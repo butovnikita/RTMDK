@@ -2678,6 +2678,10 @@ class RTMDKField:
 
     def _resonance_response(self, query_latent: NDArray, query_phase: float, node: MemoryNode,
                             query_modality: str = "text") -> float:
+        # Fix 1: Torch backend auto-switch for batch resonance
+        # (Single-node response always uses numpy for simplicity;
+        #  batch queries use TorchBackend.batch_resonance via query())
+
         # Phase 11 Track 2: Hyperbolic distance
         if self.cfg.hyperbolic:
             dist = poincare_dist(query_latent, node.latent_pos, self.cfg.ball_radius)
@@ -2717,6 +2721,33 @@ class RTMDKField:
 
         return resp * gate * node.modal_weight
 
+    def _batch_resonance(self, query_latents: NDArray, query_phases: NDArray,
+                         node_ids: List[str]) -> NDArray:
+        """Batch resonance computation. Uses Torch if available, else numpy."""
+        if not node_ids:
+            return np.empty((len(query_latents), 0), dtype=np.float32)
+
+        node_positions = np.array([self.nodes[nid].latent_pos for nid in node_ids])
+        node_phases = np.array([self.nodes[nid].phase for nid in node_ids])
+        node_amplitudes = np.array([self.nodes[nid].amplitude for nid in node_ids])
+        node_saliences = np.array([self.nodes[nid].salience for nid in node_ids])
+
+        # Fix 1: Torch backend auto-switch for batch computation
+        if self.gpu_backend and self.gpu_backend.available:
+            return self.gpu_backend.batch_resonance(
+                query_latents, query_phases, node_positions, node_phases,
+                node_amplitudes, node_saliences,
+                self.cfg.bandwidth, self.cfg.phase_coupling
+            )
+
+        # Numpy fallback
+        dists = cdist(query_latents, node_positions)
+        spatial = np.exp(-dists / self.cfg.bandwidth)
+        phase_diff = query_phases[:, np.newaxis] - node_phases[np.newaxis, :]
+        phase_align = 0.5 + 0.5 * np.cos(phase_diff)
+        response = spatial * ((1 - self.cfg.phase_coupling) + self.cfg.phase_coupling * phase_align)
+        return response * node_amplitudes[np.newaxis, :] * node_saliences[np.newaxis, :]
+
     def query(self, embedding: NDArray, phase: float = 0.0, top_k: Optional[int] = None,
               modality: str = "text") -> List[Tuple[str, float, MemoryNode]]:
         t0 = time.time()
@@ -2736,6 +2767,22 @@ class RTMDKField:
             search_nodes = [(nid, self.nodes[nid]) for nid in self.node_index]
             if self.cfg.sparse_routing:
                 self.stats["shard_misses"] += 1
+
+        # Fix 3: Hyperbolic pre-filtering for candidate selection
+        if self.cfg.hyperbolic and len(search_nodes) > top_k * 5:
+            query_norm = np.linalg.norm(query_latent)
+            if query_norm >= self.cfg.ball_radius:
+                query_latent = query_latent * (self.cfg.ball_radius - 1e-6) / max(query_norm, 1e-8)
+            prefiltered = []
+            for nid, node in search_nodes:
+                node_norm = np.linalg.norm(node.latent_pos)
+                if node_norm >= self.cfg.ball_radius:
+                    node.latent_pos = node.latent_pos * (self.cfg.ball_radius - 1e-6) / max(node_norm, 1e-8)
+                hdist = poincare_dist(query_latent, node.latent_pos, self.cfg.ball_radius)
+                if hdist < 3.0:  # Only keep nodes within reasonable hyperbolic distance
+                    prefiltered.append((nid, node))
+            if len(prefiltered) > 0:
+                search_nodes = prefiltered
 
         results = []
         for nid, node in search_nodes:
@@ -3101,7 +3148,9 @@ class RTMDKField:
     def evolve_continuous(self, inputs: Optional[List[Dict]] = None, use_sde: bool = False) -> NDArray:
         if not self.ode_dynamics or not self.nodes:
             return np.array([])
-        initial_state = np.array([n.latent_pos for n in self.nodes.values()]).flatten()
+        # Fix 2: Deterministic node order via node_index
+        ordered_nodes = [self.nodes[nid] for nid in self.node_index if nid in self.nodes]
+        initial_state = np.array([n.latent_pos for n in ordered_nodes]).flatten()
         input_signal = None
         if inputs:
             input_signal = np.array([self._project(inp["embedding"]) for inp in inputs]).flatten()
@@ -3111,9 +3160,9 @@ class RTMDKField:
         else:
             trajectory = self.ode_dynamics.evolve(initial_state, input_signal, topo_grad)
         self.stats["ode_steps"] += 1
-        final_state = trajectory[-1].reshape(len(self.nodes), self.cfg.latent_dim)
+        final_state = trajectory[-1].reshape(len(ordered_nodes), self.cfg.latent_dim)
         for i, nid in enumerate(self.node_index):
-            if i < len(final_state):
+            if nid in self.nodes and i < len(final_state):
                 old_pos = self.nodes[nid].latent_pos.copy()
                 self.nodes[nid].latent_pos = final_state[i].astype(np.float32)
                 self.nodes[nid].velocity = (self.nodes[nid].latent_pos - old_pos).astype(np.float32)
@@ -3653,6 +3702,14 @@ class RTMDKMemory(BaseModel):
     def model_post_init(self, __context):
         if self.field is None:
             object.__setattr__(self, "field", RTMDKField(self.config))
+        # Fix 4: Auto-start async workers if async_pipeline is enabled
+        if self.config.async_pipeline and not self.field._workers_started:
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self.field._start_workers())
+            except RuntimeError:
+                # No running loop yet; workers will start on first save_context
+                pass
 
     @property
     def memory_variables(self) -> List[str]:
@@ -3709,11 +3766,22 @@ class RTMDKMemory(BaseModel):
             self.field.nodes[nid].tier = tier
 
         if self.config.enable_async:
-            try:
-                asyncio.get_running_loop()
-                asyncio.create_task(self._evolve_field_async())
-            except RuntimeError:
-                self.field.step()
+            # Fix 4: Lazy async worker startup
+            if self.config.async_pipeline and not self.field._workers_started:
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(self.field._start_workers())
+                    self.field._workers_started = True
+                    # Enqueue for async processing
+                    loop.create_task(self.field.evolve_q.put({"inputs": None}))
+                except RuntimeError:
+                    self.field.step()
+            else:
+                try:
+                    asyncio.get_running_loop()
+                    asyncio.create_task(self._evolve_field_async())
+                except RuntimeError:
+                    self.field.step()
         else:
             self.field.step()
 
