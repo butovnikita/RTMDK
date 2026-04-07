@@ -39,6 +39,14 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Torch availability check
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    torch = None
+    TORCH_AVAILABLE = False
+
 
 # ============================================================================
 # CONFIGURATION v7
