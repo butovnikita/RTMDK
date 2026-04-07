@@ -276,6 +276,27 @@ class RTMDKConfig:
     save_queue_size: int = 100
     evolve_queue_size: int = 20
 
+    # Phase 13 Track 1: Teleological layer (Goal/Intent Tracking)
+    goal_tracking: bool = False
+    max_goals: int = 20
+    goal_decay: float = 0.995
+    goal_completion_threshold: float = 0.8
+
+    # Phase 13 Track 2: Cognitive attention bias
+    attention_bias: bool = False
+    bias_temperature: float = 1.0
+
+    # Phase 13 Track 3: Closed-loop RL feedback
+    rl_feedback: bool = False
+    rl_learning_rate: float = 0.01
+    rl_reward_window: int = 10
+
+    # Phase 13 Track 4: Event-driven + Low-Rank compression
+    event_driven: bool = False
+    low_rank_compression: bool = False
+    compression_rank: int = 32
+    compression_freq: int = 500
+
     def __post_init__(self):
         logger.setLevel(getattr(logging, self.log_level.upper()))
         if not self.modality_phase_shifts:
@@ -725,6 +746,9 @@ class MemoryNode:
     cross_modal_score: float = 0.0
     # Phase 11 Track 1
     tier: str = "semantic"
+    # Phase 13
+    goal_relevance: float = 0.0
+    rl_reward: float = 0.0
 
     def to_dict(self) -> Dict:
         d = asdict(self)
@@ -1606,6 +1630,395 @@ class AutoRollbackManager:
             "recent_mean": float(np.mean(self._recent_scores)) if self._recent_scores else 0,
             "rollback_count": self._rollback_count,
             "rollback_rate": self.get_rollback_rate(),
+        }
+
+
+# ============================================================================
+# PHASE 13 TRACK 1: TELEOLOGICAL LAYER (Goal/Intent Tracking)
+# ============================================================================
+
+@dataclass
+class GoalNode:
+    id: str
+    description: str
+    subgoals: List[str] = field(default_factory=list)
+    dependencies: List[str] = field(default_factory=list)
+    completion: float = 0.0
+    priority: float = 1.0
+    created_at: float = field(default_factory=time.time)
+    last_updated: float = field(default_factory=time.time)
+    status: str = "active"  # active, completed, abandoned
+    related_nodes: List[str] = field(default_factory=list)
+    intent_signals: Dict[str, float] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Dict) -> "GoalNode":
+        return cls(**data)
+
+
+class GoalTracker:
+    """Tracks user goals, subgoals, and completion progress."""
+
+    def __init__(self, max_goals: int = 20, goal_decay: float = 0.995,
+                 completion_threshold: float = 0.8):
+        self.max_goals = max_goals
+        self.goal_decay = goal_decay
+        self.completion_threshold = completion_threshold
+        self.goals: Dict[str, GoalNode] = {}
+        self._history: List[Dict] = []
+
+    def add_goal(self, description: str, goal_id: Optional[str] = None,
+                 subgoals: Optional[List[str]] = None,
+                 priority: float = 1.0) -> str:
+        gid = goal_id or f"goal_{len(self.goals)}_{int(time.time())}"
+        self.goals[gid] = GoalNode(
+            id=gid, description=description,
+            subgoals=subgoals or [], priority=priority
+        )
+        self._history.append({"action": "add", "goal_id": gid, "time": time.time()})
+        self._enforce_max_goals()
+        return gid
+
+    def update_completion(self, goal_id: str, completion: float,
+                          related_nodes: Optional[List[str]] = None):
+        if goal_id in self.goals:
+            goal = self.goals[goal_id]
+            goal.completion = min(1.0, max(0.0, completion))
+            goal.last_updated = time.time()
+            if related_nodes:
+                goal.related_nodes = list(set(goal.related_nodes + related_nodes))
+            if goal.completion >= self.completion_threshold:
+                goal.status = "completed"
+            self._history.append({
+                "action": "update", "goal_id": goal_id,
+                "completion": goal.completion, "time": time.time()
+            })
+
+    def get_active_goals(self) -> List[GoalNode]:
+        return [g for g in self.goals.values() if g.status == "active"]
+
+    def get_goal_relevance(self, node_id: str) -> float:
+        """How relevant is a node to current active goals?"""
+        if not self.goals:
+            return 0.0
+        relevance = 0.0
+        for goal in self.get_active_goals():
+            if node_id in goal.related_nodes:
+                relevance += goal.priority * (1.0 - goal.completion)
+            # Check subgoals
+            for sg in goal.subgoals:
+                if sg in node_id or node_id in sg:
+                    relevance += goal.priority * 0.5
+        return min(1.0, relevance)
+
+    def decay_goals(self):
+        """Decay inactive goals over time."""
+        to_remove = []
+        for gid, goal in self.goals.items():
+            if goal.status == "active":
+                goal.priority *= self.goal_decay
+                if goal.priority < 0.01:
+                    goal.status = "abandoned"
+                    to_remove.append(gid)
+        for gid in to_remove:
+            del self.goals[gid]
+
+    def _enforce_max_goals(self):
+        active = self.get_active_goals()
+        if len(active) > self.max_goals:
+            sorted_goals = sorted(active, key=lambda g: g.priority)
+            for goal in sorted_goals[:len(active) - self.max_goals]:
+                goal.status = "abandoned"
+
+    def get_state(self) -> Dict:
+        return {
+            "goals": {k: v.to_dict() for k, v in self.goals.items()},
+            "history": self._history[-100:],
+        }
+
+    def load_state(self, state: Dict):
+        for gid, gdata in state.get("goals", {}).items():
+            self.goals[gid] = GoalNode.from_dict(gdata)
+        self._history = state.get("history", [])
+
+
+# ============================================================================
+# PHASE 13 TRACK 2: COGNITIVE ATTENTION BIAS
+# ============================================================================
+
+def apply_attention_bias(results: List[Tuple[str, float, MemoryNode]],
+                         temperature: float = 1.0) -> List[Tuple[str, float, MemoryNode]]:
+    """
+    Transform raw resonance scores into attention-biased scores.
+    Incorporates causal_strength, tension, salience as structural signals.
+    """
+    if not results:
+        return results
+
+    # Extract raw scores
+    raw_scores = np.array([r for _, r, _ in results])
+    if len(raw_scores) < 2:
+        return results
+
+    # Compute attention weights
+    weights = []
+    for nid, resp, node in results:
+        # Base resonance
+        score = resp
+        # Causal boost
+        causal_boost = sum(node.causal_strength.values()) if hasattr(node, 'causal_strength') else 0
+        score *= (1.0 + 0.2 * min(1.0, causal_boost))
+        # Tension penalty (high tension = less reliable)
+        score *= max(0.5, 1.0 - node.tension)
+        # Goal relevance boost (Phase 13 Track 1)
+        goal_rel = getattr(node, 'goal_relevance', 0.0)
+        score *= (1.0 + 0.3 * goal_rel)
+        weights.append(score)
+
+    weights = np.array(weights)
+    # Softmax with temperature
+    if temperature > 0:
+        exp_weights = np.exp(weights / temperature)
+        normalized = exp_weights / (exp_weights.sum() + 1e-8)
+    else:
+        normalized = weights / (weights.sum() + 1e-8)
+
+    # Re-rank by attention-biased scores
+    biased_results = []
+    for i, (nid, resp, node) in enumerate(results):
+        biased_results.append((nid, float(normalized[i]), node))
+
+    biased_results.sort(key=lambda x: x[1], reverse=True)
+    return biased_results
+
+
+def format_cognitive_context(results: List[Tuple[str, float, MemoryNode]],
+                             bias_applied: bool = False) -> str:
+    """
+    Format memory results with structural attention signals.
+    Produces control-token-like format that LLM can use as attention bias.
+    """
+    if not results:
+        return "### COGNITIVE_CONTEXT\nNo relevant structures."
+
+    lines = ["### COGNITIVE_CONTEXT"]
+    for nid, score, node in results:
+        text = node.content.get("text", "unknown")[:80]
+        tier = getattr(node, 'tier', 'semantic')
+        causal = len(node.causal_strength) if hasattr(node, 'causal_strength') else 0
+        tension = node.tension
+        lineage = len(node.lineage) if node.lineage else 0
+
+        # Control-token format
+        tokens = f"[SCORE:{score:.3f}]"
+        tokens += f"[TIER:{tier[0].upper()}]"
+        if causal > 0:
+            tokens += f"[CAUSAL:{causal}]"
+        if tension > 0.3:
+            tokens += f"[TENSION:{tension:.2f}]"
+        if lineage > 0:
+            tokens += f"[LINEAGE:{lineage}]"
+
+        lines.append(f"{tokens} {text}")
+
+    return "\n".join(lines)
+
+
+# ============================================================================
+# PHASE 13 TRACK 3: CLOSED-LOOP RL FROM LLM FEEDBACK
+# ============================================================================
+
+class RLFeedbackLoop:
+    """Extracts confidence/uncertainty signals from LLM responses
+    and uses them as reinforcement for field updates."""
+
+    def __init__(self, learning_rate: float = 0.01, reward_window: int = 10):
+        self.lr = learning_rate
+        self.reward_window = reward_window
+        self._rewards: deque = deque(maxlen=reward_window)
+        self._node_rewards: Dict[str, List[float]] = defaultdict(list)
+
+    def extract_reward_from_response(self, response: str,
+                                      context_nodes: List[str]) -> float:
+        """Extract reward signal from LLM response text."""
+        reward = 0.5  # baseline
+
+        # Confidence markers
+        confidence_phrases = ["certainly", "definitely", "clearly", "obviously",
+                              "безусловно", "очевидно", "точно"]
+        uncertainty_phrases = ["not sure", "might be", "could be", "perhaps",
+                               "не уверен", "возможно", "кажется", "probably"]
+
+        resp_lower = response.lower()
+        for phrase in confidence_phrases:
+            if phrase in resp_lower:
+                reward += 0.1
+        for phrase in uncertainty_phrases:
+            reward -= 0.1
+
+        # Length-based signal (too short = unhelpful)
+        words = response.split()
+        if len(words) < 10:
+            reward -= 0.2
+        elif len(words) > 200:
+            reward -= 0.05  # Very long might be unfocused
+
+        reward = max(0.0, min(1.0, reward))
+        self._rewards.append(reward)
+
+        # Distribute reward to context nodes
+        for nid in context_nodes:
+            self._node_rewards[nid].append(reward)
+
+        return reward
+
+    def get_node_reward(self, node_id: str) -> float:
+        """Get average reward for a specific node."""
+        rewards = self._node_rewards.get(node_id, [])
+        return float(np.mean(rewards)) if rewards else 0.5
+
+    def get_average_reward(self) -> float:
+        return float(np.mean(self._rewards)) if self._rewards else 0.5
+
+    def apply_field_updates(self, field: Any):
+        """Apply RL-based updates to field parameters."""
+        if len(self._rewards) < 3:
+            return
+
+        avg_reward = self.get_average_reward()
+        reward_trend = 0.0
+        if len(self._rewards) >= 2:
+            recent = list(self._rewards)[-5:]
+            reward_trend = recent[-1] - recent[0]
+
+        # Update node RL rewards
+        for nid in field.node_index:
+            if nid in field.nodes:
+                node = field.nodes[nid]
+                node_rl = self.get_node_reward(nid)
+                node.rl_reward = node_rl
+                # Update goal_relevance based on reward
+                if reward_trend > 0.1:
+                    node.goal_relevance = min(1.0, node.goal_relevance + self.lr)
+                elif reward_trend < -0.1:
+                    node.goal_relevance = max(0.0, node.goal_relevance - self.lr)
+
+    def get_state(self) -> Dict:
+        return {
+            "rewards": list(self._rewards),
+            "node_rewards": {k: v[-10:] for k, v in self._node_rewards.items()},
+        }
+
+    def load_state(self, state: Dict):
+        self._rewards = deque(state.get("rewards", []), maxlen=self.reward_window)
+        self._node_rewards = defaultdict(list, state.get("node_rewards", {}))
+
+
+# ============================================================================
+# PHASE 13 TRACK 4: EVENT-DRIVEN + LOW-RANK COMPRESSION
+# ============================================================================
+
+class LowRankCompressor:
+    """Incremental SVD-based compression of latent states."""
+
+    def __init__(self, rank: int = 32):
+        self.rank = rank
+        self.U: Optional[NDArray] = None
+        self.S: Optional[NDArray] = None
+        self.Vt: Optional[NDArray] = None
+        self._update_count = 0
+
+    def compress(self, positions: NDArray) -> Tuple[NDArray, NDArray]:
+        """Compress node positions to low-rank representation."""
+        if len(positions) < 2:
+            return positions, positions
+
+        # Truncated SVD
+        U, S, Vt = np.linalg.svd(positions, full_matrices=False)
+        k = min(self.rank, len(S))
+        self.U = U[:, :k]
+        self.S = S[:k]
+        self.Vt = Vt[:k, :]
+        self._update_count += 1
+
+        compressed = self.U @ np.diag(self.S)
+        reconstructed = compressed @ self.Vt
+        return compressed, reconstructed
+
+    def get_compression_ratio(self, original_shape: Tuple[int, int]) -> float:
+        """How much compression achieved."""
+        original_size = original_shape[0] * original_shape[1]
+        compressed_size = self.rank * (original_shape[0] + original_shape[1])
+        return compressed_size / max(original_size, 1)
+
+    def get_state(self) -> Dict:
+        return {
+            "rank": self.rank,
+            "update_count": self._update_count,
+            "U": self.U.tolist() if self.U is not None else None,
+            "S": self.S.tolist() if self.S is not None else None,
+            "Vt": self.Vt.tolist() if self.Vt is not None else None,
+        }
+
+    def load_state(self, state: Dict):
+        self.rank = state.get("rank", self.rank)
+        self._update_count = state.get("update_count", 0)
+        if state.get("U"):
+            self.U = np.array(state["U"], dtype=np.float32)
+        if state.get("S"):
+            self.S = np.array(state["S"], dtype=np.float32)
+        if state.get("Vt"):
+            self.Vt = np.array(state["Vt"], dtype=np.float32)
+
+
+class EventDrivenScheduler:
+    """Event-driven triggers instead of periodic step()."""
+
+    def __init__(self):
+        self._event_queue: deque = deque(maxlen=1000)
+        self._event_counts: Dict[str, int] = defaultdict(int)
+
+    def enqueue(self, event_type: str, payload: Dict[str, Any]):
+        self._event_queue.append({
+            "type": event_type,
+            "payload": payload,
+            "timestamp": time.time(),
+        })
+        self._event_counts[event_type] += 1
+
+    def process_pending(self, field: Any, max_events: int = 10) -> int:
+        """Process pending events."""
+        processed = 0
+        while self._event_queue and processed < max_events:
+            event = self._event_queue.popleft()
+            etype = event["type"]
+            payload = event["payload"]
+
+            if etype == "node_added":
+                pass  # Already handled by add_node
+            elif etype == "high_tension":
+                field.consolidate()
+                processed += 1
+            elif etype == "query":
+                pass  # Already handled by query
+            elif etype == "crystallize":
+                if hasattr(field, '_crystallize_recurring'):
+                    field._crystallize_recurring()
+                processed += 1
+            elif etype == "compress":
+                if hasattr(field, '_compress_field'):
+                    field._compress_field()
+                processed += 1
+
+        return processed
+
+    def get_stats(self) -> Dict:
+        return {
+            "queue_depth": len(self._event_queue),
+            "event_counts": dict(self._event_counts),
         }
 
 
@@ -2620,6 +3033,28 @@ class RTMDKField:
             self.save_q = asyncio.Queue(maxsize=config.save_queue_size)
             self.evolve_q = asyncio.Queue(maxsize=config.evolve_queue_size)
 
+        # Phase 13 Track 1: Teleological layer
+        self.goal_tracker: Optional[GoalTracker] = None
+        if config.goal_tracking:
+            self.goal_tracker = GoalTracker(
+                config.max_goals, config.goal_decay, config.goal_completion_threshold
+            )
+
+        # Phase 13 Track 3: RL feedback loop
+        self.rl_feedback_loop: Optional[RLFeedbackLoop] = None
+        if config.rl_feedback:
+            self.rl_feedback_loop = RLFeedbackLoop(
+                config.rl_learning_rate, config.rl_reward_window
+            )
+
+        # Phase 13 Track 4: Event-driven + Low-Rank
+        self.event_scheduler: Optional[EventDrivenScheduler] = None
+        self.low_rank_compressor: Optional[LowRankCompressor] = None
+        if config.event_driven:
+            self.event_scheduler = EventDrivenScheduler()
+        if config.low_rank_compression:
+            self.low_rank_compressor = LowRankCompressor(config.compression_rank)
+
         self.stats = {
             "total_adds": 0, "total_queries": 0, "consolidations": 0,
             "avg_response": 0.0, "active_nodes": 0,
@@ -2649,6 +3084,12 @@ class RTMDKField:
             "context_tokens_saved": 0, "cognitive_compressions": 0,
             "crystallizations": 0, "crystallized_clusters": 0,
             "async_queue_depth": 0, "async_backpressure_events": 0,
+            # Phase 13
+            "active_goals": 0, "completed_goals": 0,
+            "avg_rl_reward": 0.5, "reward_trend": 0.0,
+            "attention_bias_applied": 0,
+            "compression_ratio": 1.0, "compression_updates": 0,
+            "events_processed": 0, "event_queue_depth": 0,
         }
         self._step_counter = 0
         self._rollback_history: List[Dict] = []
@@ -2820,6 +3261,20 @@ class RTMDKField:
             if self.ode_dynamics:
                 self.ode_dynamics.record_response(results[0][1])
 
+        # Phase 13 Track 1: Goal relevance scoring
+        if self.goal_tracker and results:
+            for nid, resp, node in results:
+                node.goal_relevance = self.goal_tracker.get_goal_relevance(nid)
+
+        # Phase 13 Track 2: Cognitive attention bias
+        if self.cfg.attention_bias and results:
+            results = apply_attention_bias(results, self.cfg.bias_temperature)
+            self.stats["attention_bias_applied"] += 1
+
+        # Phase 13 Track 4: Event-driven trigger for queries
+        if self.event_scheduler and results:
+            self.event_scheduler.enqueue("query", {"top_score": results[0][1] if results else 0})
+
         if self.meta_kernel:
             self.meta_kernel.record_response(results[0][1] if results else 0.0)
             if len(results) >= 2:
@@ -2872,6 +3327,10 @@ class RTMDKField:
             text = content.get("text", "")
             if text:
                 self.bm25_index.add_document(nid, text)
+
+        # Phase 13 Track 1: Event-driven trigger for node added
+        if self.event_scheduler:
+            self.event_scheduler.enqueue("node_added", {"node_id": nid, "modality": modality})
 
         return nid
 
@@ -3063,6 +3522,29 @@ class RTMDKField:
                 window=100,
                 similarity_thresh=self.cfg.crystallization_similarity
             )
+
+        # Phase 13 Track 1: Goal tracker decay
+        if self.goal_tracker and self._step_counter % 50 == 0:
+            self.goal_tracker.decay_goals()
+            active = self.goal_tracker.get_active_goals()
+            completed = [g for g in self.goal_tracker.goals.values() if g.status == "completed"]
+            self.stats["active_goals"] = len(active)
+            self.stats["completed_goals"] = len(completed)
+
+        # Phase 13 Track 3: RL feedback application
+        if self.rl_feedback_loop and self._step_counter % 20 == 0:
+            self.rl_feedback_loop.apply_field_updates(self)
+            self.stats["avg_rl_reward"] = self.rl_feedback_loop.get_average_reward()
+
+        # Phase 13 Track 4: Event-driven processing
+        if self.event_scheduler and self._step_counter % 10 == 0:
+            processed = self.event_scheduler.process_pending(self, max_events=5)
+            self.stats["events_processed"] += processed
+            self.stats["event_queue_depth"] = len(self.event_scheduler._event_queue)
+
+        # Phase 13 Track 4: Low-rank compression
+        if self.low_rank_compressor and self._step_counter % self.cfg.compression_freq == 0:
+            self._compress_field()
 
         return updated
 
@@ -3582,6 +4064,66 @@ class RTMDKField:
                 (self.query_q.qsize() if self.query_q else 0)
             )
 
+    # ========================================================================
+    # PHASE 13 TRACK 4: LOW-RANK COMPRESSION
+    # ========================================================================
+
+    def _compress_field(self):
+        """Compress node latent positions via incremental SVD."""
+        if not self.low_rank_compressor or len(self.nodes) < 10:
+            return
+        positions = np.array([n.latent_pos for n in self.nodes.values()])
+        compressed, reconstructed = self.low_rank_compressor.compress(positions)
+        ratio = self.low_rank_compressor.get_compression_ratio(positions.shape)
+        self.stats["compression_ratio"] = ratio
+        self.stats["compression_updates"] = self.low_rank_compressor._update_count
+        # Update node positions with reconstructed (lossy but preserves resonance)
+        for i, nid in enumerate(self.node_index):
+            if i < len(reconstructed) and nid in self.nodes:
+                self.nodes[nid].latent_pos = reconstructed[i].astype(np.float32)
+
+    # ========================================================================
+    # PHASE 13 TRACK 1: GOAL MANAGEMENT
+    # ========================================================================
+
+    def add_goal(self, description: str, goal_id: Optional[str] = None,
+                 subgoals: Optional[List[str]] = None,
+                 priority: float = 1.0) -> str:
+        """Add a goal to the teleological layer."""
+        if not self.goal_tracker:
+            self.goal_tracker = GoalTracker(
+                self.cfg.max_goals, self.cfg.goal_decay,
+                self.cfg.goal_completion_threshold
+            )
+        return self.goal_tracker.add_goal(description, goal_id, subgoals, priority)
+
+    def update_goal_completion(self, goal_id: str, completion: float,
+                                related_nodes: Optional[List[str]] = None):
+        """Update goal completion progress."""
+        if self.goal_tracker:
+            self.goal_tracker.update_completion(goal_id, completion, related_nodes)
+
+    def get_active_goals(self) -> List[Dict]:
+        """Get current active goals."""
+        if not self.goal_tracker:
+            return []
+        return [g.to_dict() for g in self.goal_tracker.get_active_goals()]
+
+    # ========================================================================
+    # PHASE 13 TRACK 3: RL FEEDBACK
+    # ========================================================================
+
+    def apply_rl_feedback(self, response: str, context_node_ids: List[str]) -> float:
+        """Apply RL feedback from LLM response."""
+        if not self.rl_feedback_loop:
+            self.rl_feedback_loop = RLFeedbackLoop(
+                self.cfg.rl_learning_rate, self.cfg.rl_reward_window
+            )
+        reward = self.rl_feedback_loop.extract_reward_from_response(response, context_node_ids)
+        self.rl_feedback_loop.apply_field_updates(self)
+        self.stats["avg_rl_reward"] = self.rl_feedback_loop.get_average_reward()
+        return reward
+
     def export_field(self, path: str):
         cd = asdict(self.config) if hasattr(self, 'config') else asdict(self.cfg)
         cd["consolidation_mode"] = cd["consolidation_mode"].value if isinstance(cd.get("consolidation_mode"), Enum) else cd.get("consolidation_mode", "dialectical")
@@ -3732,10 +4274,13 @@ class RTMDKMemory(BaseModel):
         phase = self._get_phase(session_id, embedding)
         results = self.field.query(embedding, phase, top_k=self.field.cfg.top_k)
 
+        # Phase 13 Track 2: Cognitive attention bias formatting
+        if self.config.attention_bias and results:
+            context = format_cognitive_context(results, bias_applied=True)
+            self.field.stats["attention_bias_applied"] += 1
         # Phase 12 Track 2: Cognitive context compression
-        if self.config.cognitive_compression and results:
+        elif self.config.cognitive_compression and results:
             context = self.field._cognitive_compress(results)
-            # Track token savings
             raw_context = format_context(results, self.config.context_format)
             tokens_saved = max(0, len(raw_context) - len(context))
             self.field.stats["context_tokens_saved"] += tokens_saved
