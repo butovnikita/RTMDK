@@ -255,6 +255,27 @@ class RTMDKConfig:
     dp_delta: float = 1e-5
     dp_max_norm: float = 1.0
 
+    # Phase 12 Track 1: Sparse resonant routing (MoE-memory)
+    sparse_routing: bool = False
+    num_shards: int = 8
+    top_shards: int = 3
+
+    # Phase 12 Track 2: Cognitive context compression
+    cognitive_compression: bool = False
+    high_resonance_threshold: float = 0.6
+
+    # Phase 12 Track 3: Crystallization
+    crystallization: bool = False
+    crystallization_freq: int = 200
+    crystallization_similarity: float = 0.75
+    crystallization_min_cluster: int = 3
+
+    # Phase 12 Track 4: Async pipeline
+    async_pipeline: bool = False
+    query_queue_size: int = 50
+    save_queue_size: int = 100
+    evolve_queue_size: int = 20
+
     def __post_init__(self):
         logger.setLevel(getattr(logging, self.log_level.upper()))
         if not self.modality_phase_shifts:
@@ -2577,6 +2598,28 @@ class RTMDKField:
         if config.differential_privacy:
             self.dp = DifferentialPrivacy(config.dp_epsilon, config.dp_delta, config.dp_max_norm)
 
+        # Phase 12 Track 1: Sparse resonant routing (MoE-memory)
+        self.shard_centers: Optional[NDArray] = None
+        self.shard_router: Optional[NDArray] = None
+        self._node_shard_map: Dict[str, int] = {}
+        if config.sparse_routing:
+            self.shard_centers = np.random.randn(config.num_shards, config.latent_dim).astype(np.float32)
+            self.shard_router = np.zeros(config.num_shards, dtype=np.float32)
+
+        # Phase 12 Track 3: Crystallization
+        self._crystallization_counter = 0
+        self._crystallized_nodes: Set[str] = set()
+
+        # Phase 12 Track 4: Async pipeline queues
+        self.query_q: Optional[asyncio.Queue] = None
+        self.save_q: Optional[asyncio.Queue] = None
+        self.evolve_q: Optional[asyncio.Queue] = None
+        self._workers_started = False
+        if config.async_pipeline:
+            self.query_q = asyncio.Queue(maxsize=config.query_queue_size)
+            self.save_q = asyncio.Queue(maxsize=config.save_queue_size)
+            self.evolve_q = asyncio.Queue(maxsize=config.evolve_queue_size)
+
         self.stats = {
             "total_adds": 0, "total_queries": 0, "consolidations": 0,
             "avg_response": 0.0, "active_nodes": 0,
@@ -2601,6 +2644,11 @@ class RTMDKField:
             "free_energy": 0.0, "prediction_error": 0.0, "surprise_level": 0.0,
             "scenarios_generated": 0, "avg_scenario_confidence": 0.0,
             "privacy_budget_spent": 0.0, "noise_std": 0.0, "updates_clipped": 0,
+            # Phase 12
+            "shard_hits": 0, "shard_misses": 0, "avg_shard_query_time_ms": 0.0,
+            "context_tokens_saved": 0, "cognitive_compressions": 0,
+            "crystallizations": 0, "crystallized_clusters": 0,
+            "async_queue_depth": 0, "async_backpressure_events": 0,
         }
         self._step_counter = 0
         self._rollback_history: List[Dict] = []
@@ -2671,14 +2719,23 @@ class RTMDKField:
 
     def query(self, embedding: NDArray, phase: float = 0.0, top_k: Optional[int] = None,
               modality: str = "text") -> List[Tuple[str, float, MemoryNode]]:
+        t0 = time.time()
         top_k = top_k or self.cfg.top_k
         query_latent = self._project(embedding)
 
-        if self.cfg.use_hnsw and self.hnsw_index and len(self.hnsw_index.positions) > top_k * 2:
+        # Phase 12 Track 1: Sparse resonant routing (MoE-memory)
+        if self.cfg.sparse_routing and self.shard_centers is not None and len(self.nodes) > self.cfg.num_shards * 2:
+            active_shards = self._route_query(query_latent, self.cfg.top_shards)
+            candidate_ids = [nid for nid in self.node_index if self._get_node_shard(nid) in active_shards]
+            search_nodes = [(nid, self.nodes[nid]) for nid in candidate_ids if nid in self.nodes]
+            self.stats["shard_hits"] += len(candidate_ids)
+        elif self.cfg.use_hnsw and self.hnsw_index and len(self.hnsw_index.positions) > top_k * 2:
             candidate_ids = self.hnsw_index.search(query_latent, top_k * 3)
             search_nodes = [(nid, self.nodes[nid]) for nid in candidate_ids if nid in self.nodes]
         else:
             search_nodes = [(nid, self.nodes[nid]) for nid in self.node_index]
+            if self.cfg.sparse_routing:
+                self.stats["shard_misses"] += 1
 
         results = []
         for nid, node in search_nodes:
@@ -2689,6 +2746,13 @@ class RTMDKField:
 
         results.sort(key=lambda x: x[1], reverse=True)
         self.stats["total_queries"] += 1
+
+        # Track shard query time
+        if self.cfg.sparse_routing:
+            elapsed_ms = (time.time() - t0) * 1000
+            self.stats["avg_shard_query_time_ms"] = (
+                0.95 * self.stats["avg_shard_query_time_ms"] + 0.05 * elapsed_ms
+            )
 
         if self.cfg.cross_modal:
             self.stats["cross_modal_queries"] += 1
@@ -2941,6 +3005,17 @@ class RTMDKField:
 
         if self.ode_dynamics:
             self.stats["response_smoothness"] = self.ode_dynamics.compute_response_smoothness()
+
+        # Phase 12 Track 1: Update shard centers periodically
+        if self.cfg.sparse_routing and self._step_counter % 100 == 0 and len(self.nodes) > self.cfg.num_shards * 2:
+            self._update_shard_centers()
+
+        # Phase 12 Track 3: Crystallization
+        if self.cfg.crystallization and self._step_counter % self.cfg.crystallization_freq == 0:
+            self._crystallize_recurring(
+                window=100,
+                similarity_thresh=self.cfg.crystallization_similarity
+            )
 
         return updated
 
@@ -3290,6 +3365,174 @@ class RTMDKField:
             return self.federated.get_sync_status()
         return {"enabled": False}
 
+    # ========================================================================
+    # PHASE 12 TRACK 1: SPARSE RESONANT ROUTING (MoE-memory)
+    # ========================================================================
+
+    def _get_node_shard(self, node_id: str) -> int:
+        """Get shard assignment for a node."""
+        if node_id in self._node_shard_map:
+            return self._node_shard_map[node_id]
+        if node_id in self.nodes:
+            pos = self.nodes[node_id].latent_pos
+            dists = np.linalg.norm(self.shard_centers - pos, axis=1)
+            shard = int(np.argmin(dists))
+            self._node_shard_map[node_id] = shard
+            return shard
+        return 0
+
+    def _route_query(self, query_latent: NDArray, top_shards: int = 3) -> List[int]:
+        """Route query to top_k most relevant shards (softmax-free)."""
+        if self.shard_centers is None:
+            return list(range(self.cfg.num_shards))
+        dists = np.linalg.norm(self.shard_centers - query_latent, axis=1)
+        self.shard_router = 1.0 / (1.0 + dists)
+        return list(np.argsort(self.shard_router)[-top_shards:])
+
+    def _update_shard_centers(self):
+        """Update shard centers based on current node distribution."""
+        if self.shard_centers is None or len(self.nodes) < self.cfg.num_shards:
+            return
+        from sklearn.cluster import KMeans
+        positions = np.array([n.latent_pos for n in self.nodes.values()])
+        if len(positions) < self.cfg.num_shards:
+            return
+        kmeans = KMeans(n_clusters=self.cfg.num_shards, n_init=3, random_state=42)
+        labels = kmeans.fit_predict(positions)
+        self.shard_centers = kmeans.cluster_centers_.astype(np.float32)
+        # Update node-shard map
+        self._node_shard_map.clear()
+        for i, nid in enumerate(self.node_index):
+            self._node_shard_map[nid] = int(labels[i])
+
+    # ========================================================================
+    # PHASE 12 TRACK 2: COGNITIVE CONTEXT COMPRESSION
+    # ========================================================================
+
+    def _cognitive_compress(self, results: List[Tuple[str, float, MemoryNode]]) -> str:
+        """Compress raw memory results into a structured cognitive dump for LLM."""
+        if not results:
+            return "### COGNITIVE_CONTEXT\nNo relevant structures."
+
+        high_res = [(nid, r, n) for nid, r, n in results if r > self.cfg.high_resonance_threshold]
+        contradictions = [n for _, _, n in results if n.content.get("causal_flag") == "incompatible"]
+        procedural = [n for _, _, n in results if getattr(n, 'tier', 'semantic') == "procedural"]
+
+        lines = ["### COGNITIVE_CONTEXT"]
+        if high_res:
+            summaries = []
+            for nid, r, n in high_res:
+                text = n.content.get("text", "unknown")[:60]
+                summaries.append(f"[{text}...](R:{r:.2f},S:{n.salience:.2f})")
+            lines.append(f"• High resonance ({len(high_res)} nodes): " + " | ".join(summaries))
+        if contradictions:
+            texts = [n.content.get("text", "unknown")[:40] for n in contradictions[:3]]
+            lines.append(f"⚠️ Conflicting nodes: " + " | ".join(texts))
+        if procedural:
+            lines.append("🛠 Procedural patterns available (how-to)")
+
+        # Add lineage summary for complex nodes
+        lineage_nodes = [(nid, n) for nid, r, n in results if n.lineage]
+        if lineage_nodes:
+            lines.append(f"📊 Consolidated memories: {len(lineage_nodes)} nodes with synthesis history")
+
+        return "\n".join(lines)
+
+    # ========================================================================
+    # PHASE 12 TRACK 3: CRYSTALLIZATION (episodic → semantic/procedural)
+    # ========================================================================
+
+    def _crystallize_recurring(self, window: int = 100, similarity_thresh: float = 0.75):
+        """Detect recurring episodic patterns and crystallize into semantic nodes."""
+        recent_ids = self.node_index[-window:]
+        recent = [self.nodes[nid] for nid in recent_ids
+                  if nid in self.nodes and getattr(self.nodes[nid], 'tier', 'semantic') == "episodic"
+                  and nid not in self._crystallized_nodes]
+        if len(recent) < 5:
+            return
+
+        try:
+            from sklearn.cluster import DBSCAN
+        except ImportError:
+            return
+
+        pos = np.array([n.latent_pos for n in recent])
+        labels = DBSCAN(eps=0.4, min_samples=self.cfg.crystallization_min_cluster).fit_predict(pos)
+
+        crystallized_count = 0
+        for cluster_id in set(labels):
+            if cluster_id == -1:
+                continue
+            members = [recent[i] for i, l in enumerate(labels) if l == cluster_id]
+            if len(members) >= self.cfg.crystallization_min_cluster:
+                new_pos = np.mean([m.latent_pos for m in members], axis=0).astype(np.float32)
+                new_phase = np.mean([m.phase for m in members])
+                combined_text = " ".join([m.content.get("text", "")[:30] for m in members[:3]])
+                new_content = {
+                    "text": f"Crystallized: {combined_text}...",
+                    "tier": "semantic",
+                    "crystallized_from": [m.id for m in members],
+                    "crystallized_at": time.time(),
+                }
+                new_id = self.add_node(new_pos, new_content, phase=float(new_phase % (2 * np.pi)))
+                self.nodes[new_id].tier = "semantic"
+                # Mark originals as archived
+                for m in members:
+                    m.content["archived"] = True
+                    self._crystallized_nodes.add(m.id)
+                crystallized_count += 1
+
+        if crystallized_count > 0:
+            self.stats["crystallizations"] += crystallized_count
+            self.stats["crystallized_clusters"] += crystallized_count
+
+    # ========================================================================
+    # PHASE 12 TRACK 4: ASYNC MULTI-THREADED EVOLUTION PIPELINE
+    # ========================================================================
+
+    async def _start_workers(self):
+        """Start background worker tasks for async pipeline."""
+        if self._workers_started:
+            return
+        self._workers_started = True
+        asyncio.create_task(self._worker_evolve())
+        asyncio.create_task(self._worker_save())
+
+    async def _worker_evolve(self):
+        """Background worker for field evolution."""
+        while True:
+            try:
+                payload = await asyncio.wait_for(self.evolve_q.get(), timeout=1.0)
+                self.step(payload.get("inputs"))
+                if self.meta_controller and self.meta_controller.should_optimize():
+                    self.meta_controller.optimize(self)
+                self.evolve_q.task_done()
+            except asyncio.TimeoutError:
+                continue
+            except Exception as e:
+                logger.error(f"Evolve worker error: {e}")
+
+    async def _worker_save(self):
+        """Background worker for context saving."""
+        while True:
+            try:
+                payload = await asyncio.wait_for(self.save_q.get(), timeout=1.0)
+                # Save is already handled by add_node, this is for post-processing
+                self.save_q.task_done()
+            except asyncio.TimeoutError:
+                continue
+            except Exception as e:
+                logger.error(f"Save worker error: {e}")
+
+    def _track_queue_depth(self):
+        """Track async queue depths for monitoring."""
+        if self.cfg.async_pipeline and self.evolve_q:
+            self.stats["async_queue_depth"] = (
+                self.evolve_q.qsize() +
+                (self.save_q.qsize() if self.save_q else 0) +
+                (self.query_q.qsize() if self.query_q else 0)
+            )
+
     def export_field(self, path: str):
         cd = asdict(self.config) if hasattr(self, 'config') else asdict(self.cfg)
         cd["consolidation_mode"] = cd["consolidation_mode"].value if isinstance(cd.get("consolidation_mode"), Enum) else cd.get("consolidation_mode", "dialectical")
@@ -3431,7 +3674,17 @@ class RTMDKMemory(BaseModel):
         embedding = self.embedder(query)
         phase = self._get_phase(session_id, embedding)
         results = self.field.query(embedding, phase, top_k=self.field.cfg.top_k)
-        context = format_context(results, self.config.context_format)
+
+        # Phase 12 Track 2: Cognitive context compression
+        if self.config.cognitive_compression and results:
+            context = self.field._cognitive_compress(results)
+            # Track token savings
+            raw_context = format_context(results, self.config.context_format)
+            tokens_saved = max(0, len(raw_context) - len(context))
+            self.field.stats["context_tokens_saved"] += tokens_saved
+            self.field.stats["cognitive_compressions"] += 1
+        else:
+            context = format_context(results, self.config.context_format)
         return {"rtmdk_context": context}
 
     def get_system_prompt(self, context: str) -> str:

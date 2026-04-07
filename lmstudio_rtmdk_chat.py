@@ -240,6 +240,11 @@ def interactive_session():
         predictive_coding=False,
         counterfactual_imagination=True,
         differential_privacy=False,
+        # Фаза 12
+        sparse_routing=False,
+        cognitive_compression=True,
+        crystallization=True,
+        crystallization_freq=100,
     )
 
     memory = None
@@ -257,6 +262,7 @@ def interactive_session():
     session_id = "default"
     print(f"\n  Команды: /stats, /tiers, /health, /causal, /contradict,")
     print(f"           /hyperbolic, /predictive, /privacy,")
+    print(f"           /shards, /crystallize, /compression,")
     print(f"           /whatif JSON, /imagine JSON,")
     print(f"           /format <json|yaml|plain>, /session <id>,")
     print(f"           /export, /clear, /quit")
@@ -311,6 +317,38 @@ def interactive_session():
 
         if user_input.lower() == "/privacy":
             print_privacy(memory)
+            continue
+
+        if user_input.lower() == "/shards":
+            stats = memory.get_stats()
+            print(f"\n  === Шардирование (MoE-память) ===")
+            print(f"  Enabled: {memory.field.cfg.sparse_routing}")
+            print(f"  Num shards: {memory.field.cfg.num_shards}")
+            print(f"  Top shards: {memory.field.cfg.top_shards}")
+            print(f"  Shard hits: {stats.get('shard_hits', 0)}")
+            print(f"  Shard misses: {stats.get('shard_misses', 0)}")
+            print(f"  Avg query time: {stats.get('avg_shard_query_time_ms', 0.0):.2f}ms")
+            continue
+
+        if user_input.lower() == "/crystallize":
+            stats = memory.get_stats()
+            print(f"\n  === Кристаллизация ===")
+            print(f"  Enabled: {memory.field.cfg.crystallization}")
+            print(f"  Crystallizations: {stats.get('crystallizations', 0)}")
+            print(f"  Crystallized clusters: {stats.get('crystallized_clusters', 0)}")
+            continue
+
+        if user_input.lower() == "/compression":
+            stats = memory.get_stats()
+            print(f"\n  === Когнитивное сжатие ===")
+            print(f"  Enabled: {memory.field.cfg.cognitive_compression}")
+            print(f"  Compressions: {stats.get('cognitive_compressions', 0)}")
+            print(f"  Tokens saved: {stats.get('context_tokens_saved', 0)}")
+            continue
+
+        if user_input.lower() == "/crystallize_now":
+            memory.field._crystallize_recurring()
+            print("\n  Crystallization triggered")
             continue
 
         if user_input.startswith("/whatif "):
