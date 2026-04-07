@@ -1,0 +1,58 @@
+version: "3.9"
+
+services:
+  # RTMDK Memory API Server
+  rtmdk-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rtmdk-memory
+    ports:
+      - "8080:8080"
+    environment:
+      - RTMDK_HOST=0.0.0.0
+      - RTMDK_PORT=8080
+      - RTMDK_MEMORY_FILE=/data/memory.json
+      - RTMDK_ENABLE_LM_STUDIO=false
+      - RTMDK_AUTO_SAVE=30
+      - RTMDK_API_KEY=rtmdk-local
+    volumes:
+      - rtmdk-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - rtmdk-network
+
+  # LM Studio (optional — раскомментируйте если LM Studio в Docker)
+  # lm-studio:
+  #   image: ghcr.io/lmstudio-ai/lmstudio:latest
+  #   container_name: lm-studio
+  #   ports:
+  #     - "12345:12345"
+  #   volumes:
+  #     - lm-studio-models:/models
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]
+  #   restart: unless-stopped
+  #   networks:
+  #     - rtmdk-network
+
+volumes:
+  rtmdk-data:
+    driver: local
+  # lm-studio-models:
+  #   driver: local
+
+networks:
+  rtmdk-network:
+    driver: bridge

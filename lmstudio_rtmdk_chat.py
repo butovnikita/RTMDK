@@ -1,6 +1,6 @@
 """
 lmstudio_rtmdk_chat.py
-Чат с LM Studio + RTMDK v2 память.
+Чат с LM Studio + RTMDK v8 память.
 
 Требования:
   1. LM Studio запущен на http://localhost:12345
@@ -11,12 +11,21 @@ lmstudio_rtmdk_chat.py
   python lmstudio_rtmdk_chat.py
 
 Команды в чате:
-  /stats   - статистика памяти (включая TDA, проекцию, самосупервизию)
-  /export  - экспорт состояния поля
-  /clear   - очистить память
+  /stats        - полная статистика памяти
+  /tiers        - распределение по уровням памяти
+  /health       - здоровье поля + топология
+  /causal       - каузальная сводка
+  /contradict   - обнаруженные противоречия
+  /whatif JSON  - контрфактуальный запрос
+  /imagine JSON - воображение сценариев
+  /hyperbolic   - статистика гиперболической геометрии
+  /predictive   - статистика предсказательного кодирования
+  /privacy      - статус дифференциальной приватности
+  /export       - экспорт состояния поля
+  /clear        - очистить память
   /format json|yaml|plain - формат контекста
   /session <id> - переключить сессию
-  /quit    - выйти
+  /quit         - выйти
 """
 
 import sys
@@ -25,7 +34,10 @@ import json
 import time
 import requests
 import numpy as np
-from rtmdk_memory_v5 import RTMDKConfig, RTMDKMemory, ContextFormat
+from rtmdk_memory_v8 import (
+    RTMDKConfig, RTMDKMemory, ContextFormat,
+    detect_tier, detect_modality,
+)
 
 LM_STUDIO_URL = "http://localhost:12345/v1"
 EMBED_MODEL = "nomic-ai/nomic-embed-text-v1.5-GGUF"
@@ -104,9 +116,90 @@ def chat_with_memory(memory: RTMDKMemory, user_input: str, session_id: str = "de
         return f"[ERROR] Chat request failed: {e}"
 
 
+def print_stats(memory: RTMDKMemory):
+    stats = memory.get_stats()
+    print(f"\n  === Статистика поля ===")
+    print(f"  Nodes: {stats['active_nodes']}")
+    print(f"  Queries: {stats['total_queries']}")
+    print(f"  Consolidations: {stats['consolidations']}")
+    print(f"  Causal edges: {stats.get('causal_edges', 0)}")
+    print(f"  Contradictions: {stats.get('contradictions', 0)}")
+    print(f"  Blocked consolidations: {stats.get('blocked_consolidations', 0)}")
+    print(f"  Projection updates: {stats.get('projection_updates', 0)}")
+    print(f"  Self-sup checks: {stats.get('self_sup_checks', 0)}")
+    print(f"  Healing events: {stats.get('healing_events', 0)}")
+    print(f"  ODE steps: {stats.get('ode_steps', 0)}")
+    print(f"  Scenarios generated: {stats.get('scenarios_generated', 0)}")
+    print(f"  Meta optimizations: {stats.get('meta_optimizations', 0)}")
+    print(f"  Federated syncs: {stats.get('federated_syncs', 0)}")
+    if 'tda_trend' in stats:
+        print(f"  TDA trend: {stats['tda_trend']}")
+    print(f"  Field health: {stats.get('field_health', 'unknown')}")
+    print(f"  Tier coherence: {stats.get('tier_coherence', 0.0):.3f}")
+    print(f"  Free energy: {stats.get('free_energy', 0.0):.4f}")
+    print(f"  Response smoothness: {stats.get('response_smoothness', 0.0):.3f}")
+    print(f"  Privacy budget: {stats.get('privacy_budget_spent', 0.0):.3f}")
+    print(f"  Avg response: {stats['avg_response']:.4f}")
+
+
+def print_tiers(memory: RTMDKMemory):
+    stats = memory.get_stats()
+    dist = stats.get('tier_distribution', {})
+    print(f"\n  === Распределение по уровням ===")
+    for tier, count in sorted(dist.items()):
+        decay = memory.field.cfg.tier_decay.get(tier, '?')
+        print(f"  {tier:12s}: {count:3d} узлов  (decay={decay})")
+    print(f"  Tier coherence: {stats.get('tier_coherence', 0.0):.3f}")
+
+
+def print_health(memory: RTMDKMemory):
+    health = memory.get_field_health()
+    print(f"\n  === Здоровье поля ===")
+    for k, v in health.items():
+        print(f"  {k}: {v}")
+
+
+def print_hyperbolic(memory: RTMDKMemory):
+    stats = memory.get_stats()
+    print(f"\n  === Гиперболическая геометрия ===")
+    print(f"  Enabled: {memory.field.cfg.hyperbolic}")
+    print(f"  Ball radius: {memory.field.cfg.ball_radius}")
+    print(f"  Avg hyperbolic dist: {stats.get('avg_hyperbolic_dist', 0.0):.4f}")
+
+
+def print_predictive(memory: RTMDKMemory):
+    stats = memory.get_stats()
+    print(f"\n  === Предсказательное кодирование ===")
+    print(f"  Enabled: {memory.field.cfg.predictive_coding}")
+    print(f"  Free energy: {stats.get('free_energy', 0.0):.4f}")
+    print(f"  Prediction error: {stats.get('prediction_error', 0.0):.4f}")
+    print(f"  Surprise level: {stats.get('surprise_level', 0.0):.3f}")
+
+
+def print_privacy(memory: RTMDKMemory):
+    stats = memory.get_stats()
+    print(f"\n  === Дифференциальная приватность ===")
+    print(f"  Enabled: {memory.field.cfg.differential_privacy}")
+    print(f"  Epsilon: {memory.field.cfg.dp_epsilon}")
+    print(f"  Budget spent: {stats.get('privacy_budget_spent', 0.0):.3f}")
+    print(f"  Updates clipped: {stats.get('updates_clipped', 0)}")
+
+
+def print_contradictions(memory: RTMDKMemory):
+    contradictions = memory.get_contradictions()
+    print(f"\n  === Противоречия ({len(contradictions)}) ===")
+    for c in contradictions[:5]:
+        status = "RESOLVED" if c.resolved else "ACTIVE"
+        print(f"  [{status}] {c.id}: {c.effect_node}")
+        for cause, strength in c.causes:
+            print(f"    do({cause}) → P={strength:.3f}")
+        if c.contradiction_reason:
+            print(f"    Reason: {c.contradiction_reason}")
+
+
 def interactive_session():
     print("=" * 60)
-    print("  RTMDK v5 Memory + LM Studio Chat")
+    print("  RTMDK v8 Memory + LM Studio Chat")
     print("=" * 60)
 
     print(f"\n  Подключение к LM Studio: {LM_STUDIO_URL}")
@@ -141,6 +234,12 @@ def interactive_session():
         counterfactual_enabled=True,
         meta_adaptive=True,
         self_healing=True,
+        # Фаза 11
+        memory_tiers={"episodic", "semantic", "procedural"},
+        hyperbolic=False,
+        predictive_coding=False,
+        counterfactual_imagination=True,
+        differential_privacy=False,
     )
 
     memory = None
@@ -153,11 +252,14 @@ def interactive_session():
 
     if memory is None:
         memory = RTMDKMemory(config=config, embedder=embedder)
-        print("  Новая память инициализирована (v5)")
+        print("  Новая память инициализирована (v8)")
 
     session_id = "default"
-    print(f"\n  Команды: /stats, /export, /clear, /format <json|yaml|plain>, /session <id>, /quit")
-    print(f"           /causal - каузальная сводка, /whatif <JSON> - контрфактуальный запрос")
+    print(f"\n  Команды: /stats, /tiers, /health, /causal, /contradict,")
+    print(f"           /hyperbolic, /predictive, /privacy,")
+    print(f"           /whatif JSON, /imagine JSON,")
+    print(f"           /format <json|yaml|plain>, /session <id>,")
+    print(f"           /export, /clear, /quit")
     print("-" * 60)
 
     while True:
@@ -174,19 +276,15 @@ def interactive_session():
             break
 
         if user_input.lower() == "/stats":
-            stats = memory.get_stats()
-            print(f"\n  Nodes: {stats['active_nodes']}")
-            print(f"  Queries: {stats['total_queries']}")
-            print(f"  Consolidations: {stats['consolidations']}")
-            print(f"  Causal edges: {stats.get('causal_edges', 0)}")
-            print(f"  Contradictions: {stats.get('contradictions', 0)}")
-            print(f"  Blocked consolidations: {stats.get('blocked_consolidations', 0)}")
-            print(f"  Projection updates: {stats.get('projection_updates', 0)}")
-            print(f"  Self-sup checks: {stats.get('self_sup_checks', 0)}")
-            print(f"  Healing events: {stats.get('healing_events', 0)}")
-            if 'tda_trend' in stats:
-                print(f"  TDA trend: {stats['tda_trend']}")
-            print(f"  Avg response: {stats['avg_response']:.4f}")
+            print_stats(memory)
+            continue
+
+        if user_input.lower() == "/tiers":
+            print_tiers(memory)
+            continue
+
+        if user_input.lower() == "/health":
+            print_health(memory)
             continue
 
         if user_input.lower() == "/causal":
@@ -197,6 +295,22 @@ def interactive_session():
                 print("  Top causal effects:")
                 for effect, strength in summary['top_effects'][:5]:
                     print(f"    {effect}: P={strength:.3f}")
+            continue
+
+        if user_input.lower() == "/contradict":
+            print_contradictions(memory)
+            continue
+
+        if user_input.lower() == "/hyperbolic":
+            print_hyperbolic(memory)
+            continue
+
+        if user_input.lower() == "/predictive":
+            print_predictive(memory)
+            continue
+
+        if user_input.lower() == "/privacy":
+            print_privacy(memory)
             continue
 
         if user_input.startswith("/whatif "):
@@ -212,7 +326,21 @@ def interactive_session():
                 for step in result.reasoning_path:
                     print(f"    → {step}")
             except json.JSONDecodeError:
-                print("\n  Usage: /whatif {\"do\": {\"node\": \"value\"}, \"query\": [\"target1\", \"target2\"]}")
+                print("\n  Usage: /whatif {\"do\": {\"node\": \"value\"}, \"query\": [\"target1\"]}")
+            continue
+
+        if user_input.startswith("/imagine "):
+            try:
+                query_json = json.loads(user_input[9:])
+                base_query = query_json.get("query", user_input)
+                intervention = query_json.get("intervention", {})
+                results = memory.imagine_counterfactual(base_query, intervention)
+                print(f"\n  Imagined {len(results)} scenarios:")
+                for r in results:
+                    print(f"  [HYPOTHETICAL] node={r['node_id']} conf={r['confidence']:.3f}")
+                    print(f"    trajectory steps: {len(r['trajectory'])}")
+            except json.JSONDecodeError:
+                print("\n  Usage: /imagine {\"query\": \"text\", \"intervention\": {\"n0\": 0.5}}")
             continue
 
         if user_input.lower() == "/export":
