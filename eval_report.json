@@ -1,0 +1,25 @@
+{
+  "summary": {
+    "n_evaluations": 50,
+    "overall_accuracy": 0.28,
+    "avg_latency_ms": 0.1018381118774414,
+    "context_usage_rate": 0.28,
+    "continual_qa_accuracy": 0.6,
+    "continual_qa_std": 0.48989794855663565,
+    "long_bench_accuracy": 0.0,
+    "long_bench_std": 0.0,
+    "memory_bench_accuracy": 0.1,
+    "memory_bench_std": 0.3
+  },
+  "forgetting": {
+    "continual_qa": 0.0,
+    "memory_bench": 0.0
+  },
+  "rollback_triggered": "False",
+  "memory_stats": {
+    "nodes": 40,
+    "consolidations": 0,
+    "recall_accuracy": 0.09011129537629277,
+    "security_violations": 0
+  }
+}
