@@ -1859,6 +1859,10 @@ class RLFeedbackLoop:
         for phrase in uncertainty_phrases:
             reward -= 0.1
 
+        # Fallback: punctuation-based uncertainty estimation
+        uncertainty_penalty = (response.count("?") + response.count("возможно")) * 0.15
+        reward -= min(0.3, uncertainty_penalty)
+
         # Length-based signal (too short = unhelpful)
         words = response.split()
         if len(words) < 10:
@@ -3195,15 +3199,15 @@ class RTMDKField:
         top_k = top_k or self.cfg.top_k
         query_latent = self._project(embedding)
 
-        # Phase 12 Track 1: Sparse resonant routing (MoE-memory)
-        if self.cfg.sparse_routing and self.shard_centers is not None and len(self.nodes) > self.cfg.num_shards * 2:
+        # Fix 1: HNSW auto-intercept for large N (>500 nodes)
+        if self.cfg.use_hnsw and self.hnsw_index and len(self.hnsw_index.positions) > max(500, top_k * 2):
+            candidate_ids = self.hnsw_index.search(query_latent, top_k * 3)
+            search_nodes = [(nid, self.nodes[nid]) for nid in candidate_ids if nid in self.nodes]
+        elif self.cfg.sparse_routing and self.shard_centers is not None and len(self.nodes) > self.cfg.num_shards * 2:
             active_shards = self._route_query(query_latent, self.cfg.top_shards)
             candidate_ids = [nid for nid in self.node_index if self._get_node_shard(nid) in active_shards]
             search_nodes = [(nid, self.nodes[nid]) for nid in candidate_ids if nid in self.nodes]
             self.stats["shard_hits"] += len(candidate_ids)
-        elif self.cfg.use_hnsw and self.hnsw_index and len(self.hnsw_index.positions) > top_k * 2:
-            candidate_ids = self.hnsw_index.search(query_latent, top_k * 3)
-            search_nodes = [(nid, self.nodes[nid]) for nid in candidate_ids if nid in self.nodes]
         else:
             search_nodes = [(nid, self.nodes[nid]) for nid in self.node_index]
             if self.cfg.sparse_routing:
@@ -3220,7 +3224,7 @@ class RTMDKField:
                 if node_norm >= self.cfg.ball_radius:
                     node.latent_pos = node.latent_pos * (self.cfg.ball_radius - 1e-6) / max(node_norm, 1e-8)
                 hdist = poincare_dist(query_latent, node.latent_pos, self.cfg.ball_radius)
-                if hdist < 3.0:  # Only keep nodes within reasonable hyperbolic distance
+                if hdist < 3.0:
                     prefiltered.append((nid, node))
             if len(prefiltered) > 0:
                 search_nodes = prefiltered
@@ -3365,7 +3369,11 @@ class RTMDKField:
                 pre_state[nid] = {"latent_pos": n.latent_pos.copy(), "phase": n.phase,
                                   "amplitude": n.amplitude, "salience": n.salience}
 
-        for nid in self.node_index:
+        # Fix 2: Safe iteration — snapshot node_index to avoid mutation issues
+        node_index_snapshot = list(self.node_index)
+        for nid in node_index_snapshot:
+            if nid not in self.nodes:
+                continue
             tension = self._compute_tension(nid)
             self.nodes[nid].tension = tension
             self.nodes[nid].soft_gate = self._soft_gate(tension)
@@ -3373,15 +3381,18 @@ class RTMDKField:
                 self.adaptive_threshold.record_tension(tension)
                 self.stats["adaptive_threshold_value"] = self.adaptive_threshold.get_threshold()
 
-        high_tension = [nid for nid in self.node_index if self.nodes[nid].tension > eff_threshold]
+        high_tension = [nid for nid in node_index_snapshot if nid in self.nodes and self.nodes[nid].tension > eff_threshold]
         processed = set()
+        pending_deletions = []
 
         for nid in high_tension:
             if nid in processed or nid not in self.nodes:
                 continue
             node = self.nodes[nid]
+            # Fix 2: Safe inner iteration with snapshot
+            inner_snapshot = list(self.node_index)
             candidates = []
-            for oid in self.node_index:
+            for oid in inner_snapshot:
                 if oid == nid or oid in processed or oid not in self.nodes:
                     continue
                 other = self.nodes[oid]
@@ -3393,6 +3404,8 @@ class RTMDKField:
                 continue
             candidates.sort(key=lambda x: x[1])
             pid = candidates[0][0]
+            if pid not in self.nodes:
+                continue
             partner = self.nodes[pid]
 
             if self.cfg.do_calculus_validation and self.causal_engine:
@@ -3439,12 +3452,20 @@ class RTMDKField:
                 self.hnsw_index.insert(nid, node.latent_pos)
             if self.cfg.bm25_fallback and self.bm25_index:
                 self.bm25_index.remove_document(pid)
-            del self.nodes[pid]
-            self.node_index.remove(pid)
+
+            # Fix 2: Defer deletion to post-loop
+            pending_deletions.append(pid)
             processed.add(pid)
             updated.append(nid)
             self.stats["consolidations"] += 1
             processed.add(nid)
+
+        # Fix 2: Apply all deletions after iteration
+        for pid in pending_deletions:
+            if pid in self.nodes:
+                del self.nodes[pid]
+            if pid in self.node_index:
+                self.node_index.remove(pid)
 
         if updated:
             self._verify_consistency(updated, pre_state)
@@ -3466,85 +3487,6 @@ class RTMDKField:
             self._rollback_history.append({"timestamp": time.time(), "pre_state": pre_state, "updated": updated})
             if len(self._rollback_history) > self.cfg.max_rollback_history:
                 self._rollback_history.pop(0)
-
-        causal_freq = getattr(self.cfg, "causal_discovery_freq", 50)
-        if self.causal_engine and self._step_counter % max(causal_freq, 1) == 0:
-            self.causal_engine.discover_causal_structure()
-            for (cause, effect), edge in self.causal_engine.causal_effects.items():
-                if effect in self.nodes:
-                    self.nodes[effect].causal_parents.append(cause)
-                    self.nodes[effect].causal_strength[cause] = edge.strength
-                if cause in self.nodes:
-                    self.nodes[cause].causal_effects[effect] = edge.strength
-            self.stats["causal_edges"] = len(self.causal_engine.causal_effects)
-            if self.cfg.contradiction_detection:
-                self.causal_engine.detect_contradictions(self.cfg.contradiction_threshold)
-                self.stats["contradictions"] = len(self.causal_engine.contradictions)
-
-        if self.learnable_kernel:
-            self.learnable_kernel.step()
-
-        if self.meta_kernel:
-            self.meta_kernel.adapt()
-            self.stats["meta_kurtosis"] = self.meta_kernel.compute_resonance_kurtosis()
-            self.stats["meta_bandwidth"] = self.meta_kernel.get_bandwidth()
-            self.stats["meta_phase_coupling"] = self.meta_kernel.get_phase_coupling()
-
-        # Track 10.2: Meta-controller optimization
-        if self.meta_controller and self.meta_controller.should_optimize():
-            best_params = self.meta_controller.optimize(self)
-            self.meta_controller.apply_params(self, best_params)
-            self.stats["meta_optimizations"] += 1
-            self.stats["meta_best_params"] = best_params
-
-        # Track 10.3: Federated sync
-        if self.federated and self._step_counter > 0 and self._step_counter % self.cfg.federated_sync_freq == 0:
-            local_phases = {nid: n.phase for nid, n in self.nodes.items()}
-            local_params = {
-                "decay_rate": self.cfg.decay_rate, "tension_threshold": self.cfg.tension_threshold,
-                "phase_coupling": self.cfg.phase_coupling, "bandwidth": self.cfg.bandwidth,
-            }
-            sync_result = self.federated.sync_with_peers(local_phases, local_params)
-            if sync_result.get("synced"):
-                self.stats["federated_syncs"] += 1
-                self.stats["federated_order_parameter"] = sync_result.get("order_parameter", 0.0)
-
-        if self.ode_dynamics:
-            self.stats["response_smoothness"] = self.ode_dynamics.compute_response_smoothness()
-
-        # Phase 12 Track 1: Update shard centers periodically
-        if self.cfg.sparse_routing and self._step_counter % 100 == 0 and len(self.nodes) > self.cfg.num_shards * 2:
-            self._update_shard_centers()
-
-        # Phase 12 Track 3: Crystallization
-        if self.cfg.crystallization and self._step_counter % self.cfg.crystallization_freq == 0:
-            self._crystallize_recurring(
-                window=100,
-                similarity_thresh=self.cfg.crystallization_similarity
-            )
-
-        # Phase 13 Track 1: Goal tracker decay
-        if self.goal_tracker and self._step_counter % 50 == 0:
-            self.goal_tracker.decay_goals()
-            active = self.goal_tracker.get_active_goals()
-            completed = [g for g in self.goal_tracker.goals.values() if g.status == "completed"]
-            self.stats["active_goals"] = len(active)
-            self.stats["completed_goals"] = len(completed)
-
-        # Phase 13 Track 3: RL feedback application
-        if self.rl_feedback_loop and self._step_counter % 20 == 0:
-            self.rl_feedback_loop.apply_field_updates(self)
-            self.stats["avg_rl_reward"] = self.rl_feedback_loop.get_average_reward()
-
-        # Phase 13 Track 4: Event-driven processing
-        if self.event_scheduler and self._step_counter % 10 == 0:
-            processed = self.event_scheduler.process_pending(self, max_events=5)
-            self.stats["events_processed"] += processed
-            self.stats["event_queue_depth"] = len(self.event_scheduler._event_queue)
-
-        # Phase 13 Track 4: Low-rank compression
-        if self.low_rank_compressor and self._step_counter % self.cfg.compression_freq == 0:
-            self._compress_field()
 
         return updated
 
@@ -3729,11 +3671,16 @@ class RTMDKField:
                     node.salience = min(1.0, node.salience + 0.03)
                 else:
                     self.add_node(emb, content, phase, session_id=session_id, modality=modality)
+
+        # Consolidation: 15% chance (lightweight)
         if len(self.nodes) > 10 and np.random.random() < 0.15:
             self.consolidate()
+
+        # Self-healing: every N steps
         if self.cfg.self_healing and self._step_counter % self.cfg.healing_check_freq == 0:
             self._self_heal()
-        # Phase 11 Track 1: Tier-specific decay
+
+        # Tier-specific decay: every step (cheap)
         tier_counts = defaultdict(int)
         tier_amplitudes = defaultdict(list)
         for node in self.nodes.values():
@@ -3748,7 +3695,6 @@ class RTMDKField:
             node.salience = np.clip(node.salience, self.cfg.min_amplitude * 0.5, 1.0)
             tier_amplitudes[tier].append(node.amplitude)
         self.stats["tier_distribution"] = dict(tier_counts)
-        # Tier coherence: how consistent amplitudes are within each tier
         if tier_amplitudes:
             coherences = []
             for tier, amps in tier_amplitudes.items():
@@ -3757,8 +3703,9 @@ class RTMDKField:
                 else:
                     coherences.append(1.0)
             self.stats["tier_coherence"] = float(np.mean(coherences)) if coherences else 0.0
-        # Phase 11 Track 3: Predictive coding
-        if self.predictor and len(self.nodes) > 0:
+
+        # Predictive coding: every 5 steps
+        if self.predictor and len(self.nodes) > 0 and self._step_counter % 5 == 0:
             state = self._encode_field_state()
             self._state_history.append(state)
             if len(self._state_history) >= 2:
@@ -3766,12 +3713,13 @@ class RTMDKField:
                 self.stats["free_energy"] = fe
                 self.stats["prediction_error"] = float(np.mean((self.predictor.predict(self._state_history[-2]) - self._state_history[-1]) ** 2))
                 self.stats["surprise_level"] = float(np.clip(fe, 0, 1))
-                # Modulate tension threshold by surprise
                 if fe > 0.3 and len(self.nodes) > 10:
                     self.consolidate()
                 if fe > 0.01:
                     self.predictor.update(self._state_history[-2], self._state_history[-1], lr=self.cfg.pc_lr)
-        if self.cfg.max_nodes and len(self.nodes) > self.cfg.max_nodes:
+
+        # Max nodes pruning: every 10 steps
+        if self.cfg.max_nodes and len(self.nodes) > self.cfg.max_nodes and self._step_counter % 10 == 0:
             sorted_nodes = sorted(self.node_index, key=lambda nid: self.nodes[nid].salience * self.nodes[nid].amplitude)
             for nid in sorted_nodes[:len(self.nodes) - self.cfg.max_nodes]:
                 if self.cfg.use_hnsw and self.hnsw_index:
@@ -3780,10 +3728,97 @@ class RTMDKField:
                     self.bm25_index.remove_document(nid)
                 del self.nodes[nid]
                 self.node_index.remove(nid)
+
+        # Self-supervision: every 20 steps
         if self.cfg.self_supervision and self._step_counter % 20 == 0:
             self._self_supervise()
+
+        # TDA: every N steps
         if self.cfg.tda_monitoring and self._step_counter % self.cfg.tda_check_freq == 0:
             self._check_tda()
+
+        # Meta-kernel adaptation: every 5 steps
+        if self.meta_kernel and self._step_counter % 5 == 0:
+            self.meta_kernel.adapt()
+            self.stats["meta_kurtosis"] = self.meta_kernel.compute_resonance_kurtosis()
+            self.stats["meta_bandwidth"] = self.meta_kernel.get_bandwidth()
+            self.stats["meta_phase_coupling"] = self.meta_kernel.get_phase_coupling()
+
+        # Meta-controller optimization: every N steps
+        if self.meta_controller and self.meta_controller.should_optimize():
+            best_params = self.meta_controller.optimize(self)
+            self.meta_controller.apply_params(self, best_params)
+            self.stats["meta_optimizations"] += 1
+            self.stats["meta_best_params"] = best_params
+
+        # Federated sync: every N steps
+        if self.federated and self._step_counter > 0 and self._step_counter % self.cfg.federated_sync_freq == 0:
+            local_phases = {nid: n.phase for nid, n in self.nodes.items()}
+            local_params = {
+                "decay_rate": self.cfg.decay_rate, "tension_threshold": self.cfg.tension_threshold,
+                "phase_coupling": self.cfg.phase_coupling, "bandwidth": self.cfg.bandwidth,
+            }
+            sync_result = self.federated.sync_with_peers(local_phases, local_params)
+            if sync_result.get("synced"):
+                self.stats["federated_syncs"] += 1
+                self.stats["federated_order_parameter"] = sync_result.get("order_parameter", 0.0)
+
+        # ODE smoothness: every 10 steps
+        if self.ode_dynamics and self._step_counter % 10 == 0:
+            self.stats["response_smoothness"] = self.ode_dynamics.compute_response_smoothness()
+
+        # Shard center updates: every 100 steps
+        if self.cfg.sparse_routing and self._step_counter % 100 == 0 and len(self.nodes) > self.cfg.num_shards * 2:
+            self._update_shard_centers()
+
+        # Crystallization: every N steps
+        if self.cfg.crystallization and self._step_counter % self.cfg.crystallization_freq == 0:
+            self._crystallize_recurring(
+                window=100,
+                similarity_thresh=self.cfg.crystallization_similarity
+            )
+
+        # Goal tracker decay: every 50 steps
+        if self.goal_tracker and self._step_counter % 50 == 0:
+            self.goal_tracker.decay_goals()
+            active = self.goal_tracker.get_active_goals()
+            completed = [g for g in self.goal_tracker.goals.values() if g.status == "completed"]
+            self.stats["active_goals"] = len(active)
+            self.stats["completed_goals"] = len(completed)
+
+        # RL feedback application: every 20 steps
+        if self.rl_feedback_loop and self._step_counter % 20 == 0:
+            self.rl_feedback_loop.apply_field_updates(self)
+            self.stats["avg_rl_reward"] = self.rl_feedback_loop.get_average_reward()
+
+        # Event-driven processing: every 10 steps
+        if self.event_scheduler and self._step_counter % 10 == 0:
+            processed = self.event_scheduler.process_pending(self, max_events=5)
+            self.stats["events_processed"] += processed
+            self.stats["event_queue_depth"] = len(self.event_scheduler._event_queue)
+
+        # Low-rank compression: every N steps
+        if self.low_rank_compressor and self._step_counter % self.cfg.compression_freq == 0:
+            self._compress_field()
+
+        # Learnable kernel step: every 5 steps
+        if self.learnable_kernel and self._step_counter % 5 == 0:
+            self.learnable_kernel.step()
+
+        # Causal discovery: every N steps
+        causal_freq = getattr(self.cfg, "causal_discovery_freq", 50)
+        if self.causal_engine and self._step_counter % max(causal_freq, 1) == 0:
+            self.causal_engine.discover_causal_structure()
+            for (cause, effect), edge in self.causal_engine.causal_effects.items():
+                if effect in self.nodes:
+                    self.nodes[effect].causal_parents.append(cause)
+                    self.nodes[effect].causal_strength[cause] = edge.strength
+                if cause in self.nodes:
+                    self.nodes[cause].causal_effects[effect] = edge.strength
+            self.stats["causal_edges"] = len(self.causal_engine.causal_effects)
+            if self.cfg.contradiction_detection:
+                self.causal_engine.detect_contradictions(self.cfg.contradiction_threshold)
+                self.stats["contradictions"] = len(self.causal_engine.contradictions)
 
     def _self_heal(self) -> List[Dict]:
         if not self.healer or len(self.nodes) < 3:
