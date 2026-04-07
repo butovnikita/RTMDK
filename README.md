@@ -1,6 +1,6 @@
 # RTMDK — Resonance-Topological Memory
 
-> Версия 8.0 | 326 тестов | 8 версий с полной обратной совместимостью | OpenAI-compatible API
+> Версия 8.0 | 326 тестов + smoke test | 8 версий с полной обратной совместимостью | OpenAI-compatible API | Docker Compose
 
 ## Обзор
 
@@ -43,18 +43,12 @@ python rtmdk_server.py
 from rtmdk_memory_v8 import RTMDKConfig, RTMDKMemory
 import numpy as np
 
-# 1. Создаём эмбеддер (замените на реальный, например sentence-transformers)
 def embedder(text: str) -> np.ndarray:
     np.random.seed(hash(text) % 2**32)
     return np.random.randn(768).astype(np.float32) * 0.1
 
-# 2. Конфигурация
 config = RTMDKConfig(
-    embedding_dim=768,
-    latent_dim=64,
-    top_k=5,
-    enable_async=False,
-    # Включите нужные фичи:
+    embedding_dim=768, latent_dim=64, top_k=5, enable_async=False,
     causal_topological=True,      # Каузальные связи
     meta_adaptive=True,           # Адаптивное ядро
     self_healing=True,            # Самовосстановление
@@ -63,30 +57,45 @@ config = RTMDKConfig(
     hyperbolic=True,              # Гиперболическая геометрия
     predictive_coding=True,       # Предсказательное кодирование
     differential_privacy=True,    # Дифференциальная приватность
+    goal_tracking=True,           # Телеологический слой
+    attention_bias=True,          # Когнитивное внимание
+    rl_feedback=True,             # Замкнутый цикл RL
+    sparse_routing=True,          # MoE-маршрутизация
+    crystallization=True,         # Кристаллизация памяти
+    event_driven=True,            # Event-driven архитектура
 )
 
-# 3. Инициализация
 memory = RTMDKMemory(config=config, embedder=embedder)
-
-# 4. Сохранение контекста
 memory.save_context(
     {"input": "Я люблю кофе по утрам", "session_id": "user1"},
     {"output": "Кофе помогает проснуться"}
 )
 
-# 5. Извлечение релевантной памяти
 ctx = memory.load_memory_variables({"input": "Что я пью по утрам?", "session_id": "user1"})
 print(ctx["rtmdk_context"])
 
-# 6. Контрфактуальный запрос
+# Контрфактуальный запрос
 result = memory.imagine_counterfactual(
     base_query="Что если я перейду на чай?",
-    intervention={"n0": 0.5}  # do-интервенция на узел
+    intervention={"n0": 0.5}
 )
 
-# 7. Экспорт/Импорт
+# Телеологический слой: добавить цель
+memory.add_goal("Узнать предпочтения пользователя", priority=1.0)
+
+# RL обратная связь
+memory.apply_rl_feedback("Кофе — отличный выбор!", ["n0"])
+
+# Экспорт/Импорт
 memory.export_field("memory_state.json")
 memory2 = RTMDKMemory.import_field("memory_state.json", embedder)
+```
+
+### Вариант 4: Smoke Test
+
+```bash
+python smoke_test.py
+# Проверяет: async_pipeline, HNSW, attention_bias, consolidation, cognitive context
 ```
 
 ## Фазы развития
@@ -143,6 +152,18 @@ memory2 = RTMDKMemory.import_field("memory_state.json", embedder)
 - `ScenarioPlanner`: imagine_counterfactual, simulate_trajectory
 - `DifferentialPrivacy`: clip + Gaussian noise, ε ≤ 2.0
 
+### Фаза 12: MoE-память + Когнитивное сжатие + Кристаллизация + Async Pipeline
+- **Sparse resonant routing (MoE-memory)**: шардирование с KMeans, O(N/K) вместо O(N)
+- **Cognitive context compression**: `_cognitive_compress()` — структурированный дамп для LLM
+- **Crystallization**: DBSCAN кластеризация эпизодических → семантические узлы
+- **Async multi-threaded pipeline**: `query_q`, `save_q`, `evolve_q` с воркерами
+
+### Фаза 13: Телеология + Внимание + RL + Event-driven
+- **Teleological layer (Goal/Intent Tracking)**: `GoalTracker`, `GoalNode`, `add_goal()`, `update_goal_completion()`
+- **Cognitive attention bias**: `apply_attention_bias()` — control-токены `[SCORE:x][TIER:x][CAUSAL:x][TENSION:x]`
+- **Closed-loop RL feedback**: `RLFeedbackLoop` — извлечение уверенности из ответов LLM
+- **Event-driven + Low-Rank compression**: `EventDrivenScheduler`, `LowRankCompressor` (инкрементальный SVD)
+
 ## Конфигурация
 
 Все параметры через `RTMDKConfig`:
@@ -150,71 +171,53 @@ memory2 = RTMDKMemory.import_field("memory_state.json", embedder)
 ```python
 config = RTMDKConfig(
     # Базовые
-    embedding_dim=768,
-    latent_dim=64,
-    top_k=5,
-    min_response=0.1,
-    
-    # Резонанс
+    embedding_dim=768, latent_dim=64, top_k=5, min_response=0.1,
     resonance_kernel="gaussian_phase",  # gaussian | cosine | gaussian_phase
-    phase_coupling=0.3,
-    bandwidth=1.0,
-    
-    # Динамика
-    attraction_lr=0.02,
-    phase_sync_lr=0.01,
-    decay_rate=0.998,
-    
+    phase_coupling=0.3, bandwidth=1.0,
+    attraction_lr=0.02, phase_sync_lr=0.01, decay_rate=0.998,
+
     # Фаза 1: Контекст
     context_format=ContextFormat.PLAIN,  # PLAIN | JSON | YAML
     use_structured_prompt=True,
-    
+
     # Фаза 2: Адаптивность
-    adaptive_threshold=False,
-    soft_gates=False,
-    gate_temperature=0.15,
-    
+    adaptive_threshold=False, soft_gates=False, gate_temperature=0.15,
+
     # Фаза 3: Каузальность
-    causal_topological=False,
-    do_calculus_validation=True,
-    contradiction_detection=True,
-    
+    causal_topological=False, do_calculus_validation=True,
+
     # Фаза 5: Мета-адаптивность
-    meta_adaptive=False,
-    kurtosis_target_min=1.5,
-    kurtosis_target_max=4.0,
-    self_healing=False,
-    
+    meta_adaptive=False, self_healing=False,
+
     # Фаза 7: ODE
-    continuous_dynamics=False,
-    ode_solver="RK45",
-    sde_noise_level=0.01,
-    
+    continuous_dynamics=False, ode_solver="RK45",
+
     # Фаза 8: Агент
-    agent_orchestration=False,
-    max_plan_depth=3,
-    max_tool_calls=5,
-    
+    agent_orchestration=False, max_plan_depth=3, max_tool_calls=5,
+
     # Фаза 9: Продакшен
-    production_mode=False,
-    shadow_mode=False,
-    ragas_enabled=False,
-    auto_rollback=False,
-    
+    production_mode=False, shadow_mode=False, ragas_enabled=False,
+
     # Фаза 10: Кросс-модальность
-    cross_modal=False,
-    meta_controller=False,
-    federated=False,
-    
-    # Фаза 11: Стратификация
+    cross_modal=False, meta_controller=False, federated=False,
+
+    # Фаза 11: Стратификация + Гиперболическая + Predictive + Counterfactual + DP
     memory_tiers={"episodic", "semantic", "procedural"},
-    tier_decay={"episodic": 0.992, "semantic": 0.999, "procedural": 1.0},
-    hyperbolic=False,
-    ball_radius=0.85,
-    predictive_coding=False,
-    counterfactual_imagination=False,
-    differential_privacy=False,
-    dp_epsilon=2.0,
+    hyperbolic=False, ball_radius=0.85,
+    predictive_coding=False, counterfactual_imagination=False,
+    differential_privacy=False, dp_epsilon=2.0,
+
+    # Фаза 12: MoE + Сжатие + Кристаллизация + Async
+    sparse_routing=False, num_shards=8, top_shards=3,
+    cognitive_compression=False, high_resonance_threshold=0.6,
+    crystallization=False, crystallization_freq=200,
+    async_pipeline=False, query_queue_size=50,
+
+    # Фаза 13: Телеология + Внимание + RL + Event-driven
+    goal_tracking=False, max_goals=20,
+    attention_bias=False, bias_temperature=1.0,
+    rl_feedback=False, rl_learning_rate=0.01,
+    event_driven=False, low_rank_compression=False, compression_rank=32,
 )
 ```
 
@@ -249,6 +252,10 @@ config = RTMDKConfig(
 | `rollback(n_steps)` | Откат консолидаций |
 | `do_intervention(node_id, text)` | Каузальное вмешательство |
 | `evolve_continuous(inputs, use_sde)` | Непрерывная эволюция ODE/SDE |
+| `add_goal(description, ...)` | Добавить цель (телеология) |
+| `update_goal_completion(goal_id, completion)` | Обновить прогресс цели |
+| `get_active_goals()` | Получить активные цели |
+| `apply_rl_feedback(response, node_ids)` | RL обратная связь |
 
 ## Команды чата (lmstudio_rtmdk_chat.py)
 
@@ -264,6 +271,10 @@ config = RTMDKConfig(
 | `/hyperbolic` | Статистика гиперболической геометрии |
 | `/predictive` | Статистика предсказательного кодирования |
 | `/privacy` | Статус дифференциальной приватности |
+| `/shards` | Статистика MoE-шардирования |
+| `/crystallize` | Статистика кристаллизации |
+| `/compression` | Статистика когнитивного сжатия |
+| `/crystallize_now` | Принудительная кристаллизация |
 | `/format json\|yaml\|plain` | Формат контекста |
 | `/session <id>` | Переключить сессию |
 | `/export` / `/clear` / `/quit` | Управление |
@@ -282,7 +293,6 @@ config = RTMDKConfig(
 
 ### Cursor / Continue / Aider
 ```json
-// .cursor/settings.json или config.json
 {
   "apiBaseUrl": "http://localhost:8080/v1",
   "apiKey": "rtmdk-local"
@@ -298,7 +308,7 @@ client = OpenAI(base_url="http://localhost:8080/v1", api_key="rtmdk-local")
 response = client.chat.completions.create(
     model="rtmdk",
     messages=[{"role": "user", "content": "Что я говорил вчера?"}],
-    session_id="user1"  # кастомный параметр RTMDK
+    session_id="user1"
 )
 print(response.choices[0].message.content)
 ```
@@ -348,6 +358,9 @@ python -m pytest test_rtmdk_v8.py test_rtmdk_v7.py test_rtmdk_v6.py \
 
 # Только v8 (34)
 python -m pytest test_rtmdk_v8.py -v
+
+# Smoke test
+python smoke_test.py
 ```
 
 ## Файлы проекта
@@ -361,12 +374,24 @@ python -m pytest test_rtmdk_v8.py -v
 | `rtmdk_memory_v5.py` | v5 | 23 | Каузально-топологическая память |
 | `rtmdk_memory_v6.py` | v6 | 49 | Neural ODE/SDE, Agent, Production |
 | `rtmdk_memory_v7.py` | v7 | 32 | Cross-modal, MetaController, Federated |
-| `rtmdk_memory_v8.py` | v8 | 34 | Stratification, Hyperbolic, Predictive, Counterfactual, DP |
+| `rtmdk_memory_v8.py` | v8 | 34 | Stratification, Hyperbolic, Predictive, Counterfactual, DP, MoE, Teleology, RL |
 | `lmstudio_rtmdk_chat.py` | v8 | — | CLI чат с LM Studio |
 | `rtmdk_server.py` | v8 | — | OpenAI-compatible API сервер |
+| `smoke_test.py` | — | — | Быстрая проверка критических путей |
 | `Dockerfile` | — | — | Docker образ |
 | `docker-compose.yml` | — | — | Docker Compose конфигурация |
 | `rtmdk_config.yaml` | — | — | Опциональная конфигурация |
+
+## Критические исправления стабильности
+
+| # | Проблема | Решение |
+|---|----------|---------|
+| 1 | HNSW не перехватывал query() | Авто-роутинг при N > 500 |
+| 2 | Dict-мутация в consolidate() | Snapshot + deferred deletions |
+| 3 | RL feedback extraction | Fallback: `1.0 - (response.count("?") + ...) * 0.15` |
+| 4 | step() overload | Все операции с % N gating |
+| 5 | ODE node order | Детерминированный порядок через `node_index` |
+| 6 | Async workers | Lazy init в `model_post_init()` |
 
 ## Обратная совместимость
 

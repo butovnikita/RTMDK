@@ -19,11 +19,11 @@ COPY rtmdk_server.py .
 RUN mkdir -p /root/.rtmdk
 
 # Expose port
-EXPOSE 8080
+EXPOSE 80801
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8080/health || exit 1
+    CMD curl -f http://localhost:80801/health || exit 1
 
 # Run server
 CMD ["python", "rtmdk_server.py"]

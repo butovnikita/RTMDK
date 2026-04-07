@@ -8,7 +8,7 @@ Zero-Config режим:
   Авто-детект:
     1. LM Studio на :12345 (если запущен)
     2. Память из ~/.rtmdk/memory.json (если существует)
-    3. Сервер на :8080
+    3. Сервер на :80801
 
 Endpoints:
   POST /v1/chat/completions  — чат с инжекцией RTMDK-контекста
@@ -55,7 +55,7 @@ from rtmdk_memory_v8 import (
 
 # Server settings
 SERVER_HOST = os.getenv("RTMDK_HOST", "0.0.0.0")
-SERVER_PORT = int(os.getenv("RTMDK_PORT", "8080"))
+SERVER_PORT = int(os.getenv("RTMDK_PORT", "80801"))
 LM_STUDIO_URL = os.getenv("LM_STUDIO_URL", "http://localhost:12345/v1")
 MEMORY_FILE = os.getenv("RTMDK_MEMORY_FILE", os.path.join(os.path.expanduser("~"), ".rtmdk", "memory.json"))
 EMBED_MODEL = os.getenv("RTMDK_EMBED_MODEL", "nomic-ai/nomic-embed-text-v1.5-GGUF")
@@ -594,7 +594,7 @@ def main():
     print("    POST /v1/memory/clear      — Clear memory")
     print()
     print("  IDE Integration:")
-    print("    Cursor/Continue/Aider: set base URL to http://localhost:8080/v1")
+    print("    Cursor/Continue/Aider: set base URL to http://localhost:80801/v1")
     print("    API Key: rtmdk-local")
     print("-" * 60)
 

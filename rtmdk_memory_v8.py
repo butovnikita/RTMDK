@@ -297,6 +297,28 @@ class RTMDKConfig:
     compression_rank: int = 32
     compression_freq: int = 500
 
+    # Phase 14 Track 1: Introspective Meta-Memory
+    meta_memory: bool = False
+    self_reflection_freq: int = 100
+    memory_age_factor: float = 0.001
+    recall_accuracy_threshold: float = 0.6
+
+    # Phase 14 Track 2: Formal Security
+    security_enabled: bool = False
+    max_node_text_length: int = 10000
+    tension_spike_threshold: float = 0.5
+    causal_graph_integrity_check: bool = True
+    prompt_injection_patterns: List[str] = field(default_factory=lambda: [
+        "ignore previous", "system prompt", "you are now", "disregard",
+        "ignore all", "new instruction", "override"
+    ])
+
+    # Phase 14 Track 5: Swarm Memory
+    swarm_memory: bool = False
+    swarm_consensus_threshold: float = 0.5
+    swarm_max_agents: int = 10
+    swarm_vote_weight: float = 0.3
+
     def __post_init__(self):
         logger.setLevel(getattr(logging, self.log_level.upper()))
         if not self.modality_phase_shifts:
@@ -2027,6 +2049,247 @@ class EventDrivenScheduler:
 
 
 # ============================================================================
+# PHASE 14 TRACK 1: INTROSPECTIVE META-MEMORY
+# ============================================================================
+
+class MetaMemoryEvaluator:
+    """Evaluates recall accuracy, memory age, and self-reflection."""
+
+    def __init__(self, recall_threshold: float = 0.6, age_factor: float = 0.001,
+                 reflection_freq: int = 100):
+        self.recall_threshold = recall_threshold
+        self.age_factor = age_factor
+        self.reflection_freq = reflection_freq
+        self._recall_history: deque = deque(maxlen=100)
+        self._reflection_log: List[Dict] = []
+        self._step_counter = 0
+
+    def record_recall(self, query_text: str, result_score: float,
+                      node_age: float = 0.0) -> Dict[str, float]:
+        """Record a recall event and compute accuracy metrics."""
+        self._recall_history.append(result_score)
+        age_penalty = 1.0 - min(1.0, node_age * self.age_factor)
+        adjusted_score = result_score * age_penalty
+        return {
+            "raw_score": result_score,
+            "age_penalty": age_penalty,
+            "adjusted_score": adjusted_score,
+            "node_age": node_age,
+        }
+
+    def evaluate_recall_accuracy(self) -> float:
+        if not self._recall_history:
+            return 1.0
+        return float(np.mean(self._recall_history))
+
+    def should_reflect(self) -> bool:
+        self._step_counter += 1
+        return self._step_counter % self.reflection_freq == 0
+
+    def self_reflect(self, field: Any) -> Dict[str, Any]:
+        """Introspective analysis of memory field health."""
+        recall_acc = self.evaluate_recall_accuracy()
+        n_nodes = len(field.nodes) if hasattr(field, 'nodes') else 0
+        n_consolidations = field.stats.get("consolidations", 0) if hasattr(field, 'stats') else 0
+        false_merges = field.stats.get("false_merges", 0) if hasattr(field, 'stats') else 0
+
+        recommendations = []
+        if recall_acc < self.recall_threshold:
+            recommendations.append("lower_consolidation_threshold")
+        if n_consolidations > 0 and false_merges > n_consolidations * 0.2:
+            recommendations.append("increase_tension_threshold")
+        if n_nodes > 1000:
+            recommendations.append("trigger_crystallization")
+
+        reflection = {
+            "recall_accuracy": recall_acc,
+            "n_nodes": n_nodes,
+            "n_consolidations": n_consolidations,
+            "false_merges": false_merges,
+            "false_merge_rate": false_merges / max(n_consolidations, 1),
+            "recommendations": recommendations,
+            "timestamp": time.time(),
+        }
+        self._reflection_log.append(reflection)
+        return reflection
+
+    def get_adaptive_params(self) -> Dict[str, float]:
+        recall_acc = self.evaluate_recall_accuracy()
+        if recall_acc < self.recall_threshold:
+            return {"consolidation_multiplier": 0.8, "decay_multiplier": 1.1}
+        elif recall_acc > 0.9:
+            return {"consolidation_multiplier": 1.2, "decay_multiplier": 0.95}
+        return {"consolidation_multiplier": 1.0, "decay_multiplier": 1.0}
+
+    def get_state(self) -> Dict:
+        return {
+            "recall_history": list(self._recall_history),
+            "reflection_log": self._reflection_log[-50:],
+            "step_counter": self._step_counter,
+        }
+
+    def load_state(self, state: Dict):
+        self._recall_history = deque(state.get("recall_history", []), maxlen=100)
+        self._reflection_log = state.get("reflection_log", [])
+        self._step_counter = state.get("step_counter", 0)
+
+
+# ============================================================================
+# PHASE 14 TRACK 2: FORMAL SECURITY
+# ============================================================================
+
+class SecurityValidator:
+    """Protects against memory poisoning, prompt injection, and graph attacks."""
+
+    def __init__(self, max_text_length: int = 10000,
+                 tension_spike_threshold: float = 0.5,
+                 injection_patterns: Optional[List[str]] = None):
+        self.max_text_length = max_text_length
+        self.tension_spike_threshold = tension_spike_threshold
+        self.injection_patterns = injection_patterns or [
+            "ignore previous", "system prompt", "you are now", "disregard",
+            "ignore all", "new instruction", "override"
+        ]
+        self._violation_log: List[Dict] = []
+        self._tension_history: deque = deque(maxlen=100)
+
+    def validate_node_content(self, text: str) -> Dict[str, Any]:
+        """Validate node text for injection patterns and length."""
+        violations = []
+        if len(text) > self.max_text_length:
+            violations.append({"type": "text_too_long", "length": len(text), "max": self.max_text_length})
+        text_lower = text.lower()
+        for pattern in self.injection_patterns:
+            if pattern in text_lower:
+                violations.append({"type": "prompt_injection", "pattern": pattern})
+        is_safe = len(violations) == 0
+        if violations:
+            self._violation_log.append({
+                "type": "node_validation", "text_preview": text[:100],
+                "violations": violations, "timestamp": time.time(),
+            })
+        return {"is_safe": is_safe, "violations": violations}
+
+    def validate_tension_spike(self, current_tension: float) -> bool:
+        """Detect anomalous tension spikes that may indicate attacks."""
+        self._tension_history.append(current_tension)
+        if len(self._tension_history) < 10:
+            return True
+        mean_t = np.mean(self._tension_history)
+        std_t = np.std(self._tension_history)
+        if std_t > 0 and (current_tension - mean_t) / std_t > self.tension_spike_threshold:
+            self._violation_log.append({
+                "type": "tension_spike", "current": current_tension,
+                "mean": float(mean_t), "std": float(std_t), "timestamp": time.time(),
+            })
+            return False
+        return True
+
+    def validate_causal_graph_integrity(self, causal_engine: Any) -> Dict[str, Any]:
+        """Check causal graph for anomalies."""
+        if not causal_engine or not hasattr(causal_engine, 'causal_effects'):
+            return {"is_valid": True, "issues": []}
+        issues = []
+        effects = causal_engine.causal_effects
+        for (src, tgt), edge in effects.items():
+            if src == tgt:
+                issues.append({"type": "self_loop", "node": src})
+            if edge.strength < 0 or edge.strength > 1.0:
+                issues.append({"type": "invalid_strength", "edge": f"{src}->{tgt}", "strength": edge.strength})
+        is_valid = len(issues) == 0
+        if issues:
+            self._violation_log.append({
+                "type": "causal_graph_integrity", "issues": issues, "timestamp": time.time(),
+            })
+        return {"is_valid": is_valid, "issues": issues, "n_edges": len(effects)}
+
+    def get_violation_summary(self) -> Dict:
+        return {
+            "total_violations": len(self._violation_log),
+            "recent_violations": self._violation_log[-10:],
+            "tension_spike_rate": sum(1 for v in self._violation_log if v["type"] == "tension_spike") / max(len(self._tension_history), 1),
+        }
+
+    def get_state(self) -> Dict:
+        return {"violation_log": self._violation_log[-100:], "tension_history": list(self._tension_history)}
+
+    def load_state(self, state: Dict):
+        self._violation_log = state.get("violation_log", [])
+        self._tension_history = deque(state.get("tension_history", []), maxlen=100)
+
+
+# ============================================================================
+# PHASE 14 TRACK 5: SWARM MEMORY
+# ============================================================================
+
+class SwarmConsensusProtocol:
+    """Consensus-based memory sharing for multi-agent scenarios."""
+
+    def __init__(self, consensus_threshold: float = 0.5, max_agents: int = 10,
+                 vote_weight: float = 0.3):
+        self.consensus_threshold = consensus_threshold
+        self.max_agents = max_agents
+        self.vote_weight = vote_weight
+        self.agents: Dict[str, Dict] = {}
+        self._consensus_log: List[Dict] = []
+
+    def register_agent(self, agent_id: str, specialization: str = "general") -> bool:
+        if len(self.agents) >= self.max_agents:
+            return False
+        self.agents[agent_id] = {
+            "specialization": specialization, "vote_weight": self.vote_weight,
+            "last_sync": time.time(), "n_exchanges": 0,
+        }
+        return True
+
+    def propose_attractor(self, proposer_id: str, attractor: Dict[str, Any]) -> bool:
+        if proposer_id not in self.agents:
+            return False
+        total_weight = 0
+        agree_weight = 0
+        votes = {}
+        for agent_id, agent in self.agents.items():
+            if agent_id == proposer_id:
+                votes[agent_id] = True
+                agree_weight += agent["vote_weight"]
+                total_weight += agent["vote_weight"]
+                continue
+            spec_match = 1.0 if agent["specialization"] == "general" else 0.7
+            vote = bool(np.random.random() < spec_match)
+            votes[agent_id] = vote
+            total_weight += agent["vote_weight"]
+            if vote:
+                agree_weight += agent["vote_weight"]
+        consensus_ratio = agree_weight / max(total_weight, 1e-8)
+        accepted = consensus_ratio >= self.consensus_threshold
+        self._consensus_log.append({
+            "proposer": proposer_id,
+            "attractor_preview": str(attractor.get("text", ""))[:50],
+            "accepted": accepted, "consensus_ratio": consensus_ratio,
+            "votes": votes, "timestamp": time.time(),
+        })
+        if accepted:
+            for agent_id in self.agents:
+                self.agents[agent_id]["n_exchanges"] += 1
+                self.agents[agent_id]["last_sync"] = time.time()
+        return accepted
+
+    def get_swarm_status(self) -> Dict:
+        return {
+            "n_agents": len(self.agents), "agents": dict(self.agents),
+            "n_consensus_events": len(self._consensus_log),
+            "recent_consensus": self._consensus_log[-5:],
+        }
+
+    def get_state(self) -> Dict:
+        return {"agents": dict(self.agents), "consensus_log": self._consensus_log[-100:]}
+
+    def load_state(self, state: Dict):
+        self.agents = state.get("agents", {})
+        self._consensus_log = state.get("consensus_log", [])
+
+
+# ============================================================================
 # SUPPORTING COMPONENTS
 # ============================================================================
 
@@ -3059,6 +3322,30 @@ class RTMDKField:
         if config.low_rank_compression:
             self.low_rank_compressor = LowRankCompressor(config.compression_rank)
 
+        # Phase 14 Track 1: Meta-Memory
+        self.meta_memory_eval: Optional[MetaMemoryEvaluator] = None
+        if config.meta_memory:
+            self.meta_memory_eval = MetaMemoryEvaluator(
+                config.recall_accuracy_threshold, config.memory_age_factor,
+                config.self_reflection_freq
+            )
+
+        # Phase 14 Track 2: Security
+        self.security: Optional[SecurityValidator] = None
+        if config.security_enabled:
+            self.security = SecurityValidator(
+                config.max_node_text_length, config.tension_spike_threshold,
+                config.prompt_injection_patterns
+            )
+
+        # Phase 14 Track 5: Swarm Memory
+        self.swarm: Optional[SwarmConsensusProtocol] = None
+        if config.swarm_memory:
+            self.swarm = SwarmConsensusProtocol(
+                config.swarm_consensus_threshold, config.swarm_max_agents,
+                config.swarm_vote_weight
+            )
+
         self.stats = {
             "total_adds": 0, "total_queries": 0, "consolidations": 0,
             "avg_response": 0.0, "active_nodes": 0,
@@ -3094,6 +3381,10 @@ class RTMDKField:
             "attention_bias_applied": 0,
             "compression_ratio": 1.0, "compression_updates": 0,
             "events_processed": 0, "event_queue_depth": 0,
+            # Phase 14
+            "recall_accuracy": 1.0, "meta_reflections": 0,
+            "security_violations": 0, "tension_spikes_blocked": 0,
+            "swarm_agents": 0, "swarm_consensus_events": 0,
         }
         self._step_counter = 0
         self._rollback_history: List[Dict] = []
@@ -3301,10 +3592,26 @@ class RTMDKField:
                 self.causal_engine.record_observation(active)
                 self._active_node_history.append(active)
 
+        # Phase 14 Track 1: Meta-memory recall tracking
+        if self.meta_memory_eval and results:
+            top_score = results[0][1]
+            avg_age = np.mean([time.time() - n.created_at for _, _, n in results])
+            self.meta_memory_eval.record_recall("", top_score, node_age=avg_age)
+            self.stats["recall_accuracy"] = self.meta_memory_eval.evaluate_recall_accuracy()
+
         return results[:top_k]
 
     def add_node(self, embedding: NDArray, content: Dict, phase: Optional[float] = None,
                  node_id: Optional[str] = None, session_id: Optional[str] = None, modality: str = "text") -> str:
+        # Phase 14 Track 2: Security validation
+        if self.security:
+            text = content.get("text", "")
+            validation = self.security.validate_node_content(text)
+            if not validation["is_safe"]:
+                self.stats["security_violations"] += 1
+                logger.warning(f"Security violation in add_node: {validation['violations']}")
+                return ""  # Reject node
+
         nid = node_id or f"n_{len(self.nodes)}_{int(time.time() * 1000)}"
         if self.projection_learner:
             latent = self.projection_learner.update(embedding)
@@ -3346,7 +3653,13 @@ class RTMDKField:
             return 0.0
         phases = np.array([n.phase for n in neighbors])
         saliences = np.array([n.salience for n in neighbors])
-        return 0.6 * (np.std(np.cos(phases)) + np.std(np.sin(phases))) + 0.4 * np.std(saliences)
+        tension = 0.6 * (np.std(np.cos(phases)) + np.std(np.sin(phases))) + 0.4 * np.std(saliences)
+
+        # Phase 14 Track 2: Security - detect tension spikes
+        if self.security and not self.security.validate_tension_spike(float(tension)):
+            self.stats["tension_spikes_blocked"] += 1
+
+        return float(tension)
 
     def _soft_gate(self, tension: float) -> float:
         if not self.cfg.soft_gates:
@@ -3820,6 +4133,32 @@ class RTMDKField:
                 self.causal_engine.detect_contradictions(self.cfg.contradiction_threshold)
                 self.stats["contradictions"] = len(self.causal_engine.contradictions)
 
+        # Phase 14 Track 2: Causal graph integrity check
+        if self.security and self.cfg.causal_graph_integrity_check and self._step_counter % 100 == 0:
+            integrity = self.security.validate_causal_graph_integrity(self.causal_engine)
+            if not integrity["is_valid"]:
+                self.stats["security_violations"] += len(integrity["issues"])
+
+        # Phase 14 Track 1: Meta-memory self-reflection
+        if self.meta_memory_eval and self.meta_memory_eval.should_reflect():
+            reflection = self.meta_memory_eval.self_reflect(self)
+            self.stats["meta_reflections"] += 1
+            # Apply adaptive params
+            adaptive = self.meta_memory_eval.get_adaptive_params()
+            if adaptive["consolidation_multiplier"] != 1.0:
+                # Adjust tension threshold based on recall accuracy
+                self.cfg.tension_threshold *= adaptive["consolidation_multiplier"]
+                self.cfg.tension_threshold = max(0.05, min(0.5, self.cfg.tension_threshold))
+
+        # Phase 14 Track 5: Swarm memory status
+        if self.swarm:
+            self.stats["swarm_agents"] = len(self.swarm.agents)
+            self.stats["swarm_consensus_events"] = len(self.swarm._consensus_log)
+
+        # Phase 14 Track 2: Security violation stats
+        if self.security:
+            self.stats["security_violations"] = len(self.security._violation_log)
+
     def _self_heal(self) -> List[Dict]:
         if not self.healer or len(self.nodes) < 3:
             return []
@@ -4190,6 +4529,13 @@ class RTMDKField:
             data["meta_controller"] = self.meta_controller.get_state()
         if self.federated:
             data["federated"] = self.federated.export_state()
+        # Phase 14 exports
+        if self.meta_memory_eval:
+            data["meta_memory_eval"] = self.meta_memory_eval.get_state()
+        if self.security:
+            data["security"] = self.security.get_state()
+        if self.swarm:
+            data["swarm"] = self.swarm.get_state()
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
@@ -4246,6 +4592,13 @@ class RTMDKField:
             memory.field.meta_controller.load_state(data["meta_controller"])
         if config.federated and "federated" in data:
             memory.field.federated.import_state(data["federated"])
+        # Phase 14 imports
+        if config.meta_memory and "meta_memory_eval" in data:
+            memory.field.meta_memory_eval.load_state(data["meta_memory_eval"])
+        if config.security_enabled and "security" in data:
+            memory.field.security.load_state(data["security"])
+        if config.swarm_memory and "swarm" in data:
+            memory.field.swarm.load_state(data["swarm"])
 
         for nd in data["nodes"]:
             node = MemoryNode.from_dict(nd)
