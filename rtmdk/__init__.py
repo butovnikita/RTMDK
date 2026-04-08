@@ -73,6 +73,10 @@ from rtmdk.support.security import SecurityValidator
 from rtmdk.support.swarm import SwarmConsensusProtocol
 from rtmdk.support.agents import AgentPlanner, HypothesisVerifier, ToolRouter
 from rtmdk.support.production import ShadowModeEvaluator, RAGASPlusEvaluator, AutoRollbackManager
+# Phase 15
+from rtmdk.support.version_control import VersionControl, NodeDelta, Version, DiffResult
+from rtmdk.support.entropy_controller import EntropyController
+from rtmdk.support.triton_backend import TritonBackend, TRITON_AVAILABLE
 
 # ---------------------------------------------------------------------------
 # Core classes from monolithic file (not yet modularized)
@@ -150,6 +154,10 @@ __all__ = [
     "ShadowModeEvaluator",
     "RAGASPlusEvaluator",
     "AutoRollbackManager",
+    # Phase 15
+    "VersionControl", "NodeDelta", "Version", "DiffResult",
+    "EntropyController",
+    "TritonBackend", "TRITON_AVAILABLE",
     # Monolithic core
     "RTMDKField",
     "RTMDKMemory",

@@ -27,6 +27,7 @@ class ContextFormat(Enum):
     PLAIN = "plain"
     JSON = "json"
     YAML = "yaml"
+    ATTENTION = "attention"  # Control-tokens for attention-aware LLMs
 
 
 class FieldHealth(Enum):

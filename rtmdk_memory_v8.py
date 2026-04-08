@@ -39,6 +39,25 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Phase 15: New modules
+try:
+    from rtmdk.support.version_control import VersionControl, NodeDelta, Version, DiffResult
+    VC_AVAILABLE = True
+except ImportError:
+    VC_AVAILABLE = False
+
+try:
+    from rtmdk.support.entropy_controller import EntropyController
+    ENTROPY_AVAILABLE = True
+except ImportError:
+    ENTROPY_AVAILABLE = False
+
+try:
+    from rtmdk.support.triton_backend import TritonBackend, TRITON_AVAILABLE
+except ImportError:
+    TritonBackend = None  # type: ignore
+    TRITON_AVAILABLE = False
+
 # Torch availability check
 try:
     import torch
@@ -65,6 +84,7 @@ class ContextFormat(Enum):
     PLAIN = "plain"
     JSON = "json"
     YAML = "yaml"
+    ATTENTION = "attention"  # Control-tokens for attention-aware LLMs
 
 class FieldHealth(Enum):
     STABLE = "stable"
@@ -318,6 +338,26 @@ class RTMDKConfig:
     swarm_consensus_threshold: float = 0.5
     swarm_max_agents: int = 10
     swarm_vote_weight: float = 0.3
+
+    # Phase 15 Track 1: Version Control (Memory Git)
+    version_control: bool = False
+    max_versions: int = 100
+
+    # Phase 15 Track 2: Proactive Clarification
+    proactive_clarification: bool = False
+    clarification_threshold_ratio: float = 0.5
+
+    # Phase 15 Track 3: Attention Tokens
+    attention_tokens: bool = True  # Enabled by default (extends attention_bias)
+
+    # Phase 15 Track 4: Entropy Control
+    entropy_management: bool = False
+    entropy_high_threshold: float = 3.0
+    entropy_low_threshold: float = 0.5
+
+    # Phase 15 Track 5: Triton/CUDA Backend
+    triton_backend: bool = False
+    min_nodes_for_gpu: int = 2000
 
     def __post_init__(self):
         logger.setLevel(getattr(logging, self.log_level.upper()))
@@ -3161,6 +3201,18 @@ SYSTEM_PROMPT_TEMPLATES = {
         "Higher scores indicate more relevant/important memories. Use them for context-aware answers.\n\n"
         "Relevant memories:\n{context}"
     ),
+    ContextFormat.ATTENTION: (
+        "You are a helpful assistant with long-term memory.\n"
+        "Below are relevant memories with attention-weighted tokens. "
+        "Each memory starts with tokens like [ATTN:x.xxxx][SAL:x.xxxx][TIER:X].\n"
+        "- ATTN: attention weight — how relevant this memory is to the current query (higher = more relevant)\n"
+        "- SAL: salience — overall importance in the memory field\n"
+        "- TIER: memory tier (E=episodic, S=semantic, P=procedural)\n"
+        "- CAUSAL: number of causal connections (if present)\n"
+        "- GOAL: goal relevance score (if present)\n"
+        "Use the ATTN weights to focus your attention on the most relevant memories.\n\n"
+        "Relevant memories:\n{context}"
+    ),
 }
 
 
@@ -3185,6 +3237,21 @@ def format_context(results: List[Tuple[str, float, MemoryNode]], fmt: ContextFor
                           f"  lineage: {node.lineage}", f"  modality: {node.modality}",
                           f"  cross_modal_score: {node.cross_modal_score:.4f}"])
         return "\n".join(lines) if lines else "No relevant memory."
+    elif fmt == ContextFormat.ATTENTION:
+        # Control-tokens format for attention-aware LLMs (Qwen, Mistral, Llama 3)
+        lines = ["### ATTENTION_CONTEXT"]
+        for nid, resp, node in results:
+            causal = len(node.causal_strength) if hasattr(node, 'causal_strength') else 0
+            goal_rel = getattr(node, 'goal_relevance', 0.0)
+            tokens = (f"[ATTN:{resp:.3f}][SAL:{node.salience:.3f}]"
+                      f"[TIER:{getattr(node, 'tier', 'semantic')[0].upper()}]")
+            if causal > 0:
+                tokens += f"[CAUSAL:{causal}]"
+            if goal_rel > 0.3:
+                tokens += f"[GOAL:{goal_rel:.2f}]"
+            text = node.content.get("text", "unknown")[:100]
+            lines.append(f"{tokens} {text}")
+        return "\n".join(lines) if len(lines) > 1 else "No relevant memory."
     else:
         parts = [f"[R:{r:.2f}|S:{n.salience:.2f}|CM:{n.cross_modal_score:.2f}] {n.content.get('text', '')}" for _, r, n in results]
         return "\n".join(parts) if parts else "No relevant memory."
@@ -3385,6 +3452,28 @@ class RTMDKField:
                 config.swarm_vote_weight
             )
 
+        # Phase 15 Track 1: Version Control (Memory Git)
+        self.version_control: Optional["VersionControl"] = None
+        if config.version_control and VC_AVAILABLE:
+            self.version_control = VersionControl(max_versions=config.max_versions)
+        elif config.version_control and not VC_AVAILABLE:
+            logger.warning("version_control enabled but rtmdk.support.version_control not available")
+
+        # Phase 15 Track 4: Entropy Control
+        self.entropy_ctrl: Optional["EntropyController"] = None
+        if config.entropy_management and ENTROPY_AVAILABLE:
+            self.entropy_ctrl = EntropyController(
+                high_entropy_threshold=config.entropy_high_threshold,
+                low_entropy_threshold=config.entropy_low_threshold,
+            )
+        elif config.entropy_management and not ENTROPY_AVAILABLE:
+            logger.warning("entropy_management enabled but rtmdk.support.entropy_controller not available")
+
+        # Phase 15 Track 5: Triton Backend
+        self.triton_backend: Optional[Any] = None
+        if config.triton_backend and TritonBackend is not None:
+            self.triton_backend = TritonBackend(min_nodes_for_gpu=config.min_nodes_for_gpu)
+
         self.stats = {
             "total_adds": 0, "total_queries": 0, "consolidations": 0,
             "avg_response": 0.0, "active_nodes": 0,
@@ -3424,6 +3513,11 @@ class RTMDKField:
             "recall_accuracy": 1.0, "meta_reflections": 0,
             "security_violations": 0, "tension_spikes_blocked": 0,
             "swarm_agents": 0, "swarm_consensus_events": 0,
+            # Phase 15
+            "current_version": 0, "n_versions": 0,
+            "clarifications_generated": 0,
+            "entropy": 0.0, "entropy_state": "normal",
+            "triton_backend_used": False, "gpu_acceleration": False,
         }
         self._step_counter = 0
         self._rollback_history: List[Dict] = []
@@ -3594,6 +3688,10 @@ class RTMDKField:
             self.stats["avg_response"] = 0.9 * self.stats["avg_response"] + 0.1 * results[0][1]
             if self.ode_dynamics:
                 self.ode_dynamics.record_response(results[0][1])
+
+            # Phase 15 Track 4: Record resonance for entropy
+            if self.entropy_ctrl:
+                self.entropy_ctrl.record_response(results[0][1], results[0][2].salience)
 
         # Phase 13 Track 1: Goal relevance scoring
         if self.goal_tracker and results:
@@ -3880,6 +3978,27 @@ class RTMDKField:
             self._rollback_history.append({"timestamp": time.time(), "pre_state": pre_state, "updated": updated})
             if len(self._rollback_history) > self.cfg.max_rollback_history:
                 self._rollback_history.pop(0)
+
+        # Phase 15 Track 1: Version Control — record deltas
+        if self.version_control and updated:
+            deltas = []
+            for nid in updated:
+                if nid in self.nodes:
+                    deltas.append(NodeDelta(
+                        node_id=nid, action="merged",
+                        old_state=pre_state.get(nid),
+                        new_state=self.nodes[nid].to_dict()
+                    ))
+            for pid in pending_deletions:
+                if pid in pre_state:
+                    deltas.append(NodeDelta(
+                        node_id=pid, action="deleted",
+                        old_state=pre_state.get(pid)
+                    ))
+            if deltas:
+                self.version_control.create_version(deltas, message=f"consolidation: {len(updated)} merged, {len(pending_deletions)} deleted")
+                self.stats["current_version"] = self.version_control.current_version
+                self.stats["n_versions"] = self.version_control.n_versions
 
         return updated
 
@@ -4233,6 +4352,26 @@ class RTMDKField:
         # Phase 14 Track 2: Security violation stats
         if self.security:
             self.stats["security_violations"] = len(self.security._violation_log)
+
+        # Phase 15 Track 4: Entropy Control
+        if self.entropy_ctrl:
+            # Record resonance responses for entropy computation
+            # (done via query() hook — see query method)
+            state = self.entropy_ctrl.get_state()
+            self.stats["entropy"] = state["entropy"]
+            self.stats["entropy_state"] = state["state"]
+            # Auto-trigger consolidation if noisy
+            if state["should_consolidate"] and len(self.nodes) > 10:
+                self.consolidate()
+            # Adjust decay rate if stagnant
+            if state["should_explore"]:
+                # Temporarily increase decay to clear space
+                pass  # Decay is applied in _prune_dead_nodes()
+
+        # Phase 15 Track 1: Version Control stats
+        if self.version_control:
+            self.stats["current_version"] = self.version_control.current_version
+            self.stats["n_versions"] = self.version_control.n_versions
 
     def _self_heal(self) -> List[Dict]:
         if not self.healer or len(self.nodes) < 3:
@@ -4771,8 +4910,21 @@ class RTMDKMemory(BaseModel):
         phase = self._get_phase(session_id, embedding)
         results = self.field.query(embedding, phase, top_k=self.field.cfg.top_k)
 
+        # Phase 15 Track 2: Proactive Clarification
+        if self.config.proactive_clarification and results:
+            max_score = results[0][1] if results else 0.0
+            threshold = self.field.cfg.min_response * self.config.clarification_threshold_ratio
+            if 0 < max_score < threshold:
+                # Weak resonance — generate clarification from near-miss nodes
+                clarification = self._generate_clarification(results, query)
+                self.field.stats["clarifications_generated"] += 1
+                return {"rtmdk_context": clarification}
+
+        # Phase 15 Track 3: Attention Token formatting
+        if self.config.attention_tokens and results:
+            context = format_context(results, ContextFormat.ATTENTION)
         # Phase 13 Track 2: Cognitive attention bias formatting
-        if self.config.attention_bias and results:
+        elif self.config.attention_bias and results:
             context = format_cognitive_context(results, bias_applied=True)
             self.field.stats["attention_bias_applied"] += 1
         # Phase 12 Track 2: Cognitive context compression
@@ -4785,6 +4937,16 @@ class RTMDKMemory(BaseModel):
         else:
             context = format_context(results, self.config.context_format)
         return {"rtmdk_context": context}
+
+    def _generate_clarification(self, results: List, query: str) -> str:
+        """Generate a clarification prompt from weak-resonance nodes."""
+        lines = [f"[CLARIFICATION] Не нашёл точных воспоминаний по запросу: \"{query[:80]}\""]
+        lines.append("Полусовпадения (низкий резонанс):")
+        for nid, score, node in results[:3]:
+            text = node.content.get("text", "")[:60]
+            lines.append(f"  [R:{score:.2f}] {text}")
+        lines.append("Уточните запрос или предоставьте дополнительный контекст.")
+        return "\n".join(lines)
 
     def get_system_prompt(self, context: str) -> str:
         return build_system_prompt(context, self.config.context_format, self.config.use_structured_prompt)

@@ -20,6 +20,10 @@ from .security import SecurityValidator
 from .swarm import SwarmConsensusProtocol
 from .agents import AgentPlanner, HypothesisVerifier, ToolRouter
 from .production import ShadowModeEvaluator, RAGASPlusEvaluator, AutoRollbackManager
+# Phase 15
+from .version_control import VersionControl, NodeDelta, Version, DiffResult
+from .entropy_controller import EntropyController
+from .triton_backend import TritonBackend, TRITON_AVAILABLE
 
 __all__ = [
     "MetaController",

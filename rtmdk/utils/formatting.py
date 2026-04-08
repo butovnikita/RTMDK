@@ -56,6 +56,20 @@ def format_context(results: List[Tuple[str, float, "MemoryNode"]], fmt: ContextF
                           f"  lineage: {node.lineage}", f"  modality: {node.modality}",
                           f"  cross_modal_score: {node.cross_modal_score:.4f}"])
         return "\n".join(lines) if lines else "No relevant memory."
+    elif fmt == ContextFormat.ATTENTION:
+        lines = ["### ATTENTION_CONTEXT"]
+        for nid, resp, node in results:
+            causal = len(node.causal_strength) if hasattr(node, 'causal_strength') else 0
+            goal_rel = getattr(node, 'goal_relevance', 0.0)
+            tokens = (f"[ATTN:{resp:.3f}][SAL:{node.salience:.3f}]"
+                      f"[TIER:{getattr(node, 'tier', 'semantic')[0].upper()}]")
+            if causal > 0:
+                tokens += f"[CAUSAL:{causal}]"
+            if goal_rel > 0.3:
+                tokens += f"[GOAL:{goal_rel:.2f}]"
+            text = node.content.get("text", "unknown")[:100]
+            lines.append(f"{tokens} {text}")
+        return "\n".join(lines) if len(lines) > 1 else "No relevant memory."
     else:
         parts = [f"[R:{r:.2f}|S:{n.salience:.2f}|CM:{n.cross_modal_score:.2f}] {n.content.get('text', '')}" for _, r, n in results]
         return "\n".join(parts) if parts else "No relevant memory."
