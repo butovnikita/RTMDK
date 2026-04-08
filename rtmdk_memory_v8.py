@@ -1311,7 +1311,7 @@ class NeuralODEDynamics:
         self.gamma = 0.02
         self.W = np.random.randn(latent_dim, latent_dim).astype(np.float32) * 0.01
         self._response_history: deque = deque(maxlen=100)
-        self._state_history: List[NDArray] = []
+        self._state_history: deque = deque(maxlen=2)
 
     def _sigma(self, x: NDArray) -> NDArray:
         return np.tanh(x)
@@ -3610,6 +3610,7 @@ class RTMDKField:
             # Phase 17
             "n_shards": 0, "shard_distribution": {},
             "cross_shard_exchanges": 0, "role_router_enabled": False,
+            "field_integrity_issues": 0,
         }
         self._step_counter = 0
         self._rollback_history: List[Dict] = []
@@ -3736,10 +3737,12 @@ class RTMDKField:
                 query_latent = query_latent * (self.cfg.ball_radius - 1e-6) / max(query_norm, 1e-8)
             prefiltered = []
             for nid, node in search_nodes:
+                # FIX: Never mutate node.latent_pos — use a local copy for projection
                 node_norm = np.linalg.norm(node.latent_pos)
+                node_pos = node.latent_pos
                 if node_norm >= self.cfg.ball_radius:
-                    node.latent_pos = node.latent_pos * (self.cfg.ball_radius - 1e-6) / max(node_norm, 1e-8)
-                hdist = poincare_dist(query_latent, node.latent_pos, self.cfg.ball_radius)
+                    node_pos = node.latent_pos * (self.cfg.ball_radius - 1e-6) / max(node_norm, 1e-8)
+                hdist = poincare_dist(query_latent, node_pos, self.cfg.ball_radius)
                 if hdist < 3.0:
                     prefiltered.append((nid, node))
             if len(prefiltered) > 0:
@@ -3987,91 +3990,188 @@ class RTMDKField:
         high_tension = [nid for nid in node_index_snapshot if nid in self.nodes and self.nodes[nid].tension > eff_threshold]
         processed = set()
         pending_deletions = []
+        # Fix: Snapshot node_index ONCE before outer loop (was O(N²) due to repeated copies)
+        node_index_snapshot = list(self.node_index)
+        n_snap = len(node_index_snapshot)
 
-        for nid in high_tension:
-            if nid in processed or nid not in self.nodes:
-                continue
-            node = self.nodes[nid]
-            # Fix 2: Safe inner iteration with snapshot
-            inner_snapshot = list(self.node_index)
-            candidates = []
-            for oid in inner_snapshot:
-                if oid == nid or oid in processed or oid not in self.nodes:
+        # FIX: Precompute positions for vectorized distance computation
+        if self.cfg.use_hnsw and self.hnsw_index and n_snap > 50:
+            # Use HNSW for candidate search — O(N log N) instead of O(N²)
+            for nid in high_tension:
+                if nid in processed or nid not in self.nodes:
                     continue
-                other = self.nodes[oid]
-                dist = np.linalg.norm(node.latent_pos - other.latent_pos)
-                pd = min(abs(node.phase - other.phase), 2 * np.pi - abs(node.phase - other.phase))
-                if dist < 2.5 and pd > 1.0:
-                    candidates.append((oid, dist, pd))
-            if not candidates:
-                continue
-            candidates.sort(key=lambda x: x[1])
-            pid = candidates[0][0]
-            if pid not in self.nodes:
-                continue
-            partner = self.nodes[pid]
+                node = self.nodes[nid]
+                # HNSW search for neighbors within distance 2.5
+                candidate_ids = self.hnsw_index.search(node.latent_pos, top_k=min(50, n_snap))
+                candidates = []
+                for oid in candidate_ids:
+                    if oid == nid or oid in processed or oid not in self.nodes:
+                        continue
+                    other = self.nodes[oid]
+                    dist = np.linalg.norm(node.latent_pos - other.latent_pos)
+                    if dist >= 2.5:
+                        continue
+                    pd = min(abs(node.phase - other.phase), 2 * np.pi - abs(node.phase - other.phase))
+                    if pd > 1.0:
+                        candidates.append((oid, dist, pd))
+                if not candidates:
+                    continue
+                candidates.sort(key=lambda x: x[1])
+                pid = candidates[0][0]
+                if pid not in self.nodes:
+                    continue
+                partner = self.nodes[pid]
 
-            if self.cfg.do_calculus_validation and self.causal_engine:
-                validation = self.causal_engine.validate_consolidation(nid, pid)
-                self.stats["consolidation_validations"] += 1
-                if not validation["safe"]:
-                    self.stats["blocked_consolidations"] += 1
-                    processed.add(nid)
-                    processed.add(pid)
+                if self.cfg.do_calculus_validation and self.causal_engine:
+                    validation = self.causal_engine.validate_consolidation(nid, pid)
+                    self.stats["consolidation_validations"] += 1
+                    if not validation["safe"]:
+                        self.stats["blocked_consolidations"] += 1
+                        processed.add(nid)
+                        processed.add(pid)
+                        continue
+
+                gate = self._soft_gate(max(node.tension, partner.tension))
+
+                if self.cfg.enable_rollback:
+                    node.pre_consolidation_pos = node.latent_pos.copy()
+
+                if self.diff_consolidation and mode == ConsolidationMode.DIALECTICAL:
+                    synth = self.diff_consolidation.compute_synthesis(node, partner, gate)
+                    node.latent_pos = synth["latent_pos"]
+                    node.phase = synth["phase"]
+                    node.amplitude = synth["amplitude"]
+                    node.salience = synth["salience"]
+                elif mode == ConsolidationMode.DIALECTICAL:
+                    node.latent_pos = 0.5 * (node.latent_pos + partner.latent_pos)
+                    node.phase = np.arctan2(0.5*(np.sin(node.phase)+np.sin(partner.phase)),
+                                            0.5*(np.cos(node.phase)+np.cos(partner.phase))) % (2*np.pi)
+                    node.amplitude = min(1.0, 0.8*(node.amplitude+partner.amplitude))
+                    node.salience = 0.7*(node.salience+partner.salience)
+
+                node.tension = 0.0
+                node.soft_gate = 1.0
+                node.lineage = [f"{node.id}+{pid}"] + node.lineage + partner.lineage
+                node.content["synthesis_note"] = f"Consolidated with {pid} at t={time.time():.0f}"
+
+                if self.causal_engine:
+                    for parent, strength in partner.causal_strength.items():
+                        if parent not in node.causal_strength:
+                            node.causal_strength[parent] = strength
+                        else:
+                            node.causal_strength[parent] = max(node.causal_strength[parent], strength)
+
+                if self.cfg.use_hnsw and self.hnsw_index:
+                    self.hnsw_index.remove(pid)
+                    self.hnsw_index.insert(nid, node.latent_pos)
+                if self.cfg.bm25_fallback and self.bm25_index:
+                    self.bm25_index.remove_document(pid)
+
+                pending_deletions.append(pid)
+                processed.add(pid)
+                updated.append(nid)
+                self.stats["consolidations"] += 1
+                processed.add(nid)
+        else:
+            # Fallback: vectorized candidate search without HNSW
+            # Precompute all positions once
+            snap_positions = np.array([self.nodes[oid].latent_pos for oid in node_index_snapshot if oid in self.nodes])
+            snap_ids = [oid for oid in node_index_snapshot if oid in self.nodes]
+            snap_phases = np.array([self.nodes[oid].phase for oid in snap_ids])
+
+            for nid in high_tension:
+                if nid in processed or nid not in self.nodes:
+                    continue
+                node = self.nodes[nid]
+                # Find node index in snapshot
+                try:
+                    node_idx = snap_ids.index(nid)
+                except ValueError:
+                    continue
+                node_pos = snap_positions[node_idx]
+
+                # Vectorized distance computation
+                dists = np.linalg.norm(snap_positions - node_pos, axis=1)
+                phase_diffs = np.minimum(
+                    np.abs(snap_phases - node.phase),
+                    2 * np.pi - np.abs(snap_phases - node.phase)
+                )
+
+                # Filter candidates
+                mask = (dists < 2.5) & (phase_diffs > 1.0)
+                candidate_indices = np.where(mask)[0]
+                if len(candidate_indices) == 0:
                     continue
 
-            gate = self._soft_gate(max(node.tension, partner.tension))
+                # Sort by distance and pick nearest
+                sorted_indices = candidate_indices[np.argsort(dists[candidate_indices])]
+                pid = snap_ids[sorted_indices[0]]
+                if pid not in self.nodes or pid in processed:
+                    continue
+                partner = self.nodes[pid]
 
-            if self.cfg.enable_rollback:
-                node.pre_consolidation_pos = node.latent_pos.copy()
+                if self.cfg.do_calculus_validation and self.causal_engine:
+                    validation = self.causal_engine.validate_consolidation(nid, pid)
+                    self.stats["consolidation_validations"] += 1
+                    if not validation["safe"]:
+                        self.stats["blocked_consolidations"] += 1
+                        processed.add(nid)
+                        processed.add(pid)
+                        continue
 
-            if self.diff_consolidation and mode == ConsolidationMode.DIALECTICAL:
-                synth = self.diff_consolidation.compute_synthesis(node, partner, gate)
-                node.latent_pos = synth["latent_pos"]
-                node.phase = synth["phase"]
-                node.amplitude = synth["amplitude"]
-                node.salience = synth["salience"]
-            elif mode == ConsolidationMode.DIALECTICAL:
-                node.latent_pos = 0.5 * (node.latent_pos + partner.latent_pos)
-                node.phase = np.arctan2(0.5*(np.sin(node.phase)+np.sin(partner.phase)),
-                                        0.5*(np.cos(node.phase)+np.cos(partner.phase))) % (2*np.pi)
-                node.amplitude = min(1.0, 0.8*(node.amplitude+partner.amplitude))
-                node.salience = 0.7*(node.salience+partner.salience)
+                gate = self._soft_gate(max(node.tension, partner.tension))
 
-            node.tension = 0.0
-            node.soft_gate = 1.0
-            node.lineage = [f"{node.id}+{pid}"] + node.lineage + partner.lineage
-            node.content["synthesis_note"] = f"Consolidated with {pid} at t={time.time():.0f}"
+                if self.cfg.enable_rollback:
+                    node.pre_consolidation_pos = node.latent_pos.copy()
 
-            if self.causal_engine:
-                for parent, strength in partner.causal_strength.items():
-                    if parent not in node.causal_strength:
-                        node.causal_strength[parent] = strength
-                    else:
-                        node.causal_strength[parent] = max(node.causal_strength[parent], strength)
+                if self.diff_consolidation and mode == ConsolidationMode.DIALECTICAL:
+                    synth = self.diff_consolidation.compute_synthesis(node, partner, gate)
+                    node.latent_pos = synth["latent_pos"]
+                    node.phase = synth["phase"]
+                    node.amplitude = synth["amplitude"]
+                    node.salience = synth["salience"]
+                elif mode == ConsolidationMode.DIALECTICAL:
+                    node.latent_pos = 0.5 * (node.latent_pos + partner.latent_pos)
+                    node.phase = np.arctan2(0.5*(np.sin(node.phase)+np.sin(partner.phase)),
+                                            0.5*(np.cos(node.phase)+np.cos(partner.phase))) % (2*np.pi)
+                    node.amplitude = min(1.0, 0.8*(node.amplitude+partner.amplitude))
+                    node.salience = 0.7*(node.salience+partner.salience)
 
-            if self.cfg.use_hnsw and self.hnsw_index:
-                self.hnsw_index.remove(pid)
-                self.hnsw_index.insert(nid, node.latent_pos)
-            if self.cfg.bm25_fallback and self.bm25_index:
-                self.bm25_index.remove_document(pid)
+                node.tension = 0.0
+                node.soft_gate = 1.0
+                node.lineage = [f"{node.id}+{pid}"] + node.lineage + partner.lineage
+                node.content["synthesis_note"] = f"Consolidated with {pid} at t={time.time():.0f}"
 
-            # Fix 2: Defer deletion to post-loop
-            pending_deletions.append(pid)
-            processed.add(pid)
-            updated.append(nid)
-            self.stats["consolidations"] += 1
-            processed.add(nid)
+                if self.causal_engine:
+                    for parent, strength in partner.causal_strength.items():
+                        if parent not in node.causal_strength:
+                            node.causal_strength[parent] = strength
+                        else:
+                            node.causal_strength[parent] = max(node.causal_strength[parent], strength)
 
-        # Fix 2: Apply all deletions after iteration
+                if self.cfg.use_hnsw and self.hnsw_index:
+                    self.hnsw_index.remove(pid)
+                    self.hnsw_index.insert(nid, node.latent_pos)
+                if self.cfg.bm25_fallback and self.bm25_index:
+                    self.bm25_index.remove_document(pid)
+
+                pending_deletions.append(pid)
+                processed.add(pid)
+                updated.append(nid)
+                self.stats["consolidations"] += 1
+                processed.add(nid)
+
+        # Fix 2: Apply all deletions after iteration — rebuild node_index once (O(N) instead of O(M×N))
         for pid in pending_deletions:
             if pid in self.nodes:
                 del self.nodes[pid]
-            if pid in self.node_index:
-                self.node_index.remove(pid)
+        # Rebuild node_index in one pass
+        self.node_index = [nid for nid in self.node_index if nid in self.nodes]
 
         if updated:
-            self._verify_consistency(updated, pre_state)
+            # FIX: Limit verification to first 10 nodes to avoid O(K×N) blowup
+            verify_limit = min(10, len(updated))
+            self._verify_consistency(updated[:verify_limit], pre_state)
 
         self._prune_dead_nodes()
         self.stats["active_nodes"] = len(self.nodes)
@@ -4211,7 +4311,31 @@ class RTMDKField:
             if self.cfg.bm25_fallback and self.bm25_index:
                 self.bm25_index.remove_document(nid)
             del self.nodes[nid]
-            self.node_index.remove(nid)
+        # FIX: Rebuild node_index once instead of O(N) remove per node
+        self.node_index = [nid for nid in self.node_index if nid in self.nodes]
+
+    def _check_field_integrity(self) -> Dict[str, Any]:
+        """Check for NaN/inf in nodes and report integrity issues."""
+        issues = []
+        n_nan = 0
+        n_inf = 0
+        for nid, node in self.nodes.items():
+            if np.any(np.isnan(node.latent_pos)):
+                n_nan += 1
+                issues.append(f"NaN in {nid}")
+            if np.any(np.isinf(node.latent_pos)):
+                n_inf += 1
+                issues.append(f"Inf in {nid}")
+            if np.isnan(node.phase) or np.isinf(node.phase):
+                issues.append(f"Invalid phase in {nid}")
+            if np.isnan(node.amplitude) or node.amplitude < 0:
+                issues.append(f"Invalid amplitude in {nid}")
+        return {
+            "n_issues": len(issues),
+            "n_nan": n_nan,
+            "n_inf": n_inf,
+            "issues": issues[:20],  # Limit to first 20
+        }
 
     def evolve_continuous(self, inputs: Optional[List[Dict]] = None, use_sde: bool = False) -> NDArray:
         if not self.ode_dynamics or not self.nodes:
@@ -4440,7 +4564,9 @@ class RTMDKField:
             self.causal_engine.discover_causal_structure()
             for (cause, effect), edge in self.causal_engine.causal_effects.items():
                 if effect in self.nodes:
-                    self.nodes[effect].causal_parents.append(cause)
+                    # FIX: Prevent unbounded growth of causal_parents list
+                    if cause not in self.nodes[effect].causal_parents:
+                        self.nodes[effect].causal_parents.append(cause)
                     self.nodes[effect].causal_strength[cause] = edge.strength
                 if cause in self.nodes:
                     self.nodes[cause].causal_effects[effect] = edge.strength
@@ -4528,6 +4654,13 @@ class RTMDKField:
             # Cross-shard exchange stats
             total_exchanges = sum(s.n_cross_shard_exchanges for s in self.role_router.shards.values())
             self.stats["cross_shard_exchanges"] = total_exchanges
+
+        # Field integrity check every 100 steps — detect NaN/inf
+        if self._step_counter % 100 == 0:
+            integrity = self._check_field_integrity()
+            if integrity["n_issues"] > 0:
+                logger.warning(f"Field integrity issues at step {self._step_counter}: {integrity['n_issues']} issues")
+                self.stats["field_integrity_issues"] = integrity["n_issues"]
 
     def _self_heal(self) -> List[Dict]:
         if not self.healer or len(self.nodes) < 3:

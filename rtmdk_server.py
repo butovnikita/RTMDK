@@ -164,22 +164,33 @@ def get_embedding(text: str) -> np.ndarray:
         return embedder_cache[text]
 
     import requests
-    try:
-        resp = requests.post(
-            f"{LM_STUDIO_URL}/embeddings",
-            json={"model": EMBED_MODEL, "input": text},
-            timeout=30,
-        )
-        data = resp.json()
-        embedding = np.array(data["data"][0]["embedding"], dtype=np.float32)
-        embedder_cache[text] = embedding
-        return embedding
-    except Exception as e:
-        logger.warning(f"Embedding error: {e}, using fallback")
-        np.random.seed(hash(text) % 2**32)
-        emb = np.random.randn(768).astype(np.float32) * 0.1
-        embedder_cache[text] = emb
-        return emb
+    # FIX: Retry logic with exponential backoff
+    max_retries = 3
+    base_timeout = int(os.getenv("RTMDK_LM_STUDIO_TIMEOUT", "30"))
+    for attempt in range(max_retries):
+        try:
+            resp = requests.post(
+                f"{LM_STUDIO_URL}/embeddings",
+                json={"model": EMBED_MODEL, "input": text},
+                timeout=base_timeout,
+            )
+            data = resp.json()
+            embedding = np.array(data["data"][0]["embedding"], dtype=np.float32)
+            embedder_cache[text] = embedding
+            return embedding
+        except requests.exceptions.Timeout:
+            logger.warning(f"Embedding timeout on attempt {attempt+1}/{max_retries}")
+            if attempt == max_retries - 1:
+                break
+            time.sleep(1 * (attempt + 1))
+        except Exception as e:
+            logger.warning(f"Embedding error: {e}, using fallback")
+            break
+
+    np.random.seed(hash(text) % 2**32)
+    emb = np.random.randn(768).astype(np.float32) * 0.1
+    embedder_cache[text] = emb
+    return emb
 
 
 def init_memory() -> RTMDKMemory:
@@ -329,63 +340,84 @@ async def chat_completions(req: ChatCompletionRequest):
                 logger.warning(f"Memory save failed: {e}")
 
     # Call LM Studio
-    try:
-        resp = requests.post(
-            f"{LM_STUDIO_URL}/chat/completions",
-            json={
-                "model": chat_model or "local-model",
-                "messages": messages,
-                "temperature": req.temperature,
-                "max_tokens": req.max_tokens,
-                "stream": req.stream,
-                "top_p": req.top_p,
-                "frequency_penalty": req.frequency_penalty,
-                "presence_penalty": req.presence_penalty,
-            },
-            timeout=120,
-            stream=req.stream,
-        )
+    lm_timeout = int(os.getenv("RTMDK_LM_STUDIO_TIMEOUT", "120"))
+    max_retries = 2
+    last_error = None
 
-        if req.stream:
-            def stream_generator():
-                for chunk in resp.iter_lines():
-                    if chunk:
-                        line = chunk.decode("utf-8")
-                        if line.startswith("data: "):
-                            yield f"{line}\n\n"
-                # Save final response to memory
-                if memory:
-                    try:
-                        last_user = next((m.content for m in reversed(req.messages) if m.role == "user"), "")
-                        if last_user:
-                            memory.save_context(
-                                {"input": last_user, "session_id": req.session_id},
-                                {"output": "[streamed response]"}
-                            )
-                    except:
-                        pass
+    for attempt in range(max_retries):
+        try:
+            resp = requests.post(
+                f"{LM_STUDIO_URL}/chat/completions",
+                json={
+                    "model": chat_model or "local-model",
+                    "messages": messages,
+                    "temperature": req.temperature,
+                    "max_tokens": req.max_tokens,
+                    "stream": req.stream,
+                    "top_p": req.top_p,
+                    "frequency_penalty": req.frequency_penalty,
+                    "presence_penalty": req.presence_penalty,
+                },
+                timeout=lm_timeout,
+                stream=req.stream,
+            )
+            last_error = None
+            break  # Success
+        except requests.exceptions.Timeout:
+            last_error = f"LM Studio timeout after {lm_timeout}s (attempt {attempt+1}/{max_retries})"
+            logger.warning(last_error)
+            if attempt < max_retries - 1:
+                time.sleep(2 * (attempt + 1))
+        except requests.exceptions.ConnectionError as e:
+            last_error = f"LM Studio connection error: {e}"
+            logger.warning(last_error)
+            if attempt < max_retries - 1:
+                time.sleep(2 * (attempt + 1))
+        except requests.exceptions.RequestException as e:
+            last_error = f"LM Studio request failed: {e}"
+            logger.warning(last_error)
+            break  # Don't retry on other errors
 
-            return StreamingResponse(stream_generator(), media_type="text/event-stream")
+    if last_error:
+        raise HTTPException(status_code=502, detail=last_error)
 
-        data = resp.json()
-        response_content = data["choices"][0]["message"]["content"]
+    if req.stream:
+        def stream_generator():
+            for chunk in resp.iter_lines():
+                if chunk:
+                    line = chunk.decode("utf-8")
+                    if line.startswith("data: "):
+                        yield f"{line}\n\n"
+            # Save final response to memory
+            if memory:
+                try:
+                    last_user = next((m.content for m in reversed(req.messages) if m.role == "user"), "")
+                    if last_user:
+                        memory.save_context(
+                            {"input": last_user, "session_id": req.session_id},
+                            {"output": "[streamed response]"}
+                        )
+                except:
+                    pass
 
-        # Update memory with response
-        if memory and req.messages:
-            try:
-                last_user = next((m.content for m in reversed(req.messages) if m.role == "user"), "")
-                if last_user:
-                    memory.save_context(
-                        {"input": last_user, "session_id": req.session_id},
-                        {"output": response_content}
-                    )
-            except Exception as e:
-                logger.warning(f"Memory update failed: {e}")
+        return StreamingResponse(stream_generator(), media_type="text/event-stream")
 
-        return data
+    data = resp.json()
+    response_content = data["choices"][0]["message"]["content"]
 
-    except requests.exceptions.RequestException as e:
-        raise HTTPException(status_code=502, detail=f"LM Studio request failed: {str(e)}")
+    # Update memory with response
+    if memory and req.messages:
+        try:
+            last_user = next((m.content for m in reversed(req.messages) if m.role == "user"), "")
+            if last_user:
+                memory.save_context(
+                    {"input": last_user, "session_id": req.session_id},
+                    {"output": response_content}
+                )
+        except Exception as e:
+            logger.warning(f"Memory update failed: {e}")
+
+    return data
 
 
 @app.post("/v1/embeddings")
