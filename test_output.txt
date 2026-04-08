@@ -1,0 +1,8 @@
+======================================================================
+  RTMDK MEMORY STABILITY TEST SUITE
+======================================================================
+
+[Test 1] Long-term Retention (forgetting curve)...
+  Steps     0: recall = 50.00%
+  Steps    50: recall = 50.00%
+  Steps   100: recall = 50.00%
