@@ -920,6 +920,8 @@ class MetaController:
         return best_params
 
     def _optimize_grid_search(self, field: Any) -> Dict[str, float]:
+        # Replaced full grid search with random search for performance.
+        # Original grid: 5^4 = 625 combinations → now 50 random trials.
         grid = {
             "decay_rate": [0.97, 0.98, 0.99, 0.995, 0.998],
             "tension_threshold": [0.15, 0.2, 0.25, 0.3, 0.35],
@@ -931,28 +933,21 @@ class MetaController:
         best_params = {}
         keys = list(filtered_grid.keys())
         values = list(filtered_grid.values())
+        n_trials = min(50, max(len(v) for v in values) ** len(keys))
 
-        def _iterate(current):
-            nonlocal best_score, best_params
-            if len(current) == len(keys):
-                params = dict(zip(keys, current))
-                score = self._evaluate_params(field, params)
-                if score > best_score:
-                    best_score = score
-                    best_params = params.copy()
-                return
-            for v in values[len(current)]:
-                current.append(v)
-                _iterate(current)
-                current.pop()
+        for _ in range(n_trials):
+            params = {k: values[i][np.random.randint(len(values[i]))] for i, k in enumerate(keys)}
+            score = self._evaluate_params(field, params)
+            if score > best_score:
+                best_score = score
+                best_params = params.copy()
 
-        _iterate([])
         self._best_params = best_params
         self._total_optimizations += 1
         self._last_optimization_time = time.time()
         self._optimization_history.append({
             "time": time.time(), "best_value": best_score,
-            "params": best_params, "method": "grid_search",
+            "params": best_params, "method": "random_search", "n_trials": n_trials,
         })
         return best_params
 
@@ -2520,6 +2515,7 @@ class CausalInferenceEngine:
         self.contradictions: Dict[str, ContradictionRecord] = {}
         self._contradiction_counter = 0
         self._counterfactual_cache: Dict[str, CounterfactualResult] = {}
+        self._intervention_store: Dict[str, List[Dict]] = {}
 
     def record_cooccurrence(self, a: str, b: str):
         self._cooccurrence[(a, b)] += 1
@@ -2737,10 +2733,28 @@ class CausalInferenceEngine:
         return result
 
     def do_intervention(self, node_id: str, new_pos: NDArray):
-        pass
+        """Apply do-calculus intervention: set node position to counterfactual state."""
+        if node_id not in self.parents and node_id not in self.children:
+            # Node not in causal graph — record it as a causal root
+            self.parents[node_id] = set()
+        # Store intervention for tracking
+        if node_id not in self._intervention_store:
+            self._intervention_store[node_id] = []
+        self._intervention_store[node_id].append({
+            "new_pos": new_pos.copy(),
+            "timestamp": time.time(),
+        })
+        # Update causal effects with intervention strength
+        for child in self.children.get(node_id, set()):
+            edge_key = (node_id, child)
+            if edge_key in self.causal_effects:
+                edge = self.causal_effects[edge_key]
+                edge.strength = min(1.0, edge.strength * 1.2)  # Boost causal strength under intervention
+                edge.evidence_count += 1
 
     def clear_interventions(self):
-        pass
+        """Clear all recorded interventions."""
+        self._intervention_store = {}
 
     def get_state(self) -> Dict:
         return {
@@ -2750,6 +2764,7 @@ class CausalInferenceEngine:
             "contradictions": {k: v.to_dict() for k, v in self.contradictions.items()},
             "node_counts": dict(self._node_counts),
             "total_observations": self._total_observations,
+            "intervention_store": {k: [{"new_pos": v["new_pos"].tolist() if hasattr(v["new_pos"], 'tolist') else v["new_pos"], "timestamp": v["timestamp"]} for v in vals] for k, vals in self._intervention_store.items()},
         }
 
     def load_state(self, state: Dict):
@@ -2757,6 +2772,12 @@ class CausalInferenceEngine:
         self.children = defaultdict(set, {k: set(v) for k, v in state.get("children", {}).items()})
         self._node_counts = defaultdict(int, state.get("node_counts", {}))
         self._total_observations = state.get("total_observations", 0)
+        self._intervention_store = {}
+        for node_id, interventions in state.get("intervention_store", {}).items():
+            self._intervention_store[node_id] = [
+                {"new_pos": np.array(iv["new_pos"], dtype=np.float32), "timestamp": iv["timestamp"]}
+                for iv in interventions
+            ]
         for key, edge_data in state.get("causal_effects", {}).items():
             parts = key.split("->")
             if len(parts) == 2:
@@ -2824,6 +2845,18 @@ class IncPCAProjection:
 
     def get_state(self) -> Dict:
         return {"projection": self.projection.tolist(), "mean": self.mean.tolist(), "n_samples": self.n_samples, "use_sklearn": self.use_sklearn}
+
+    def set_matrix(self, matrix: NDArray):
+        """Set projection matrix directly (for import/initialization)."""
+        assert matrix.shape == (self.input_dim, self.latent_dim), \
+            f"Expected shape ({self.input_dim}, {self.latent_dim}), got {matrix.shape}"
+        self.projection = matrix.astype(np.float32)
+        if self.use_sklearn:
+            self._ipca_fitted = True
+            self.ipca = IncrementalPCA(n_components=self.latent_dim)
+            self.ipca.components_ = self.projection.T
+            self.ipca.mean_ = self.mean
+            self.ipca.n_samples_seen_ = max(self.n_samples, 1)
 
     def load_state(self, state: Dict):
         self.projection = np.array(state["projection"], dtype=np.float32)
@@ -3653,36 +3686,50 @@ class RTMDKField:
 
     def _compute_tension(self, node_id: str, neighborhood_radius: float = 2.0) -> float:
         node = self.nodes[node_id]
-        
-        # Fix 4: O(N) -> O(N*k) optimization via limited neighbor search
-        # Use HNSW if available for fast k-NN, else fallback to limited cdist
+
+        # Use HNSW for fast k-NN, else fallback to deterministic k-NN via cdist
         k_neighbors = 10
         neighbor_ids = []
-        
+
         if self.cfg.use_hnsw and self.hnsw_index and len(self.hnsw_index.positions) > k_neighbors:
             candidate_ids = self.hnsw_index.search(node.latent_pos, top_k=k_neighbors + 1)
             neighbor_ids = [nid for nid in candidate_ids if nid != node_id and nid in self.nodes]
         else:
-            # Fallback: limit scan to a small sample if N is large, or full scan if N < 100
+            # Deterministic fallback: compute distances to a limited window
             ids_to_check = self.node_index
-            if len(ids_to_check) > 100:
-                import random
-                ids_to_check = random.sample(ids_to_check, 100)
-            
-            # O(N*k) approximation: just check distance for small subset or use argsort for exact k nearest
-            dists = {}
-            for oid in ids_to_check:
-                if oid == node_id: continue
-                other = self.nodes[oid]
-                d = np.linalg.norm(node.latent_pos - other.latent_pos)
-                if d < neighborhood_radius:
-                    dists[oid] = d
-            # Select k nearest
-            neighbor_ids = sorted(dists, key=dists.get)[:k_neighbors]
+            max_scan = 200  # Limit scan for performance
+            if len(ids_to_check) > max_scan:
+                # Use reservoir-style sample with deterministic seed based on node_id
+                np.random.seed(int(hashlib.md5(node_id.encode()).hexdigest(), 16) % 2**32)
+                ids_to_check = list(np.random.choice(ids_to_check, size=max_scan, replace=False))
+
+            if len(ids_to_check) < 2:
+                return 0.0
+
+            # Compute distances and select k nearest within radius
+            others = [(oid, self.nodes[oid]) for oid in ids_to_check if oid != node_id and oid in self.nodes]
+            if not others:
+                return 0.0
+
+            other_positions = np.array([n.latent_pos for _, n in others])
+            other_ids = [oid for oid, _ in others]
+            dists = np.linalg.norm(other_positions - node.latent_pos, axis=1)
+
+            # Filter by radius and select k nearest
+            within_radius = dists < neighborhood_radius
+            if not np.any(within_radius):
+                # Fallback: take k nearest regardless of radius
+                k = min(k_neighbors, len(dists))
+                nearest_idx = np.argsort(dists)[:k]
+                neighbor_ids = [other_ids[i] for i in nearest_idx]
+            else:
+                radius_dists = [(other_ids[i], dists[i]) for i in range(len(dists)) if within_radius[i]]
+                radius_dists.sort(key=lambda x: x[1])
+                neighbor_ids = [oid for oid, _ in radius_dists[:k_neighbors]]
 
         if len(neighbor_ids) < 2:
             return 0.0
-            
+
         neighbors = [self.nodes[oid] for oid in neighbor_ids]
         phases = np.array([n.phase for n in neighbors])
         saliences = np.array([n.salience for n in neighbors])

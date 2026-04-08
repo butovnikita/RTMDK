@@ -198,15 +198,26 @@ with tab_field:
                 colors.append("#45B7D1")
             labels.append(nid[:10])
 
-        import matplotlib.pyplot as plt
-        fig, ax = plt.subplots(figsize=(10, 6))
-        for i, (pos, color, label) in enumerate(zip(positions, colors, labels)):
-            ax.scatter(pos[0], pos[1], c=color, s=100, alpha=0.7, label=label if i < 20 else "")
-        ax.set_xlabel("Latent Dim 1")
-        ax.set_ylabel("Latent Dim 2")
-        ax.set_title(f"Memory Field ({len(positions)} nodes)")
-        ax.legend(loc="upper right", fontsize=8)
-        st.pyplot(fig)
+        try:
+            import matplotlib.pyplot as plt
+            fig, ax = plt.subplots(figsize=(10, 6))
+            for i, (pos, color, label) in enumerate(zip(positions, colors, labels)):
+                ax.scatter(pos[0], pos[1], c=color, s=100, alpha=0.7, label=label if i < 20 else "")
+            ax.set_xlabel("Latent Dim 1")
+            ax.set_ylabel("Latent Dim 2")
+            ax.set_title(f"Memory Field ({len(positions)} nodes)")
+            ax.legend(loc="upper right", fontsize=8)
+            st.pyplot(fig)
+        except ImportError:
+            st.warning("matplotlib not installed — install with `pip install matplotlib` to see field visualization.")
+            # Fallback: show data table instead
+            import pandas as pd
+            df = pd.DataFrame({
+                "Node": list(memory.field.nodes.keys())[:20],
+                "Dim1": positions[:20, 0],
+                "Dim2": positions[:20, 1],
+            })
+            st.dataframe(df, use_container_width=True)
 
         # Stats
         col1, col2, col3 = st.columns(3)
@@ -288,7 +299,6 @@ with tab_nodes:
 
         # Display table
         if filtered:
-            import pandas as pd
             data = []
             for nid, node in filtered[:50]:
                 data.append({
@@ -300,8 +310,15 @@ with tab_nodes:
                     "Tension": f"{node.tension:.3f}",
                     "Text": node.content.get("text", "")[:60],
                 })
-            df = pd.DataFrame(data)
-            st.dataframe(df, use_container_width=True)
+            try:
+                import pandas as pd
+                df = pd.DataFrame(data)
+                st.dataframe(df, use_container_width=True)
+            except ImportError:
+                st.warning("pandas not installed — install with `pip install pandas` for table view.")
+                # Fallback: show as text
+                for row in data:
+                    st.text(row)
         else:
             st.info("No nodes match your search.")
     else:
