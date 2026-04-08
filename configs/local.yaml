@@ -1,27 +1,27 @@
 # RTMDK Local Development Config
-# Single user, minimal features, no GPU
+# Single user, optimized defaults for real embeddings
 embedding_dim: 768
-latent_dim: 64
+latent_dim: 256
 resonance_kernel: "gaussian_phase"
 phase_coupling: 0.3
 bandwidth: 1.0
 attraction_lr: 0.02
 phase_sync_lr: 0.01
-decay_rate: 0.998
+decay_rate: 0.999
 min_amplitude: 0.05
 tension_threshold: 0.25
 consolidation_mode: "dialectical"
 max_nodes: 1000
 top_k: 5
-min_response: 0.1
+min_response: 0.005
 enable_async: false
 log_level: "INFO"
 
 context_format: "plain"
 use_structured_prompt: true
 adaptive_threshold: false
-learn_projection: false
-bm25_fallback: false
+learn_projection: true
+bm25_fallback: true
 
 soft_gates: false
 backend: "numpy"
@@ -30,7 +30,9 @@ false_merge_threshold: 0.4
 enable_rollback: false
 
 multimodal: false
-use_hnsw: false
+use_hnsw: true
+hnsw_m: 16
+hnsw_ef_construction: 200
 tda_monitoring: false
 
 differentiable: false

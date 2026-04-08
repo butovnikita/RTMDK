@@ -30,23 +30,35 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rtmdk_memory_v8 import RTMDKConfig, RTMDKMemory
 
+# Try real embedder first
+try:
+    from embedder_lmstudio import get_embedder
+    _embedder_fn = get_embedder()
+    USING_REAL_EMBEDDER = getattr(_embedder_fn, 'is_real', False)
+except Exception:
+    USING_REAL_EMBEDDER = False
+    def _make_hash_embedder(dim=768):
+        def embed(text):
+            np.random.seed(42)
+            base = np.random.randn(dim).astype(np.float32) * 0.01
+            tokens = text.lower().split()
+            for tok in tokens[:20]:
+                np.random.seed(hash(tok + "stab_seed") % 2**32)
+                d = np.random.randn(dim).astype(np.float32)
+                d = d / (np.linalg.norm(d) + 1e-8)
+                base += d * 0.5
+            return base
+        return embed
+    _embedder_fn = _make_hash_embedder()
+
 
 # ============================================================================
 # HELPERS
 # ============================================================================
 
 def make_embedder(dim=768):
-    def embed(text):
-        np.random.seed(42)
-        base = np.random.randn(dim).astype(np.float32) * 0.01
-        tokens = text.lower().split()
-        for tok in tokens[:20]:
-            np.random.seed(hash(tok + "stab_seed") % 2**32)
-            d = np.random.randn(dim).astype(np.float32)
-            d = d / (np.linalg.norm(d) + 1e-8)
-            base += d * 0.5
-        return base
-    return embed
+    # Use the shared embedder (real if available, hash fallback)
+    return _embedder_fn
 
 def generate_stable_facts(n=100, seed=42):
     random.seed(seed)

@@ -127,19 +127,19 @@ class EvalMode(Enum):
 @dataclass
 class RTMDKConfig:
     embedding_dim: int = 768
-    latent_dim: int = 64
+    latent_dim: int = 256  # OPTIMIZED: 4x larger → less projection loss
     resonance_kernel: str = "gaussian_phase"
     phase_coupling: float = 0.3
     bandwidth: float = 1.0
     attraction_lr: float = 0.02
     phase_sync_lr: float = 0.01
-    decay_rate: float = 0.998
+    decay_rate: float = 0.999  # OPTIMIZED: slower decay for better retention
     min_amplitude: float = 0.05
     tension_threshold: float = 0.25
     consolidation_mode: ConsolidationMode = ConsolidationMode.DIALECTICAL
     max_nodes: Optional[int] = 5000
     top_k: int = 5
-    min_response: float = 0.1
+    min_response: float = 0.005  # OPTIMIZED: 20x lower → more results pass filter
     enable_async: bool = True
     log_level: str = "INFO"
 
@@ -148,11 +148,11 @@ class RTMDKConfig:
     use_structured_prompt: bool = True
     adaptive_threshold: bool = False
     adaptive_window: int = 30
-    learn_projection: bool = False
+    learn_projection: bool = True  # OPTIMIZED: IncPCA instead of random matrix
     projection_lr: float = 0.001
-    projection_update_freq: int = 50
+    projection_update_freq: int = 300  # OPTIMIZED: >= latent_dim for IncPCA first fit
     pca_n_components: Optional[int] = None
-    bm25_fallback: bool = False
+    bm25_fallback: bool = True  # OPTIMIZED: text search as safety net
     bm25_k1: float = 1.5
     bm25_b: float = 0.75
 
@@ -174,7 +174,7 @@ class RTMDKConfig:
     multimodal: bool = False
     modalities: List[str] = field(default_factory=lambda: ["text"])
     modality_phase_shifts: Dict[str, float] = field(default_factory=dict)
-    use_hnsw: bool = False
+    use_hnsw: bool = True  # OPTIMIZED: fast approximate nearest neighbor
     hnsw_m: int = 16
     hnsw_ef_construction: int = 200
     tda_monitoring: bool = False
@@ -3918,8 +3918,16 @@ class RTMDKField:
         if phase is None:
             phase = self._get_phase(session_id, embedding, modality)
 
+        # OPTIMIZED: Initialize amplitude/salience based on embedding quality
+        # Higher norm embeddings → more informative content → higher initial salience
+        emb_norm = float(np.linalg.norm(embedding))
+        # Typical emb_norm range: 5-30 for real embeddings, 2-10 for synthetic
+        # Normalize to [0.5, 1.0] range for salience
+        salience = min(1.0, max(0.3, emb_norm / 20.0))
+        amplitude = min(1.0, max(0.5, emb_norm / 15.0))
+
         node = MemoryNode(id=nid, latent_pos=latent, phase=phase,
-                          amplitude=0.7, salience=0.6, content=content,
+                          amplitude=amplitude, salience=salience, content=content,
                           lineage=[], modality=modality)
 
         if self.cfg.cross_modal:
