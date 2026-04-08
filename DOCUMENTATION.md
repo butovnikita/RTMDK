@@ -1,6 +1,6 @@
 # RTMDK — Полная документация
 
-> Версия 8.0 | Модульная архитектура | 52 публичных класса/функции | 29 файлов пакета
+> Версия 8.0 | Модульная архитектура | 72+ публичных класса/функции | 36 файлов пакета | 7 коммитов
 
 ---
 
@@ -9,7 +9,7 @@
 1. [Обзор архитектуры](#1-обзор-архитектуры)
 2. [Структура пакета](#2-структура-пакета)
 3. [Установка и быстрый старт](#3-установка-и-быстрый-старт)
-4. [Конфигурация](#4-конфигурация)
+4. [Полный справочник конфигурации](#4-полный-справочник-конфигурации)
 5. [Ядро: RTMDKMemory и RTMDKField](#5-ядро-rtmdkmemory-и-rtmdkfield)
 6. [Утилиты](#6-утилиты)
 7. [Движки (Engines)](#7-движки-engines)
@@ -21,6 +21,7 @@
 13. [Тестирование](#13-тестирование)
 14. [Обратная совместимость](#14-обратная-совместимость)
 15. [Развёртывание](#15-развёртывание)
+16. [История коммитов](#16-история-коммитов)
 
 ---
 
@@ -38,6 +39,8 @@ RTMDK (Resonance-Topological Memory) — система памяти для LLM,
 | **Непрерывная динамика** | Neural ODE/SDE: dX/dt = F(X, u) + σ·dW |
 | **Самовосстановление** | Обнаружение мёртвых зон, гиперконвергенции, фрагментации |
 | **Мета-адаптивность** | Автоподстройка гиперпараметров по куртозису откликов |
+| **Символический слой** | Probabilistic Horn clauses из консолидированных узлов |
+| **Ролевое шардирование** | Изоляция контекстов с Kuramoto внутри шардов |
 
 ### Два стиля импорта
 
@@ -49,61 +52,66 @@ from rtmdk import RTMDKMemory, RTMDKConfig, MemoryNode
 from rtmdk_memory_v8 import RTMDKMemory, RTMDKConfig, MemoryNode
 ```
 
-Оба стиля полностью эквивалентны. Модульный стиль даёт доступ к отдельным компонентам без загрузки тяжёлого ядра.
-
 ---
 
 ## 2. Структура пакета
 
 ```
-rtmdk/                          # Главный пакет (52 публичных символа)
-├── __init__.py                 # Re-export всех символов
-├── config.py                   # RTMDKConfig + 5 enums
-├── nodes.py                    # 10 data-классов
+rtmdk/                              # Python-пакет (72+ публичных символа)
+├── __init__.py                     # Re-export всех символов
+├── config.py                       # RTMDKConfig + 5 enums (~340 строк)
+├── nodes.py                        # 10 data-классов (~234 строки)
 │
-├── utils/                      # Утилиты
+├── utils/                          # Утилиты
 │   ├── __init__.py
-│   ├── modality.py             # detect_modality, detect_tier
-│   ├── hyperbolic.py           # poincare_dist, exp/log_map, mobius_add
-│   ├── attention.py            # apply_attention_bias, format_cognitive_context
-│   └── formatting.py           # format_context, build_system_prompt
+│   ├── modality.py                 # detect_modality, detect_tier
+│   ├── hyperbolic.py               # poincare_dist, exp/log_map, mobius_add
+│   ├── attention.py                # apply_attention_bias, format_cognitive_context
+│   └── formatting.py               # format_context, build_system_prompt
 │
-├── engines/                    # Движки (вычисления)
+├── engines/                        # Движки (вычисления)
 │   ├── __init__.py
-│   ├── causal.py               # CausalInferenceEngine
-│   ├── predictive.py           # PredictiveCodingModel
-│   ├── counterfactual.py       # ScenarioPlanner
-│   ├── privacy.py              # DifferentialPrivacy
-│   └── neural_ode.py           # NeuralODEDynamics
+│   ├── causal.py                   # CausalInferenceEngine
+│   ├── predictive.py               # PredictiveCodingModel
+│   ├── counterfactual.py           # ScenarioPlanner
+│   ├── privacy.py                  # DifferentialPrivacy
+│   └── neural_ode.py               # NeuralODEDynamics
 │
-└── support/                    # Поддержка (24 класса)
+└── support/                        # Поддержка (24+ класса)
     ├── __init__.py
-    ├── meta_controller.py      # MetaController (Optuna/grid search)
-    ├── kuramoto.py             # KuramotoSync, FederatedRTMDK
-    ├── meta_adaptive.py        # MetaAdaptiveKernel
-    ├── healer.py               # TopologyHealer
-    ├── projection.py           # IncPCAProjection
-    ├── bm25.py                 # BM25Index
-    ├── threshold.py            # AdaptiveThreshold
-    ├── tda.py                  # TDAMonitor
-    ├── hnsw.py                 # HNSWIndex
-    ├── torch_backend.py        # TorchBackend
-    ├── learnable.py            # LearnableKernel, DifferentiableConsolidation
-    ├── goal_tracker.py         # GoalTracker
-    ├── rl_feedback.py          # RLFeedbackLoop
-    ├── event_driven.py         # LowRankCompressor, EventDrivenScheduler
-    ├── meta_memory.py          # MetaMemoryEvaluator
-    ├── security.py             # SecurityValidator
-    ├── swarm.py                # SwarmConsensusProtocol
-    ├── agents/__init__.py      # AgentPlanner, HypothesisVerifier, ToolRouter
-    └── production/__init__.py  # ShadowModeEvaluator, RAGASPlusEvaluator, AutoRollbackManager
+    ├── meta_controller.py          # MetaController (Optuna/grid search)
+    ├── kuramoto.py                 # KuramotoSync, FederatedRTMDK
+    ├── meta_adaptive.py            # MetaAdaptiveKernel
+    ├── healer.py                   # TopologyHealer
+    ├── projection.py               # IncPCAProjection
+    ├── bm25.py                     # BM25Index
+    ├── threshold.py                # AdaptiveThreshold
+    ├── tda.py                      # TDAMonitor
+    ├── hnsw.py                     # HNSWIndex
+    ├── torch_backend.py            # TorchBackend
+    ├── learnable.py                # LearnableKernel, DifferentiableConsolidation
+    ├── goal_tracker.py             # GoalTracker
+    ├── rl_feedback.py              # RLFeedbackLoop
+    ├── event_driven.py             # LowRankCompressor, EventDrivenScheduler
+    ├── meta_memory.py              # MetaMemoryEvaluator
+    ├── security.py                 # SecurityValidator
+    ├── swarm.py                    # SwarmConsensusProtocol
+    ├── agents/__init__.py          # AgentPlanner, HypothesisVerifier, ToolRouter
+    ├── production/__init__.py      # ShadowModeEvaluator, RAGASPlusEvaluator, AutoRollbackManager
+    ├── version_control.py          # VersionControl, NodeDelta, Version, DiffResult (Phase 15)
+    ├── entropy_controller.py       # EntropyController (Phase 15)
+    ├── triton_backend.py           # TritonBackend (Phase 15)
+    ├── symbolic_overlay.py         # SymbolicOverlay, SymbolicRule, ConflictDetector (Phase 16)
+    ├── safety_certifier.py         # SafetyCertifier, LyapunovFunction (Phase 16)
+    ├── ump.py                      # UniversalMemoryProtocol (Phase 16)
+    └── role_shard_router.py        # RoleShardRouter, RoleShard, RoleDetector (Phase 17)
 ```
 
 **Внешние файлы** (не входят в пакет `rtmdk/`):
 
 | Файл | Описание |
 |------|----------|
-| `rtmdk_memory_v8.py` | Монолитное ядро: RTMDKField + RTMDKMemory (~5000 строк) |
+| `rtmdk_memory_v8.py` | Монолитное ядро: RTMDKField + RTMDKMemory (~5600 строк) |
 | `rtmdk_server.py` | OpenAI-compatible HTTP-сервер |
 | `lmstudio_rtmdk_chat.py` | CLI-чат через LM Studio |
 | `streamlit_app.py` | Интерактивный дашборд |
@@ -126,8 +134,6 @@ pip install numpy scipy pydantic
 pip install fastapi uvicorn requests
 
 # Разработка (тесты, дашборд, оптимизация)
-pip install pytest streamlit matplotlib pandas optuna scikit-learn
-# или одной командой:
 pip install -r requirements-dev.txt
 ```
 
@@ -137,53 +143,28 @@ pip install -r requirements-dev.txt
 from rtmdk import RTMDKConfig, RTMDKMemory
 import numpy as np
 
-# 1. Создаём эмбеддер (заглушка для демо)
 def embedder(text: str) -> np.ndarray:
     np.random.seed(hash(text) % 2**32)
     return np.random.randn(768).astype(np.float32) * 0.1
 
-# 2. Конфигурация с нужными фазами
 config = RTMDKConfig(
     embedding_dim=768, latent_dim=64, top_k=3,
-    causal_topological=True,    # Каузальные связи
-    self_healing=True,          # Самовосстановление
-    goal_tracking=True,         # Цели
-    attention_bias=True,        # Когнитивное внимание
+    causal_topological=True, self_healing=True, goal_tracking=True,
+    attention_bias=True, version_control=True, symbolic_overlay=True,
 )
-
-# 3. Создаём память
 memory = RTMDKMemory(config=config, embedder=embedder)
-
-# 4. Сохраняем
 memory.save_context(
     {"input": "Меня зовут Никита, я разработчик", "session_id": "u1"},
     {"output": "Запомнил: Никита — разработчик"}
 )
-
-# 5. Ищем
 ctx = memory.load_memory_variables({"input": "Кто я?", "session_id": "u1"})
 print(ctx["rtmdk_context"])
-# → [R:0.42|S:0.60] Меня зовут Никита, я разработчик
-```
-
-### С реальным эмбеддером
-
-```python
-from embedder_factory import EmbedderFactory
-
-# LM Studio (нужен запущенный сервер на :12345)
-embedder = EmbedderFactory.create("lmstudio", url="http://localhost:12345/v1")
-
-# Sentence Transformers (локально, нужна установка)
-embedder = EmbedderFactory.create("sentence", model="all-MiniLM-L6-v2")
-
-# Dummy (детерминированный, для тестов)
-embedder = EmbedderFactory.create("dummy", dim=768)
+# → [ATTN:0.42|SAL:0.60|TIER:S] Меня зовут Никита, я разработчик
 ```
 
 ---
 
-## 4. Конфигурация
+## 4. Полный справочник конфигурации
 
 ### Enums
 
@@ -191,55 +172,114 @@ embedder = EmbedderFactory.create("dummy", dim=768)
 |------|----------|------------|
 | `ConsolidationMode` | `DIALECTICAL`, `MERGE`, `PRUNE` | Стратегия объединения узлов |
 | `Backend` | `NUMPY`, `TORCH` | Бэкенд вычислений |
-| `ContextFormat` | `PLAIN`, `JSON`, `YAML` | Формат контекста для LLM |
+| `ContextFormat` | `PLAIN`, `JSON`, `YAML`, `ATTENTION` | Формат контекста для LLM |
 | `FieldHealth` | `STABLE`, `DEGRADED`, `CRITICAL`, `HEALING` | Состояние поля |
 | `EvalMode` | `PRODUCTION`, `SHADOW`, `EVALUATION` | Режим оценки |
 
-### RTMDKConfig — ключевые параметры по фазам
+### RTMDKConfig — все параметры по фазам
 
-#### Базовые (фаза 0)
+#### Фаза 0: Базовые
 
 | Параметр | Default | Описание |
 |----------|---------|----------|
 | `embedding_dim` | 768 | Размерность эмбеддинга |
 | `latent_dim` | 64 | Размерность скрытого многообразия |
-| `top_k` | 5 | Количество узлов в ответе |
+| `resonance_kernel` | "gaussian_phase" | Ядро резонанса: gaussian, cosine, gaussian_phase |
+| `phase_coupling` | 0.3 | Сила фазового выравнивания |
+| `bandwidth` | 1.0 | Ширина ядра резонанса |
+| `attraction_lr` | 0.02 | Скорость притяжения к цели |
+| `phase_sync_lr` | 0.01 | Скорость синхронизации фаз |
 | `decay_rate` | 0.998 | Скорость затухания салентности |
+| `min_amplitude` | 0.05 | Минимальная амплитуда узла |
 | `tension_threshold` | 0.25 | Порог консолидации |
+| `consolidation_mode` | `DIALECTICAL` | Режим консолидации |
+| `max_nodes` | 5000 | Максимум узлов (None = без лимита) |
+| `top_k` | 5 | Количество узлов в ответе |
 | `min_response` | 0.1 | Минимальный резонанс для выдачи |
+| `enable_async` | True | Включить async pipeline |
+| `log_level` | "INFO" | Уровень логирования |
 
 #### Фаза 1–2: Контекст и адаптивность
 
 | Параметр | Default | Описание |
 |----------|---------|----------|
 | `context_format` | `ContextFormat.PLAIN` | Формат контекста |
+| `use_structured_prompt` | True | Использовать структурированные промпты |
 | `adaptive_threshold` | False | Скользящий порог консолидации |
+| `adaptive_window` | 30 | Размер окна для адаптивного порога |
+| `learn_projection` | False | IncPCA-обучение проекции |
+| `projection_lr` | 0.001 | Скорость обучения проекции |
+| `projection_update_freq` | 50 | Частота обновления проекции |
+| `pca_n_components` | None (= latent_dim) | Количество компонент PCA |
+| `bm25_fallback` | False | Текстовый поиск при промахе |
+| `bm25_k1` | 1.5 | BM25 k1 параметр |
+| `bm25_b` | 0.75 | BM25 b параметр |
 | `soft_gates` | False | Sigmoid-ворота для узлов |
-| `bm25_fallback` | False | Текстовый поиск при промахе векторного |
+| `gate_temperature` | 0.15 | Температура sigmoid-ворот |
+| `self_supervision` | False | Самообучение |
+| `self_sup_threshold` | 0.3 | Порог самообучения |
+| `self_sup_verify_after_consolidate` | False | Проверка после консолидации |
+| `backend` | `Backend.NUMPY` | NUMPY или TORCH |
+| `gpu_batch_size` | 512 | Размер батча для GPU |
+| `l2_regularization` | 0.0001 | L2 регуляризация проекции |
+| `false_merge_threshold` | 0.4 | Порог ложного слияния |
+| `field_stability_window` | 20 | Окно стабильности поля |
+| `enable_rollback` | False | Включить откат |
+| `max_rollback_history` | 50 | Макс. история откатов |
 
-#### Фаза 3: Каузальность
+#### Фаза 3: Мультимодальность + HNSW + TDA
 
 | Параметр | Default | Описание |
 |----------|---------|----------|
-| `causal_topological` | False | Включить CausalInferenceEngine |
-| `do_calculus_validation` | True | Валидация через do-calculus |
-| `contradiction_detection` | True | Обнаружение противоречий |
-| `use_hnsw` | False | Approximate nearest neighbor индекс |
+| `multimodal` | False | Мультимодальная обработка |
+| `modalities` | ["text"] | Список модальностей |
+| `modality_phase_shifts` | {} | Сдвиги фаз по модальностям |
+| `use_hnsw` | False | Approximate nearest neighbor |
+| `hnsw_m` | 16 | HNSW M параметр |
+| `hnsw_ef_construction` | 200 | HNSW ef_construction |
+| `tda_monitoring` | False | Топологический мониторинг |
+| `tda_check_freq` | 50 | Частота TDA проверок |
 
-#### Фаза 5: Мета-адаптивность
+#### Фаза 1 (Track): Differentiable field
 
 | Параметр | Default | Описание |
 |----------|---------|----------|
-| `meta_adaptive` | False | MetaAdaptiveKernel (адаптация bandwidth/phase_coupling) |
-| `self_healing` | False | TopologyHealer (лечение мёртвых зон) |
-| `healing_strength` | 0.1 | Сила перемещения при лечении |
+| `differentiable` | False | Дифференцируемое поле |
+| `learnable_bandwidth` | False | Обучаемая ширина ядра |
+| `learnable_phase_coupling` | False | Обучаемое фазовое сопряжение |
+| `learnable_decay` | False | Обучаемый decay rate |
+| `gradient_clip` | 1.0 | Клиппинг градиентов |
+| `consolidation_loss_weight` | 0.1 | Вес потерь консолидации |
+
+#### Фаза 5: Мета-адаптивность + Самовосстановление
+
+| Параметр | Default | Описание |
+|----------|---------|----------|
+| `meta_adaptive` | False | MetaAdaptiveKernel |
+| `meta_adaptation_lr` | 0.005 | Скорость мета-адаптации |
+| `kurtosis_target_min` | 1.5 | Мин. целевой куртозис |
+| `kurtosis_target_max` | 4.0 | Макс. целевой куртозис |
+| `self_healing` | False | TopologyHealer |
+| `healing_check_freq` | 25 | Частота проверок лечения |
+| `dead_zone_threshold` | 0.15 | Порог мёртвой зоны |
+| `hyperconvergence_threshold` | 0.05 | Порог гиперконвергенции |
+| `fragmentation_threshold` | 0.6 | Порог фрагментации |
+| `healing_strength` | 0.1 | Сила лечения |
+| `max_healing_nodes_per_step` | 5 | Макс. узлов лечения за шаг |
 
 #### Фаза 6: Каузально-топологическая память
 
 | Параметр | Default | Описание |
 |----------|---------|----------|
+| `causal_topological` | False | Включить CausalInferenceEngine |
+| `causal_discovery_min_samples` | 20 | Мин. сэмплов для discovery |
+| `causal_p_threshold` | 0.05 | Порог p-value для PC-algorithm |
+| `do_calculus_validation` | True | Валидация через do-calculus |
 | `counterfactual_enabled` | False | Контрфактуальные запросы |
-| `counterfactual_max_depth` | 3 | Максимальная глубина рассуждений |
+| `counterfactual_max_depth` | 3 | Макс. глубина рассуждений |
+| `contradiction_detection` | True | Обнаружение противоречий |
+| `contradiction_threshold` | 0.3 | Порог противоречий |
+| `causal_adjustment_sets` | True | Backdoor adjustment sets |
 
 #### Фаза 7: Neural ODE/SDE
 
@@ -247,44 +287,174 @@ embedder = EmbedderFactory.create("dummy", dim=768)
 |----------|---------|----------|
 | `continuous_dynamics` | False | Непрерывная эволюция через ODE |
 | `ode_solver` | "RK45" | Метод решения (RK45 / odeint) |
+| `ode_atol` | 1e-6 | Абсолютная точность ODE |
+| `ode_rtol` | 1e-5 | Относительная точность ODE |
+| `ode_time_horizon` | 1.0 | Горизонт времени ODE |
+| `ode_n_steps` | 20 | Количество шагов ODE |
 | `ode_chunk_size` | 256 | Размер чанка для больших полей |
+| `sde_noise_level` | 0.01 | Уровень шума SDE |
+| `adjoint_enabled` | False | Adjoint method для ODE |
+| `response_smoothness_target` | 0.92 | Целевая гладкость отклика |
 
-#### Фаза 11: Стратификация + Гиперболическая геометрия
+#### Фаза 8: Агентная оркестрация
+
+| Параметр | Default | Описание |
+|----------|---------|----------|
+| `agent_orchestration` | False | Включить AgentPlanner |
+| `max_plan_depth` | 3 | Макс. глубина плана |
+| `max_tool_calls` | 5 | Макс. вызовов инструментов |
+| `tool_timeout` | 15.0 | Таймаут инструмента (сек) |
+| `hypothesis_verification` | True | Верификация гипотез |
+| `verification_confidence_threshold` | 0.7 | Порог уверенности верификации |
+| `goal_directed_routing` | False | Целенаправленная маршрутизация |
+
+#### Фаза 9: Продакшен-стек
+
+| Параметр | Default | Описание |
+|----------|---------|----------|
+| `production_mode` | False | Режим продакшена |
+| `eval_mode` | `EvalMode.PRODUCTION` | Режим оценки |
+| `shadow_mode` | False | Shadow mode |
+| `shadow_fallback_threshold` | 0.3 | Порог fallback shadow mode |
+| `auto_rollback` | False | Автооткат |
+| `auto_rollback_threshold` | 0.15 | Порог автоотката |
+| `eval_frequency` | 100 | Частота оценки |
+| `ragas_enabled` | False | RAGAS++ оценка |
+| `drift_detection` | False | Обнаружение дрейфа |
+| `drift_window` | 100 | Окно дрейфа |
+| `drift_threshold` | 0.05 | Порог дрейфа |
+| `metrics_retention` | 10000 | Удержание метрик |
+
+#### Фаза 10: Кросс-модальность + Мета-контроллер + Федерация
+
+| Параметр | Default | Описание |
+|----------|---------|----------|
+| `cross_modal` | False | Кросс-модальный резонанс |
+| `modal_phase_offsets` | {...} | Сдвиги фаз по модальностям |
+| `cross_modal_kernel_weight` | 0.35 | Вес кросс-модального ядра |
+| `meta_controller` | False | MetaController (Optuna) |
+| `meta_optimization_freq` | 500 | Частота мета-оптимизации |
+| `meta_n_trials` | 20 | Кол-во trials Optuna |
+| `meta_optimize_params` | [decay_rate, ...] | Параметры для оптимизации |
+| `federated` | False | Федеративная синхронизация |
+| `federated_sync_lr` | 0.01 | LR федеративной синхронизации |
+| `federated_sync_freq` | 100 | Частота федеративной синхронизации |
+| `federated_min_resonance` | 0.2 | Мин. резонанс для обмена |
+| `node_id` | "local" | ID узла федерации |
+
+#### Фаза 11: Стратификация + Гиперболическая геометрия + Predictive Coding + Counterfactual + DP
 
 | Параметр | Default | Описание |
 |----------|---------|----------|
 | `memory_tiers` | {"episodic","semantic","procedural"} | Уровни памяти |
+| `tier_decay` | {episodic:0.992, ...} | Decay rate по уровням |
+| `tier_tension_thresh` | {episodic:0.10, ...} | Порог напряжения по уровням |
 | `hyperbolic` | False | Геометрия Пуанкаре |
 | `ball_radius` | 0.85 | Радиус шара Пуанкаре |
+| `curvature` | -1.0 | Кривизна пространства |
 | `predictive_coding` | False | Предсказательное кодирование |
+| `pc_latent_dim` | 32 | Латентная размерность PC |
+| `pc_lr` | 0.01 | Скорость обучения PC |
+| `counterfactual_imagination` | False | Контрфактуальное воображение |
+| `max_scenarios` | 5 | Макс. сценариев |
 | `differential_privacy` | False | Дифференциальная приватность |
 | `dp_epsilon` | 2.0 | Бюджет приватности |
+| `dp_delta` | 1e-5 | Вероятность выхода за бюджет |
+| `dp_max_norm` | 1.0 | Макс. норма обновления |
 
-#### Фаза 12: MoE + Сжатие
+#### Фаза 12: MoE + Сжатие + Кристаллизация + Async
 
 | Параметр | Default | Описание |
 |----------|---------|----------|
-| `sparse_routing` | False | MoE-маршрутизация (шардирование) |
+| `sparse_routing` | False | MoE-маршрутизация |
 | `num_shards` | 8 | Количество шардов |
-| `cognitive_compression` | False | Когнитивное сжатие контекста |
-| `crystallization` | False | Кристаллизация эпизодических → семантические |
+| `top_shards` | 3 | Топ шардов для запроса |
+| `cognitive_compression` | False | Когнитивное сжатие |
+| `high_resonance_threshold` | 0.6 | Порог высокого резонанса |
+| `crystallization` | False | Кристаллизация памяти |
+| `crystallization_freq` | 200 | Частота кристаллизации |
+| `crystallization_similarity` | 0.75 | Порог схожести |
+| `crystallization_min_cluster` | 3 | Мин. размер кластера |
+| `async_pipeline` | False | Async multi-threaded pipeline |
+| `query_queue_size` | 50 | Размер очереди запросов |
+| `save_queue_size` | 100 | Размер очереди сохранения |
+| `evolve_queue_size` | 20 | Размер очереди эволюции |
 
-#### Фаза 13: Телеология + Внимание + RL
+#### Фаза 13: Телеология + Внимание + RL + Event-driven
 
 | Параметр | Default | Описание |
 |----------|---------|----------|
 | `goal_tracking` | False | Отслеживание целей |
+| `max_goals` | 20 | Макс. целей |
+| `goal_decay` | 0.995 | Затухание целей |
+| `goal_completion_threshold` | 0.8 | Порог выполнения цели |
 | `attention_bias` | False | Когнитивное внимание |
+| `bias_temperature` | 1.0 | Температура внимания |
 | `rl_feedback` | False | RL из ответов LLM |
+| `rl_learning_rate` | 0.01 | Скорость обучения RL |
+| `rl_reward_window` | 10 | Окно награды RL |
 | `event_driven` | False | Event-driven обработка |
+| `low_rank_compression` | False | Low-rank SVD сжатие |
+| `compression_rank` | 32 | Ранг сжатия |
+| `compression_freq` | 500 | Частота сжатия |
 
-#### Фаза 14: Мета-память + Безопасность
+#### Фаза 14: Мета-память + Безопасность + Рой
 
 | Параметр | Default | Описание |
 |----------|---------|----------|
 | `meta_memory` | False | Introspective Meta-Memory |
+| `self_reflection_freq` | 100 | Частота саморефлексии |
+| `memory_age_factor` | 0.001 | Фактор возраста памяти |
+| `recall_accuracy_threshold` | 0.6 | Порог точности вспоминания |
 | `security_enabled` | False | Защита от инъекций |
+| `max_node_text_length` | 10000 | Макс. длина текста узла |
+| `tension_spike_threshold` | 0.5 | Порог всплеска напряжения |
+| `causal_graph_integrity_check` | True | Проверка целостности каузального графа |
+| `prompt_injection_patterns` | [...] | Шаблоны инъекций |
 | `swarm_memory` | False | Роевая память |
+| `swarm_consensus_threshold` | 0.5 | Порог консенсуса роя |
+| `swarm_max_agents` | 10 | Макс. агентов в рое |
+| `swarm_vote_weight` | 0.3 | Вес голоса агента |
+
+#### Фаза 15: Memory Git + Clarification + Attention + Entropy + Triton
+
+| Параметр | Default | Описание |
+|----------|---------|----------|
+| `version_control` | False | Delta-based versioning |
+| `max_versions` | 100 | Макс. версий |
+| `proactive_clarification` | False | Уточняющие вопросы при слабом резонансе |
+| `clarification_threshold_ratio` | 0.5 | Порог clarification относительно min_response |
+| `attention_tokens` | True | [ATTN:x][SAL:x][TIER:x] токены |
+| `entropy_management` | False | Shannon entropy контроль |
+| `entropy_high_threshold` | 3.0 | Порог высокого шума |
+| `entropy_low_threshold` | 0.5 | Порог застоя |
+| `triton_backend` | False | GPU-ускорение резонанса |
+| `min_nodes_for_gpu` | 2000 | Мин. узлов для GPU |
+
+#### Фаза 16: SymbolicOverlay + SafetyCertifier + UMP
+
+| Параметр | Default | Описание |
+|----------|---------|----------|
+| `symbolic_overlay` | False | Probabilistic logic layer |
+| `symbolic_min_self_sup` | 0.7 | Мин. self_sup_score для правил |
+| `symbolic_max_tension` | 0.15 | Макс. tension для правил |
+| `symbolic_confidence_threshold` | 0.65 | Порог уверенности вывода |
+| `safety_certifier` | False | Lyapunov soft regulator |
+| `safety_mode` | "soft_regulate" | monitor_only / soft_regulate / hard_block |
+| `lyapunov_alpha` | 0.4 | Вес tension² в V |
+| `lyapunov_beta` | 0.4 | Вес entropy в V |
+| `lyapunov_gamma` | 0.2 | Вес causal_conflict в V |
+| `lyapunov_threshold` | 0.1 | Порог dV/dt |
+| `ump_enabled` | False | Universal Memory Protocol |
+
+#### Фаза 17: RoleShardRouter
+
+| Параметр | Default | Описание |
+|----------|---------|----------|
+| `role_sharding` | False | Ролевое шардирование |
+| `role_shards` | {"default"} | Начальные шарды |
+| `cross_shard_threshold` | 0.45 | Порог обмена между шардами |
+| `auto_role_detection` | True | Автодетект роли по тексту |
 
 ---
 
@@ -311,6 +481,9 @@ memory = RTMDKMemory(config=RTMDKConfig(), embedder=Callable[[str], np.ndarray])
 | `rollback(n_steps)` | bool | Откат консолидаций |
 | `export_field(path)` | None | Экспорт в JSON |
 | `import_field(path, embedder)` | RTMDKMemory | Импорт из JSON (classmethod) |
+| `export_ump(path)` | None | Экспорт в Universal Memory Protocol |
+| `import_ump(path, embedder)` | RTMDKMemory | Импорт из UMP (classmethod) |
+| `validate_ump(path)` | Dict | Валидация UMP-файла |
 | `clear()` | None | Очистка памяти |
 
 ### RTMDKField — внутренняя реализация
@@ -325,6 +498,7 @@ field.add_node(embedding, {"text": "hello"}, modality="text")
 results = field.query(embedding, phase=0.0, top_k=5)
 field.step()  # Продвинуть динамику на 1 шаг
 field.consolidate()  # Запустить консолидацию
+integrity = field._check_field_integrity()  # Проверка NaN/inf
 ```
 
 ---
@@ -355,11 +529,7 @@ import numpy as np
 
 u = np.random.randn(64).astype(np.float32) * 0.1
 v = np.random.randn(64).astype(np.float32) * 0.1
-
-# Гиперболическое расстояние (всегда ≥ евклидова)
 d = poincare_dist(u, v, ball_radius=0.85)
-
-# Мёбиусово сложение (некоммутативно, неассоциативно)
 w = mobius_add(u, v, ball_radius=0.85)
 ```
 
@@ -367,13 +537,10 @@ w = mobius_add(u, v, ball_radius=0.85)
 
 ```python
 from rtmdk import apply_attention_bias, format_cognitive_context
-
-# results = field.query(...) — List[(node_id, score, MemoryNode)]
 biased = apply_attention_bias(results, temperature=1.0)
 context = format_cognitive_context(biased)
 # → ### COGNITIVE_CONTEXT
-#   [SCORE:0.428][TIER:S] coffee helps wake up
-#   [SCORE:0.287][TIER:S][CAUSAL:2] morning routine
+#   [SCORE:0.428][TIER:S][CAUSAL:2] coffee helps wake up
 ```
 
 ### formatting.py
@@ -381,12 +548,10 @@ context = format_cognitive_context(biased)
 ```python
 from rtmdk import format_context, build_system_prompt, ContextFormat
 
-# JSON-формат
-ctx_json = format_context(results, ContextFormat.JSON)
-# → [{"resonance": 0.428, "salience": 0.6, "text": "...", ...}]
-
-# Системный промпт
-prompt = build_system_prompt(ctx_json, ContextFormat.JSON, use_structured=True)
+ctx = format_context(results, ContextFormat.ATTENTION)
+# → ### ATTENTION_CONTEXT
+#   [ATTN:0.428][SAL:0.598][TIER:S] coffee helps wake up
+prompt = build_system_prompt(ctx, ContextFormat.ATTENTION, use_structured=True)
 ```
 
 ---
@@ -398,31 +563,12 @@ prompt = build_system_prompt(ctx_json, ContextFormat.JSON, use_structured=True)
 Обнаружение каузальной структуры и do-calculus.
 
 ```python
-from rtmdk import CausalInferenceEngine
-
 engine = CausalInferenceEngine(min_samples=20, p_threshold=0.05)
-
-# Сбор данных
 engine.record_observation(["n0", "n1", "n2"], context={"session": "u1"})
-engine.record_cooccurrence("n0", "n1")
-
-# Открытие структуры
 parents = engine.discover_causal_structure()
-
-# do-calculus
 prob = engine.compute_do_probability(effect="n2", intervention="n0")
-
-# Контрфактуал
-result = engine.counterfactual_query(
-    intervention={"n0": 1.0},
-    query_nodes=["n2", "n3"]
-)
-
-# Проверка консолидации
+result = engine.counterfactual_query(intervention={"n0": 1.0}, query_nodes=["n2", "n3"])
 safety = engine.validate_consolidation("n0", "n1")
-# → {"safe": True, "reasons": [], "recommendation": "proceed"}
-
-# Вмешательство
 engine.do_intervention("n0", new_position)
 ```
 
@@ -431,17 +577,9 @@ engine.do_intervention("n0", new_position)
 Предсказание следующей конфигурации поля.
 
 ```python
-from rtmdk import PredictiveCodingModel
-
 pc = PredictiveCodingModel(latent_dim=64, lr=0.01)
-
-# Обучение на паре состояний
 pc.update(state_t, state_t1)
-
-# Предсказание
 predicted = pc.predict(state_t)
-
-# Свободная энергия (ошибка + сложность)
 fe = pc.compute_free_energy(state_t, state_t1)
 ```
 
@@ -450,17 +588,9 @@ fe = pc.compute_free_energy(state_t, state_t1)
 Непрерывная эволюция поля через ODE/SDE.
 
 ```python
-from rtmdk import NeuralODEDynamics
-
 ode = NeuralODEDynamics(latent_dim=64, noise_level=0.01, solver="RK45")
-
-# Эволюция (ODE)
 trajectory = ode.evolve(initial_state, t_span=np.linspace(0, 1, 20))
-
-# Эволюция с шумом (SDE)
 trajectory = ode.evolve_with_noise(initial_state, dt=0.05)
-
-# Градиент топологии
 grad = ode.compute_topology_gradient(nodes)
 ```
 
@@ -469,15 +599,9 @@ grad = ode.compute_topology_gradient(nodes)
 DP-SGD для федеративных обновлений.
 
 ```python
-from rtmdk import DifferentialPrivacy
-
 dp = DifferentialPrivacy(epsilon=2.0, delta=1e-5, max_norm=1.0)
-
-# Обрезка + шум
 clipped = dp.clip_update(gradient)
 noisy = dp.add_noise(clipped)
-
-# Отслеживание бюджета
 dp.record_update()
 spent = dp.get_privacy_spent()
 ```
@@ -488,11 +612,7 @@ spent = dp.get_privacy_spent()
 
 ```python
 planner = ScenarioPlanner(field, max_scenarios=5)
-scenarios = planner.imagine_counterfactual(
-    base_query=embedding,
-    intervention={"n0": 0.5, "n3": -0.3}
-)
-# → [{"hypothetical": True, "node_id": "n0", "confidence": 0.78, "trajectory": [...]}, ...]
+scenarios = planner.imagine_counterfactual(base_query=embedding, intervention={"n0": 0.5, "n3": -0.3})
 ```
 
 ---
@@ -553,6 +673,30 @@ scenarios = planner.imagine_counterfactual(
 |-------|-----------|-----------------|
 | `SwarmConsensusProtocol` | Консенсус агентов | `register_agent()`, `propose_attractor()` |
 
+### Phase 15: Версионирование, Энтропия, Triton
+
+| Класс | Назначение | Ключевые методы |
+|-------|-----------|-----------------|
+| `VersionControl` | Delta-based versioning | `create_version()`, `diff()`, `rollback_to()`, `history()` |
+| `EntropyController` | Shannon entropy управление | `compute_entropy()`, `should_consolidate()`, `get_consolidation_multiplier()` |
+| `TritonBackend` | GPU-accelerated resonance | `batch_resonance()`, `should_use_gpu()` |
+
+### Phase 16: Символика, Безопасность, UMP
+
+| Класс | Назначение | Ключевые методы |
+|-------|-----------|-----------------|
+| `SymbolicOverlay` | Probabilistic Horn clauses | `extract_rules_from_field()`, `forward_chain()`, `get_symbolic_context()` |
+| `SafetyCertifier` | Lyapunov soft regulator | `check_and_regulate()`, `get_regulation_factor()`, `should_block_updates()` |
+| `UniversalMemoryProtocol` | Стандартизированный экспорт | `export()`, `import_ump()`, `validate()` |
+
+### Phase 17: Ролевое шардирование
+
+| Класс | Назначение | Ключевые методы |
+|-------|-----------|-----------------|
+| `RoleShardRouter` | Ролевая маршрутизация | `add_node()`, `get_relevant_shards()`, `update_kuramoto_phases()` |
+| `RoleShard` | Один шард | `to_dict()`, `from_dict()` |
+| `RoleDetector` | Автодетект роли | `detect(text)` |
+
 ---
 
 ## 9. Агенты и Продакшен
@@ -561,17 +705,10 @@ scenarios = planner.imagine_counterfactual(
 
 ```python
 from rtmdk import AgentPlanner, HypothesisVerifier, ToolRouter
-
-# Планирование
 planner = AgentPlanner(max_depth=3, max_tool_calls=5)
 plan = planner.create_plan("Найти информацию о кофе", available_tools=["retrieve", "search"], context={})
-# → AgentPlan(goal=..., subtasks=[...], tools_needed=["retrieve"], confidence=0.65)
-
-# Верификация
 verifier = HypothesisVerifier(confidence_threshold=0.7)
 hyp = verifier.verify("Кофе → бодрость", causal_engine, active_nodes=["n0", "n1"])
-
-# Маршрутизация инструментов
 router = ToolRouter(timeout=15.0)
 router.register_tool("retrieve", lambda query: memory.load_memory_variables({"input": query}))
 result = router.execute("retrieve", {"query": "кофе"})
@@ -581,23 +718,10 @@ result = router.execute("retrieve", {"query": "кофе"})
 
 ```python
 from rtmdk import ShadowModeEvaluator, RAGASPlusEvaluator, AutoRollbackManager
-
-# Shadow mode
 shadow = ShadowModeEvaluator(fallback_threshold=0.3)
 cmp = shadow.compare(shadow_output=0.8, production_output=0.75)
-# → {"difference": 0.05, "fallback_triggered": False, ...}
-
-# RAGAS++ оценка
 ragas = RAGASPlusEvaluator()
-eval_result = ragas.evaluate(
-    question="Что я пью?",
-    answer="Кофе",
-    contexts=["Я люблю кофе по утрам"],
-    ground_truth="Кофе"
-)
-# → EvalResult(context_precision=1.0, context_recall=1.0, overall_score=0.85, ...)
-
-# Автооткат
+eval_result = ragas.evaluate(question="Что я пью?", answer="Кофе", contexts=["Я люблю кофе по утрам"], ground_truth="Кофе")
 rollback = AutoRollbackManager(threshold=0.15)
 rollback.set_baseline(0.85)
 triggered = rollback.record_score(0.5)  # → True (деградация > 0.15)
@@ -612,20 +736,10 @@ triggered = rollback.record_score(0.5)  # → True (деградация > 0.15)
 ```python
 from embedder_factory import EmbedderFactory
 
-# Dummy — детерминированный, без сети (для тестов)
-embedder = EmbedderFactory.create("dummy", dim=768, seed=42)
+embedder = EmbedderFactory.create("dummy", dim=768, seed=42)  # Детерминированный
+embedder = EmbedderFactory.create("lmstudio", url="http://localhost:12345/v1")  # LM Studio
+embedder = EmbedderFactory.create("sentence", model="all-MiniLM-L6-v2")  # Sentence Transformers
 
-# LM Studio — реальные эмбеддинги через API
-embedder = EmbedderFactory.create(
-    "lmstudio",
-    url="http://localhost:12345/v1",
-    model="nomic-ai/nomic-embed-text-v1.5-GGUF"
-)
-
-# Sentence Transformers — локальная модель
-embedder = EmbedderFactory.create("sentence", model="all-MiniLM-L6-v2")
-
-# Использование
 vec = embedder("hello world")  # → np.ndarray shape (768,)
 ```
 
@@ -642,13 +756,23 @@ vec = embedder("hello world")  # → np.ndarray shape (768,)
 ### Запуск
 
 ```bash
-# Локально
-python rtmdk_server.py
-# → http://0.0.0.0:8080
-
-# Docker
+python rtmdk_server.py  # → http://0.0.0.0:8080
+# или
 docker-compose up -d
 ```
+
+### Переменные окружения
+
+| Переменная | Default | Описание |
+|------------|---------|----------|
+| `RTMDK_HOST` | `0.0.0.0` | Хост сервера |
+| `RTMDK_PORT` | `8080` | Порт сервера |
+| `RTMDK_MEMORY_FILE` | `~/.rtmdk/memory.json` | Путь к файлу памяти |
+| `RTMDK_ENABLE_LM_STUDIO` | `true` | Включить LM Studio интеграцию |
+| `LM_STUDIO_URL` | `http://localhost:12345/v1` | URL LM Studio |
+| `RTMDK_API_KEY` | `rtmdk-local` | API ключ |
+| `RTMDK_AUTO_SAVE` | `60` | Интервал автосохранения (сек) |
+| `RTMDK_LM_STUDIO_TIMEOUT` | `30` | Таймаут запросов к LM Studio (сек) |
 
 ### Endpoints
 
@@ -669,14 +793,6 @@ docker-compose up -d
 | POST | `/v1/memory/clear` | Очистить память |
 | GET | `/v1/memory/causal` | Каузальная сводка |
 | GET | `/v1/memory/contradictions` | Противоречия |
-
-### Пример: чат через API
-
-```bash
-curl -X POST http://localhost:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model":"rtmdk","messages":[{"role":"user","content":"Привет!"}],"session_id":"u1"}'
-```
 
 ---
 
@@ -702,6 +818,7 @@ python lmstudio_rtmdk_chat.py
 | `/privacy` | Дифференциальная приватность |
 | `/shards` | MoE-шардирование |
 | `/crystallize` | Кристаллизация |
+| `/compression` | Когнитивное сжатие |
 | `/format json\|yaml\|plain` | Формат контекста |
 | `/session <id>` | Переключить сессию |
 | `/export` / `/clear` / `/quit` | Управление |
@@ -724,7 +841,6 @@ python swarm_memory.py --n_agents 5 --n_rounds 10
 pip install pytest
 python -m pytest test_rtmdk_v8.py -v    # 34 теста v8
 python -m pytest test_rtmdk_v7.py -v    # 32 теста v7
-# ... и так далее для всех версий
 ```
 
 ### Smoke test проверяет
@@ -761,6 +877,7 @@ v8 = V8Memory.import_field("state.json", embedder)
 - Все поля `MemoryNode` сохраняются/загружаются корректно
 - Новые поля получают значения по умолчанию при загрузке старого state
 - `RTMDKConfig` — новые параметры получают дефолтные значения
+- Монолит `rtmdk_memory_v8.py` и пакет `rtmdk/` полностью синхронизированы
 
 ---
 
@@ -769,7 +886,6 @@ v8 = V8Memory.import_field("state.json", embedder)
 ### Docker Compose
 
 ```yaml
-# docker-compose.yml
 services:
   rtmdk-api:
     build: .
@@ -782,23 +898,10 @@ services:
     volumes:
       - rtmdk-data:/data
     restart: unless-stopped
-
 volumes:
   rtmdk-data:
     driver: local
 ```
-
-### Переменные окружения
-
-| Переменная | Default | Описание |
-|------------|---------|----------|
-| `RTMDK_HOST` | `0.0.0.0` | Хост сервера |
-| `RTMDK_PORT` | `8080` | Порт сервера |
-| `RTMDK_MEMORY_FILE` | `~/.rtmdk/memory.json` | Путь к файлу памяти |
-| `RTMDK_ENABLE_LM_STUDIO` | `true` | Включить LM Studio интеграцию |
-| `LM_STUDIO_URL` | `http://localhost:12345/v1` | URL LM Studio |
-| `RTMDK_API_KEY` | `rtmdk-local` | API ключ |
-| `RTMDK_AUTO_SAVE` | `60` | Интервал автосохранения (сек) |
 
 ### IDE интеграция
 
@@ -829,39 +932,19 @@ streamlit run streamlit_app.py
 # → http://localhost:8501
 ```
 
-Вкладки: Chat, Field Visualization, Goals, Security Monitor, Node Management.
-
 ---
 
-## Приложение: Полная карта зависимостей
+## 16. История коммитов
 
-```
-rtmdk_memory_v8.py (ядро)
-  ├── rtmdk.config        → RTMDKConfig, enums
-  ├── rtmdk.nodes         → MemoryNode, CausalEdge, ...
-  ├── rtmdk.utils.*       → modality, hyperbolic, attention, formatting
-  ├── rtmdk.engines.*     → causal, predictive, counterfactual, privacy, neural_ode
-  └── rtmdk.support.*     → 24 класса поддержки
+| Коммит | Описание | Файлов | Строк |
+|--------|----------|--------|-------|
+| `8c7747b` | Модуляризация + фиксы стабильности | 44 | +3846 |
+| `0119af1` | DOCUMENTATION.md + README | 2 | +900 |
+| `98c49d0` | Phase 15 (Memory Git, Clarification, Attention, Entropy, Triton) | 9 | +814 |
+| `66e0370` | LOCAL_SETUP.md | 1 | +340 |
+| `40e63ff` | Phase 16 (SymbolicOverlay, SafetyCertifier, UMP v1) | 7 | +1087 |
+| `4391b1c` | Phase 17 (RoleShardRouter) | 5 | +368 |
+| `e8ccfb1` | Аудит: 10 критических фиксов (performance, stability, LM Studio) | 3 | +313/-148 |
+| `6f7b781` | Sync rtmdk/ модулей с монолитом | 3 | +54 |
 
-rtmdk_server.py
-  └── rtmdk_memory_v8.py  → RTMDKConfig, RTMDKMemory
-
-lmstudio_rtmdk_chat.py
-  └── rtmdk_memory_v8.py  → RTMDKConfig, RTMDKMemory
-
-streamlit_app.py
-  └── rtmdk_memory_v8.py  → RTMDKConfig, RTMDKMemory, utils
-
-eval_pipeline.py
-  └── rtmdk_memory_v8.py  → RTMDKConfig, RTMDKMemory, attention
-
-swarm_memory.py
-  └── rtmdk_memory_v8.py  → RTMDKConfig, RTMDKMemory, SwarmConsensusProtocol
-
-smoke_test.py
-  └── rtmdk_memory_v8.py  → RTMDKConfig, RTMDKMemory, attention, formatting
-```
-
----
-
-*Документация актуальна для коммита `8c7747b` — «feat: modularize RTMDK v8 + fix critical stability issues».*
+*Документация актуальна для коммита `6f7b781`.*
