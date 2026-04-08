@@ -117,6 +117,7 @@ class SwarmAgent:
             self.memory.field.nodes[nid] = node
             self.memory.field.node_index.append(nid)
             self.memory.field.stats["total_adds"] += 1
+            self.memory.field.stats["active_nodes"] = len(self.memory.field.nodes)
             ingested += 1
         self.n_exchanges += 1
         self.last_sync = time.time()

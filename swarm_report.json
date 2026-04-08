@@ -1,8 +1,8 @@
 {
   "swarm_report": {
     "n_agents": 3,
-    "total_nodes": 0,
-    "total_exchanges": 76,
+    "total_nodes": 33,
+    "total_exchanges": 72,
     "n_sync_rounds": 5,
     "n_consensus_events": 39,
     "agents": {
@@ -28,14 +28,14 @@
         "agent_id": "agent_1",
         "specialization": "code",
         "n_nodes": 6,
-        "n_exchanges": 26,
+        "n_exchanges": 24,
         "specialty_topics": []
       },
       "agent_2": {
         "agent_id": "agent_2",
         "specialization": "science",
         "n_nodes": 6,
-        "n_exchanges": 26,
+        "n_exchanges": 24,
         "specialty_topics": []
       }
     },
@@ -81,8 +81,8 @@
       },
       {
         "round": 2,
-        "exchanges": 18,
-        "consensus_events": 9,
+        "exchanges": 16,
+        "consensus_events": 8,
         "agent_stats": {
           "agent_0": {
             "agent_id": "agent_0",
@@ -106,22 +106,22 @@
             "agent_id": "agent_1",
             "specialization": "code",
             "n_nodes": 6,
-            "n_exchanges": 9,
+            "n_exchanges": 8,
             "specialty_topics": []
           },
           "agent_2": {
             "agent_id": "agent_2",
             "specialization": "science",
             "n_nodes": 6,
-            "n_exchanges": 9,
+            "n_exchanges": 8,
             "specialty_topics": []
           }
         }
       },
       {
         "round": 3,
-        "exchanges": 18,
-        "consensus_events": 9,
+        "exchanges": 16,
+        "consensus_events": 8,
         "agent_stats": {
           "agent_0": {
             "agent_id": "agent_0",
@@ -145,14 +145,14 @@
             "agent_id": "agent_1",
             "specialization": "code",
             "n_nodes": 6,
-            "n_exchanges": 15,
+            "n_exchanges": 13,
             "specialty_topics": []
           },
           "agent_2": {
             "agent_id": "agent_2",
             "specialization": "science",
             "n_nodes": 6,
-            "n_exchanges": 15,
+            "n_exchanges": 13,
             "specialty_topics": []
           }
         }
@@ -184,14 +184,14 @@
             "agent_id": "agent_1",
             "specialization": "code",
             "n_nodes": 6,
-            "n_exchanges": 20,
+            "n_exchanges": 18,
             "specialty_topics": []
           },
           "agent_2": {
             "agent_id": "agent_2",
             "specialization": "science",
             "n_nodes": 6,
-            "n_exchanges": 20,
+            "n_exchanges": 18,
             "specialty_topics": []
           }
         }
@@ -223,14 +223,14 @@
             "agent_id": "agent_1",
             "specialization": "code",
             "n_nodes": 6,
-            "n_exchanges": 26,
+            "n_exchanges": 24,
             "specialty_topics": []
           },
           "agent_2": {
             "agent_id": "agent_2",
             "specialization": "science",
             "n_nodes": 6,
-            "n_exchanges": 26,
+            "n_exchanges": 24,
             "specialty_topics": []
           }
         }
@@ -243,20 +243,20 @@
       "agent_0": {
         "specialization": "general",
         "vote_weight": 0.3,
-        "last_sync": 1775547270.016946,
-        "n_exchanges": 38
+        "last_sync": 1775606540.3657038,
+        "n_exchanges": 36
       },
       "agent_1": {
         "specialization": "code",
         "vote_weight": 0.3,
-        "last_sync": 1775547270.016946,
-        "n_exchanges": 38
+        "last_sync": 1775606540.3657038,
+        "n_exchanges": 36
       },
       "agent_2": {
         "specialization": "science",
         "vote_weight": 0.3,
-        "last_sync": 1775547270.016946,
-        "n_exchanges": 38
+        "last_sync": 1775606540.3657038,
+        "n_exchanges": 36
       }
     },
     "consensus_log": [
@@ -264,49 +264,13 @@
         "proposer": "agent_0",
         "attractor_preview": "Information about python programming.",
         "accepted": true,
-        "consensus_ratio": 0.6666666666666667,
-        "votes": {
-          "agent_0": true,
-          "agent_1": false,
-          "agent_2": true
-        },
-        "timestamp": 1775547270.0159457
-      },
-      {
-        "proposer": "agent_0",
-        "attractor_preview": "Information about quantum physics.",
-        "accepted": true,
         "consensus_ratio": 1.0,
         "votes": {
           "agent_0": true,
           "agent_1": true,
           "agent_2": true
         },
-        "timestamp": 1775547270.0159457
-      },
-      {
-        "proposer": "agent_0",
-        "attractor_preview": "Information about world war 2.",
-        "accepted": true,
-        "consensus_ratio": 0.6666666666666667,
-        "votes": {
-          "agent_0": true,
-          "agent_1": false,
-          "agent_2": true
-        },
-        "timestamp": 1775547270.0159457
-      },
-      {
-        "proposer": "agent_0",
-        "attractor_preview": "Information about python programming.",
-        "accepted": true,
-        "consensus_ratio": 1.0,
-        "votes": {
-          "agent_0": true,
-          "agent_1": true,
-          "agent_2": true
-        },
-        "timestamp": 1775547270.0159457
+        "timestamp": 1775606540.3657038
       },
       {
         "proposer": "agent_0",
@@ -318,7 +282,7 @@
           "agent_1": true,
           "agent_2": false
         },
-        "timestamp": 1775547270.0159457
+        "timestamp": 1775606540.3657038
       },
       {
         "proposer": "agent_0",
@@ -330,187 +294,7 @@
           "agent_1": true,
           "agent_2": true
         },
-        "timestamp": 1775547270.0159457
-      },
-      {
-        "proposer": "agent_1",
-        "attractor_preview": "Information about python programming.",
-        "accepted": true,
-        "consensus_ratio": 1.0,
-        "votes": {
-          "agent_0": true,
-          "agent_1": true,
-          "agent_2": true
-        },
-        "timestamp": 1775547270.0159457
-      },
-      {
-        "proposer": "agent_1",
-        "attractor_preview": "Information about quantum physics.",
-        "accepted": true,
-        "consensus_ratio": 1.0,
-        "votes": {
-          "agent_0": true,
-          "agent_1": true,
-          "agent_2": true
-        },
-        "timestamp": 1775547270.0159457
-      },
-      {
-        "proposer": "agent_1",
-        "attractor_preview": "Information about world war 2.",
-        "accepted": true,
-        "consensus_ratio": 1.0,
-        "votes": {
-          "agent_0": true,
-          "agent_1": true,
-          "agent_2": true
-        },
-        "timestamp": 1775547270.0159457
-      },
-      {
-        "proposer": "agent_2",
-        "attractor_preview": "Information about python programming.",
-        "accepted": true,
-        "consensus_ratio": 1.0,
-        "votes": {
-          "agent_0": true,
-          "agent_1": true,
-          "agent_2": true
-        },
-        "timestamp": 1775547270.0159457
-      },
-      {
-        "proposer": "agent_2",
-        "attractor_preview": "Information about quantum physics.",
-        "accepted": true,
-        "consensus_ratio": 1.0,
-        "votes": {
-          "agent_0": true,
-          "agent_1": true,
-          "agent_2": true
-        },
-        "timestamp": 1775547270.0159457
-      },
-      {
-        "proposer": "agent_2",
-        "attractor_preview": "Information about world war 2.",
-        "accepted": true,
-        "consensus_ratio": 0.6666666666666667,
-        "votes": {
-          "agent_0": true,
-          "agent_1": false,
-          "agent_2": true
-        },
-        "timestamp": 1775547270.0159457
-      },
-      {
-        "proposer": "agent_0",
-        "attractor_preview": "Information about python programming.",
-        "accepted": true,
-        "consensus_ratio": 1.0,
-        "votes": {
-          "agent_0": true,
-          "agent_1": true,
-          "agent_2": true
-        },
-        "timestamp": 1775547270.016946
-      },
-      {
-        "proposer": "agent_0",
-        "attractor_preview": "Information about quantum physics.",
-        "accepted": true,
-        "consensus_ratio": 0.6666666666666667,
-        "votes": {
-          "agent_0": true,
-          "agent_1": true,
-          "agent_2": false
-        },
-        "timestamp": 1775547270.016946
-      },
-      {
-        "proposer": "agent_0",
-        "attractor_preview": "Information about world war 2.",
-        "accepted": true,
-        "consensus_ratio": 0.6666666666666667,
-        "votes": {
-          "agent_0": true,
-          "agent_1": false,
-          "agent_2": true
-        },
-        "timestamp": 1775547270.016946
-      },
-      {
-        "proposer": "agent_1",
-        "attractor_preview": "Information about python programming.",
-        "accepted": true,
-        "consensus_ratio": 1.0,
-        "votes": {
-          "agent_0": true,
-          "agent_1": true,
-          "agent_2": true
-        },
-        "timestamp": 1775547270.016946
-      },
-      {
-        "proposer": "agent_1",
-        "attractor_preview": "Information about quantum physics.",
-        "accepted": true,
-        "consensus_ratio": 1.0,
-        "votes": {
-          "agent_0": true,
-          "agent_1": true,
-          "agent_2": true
-        },
-        "timestamp": 1775547270.016946
-      },
-      {
-        "proposer": "agent_1",
-        "attractor_preview": "Information about world war 2.",
-        "accepted": true,
-        "consensus_ratio": 0.6666666666666667,
-        "votes": {
-          "agent_0": true,
-          "agent_1": true,
-          "agent_2": false
-        },
-        "timestamp": 1775547270.016946
-      },
-      {
-        "proposer": "agent_2",
-        "attractor_preview": "Information about python programming.",
-        "accepted": true,
-        "consensus_ratio": 1.0,
-        "votes": {
-          "agent_0": true,
-          "agent_1": true,
-          "agent_2": true
-        },
-        "timestamp": 1775547270.016946
-      },
-      {
-        "proposer": "agent_2",
-        "attractor_preview": "Information about quantum physics.",
-        "accepted": true,
-        "consensus_ratio": 1.0,
-        "votes": {
-          "agent_0": true,
-          "agent_1": true,
-          "agent_2": true
-        },
-        "timestamp": 1775547270.016946
-      },
-      {
-        "proposer": "agent_2",
-        "attractor_preview": "Information about world war 2.",
-        "accepted": true,
-        "consensus_ratio": 1.0,
-        "votes": {
-          "agent_0": true,
-          "agent_1": true,
-          "agent_2": true
-        },
-        "timestamp": 1775547270.016946
+        "timestamp": 1775606540.3657038
       },
       {
         "proposer": "agent_0",
@@ -522,7 +306,7 @@
           "agent_1": false,
           "agent_2": false
         },
-        "timestamp": 1775547270.016946
+        "timestamp": 1775606540.3657038
       },
       {
         "proposer": "agent_0",
@@ -534,127 +318,19 @@
           "agent_1": true,
           "agent_2": true
         },
-        "timestamp": 1775547270.016946
+        "timestamp": 1775606540.3657038
       },
       {
         "proposer": "agent_0",
         "attractor_preview": "Information about world war 2.",
         "accepted": true,
-        "consensus_ratio": 0.6666666666666667,
-        "votes": {
-          "agent_0": true,
-          "agent_1": true,
-          "agent_2": false
-        },
-        "timestamp": 1775547270.016946
-      },
-      {
-        "proposer": "agent_1",
-        "attractor_preview": "Information about python programming.",
-        "accepted": true,
-        "consensus_ratio": 0.6666666666666667,
-        "votes": {
-          "agent_0": true,
-          "agent_1": true,
-          "agent_2": false
-        },
-        "timestamp": 1775547270.016946
-      },
-      {
-        "proposer": "agent_1",
-        "attractor_preview": "Information about quantum physics.",
-        "accepted": true,
-        "consensus_ratio": 0.6666666666666667,
-        "votes": {
-          "agent_0": true,
-          "agent_1": true,
-          "agent_2": false
-        },
-        "timestamp": 1775547270.016946
-      },
-      {
-        "proposer": "agent_1",
-        "attractor_preview": "Information about world war 2.",
-        "accepted": true,
         "consensus_ratio": 1.0,
         "votes": {
           "agent_0": true,
           "agent_1": true,
           "agent_2": true
         },
-        "timestamp": 1775547270.016946
-      },
-      {
-        "proposer": "agent_2",
-        "attractor_preview": "Information about python programming.",
-        "accepted": true,
-        "consensus_ratio": 1.0,
-        "votes": {
-          "agent_0": true,
-          "agent_1": true,
-          "agent_2": true
-        },
-        "timestamp": 1775547270.016946
-      },
-      {
-        "proposer": "agent_2",
-        "attractor_preview": "Information about quantum physics.",
-        "accepted": true,
-        "consensus_ratio": 1.0,
-        "votes": {
-          "agent_0": true,
-          "agent_1": true,
-          "agent_2": true
-        },
-        "timestamp": 1775547270.016946
-      },
-      {
-        "proposer": "agent_2",
-        "attractor_preview": "Information about world war 2.",
-        "accepted": true,
-        "consensus_ratio": 1.0,
-        "votes": {
-          "agent_0": true,
-          "agent_1": true,
-          "agent_2": true
-        },
-        "timestamp": 1775547270.016946
-      },
-      {
-        "proposer": "agent_0",
-        "attractor_preview": "Information about python programming.",
-        "accepted": true,
-        "consensus_ratio": 1.0,
-        "votes": {
-          "agent_0": true,
-          "agent_1": true,
-          "agent_2": true
-        },
-        "timestamp": 1775547270.016946
-      },
-      {
-        "proposer": "agent_0",
-        "attractor_preview": "Information about quantum physics.",
-        "accepted": true,
-        "consensus_ratio": 1.0,
-        "votes": {
-          "agent_0": true,
-          "agent_1": true,
-          "agent_2": true
-        },
-        "timestamp": 1775547270.016946
-      },
-      {
-        "proposer": "agent_0",
-        "attractor_preview": "Information about world war 2.",
-        "accepted": true,
-        "consensus_ratio": 0.6666666666666667,
-        "votes": {
-          "agent_0": true,
-          "agent_1": true,
-          "agent_2": false
-        },
-        "timestamp": 1775547270.016946
+        "timestamp": 1775606540.3657038
       },
       {
         "proposer": "agent_1",
@@ -666,19 +342,19 @@
           "agent_1": true,
           "agent_2": true
         },
-        "timestamp": 1775547270.016946
+        "timestamp": 1775606540.3657038
       },
       {
         "proposer": "agent_1",
         "attractor_preview": "Information about quantum physics.",
         "accepted": true,
-        "consensus_ratio": 1.0,
+        "consensus_ratio": 0.6666666666666667,
         "votes": {
           "agent_0": true,
           "agent_1": true,
-          "agent_2": true
+          "agent_2": false
         },
-        "timestamp": 1775547270.016946
+        "timestamp": 1775606540.3657038
       },
       {
         "proposer": "agent_1",
@@ -690,7 +366,7 @@
           "agent_1": true,
           "agent_2": false
         },
-        "timestamp": 1775547270.016946
+        "timestamp": 1775606540.3657038
       },
       {
         "proposer": "agent_2",
@@ -702,19 +378,19 @@
           "agent_1": false,
           "agent_2": true
         },
-        "timestamp": 1775547270.016946
+        "timestamp": 1775606540.3657038
       },
       {
         "proposer": "agent_2",
         "attractor_preview": "Information about quantum physics.",
         "accepted": true,
-        "consensus_ratio": 0.6666666666666667,
+        "consensus_ratio": 1.0,
         "votes": {
           "agent_0": true,
-          "agent_1": false,
+          "agent_1": true,
           "agent_2": true
         },
-        "timestamp": 1775547270.016946
+        "timestamp": 1775606540.3657038
       },
       {
         "proposer": "agent_2",
@@ -726,7 +402,331 @@
           "agent_1": false,
           "agent_2": true
         },
-        "timestamp": 1775547270.016946
+        "timestamp": 1775606540.3657038
+      },
+      {
+        "proposer": "agent_0",
+        "attractor_preview": "Information about python programming.",
+        "accepted": false,
+        "consensus_ratio": 0.33333333333333337,
+        "votes": {
+          "agent_0": true,
+          "agent_1": false,
+          "agent_2": false
+        },
+        "timestamp": 1775606540.3657038
+      },
+      {
+        "proposer": "agent_0",
+        "attractor_preview": "Information about quantum physics.",
+        "accepted": true,
+        "consensus_ratio": 1.0,
+        "votes": {
+          "agent_0": true,
+          "agent_1": true,
+          "agent_2": true
+        },
+        "timestamp": 1775606540.3657038
+      },
+      {
+        "proposer": "agent_0",
+        "attractor_preview": "Information about world war 2.",
+        "accepted": true,
+        "consensus_ratio": 1.0,
+        "votes": {
+          "agent_0": true,
+          "agent_1": true,
+          "agent_2": true
+        },
+        "timestamp": 1775606540.3657038
+      },
+      {
+        "proposer": "agent_1",
+        "attractor_preview": "Information about python programming.",
+        "accepted": true,
+        "consensus_ratio": 1.0,
+        "votes": {
+          "agent_0": true,
+          "agent_1": true,
+          "agent_2": true
+        },
+        "timestamp": 1775606540.3657038
+      },
+      {
+        "proposer": "agent_1",
+        "attractor_preview": "Information about quantum physics.",
+        "accepted": true,
+        "consensus_ratio": 1.0,
+        "votes": {
+          "agent_0": true,
+          "agent_1": true,
+          "agent_2": true
+        },
+        "timestamp": 1775606540.3657038
+      },
+      {
+        "proposer": "agent_1",
+        "attractor_preview": "Information about world war 2.",
+        "accepted": true,
+        "consensus_ratio": 1.0,
+        "votes": {
+          "agent_0": true,
+          "agent_1": true,
+          "agent_2": true
+        },
+        "timestamp": 1775606540.3657038
+      },
+      {
+        "proposer": "agent_2",
+        "attractor_preview": "Information about python programming.",
+        "accepted": true,
+        "consensus_ratio": 0.6666666666666667,
+        "votes": {
+          "agent_0": true,
+          "agent_1": false,
+          "agent_2": true
+        },
+        "timestamp": 1775606540.3657038
+      },
+      {
+        "proposer": "agent_2",
+        "attractor_preview": "Information about quantum physics.",
+        "accepted": true,
+        "consensus_ratio": 1.0,
+        "votes": {
+          "agent_0": true,
+          "agent_1": true,
+          "agent_2": true
+        },
+        "timestamp": 1775606540.3657038
+      },
+      {
+        "proposer": "agent_2",
+        "attractor_preview": "Information about world war 2.",
+        "accepted": true,
+        "consensus_ratio": 0.6666666666666667,
+        "votes": {
+          "agent_0": true,
+          "agent_1": false,
+          "agent_2": true
+        },
+        "timestamp": 1775606540.3657038
+      },
+      {
+        "proposer": "agent_0",
+        "attractor_preview": "Information about python programming.",
+        "accepted": true,
+        "consensus_ratio": 0.6666666666666667,
+        "votes": {
+          "agent_0": true,
+          "agent_1": true,
+          "agent_2": false
+        },
+        "timestamp": 1775606540.3657038
+      },
+      {
+        "proposer": "agent_0",
+        "attractor_preview": "Information about quantum physics.",
+        "accepted": false,
+        "consensus_ratio": 0.33333333333333337,
+        "votes": {
+          "agent_0": true,
+          "agent_1": false,
+          "agent_2": false
+        },
+        "timestamp": 1775606540.3657038
+      },
+      {
+        "proposer": "agent_0",
+        "attractor_preview": "Information about world war 2.",
+        "accepted": true,
+        "consensus_ratio": 0.6666666666666667,
+        "votes": {
+          "agent_0": true,
+          "agent_1": false,
+          "agent_2": true
+        },
+        "timestamp": 1775606540.3657038
+      },
+      {
+        "proposer": "agent_1",
+        "attractor_preview": "Information about python programming.",
+        "accepted": true,
+        "consensus_ratio": 1.0,
+        "votes": {
+          "agent_0": true,
+          "agent_1": true,
+          "agent_2": true
+        },
+        "timestamp": 1775606540.3657038
+      },
+      {
+        "proposer": "agent_1",
+        "attractor_preview": "Information about quantum physics.",
+        "accepted": true,
+        "consensus_ratio": 1.0,
+        "votes": {
+          "agent_0": true,
+          "agent_1": true,
+          "agent_2": true
+        },
+        "timestamp": 1775606540.3657038
+      },
+      {
+        "proposer": "agent_1",
+        "attractor_preview": "Information about world war 2.",
+        "accepted": true,
+        "consensus_ratio": 0.6666666666666667,
+        "votes": {
+          "agent_0": true,
+          "agent_1": true,
+          "agent_2": false
+        },
+        "timestamp": 1775606540.3657038
+      },
+      {
+        "proposer": "agent_2",
+        "attractor_preview": "Information about python programming.",
+        "accepted": true,
+        "consensus_ratio": 0.6666666666666667,
+        "votes": {
+          "agent_0": true,
+          "agent_1": false,
+          "agent_2": true
+        },
+        "timestamp": 1775606540.3657038
+      },
+      {
+        "proposer": "agent_2",
+        "attractor_preview": "Information about quantum physics.",
+        "accepted": true,
+        "consensus_ratio": 0.6666666666666667,
+        "votes": {
+          "agent_0": true,
+          "agent_1": false,
+          "agent_2": true
+        },
+        "timestamp": 1775606540.3657038
+      },
+      {
+        "proposer": "agent_2",
+        "attractor_preview": "Information about world war 2.",
+        "accepted": true,
+        "consensus_ratio": 0.6666666666666667,
+        "votes": {
+          "agent_0": true,
+          "agent_1": false,
+          "agent_2": true
+        },
+        "timestamp": 1775606540.3657038
+      },
+      {
+        "proposer": "agent_0",
+        "attractor_preview": "Information about python programming.",
+        "accepted": true,
+        "consensus_ratio": 0.6666666666666667,
+        "votes": {
+          "agent_0": true,
+          "agent_1": true,
+          "agent_2": false
+        },
+        "timestamp": 1775606540.3657038
+      },
+      {
+        "proposer": "agent_0",
+        "attractor_preview": "Information about quantum physics.",
+        "accepted": true,
+        "consensus_ratio": 0.6666666666666667,
+        "votes": {
+          "agent_0": true,
+          "agent_1": false,
+          "agent_2": true
+        },
+        "timestamp": 1775606540.3657038
+      },
+      {
+        "proposer": "agent_0",
+        "attractor_preview": "Information about world war 2.",
+        "accepted": true,
+        "consensus_ratio": 0.6666666666666667,
+        "votes": {
+          "agent_0": true,
+          "agent_1": true,
+          "agent_2": false
+        },
+        "timestamp": 1775606540.3657038
+      },
+      {
+        "proposer": "agent_1",
+        "attractor_preview": "Information about python programming.",
+        "accepted": true,
+        "consensus_ratio": 1.0,
+        "votes": {
+          "agent_0": true,
+          "agent_1": true,
+          "agent_2": true
+        },
+        "timestamp": 1775606540.3657038
+      },
+      {
+        "proposer": "agent_1",
+        "attractor_preview": "Information about quantum physics.",
+        "accepted": true,
+        "consensus_ratio": 1.0,
+        "votes": {
+          "agent_0": true,
+          "agent_1": true,
+          "agent_2": true
+        },
+        "timestamp": 1775606540.3657038
+      },
+      {
+        "proposer": "agent_1",
+        "attractor_preview": "Information about world war 2.",
+        "accepted": true,
+        "consensus_ratio": 0.6666666666666667,
+        "votes": {
+          "agent_0": true,
+          "agent_1": true,
+          "agent_2": false
+        },
+        "timestamp": 1775606540.3657038
+      },
+      {
+        "proposer": "agent_2",
+        "attractor_preview": "Information about python programming.",
+        "accepted": true,
+        "consensus_ratio": 0.6666666666666667,
+        "votes": {
+          "agent_0": true,
+          "agent_1": false,
+          "agent_2": true
+        },
+        "timestamp": 1775606540.3657038
+      },
+      {
+        "proposer": "agent_2",
+        "attractor_preview": "Information about quantum physics.",
+        "accepted": true,
+        "consensus_ratio": 1.0,
+        "votes": {
+          "agent_0": true,
+          "agent_1": true,
+          "agent_2": true
+        },
+        "timestamp": 1775606540.3657038
+      },
+      {
+        "proposer": "agent_2",
+        "attractor_preview": "Information about world war 2.",
+        "accepted": true,
+        "consensus_ratio": 0.6666666666666667,
+        "votes": {
+          "agent_0": true,
+          "agent_1": false,
+          "agent_2": true
+        },
+        "timestamp": 1775606540.3657038
       }
     ]
   },
@@ -758,7 +758,7 @@
         "agent_id": "agent_1",
         "specialization": "code",
         "n_nodes": 6,
-        "n_exchanges": 26,
+        "n_exchanges": 24,
         "specialty_topics": []
       }
     },
@@ -768,7 +768,7 @@
         "agent_id": "agent_2",
         "specialization": "science",
         "n_nodes": 6,
-        "n_exchanges": 26,
+        "n_exchanges": 24,
         "specialty_topics": []
       }
     }

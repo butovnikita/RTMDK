@@ -3290,6 +3290,12 @@ class RTMDKField:
         self._crystallization_counter = 0
         self._crystallized_nodes: Set[str] = set()
 
+        # Fix 3: Lifecycle & Throttling Controls
+        self._workers: List[asyncio.Task] = []
+        self._write_lock: Optional[asyncio.Lock] = None
+        self._backpressure_events = 0
+        self._heavy_modules_disabled = False
+
         # Phase 12 Track 4: Async pipeline queues
         self.query_q: Optional[asyncio.Queue] = None
         self.save_q: Optional[asyncio.Queue] = None
@@ -3647,10 +3653,37 @@ class RTMDKField:
 
     def _compute_tension(self, node_id: str, neighborhood_radius: float = 2.0) -> float:
         node = self.nodes[node_id]
-        neighbors = [self.nodes[oid] for oid in self.node_index
-                     if oid != node_id and np.linalg.norm(node.latent_pos - self.nodes[oid].latent_pos) < neighborhood_radius]
-        if len(neighbors) < 2:
+        
+        # Fix 4: O(N) -> O(N*k) optimization via limited neighbor search
+        # Use HNSW if available for fast k-NN, else fallback to limited cdist
+        k_neighbors = 10
+        neighbor_ids = []
+        
+        if self.cfg.use_hnsw and self.hnsw_index and len(self.hnsw_index.positions) > k_neighbors:
+            candidate_ids = self.hnsw_index.search(node.latent_pos, top_k=k_neighbors + 1)
+            neighbor_ids = [nid for nid in candidate_ids if nid != node_id and nid in self.nodes]
+        else:
+            # Fallback: limit scan to a small sample if N is large, or full scan if N < 100
+            ids_to_check = self.node_index
+            if len(ids_to_check) > 100:
+                import random
+                ids_to_check = random.sample(ids_to_check, 100)
+            
+            # O(N*k) approximation: just check distance for small subset or use argsort for exact k nearest
+            dists = {}
+            for oid in ids_to_check:
+                if oid == node_id: continue
+                other = self.nodes[oid]
+                d = np.linalg.norm(node.latent_pos - other.latent_pos)
+                if d < neighborhood_radius:
+                    dists[oid] = d
+            # Select k nearest
+            neighbor_ids = sorted(dists, key=dists.get)[:k_neighbors]
+
+        if len(neighbor_ids) < 2:
             return 0.0
+            
+        neighbors = [self.nodes[oid] for oid in neighbor_ids]
         phases = np.array([n.phase for n in neighbors])
         saliences = np.array([n.salience for n in neighbors])
         tension = 0.6 * (np.std(np.cos(phases)) + np.std(np.sin(phases))) + 0.4 * np.std(saliences)
@@ -3804,18 +3837,26 @@ class RTMDKField:
         return updated
 
     def _verify_consistency(self, updated_nodes: List[str], pre_state: Optional[Dict] = None):
+        """Fix: Use local probe (latent+noise) instead of global zero to preserve semantic meaning."""
+        from collections import deque
+        # Ensure buffer limits
+        if not isinstance(self._stability_buffer, deque):
+            self._stability_buffer = deque(self._stability_buffer, maxlen=100)
+            
         for nid in updated_nodes:
             if nid not in self.nodes:
                 continue
             node = self.nodes[nid]
-            if node.lineage:
-                results = self.query(np.zeros(self.cfg.embedding_dim, dtype=np.float32), phase=node.phase, top_k=1)
-                if results and results[0][0] == nid:
-                    node.self_sup_score = max(0.5, results[0][1])
-                else:
-                    node.self_sup_score *= 0.9
+            # FIX: Probe around the node's actual position, not np.zeros
+            probe = node.latent_pos + np.random.normal(0, 0.05, node.latent_pos.shape)
+            results = self.query(probe, phase=node.phase, top_k=1)
+            if results and results[0][0] == nid:
+                node.self_sup_score = max(0.5, results[0][1])
+            else:
+                node.self_sup_score *= 0.9
 
     def _self_supervise(self):
+        """Fix: Use local probe instead of np.zeros to prevent false decay of peripheral nodes."""
         if not self.cfg.self_supervision:
             return
         self.stats["self_sup_checks"] += 1
@@ -3823,7 +3864,9 @@ class RTMDKField:
             if nid not in self.nodes or not self.nodes[nid].lineage:
                 continue
             node = self.nodes[nid]
-            results = self.query(np.zeros(self.cfg.embedding_dim, dtype=np.float32), phase=node.phase, top_k=1)
+            # FIX: Probe around the node's actual position
+            probe = node.latent_pos + np.random.normal(0, 0.05, node.latent_pos.shape)
+            results = self.query(probe, phase=node.phase, top_k=1)
             if results and results[0][0] == nid:
                 node.self_sup_score = max(0.5, results[0][1])
             else:
@@ -3963,9 +4006,15 @@ class RTMDKField:
 
     def step(self, inputs: Optional[List[Dict]] = None):
         self._step_counter += 1
+        
+        # Throttle: Skip non-critical heavy tasks if backpressure is high
+        backpressure_ok = self._backpressure_events < 3
+        
         if self.cfg.continuous_dynamics and self.ode_dynamics:
-            self.evolve_continuous(inputs, use_sde=self.cfg.sde_noise_level > 0)
+            # Fix: Safe run for ODE to prevent crashes
+            self._safe_run("ODEEvolve", self.evolve_continuous, inputs, use_sde=self.cfg.sde_noise_level > 0, default=0)
             return
+            
         if inputs:
             for inp in inputs:
                 emb = inp["embedding"]
@@ -3987,11 +4036,11 @@ class RTMDKField:
 
         # Consolidation: 15% chance (lightweight)
         if len(self.nodes) > 10 and np.random.random() < 0.15:
-            self.consolidate()
+            self._safe_run("Consolidate", self.consolidate, default=[])
 
         # Self-healing: every N steps
         if self.cfg.self_healing and self._step_counter % self.cfg.healing_check_freq == 0:
-            self._self_heal()
+            self._safe_run("SelfHeal", self._self_heal)
 
         # Tier-specific decay: every step (cheap)
         tier_counts = defaultdict(int)
@@ -4022,14 +4071,14 @@ class RTMDKField:
             state = self._encode_field_state()
             self._state_history.append(state)
             if len(self._state_history) >= 2:
-                fe = self.predictor.compute_free_energy(self._state_history[-2], self._state_history[-1])
+                fe = self._safe_run("PredictorFreeEnergy", self.predictor.compute_free_energy, self._state_history[-2], self._state_history[-1], default=0.0)
                 self.stats["free_energy"] = fe
                 self.stats["prediction_error"] = float(np.mean((self.predictor.predict(self._state_history[-2]) - self._state_history[-1]) ** 2))
                 self.stats["surprise_level"] = float(np.clip(fe, 0, 1))
                 if fe > 0.3 and len(self.nodes) > 10:
-                    self.consolidate()
+                    self._safe_run("Consolidate", self.consolidate, default=[])
                 if fe > 0.01:
-                    self.predictor.update(self._state_history[-2], self._state_history[-1], lr=self.cfg.pc_lr)
+                    self._safe_run("PredictorUpdate", self.predictor.update, self._state_history[-2], self._state_history[-1], lr=self.cfg.pc_lr)
 
         # Max nodes pruning: every 10 steps
         if self.cfg.max_nodes and len(self.nodes) > self.cfg.max_nodes and self._step_counter % 10 == 0:
@@ -4044,25 +4093,26 @@ class RTMDKField:
 
         # Self-supervision: every 20 steps
         if self.cfg.self_supervision and self._step_counter % 20 == 0:
-            self._self_supervise()
+            self._safe_run("SelfSupervise", self._self_supervise)
 
-        # TDA: every N steps
-        if self.cfg.tda_monitoring and self._step_counter % self.cfg.tda_check_freq == 0:
-            self._check_tda()
+        # TDA: every N steps (Throttled)
+        if backpressure_ok and self.cfg.tda_monitoring and self._step_counter % self.cfg.tda_check_freq == 0:
+            self._safe_run("TDA", self._check_tda)
 
         # Meta-kernel adaptation: every 5 steps
         if self.meta_kernel and self._step_counter % 5 == 0:
-            self.meta_kernel.adapt()
+            self._safe_run("MetaKernelAdapt", self.meta_kernel.adapt)
             self.stats["meta_kurtosis"] = self.meta_kernel.compute_resonance_kurtosis()
             self.stats["meta_bandwidth"] = self.meta_kernel.get_bandwidth()
             self.stats["meta_phase_coupling"] = self.meta_kernel.get_phase_coupling()
 
-        # Meta-controller optimization: every N steps
-        if self.meta_controller and self.meta_controller.should_optimize():
-            best_params = self.meta_controller.optimize(self)
-            self.meta_controller.apply_params(self, best_params)
-            self.stats["meta_optimizations"] += 1
-            self.stats["meta_best_params"] = best_params
+        # Meta-controller optimization: every N steps (Throttled)
+        if backpressure_ok and self.meta_controller and self.meta_controller.should_optimize() and self._step_counter % self.cfg.meta_opt_freq == 0:
+            best_params = self._safe_run("MetaControllerOptimize", self.meta_controller.optimize, self, default={})
+            if best_params:
+                self._safe_run("MetaControllerApply", self.meta_controller.apply_params, self, best_params)
+                self.stats["meta_optimizations"] += 1
+                self.stats["meta_best_params"] = best_params
 
         # Federated sync: every N steps
         if self.federated and self._step_counter > 0 and self._step_counter % self.cfg.federated_sync_freq == 0:
@@ -4071,37 +4121,15 @@ class RTMDKField:
                 "decay_rate": self.cfg.decay_rate, "tension_threshold": self.cfg.tension_threshold,
                 "phase_coupling": self.cfg.phase_coupling, "bandwidth": self.cfg.bandwidth,
             }
-            sync_result = self.federated.sync_with_peers(local_phases, local_params)
-            if sync_result.get("synced"):
-                self.stats["federated_syncs"] += 1
-                self.stats["federated_order_parameter"] = sync_result.get("order_parameter", 0.0)
+            self._safe_run("FederatedSync", self.federated.sync_with_peers, local_phases, local_params)
 
-        # ODE smoothness: every 10 steps
-        if self.ode_dynamics and self._step_counter % 10 == 0:
-            self.stats["response_smoothness"] = self.ode_dynamics.compute_response_smoothness()
+        # ODE smoothness: every 10 steps (Throttled)
+        if backpressure_ok and self.ode_dynamics and self._step_counter % 10 == 0:
+            self.stats["response_smoothness"] = self._safe_run("ODESmoothness", self.ode_dynamics.compute_response_smoothness, default=1.0)
 
         # Shard center updates: every 100 steps
         if self.cfg.sparse_routing and self._step_counter % 100 == 0 and len(self.nodes) > self.cfg.num_shards * 2:
-            self._update_shard_centers()
-
-        # Crystallization: every N steps
-        if self.cfg.crystallization and self._step_counter % self.cfg.crystallization_freq == 0:
-            self._crystallize_recurring(
-                window=100,
-                similarity_thresh=self.cfg.crystallization_similarity
-            )
-
-        # Goal tracker decay: every 50 steps
-        if self.goal_tracker and self._step_counter % 50 == 0:
-            self.goal_tracker.decay_goals()
-            active = self.goal_tracker.get_active_goals()
-            completed = [g for g in self.goal_tracker.goals.values() if g.status == "completed"]
-            self.stats["active_goals"] = len(active)
-            self.stats["completed_goals"] = len(completed)
-
-        # RL feedback application: every 20 steps
-        if self.rl_feedback_loop and self._step_counter % 20 == 0:
-            self.rl_feedback_loop.apply_field_updates(self)
+            self._safe_run("ShardUpdate", self._update_shard_centers)
             self.stats["avg_rl_reward"] = self.rl_feedback_loop.get_average_reward()
 
         # Event-driven processing: every 10 steps
@@ -4395,40 +4423,74 @@ class RTMDKField:
     # PHASE 12 TRACK 4: ASYNC MULTI-THREADED EVOLUTION PIPELINE
     # ========================================================================
 
+    def _safe_run(self, module_name: str, func, *args, default=None, **kwargs):
+        """Execute a heavy module safely, handling exceptions and throttling."""
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            logger.warning(f"[SafeRun] {module_name} failed: {e}")
+            self._backpressure_events += 1
+            return default
+
     async def _start_workers(self):
-        """Start background worker tasks for async pipeline."""
+        """Start background worker tasks for async pipeline with lifecycle tracking."""
         if self._workers_started:
             return
         self._workers_started = True
-        asyncio.create_task(self._worker_evolve())
-        asyncio.create_task(self._worker_save())
+        if self._write_lock is None:
+            self._write_lock = asyncio.Lock()
+        
+        # Fix 3: Track tasks for cancellation in clear()
+        t_evolve = asyncio.create_task(self._worker_evolve())
+        t_save = asyncio.create_task(self._worker_save())
+        self._workers.extend([t_evolve, t_save])
 
     async def _worker_evolve(self):
-        """Background worker for field evolution."""
-        while True:
-            try:
-                payload = await asyncio.wait_for(self.evolve_q.get(), timeout=1.0)
-                self.step(payload.get("inputs"))
-                if self.meta_controller and self.meta_controller.should_optimize():
-                    self.meta_controller.optimize(self)
-                self.evolve_q.task_done()
-            except asyncio.TimeoutError:
-                continue
-            except Exception as e:
-                logger.error(f"Evolve worker error: {e}")
+        """Background worker for field evolution with throttling."""
+        try:
+            while True:
+                try:
+                    payload = await asyncio.wait_for(self.evolve_q.get(), timeout=1.0)
+                    inputs = payload.get("inputs", {})
+                    
+                    # Throttling: Skip heavy meta-ops if backpressure high
+                    backpressure_ok = self._backpressure_events < 3
+                    
+                    self.step(inputs)
+                    
+                    if backpressure_ok and self.meta_controller:
+                        # Safe execution for optimization
+                        if self.meta_controller.should_optimize():
+                            self._safe_run("MetaControllerOptimize", self.meta_controller.optimize, self)
+                    
+                    # Decay backpressure on success
+                    if self._backpressure_events > 0:
+                        self._backpressure_events = max(0, self._backpressure_events - 1)
+                        
+                    self.evolve_q.task_done()
+                except asyncio.TimeoutError:
+                    continue
+                except Exception as e:
+                    self._backpressure_events += 1
+                    logger.error(f"Evolve worker error: {e}")
+        except asyncio.CancelledError:
+            logger.info("Evolve worker cancelled cleanly.")
 
     async def _worker_save(self):
         """Background worker for context saving."""
-        while True:
-            try:
-                payload = await asyncio.wait_for(self.save_q.get(), timeout=1.0)
-                # Save is already handled by add_node, this is for post-processing
-                self.save_q.task_done()
-            except asyncio.TimeoutError:
-                continue
-            except Exception as e:
-                logger.error(f"Save worker error: {e}")
-
+        try:
+            while True:
+                try:
+                    payload = await asyncio.wait_for(self.save_q.get(), timeout=1.0)
+                    # Save is handled by add_node, just track depth
+                    self._track_queue_depth()
+                    self.save_q.task_done()
+                except asyncio.TimeoutError:
+                    continue
+                except Exception as e:
+                    logger.error(f"Save worker error: {e}")
+        except asyncio.CancelledError:
+            logger.info("Save worker cancelled cleanly.")
     def _track_queue_depth(self):
         """Track async queue depths for monitoring."""
         if self.cfg.async_pipeline and self.evolve_q:
