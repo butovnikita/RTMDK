@@ -28,6 +28,8 @@ from .triton_backend import TritonBackend, TRITON_AVAILABLE
 from .symbolic_overlay import SymbolicOverlay, SymbolicRule, SymbolicInference
 from .safety_certifier import SafetyCertifier, LyapunovFunction
 from .ump import UniversalMemoryProtocol, UMP_VERSION, UMP_SCHEMA
+# Phase 17
+from .role_shard_router import RoleShardRouter, RoleShard, RoleDetector, DEFAULT_ROLE
 
 __all__ = [
     "MetaController",

@@ -77,6 +77,14 @@ try:
 except ImportError:
     UMP_AVAILABLE = False
 
+# Phase 17: RoleShardRouter
+try:
+    from rtmdk.support.role_shard_router import RoleShardRouter, RoleShard, RoleDetector, DEFAULT_ROLE
+    ROLE_SHARD_AVAILABLE = True
+except ImportError:
+    ROLE_SHARD_AVAILABLE = False
+    DEFAULT_ROLE = "default"  # Fallback
+
 # Torch availability check
 try:
     import torch
@@ -394,6 +402,12 @@ class RTMDKConfig:
 
     # Phase 16 Track 3: Universal Memory Protocol
     ump_enabled: bool = False
+
+    # Phase 17: RoleShardRouter
+    role_sharding: bool = False
+    role_shards: Set[str] = field(default_factory=lambda: {"default"})
+    cross_shard_threshold: float = 0.45
+    auto_role_detection: bool = True
 
     def __post_init__(self):
         logger.setLevel(getattr(logging, self.log_level.upper()))
@@ -3534,6 +3548,17 @@ class RTMDKField:
         elif config.safety_certifier and not SAFETY_AVAILABLE:
             logger.warning("safety_certifier enabled but rtmdk.support.safety_certifier not available")
 
+        # Phase 17: RoleShardRouter
+        self.role_router: Optional["RoleShardRouter"] = None
+        if config.role_sharding and ROLE_SHARD_AVAILABLE:
+            self.role_router = RoleShardRouter(
+                shards=config.role_shards,
+                cross_shard_threshold=config.cross_shard_threshold,
+                auto_role_detection=config.auto_role_detection,
+            )
+        elif config.role_sharding and not ROLE_SHARD_AVAILABLE:
+            logger.warning("role_sharding enabled but rtmdk.support.role_shard_router not available")
+
         self.stats = {
             "total_adds": 0, "total_queries": 0, "consolidations": 0,
             "avg_response": 0.0, "active_nodes": 0,
@@ -3582,6 +3607,9 @@ class RTMDKField:
             "n_symbolic_rules": 0, "n_symbolic_inferences": 0, "n_symbolic_conflicts": 0,
             "lyapunov_V": 0.0, "lyapunov_dV_dt": 0.0, "safety_regulation_factor": 1.0,
             "safety_mode": "monitor_only",
+            # Phase 17
+            "n_shards": 0, "shard_distribution": {},
+            "cross_shard_exchanges": 0, "role_router_enabled": False,
         }
         self._step_counter = 0
         self._rollback_history: List[Dict] = []
@@ -3832,9 +3860,26 @@ class RTMDKField:
         if self.cfg.cross_modal:
             node.modal_embedding = embedding.copy()
 
+        # Phase 17: Role assignment
+        role = DEFAULT_ROLE
+        if self.role_router:
+            text = content.get("text", "")
+            # Check if content has explicit role tag
+            explicit_role = content.get("role") or content.get("tier_role")
+            role = self.role_router.add_node(nid, text, role=explicit_role)
+            node.role = role  # Set role attribute on node
+
         self.nodes[nid] = node
         self.node_index.append(nid)
         self.stats["total_adds"] += 1
+
+        # Phase 17: Update shard distribution stats
+        if self.role_router:
+            self.stats["n_shards"] = len(self.role_router.shards)
+            self.stats["shard_distribution"] = {
+                r: len(s.node_ids) for r, s in self.role_router.shards.items()
+            }
+            self.stats["role_router_enabled"] = True
 
         if self.cfg.use_hnsw and self.hnsw_index:
             self.hnsw_index.insert(nid, latent)
@@ -4066,6 +4111,16 @@ class RTMDKField:
                 self.version_control.create_version(deltas, message=f"consolidation: {len(updated)} merged, {len(pending_deletions)} deleted")
                 self.stats["current_version"] = self.version_control.current_version
                 self.stats["n_versions"] = self.version_control.n_versions
+
+        # Phase 17: Update shard consolidation stats
+        if self.role_router and updated:
+            # Update consolidation count for affected shards
+            affected_roles = set()
+            for nid in updated:
+                role = self.role_router.get_node_role(nid)
+                if role in self.role_router.shards:
+                    self.role_router.shards[role].n_consolidations += 1
+                    affected_roles.add(role)
 
         return updated
 
@@ -4461,6 +4516,18 @@ class RTMDKField:
             self.stats["lyapunov_dV_dt"] = cert_result["dV_dt"]
             self.stats["safety_regulation_factor"] = cert_result["regulation_factor"]
             self.stats["safety_mode"] = self.safety_certifier.mode
+
+        # Phase 17: RoleShardRouter — Kuramoto sync within each shard
+        if self.role_router and self._step_counter % 5 == 0:
+            self.role_router.update_kuramoto_phases(self.nodes)
+            self.stats["n_shards"] = len(self.role_router.shards)
+            self.stats["shard_distribution"] = {
+                r: len(s.node_ids) for r, s in self.role_router.shards.items()
+            }
+            self.stats["role_router_enabled"] = True
+            # Cross-shard exchange stats
+            total_exchanges = sum(s.n_cross_shard_exchanges for s in self.role_router.shards.values())
+            self.stats["cross_shard_exchanges"] = total_exchanges
 
     def _self_heal(self) -> List[Dict]:
         if not self.healer or len(self.nodes) < 3:

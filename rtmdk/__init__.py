@@ -81,6 +81,8 @@ from rtmdk.support.triton_backend import TritonBackend, TRITON_AVAILABLE
 from rtmdk.support.symbolic_overlay import SymbolicOverlay, SymbolicRule, SymbolicInference
 from rtmdk.support.safety_certifier import SafetyCertifier, LyapunovFunction
 from rtmdk.support.ump import UniversalMemoryProtocol, UMP_VERSION, UMP_SCHEMA
+# Phase 17
+from rtmdk.support.role_shard_router import RoleShardRouter, RoleShard, RoleDetector, DEFAULT_ROLE
 
 # ---------------------------------------------------------------------------
 # Core classes from monolithic file (not yet modularized)
@@ -166,6 +168,8 @@ __all__ = [
     "SymbolicOverlay", "SymbolicRule", "SymbolicInference",
     "SafetyCertifier", "LyapunovFunction",
     "UniversalMemoryProtocol", "UMP_VERSION", "UMP_SCHEMA",
+    # Phase 17
+    "RoleShardRouter", "RoleShard", "RoleDetector", "DEFAULT_ROLE",
     # Monolithic core
     "RTMDKField",
     "RTMDKMemory",
