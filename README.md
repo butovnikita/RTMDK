@@ -1,6 +1,12 @@
 # RTMDK — Resonance-Topological Memory
 
-> Версия 8.0 | 326 тестов + smoke test | 8 версий с полной обратной совместимостью | OpenAI-compatible API | Docker Compose
+> Версия 8.0 | Модульная архитектура | 52 публичных API | OpenAI-compatible API | Docker Compose
+
+## 📖 Документация
+
+**Полная документация со всеми модулями, API и примерами:** → [DOCUMENTATION.md](DOCUMENTATION.md)
+
+Этот README — быстрый старт. Для деталей по каждому модулю, конфигурации и развёртыванию см. полную документацию.
 
 ## Обзор
 
@@ -40,7 +46,12 @@ python rtmdk_server.py
 ### Вариант 3: Python библиотека
 
 ```python
+# Модульный импорт (рекомендуется)
+from rtmdk import RTMDKConfig, RTMDKMemory
+
+# Или обратная совместимость
 from rtmdk_memory_v8 import RTMDKConfig, RTMDKMemory
+
 import numpy as np
 
 def embedder(text: str) -> np.ndarray:
@@ -405,3 +416,24 @@ v8_memory = RTMDKMemory.import_field("state.json", embedder)
 ## Лицензия
 
 MIT
+
+## Модульная архитектура (v8.0+)
+
+Начиная с коммита `8c7747b`, проект имеет **модульную структуру**:
+
+```
+rtmdk/                    # Python-пакет (52 публичных символа)
+├── config.py             # RTMDKConfig + enums
+├── nodes.py              # 10 data-классов (MemoryNode, CausalEdge, ...)
+├── utils/                # modality, hyperbolic, attention, formatting
+├── engines/              # causal, predictive, counterfactual, privacy, neural_ode
+└── support/              # 24 класса (MetaController, KuramotoSync, ...)
+```
+
+- **Новый стиль**: `from rtmdk import RTMDKMemory, RTMDKConfig`
+- **Старый стиль**: `from rtmdk_memory_v8 import RTMDKMemory, RTMDKConfig` (работает без изменений)
+
+Дополнительные файлы:
+- `embedder_factory.py` — единый интерфейс эмбеддингов (dummy / LM Studio / sentence-transformers)
+- `requirements-dev.txt` — все dev-зависимости
+- `DOCUMENTATION.md` — полная документация по всем модулям
