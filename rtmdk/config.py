@@ -49,6 +49,11 @@ class FieldHealth(Enum):
     CRITICAL = "critical"
     HEALING = "healing"
 
+class EvalMode(Enum):
+    PRODUCTION = "production"
+    SHADOW = "shadow"
+    EVALUATION = "evaluation"
+
 
 # ============================================================================
 # CENTRAL CONFIGURATION
@@ -299,7 +304,7 @@ class RTMDKConfig:
     verification_confidence_threshold: float = 0.7
     goal_directed_routing: bool = False
     production_mode: bool = False
-    eval_mode: "EvalMode" = None  # type: ignore
+    eval_mode: EvalMode = EvalMode.PRODUCTION
     shadow_mode: bool = False
     shadow_fallback_threshold: float = 0.3
     auto_rollback: bool = False
