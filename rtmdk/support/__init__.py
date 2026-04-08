@@ -24,6 +24,10 @@ from .production import ShadowModeEvaluator, RAGASPlusEvaluator, AutoRollbackMan
 from .version_control import VersionControl, NodeDelta, Version, DiffResult
 from .entropy_controller import EntropyController
 from .triton_backend import TritonBackend, TRITON_AVAILABLE
+# Phase 16
+from .symbolic_overlay import SymbolicOverlay, SymbolicRule, SymbolicInference
+from .safety_certifier import SafetyCertifier, LyapunovFunction
+from .ump import UniversalMemoryProtocol, UMP_VERSION, UMP_SCHEMA
 
 __all__ = [
     "MetaController",

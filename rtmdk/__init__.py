@@ -77,6 +77,10 @@ from rtmdk.support.production import ShadowModeEvaluator, RAGASPlusEvaluator, Au
 from rtmdk.support.version_control import VersionControl, NodeDelta, Version, DiffResult
 from rtmdk.support.entropy_controller import EntropyController
 from rtmdk.support.triton_backend import TritonBackend, TRITON_AVAILABLE
+# Phase 16
+from rtmdk.support.symbolic_overlay import SymbolicOverlay, SymbolicRule, SymbolicInference
+from rtmdk.support.safety_certifier import SafetyCertifier, LyapunovFunction
+from rtmdk.support.ump import UniversalMemoryProtocol, UMP_VERSION, UMP_SCHEMA
 
 # ---------------------------------------------------------------------------
 # Core classes from monolithic file (not yet modularized)
@@ -158,6 +162,10 @@ __all__ = [
     "VersionControl", "NodeDelta", "Version", "DiffResult",
     "EntropyController",
     "TritonBackend", "TRITON_AVAILABLE",
+    # Phase 16
+    "SymbolicOverlay", "SymbolicRule", "SymbolicInference",
+    "SafetyCertifier", "LyapunovFunction",
+    "UniversalMemoryProtocol", "UMP_VERSION", "UMP_SCHEMA",
     # Monolithic core
     "RTMDKField",
     "RTMDKMemory",

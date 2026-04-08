@@ -58,6 +58,25 @@ except ImportError:
     TritonBackend = None  # type: ignore
     TRITON_AVAILABLE = False
 
+# Phase 16: New modules
+try:
+    from rtmdk.support.symbolic_overlay import SymbolicOverlay, SymbolicRule, SymbolicInference
+    SYMBOLIC_AVAILABLE = True
+except ImportError:
+    SYMBOLIC_AVAILABLE = False
+
+try:
+    from rtmdk.support.safety_certifier import SafetyCertifier, LyapunovFunction
+    SAFETY_AVAILABLE = True
+except ImportError:
+    SAFETY_AVAILABLE = False
+
+try:
+    from rtmdk.support.ump import UniversalMemoryProtocol, UMP_VERSION, UMP_SCHEMA
+    UMP_AVAILABLE = True
+except ImportError:
+    UMP_AVAILABLE = False
+
 # Torch availability check
 try:
     import torch
@@ -358,6 +377,23 @@ class RTMDKConfig:
     # Phase 15 Track 5: Triton/CUDA Backend
     triton_backend: bool = False
     min_nodes_for_gpu: int = 2000
+
+    # Phase 16 Track 1: SymbolicOverlay
+    symbolic_overlay: bool = False
+    symbolic_min_self_sup: float = 0.7
+    symbolic_max_tension: float = 0.15
+    symbolic_confidence_threshold: float = 0.65
+
+    # Phase 16 Track 2: SafetyCertifier
+    safety_certifier: bool = False
+    safety_mode: str = "soft_regulate"  # monitor_only | soft_regulate | hard_block
+    lyapunov_alpha: float = 0.4
+    lyapunov_beta: float = 0.4
+    lyapunov_gamma: float = 0.2
+    lyapunov_threshold: float = 0.1
+
+    # Phase 16 Track 3: Universal Memory Protocol
+    ump_enabled: bool = False
 
     def __post_init__(self):
         logger.setLevel(getattr(logging, self.log_level.upper()))
@@ -3474,6 +3510,30 @@ class RTMDKField:
         if config.triton_backend and TritonBackend is not None:
             self.triton_backend = TritonBackend(min_nodes_for_gpu=config.min_nodes_for_gpu)
 
+        # Phase 16 Track 1: SymbolicOverlay
+        self.symbolic_overlay: Optional["SymbolicOverlay"] = None
+        if config.symbolic_overlay and SYMBOLIC_AVAILABLE:
+            self.symbolic_overlay = SymbolicOverlay(
+                min_self_sup=config.symbolic_min_self_sup,
+                max_tension=config.symbolic_max_tension,
+                confidence_threshold=config.symbolic_confidence_threshold,
+            )
+        elif config.symbolic_overlay and not SYMBOLIC_AVAILABLE:
+            logger.warning("symbolic_overlay enabled but rtmdk.support.symbolic_overlay not available")
+
+        # Phase 16 Track 2: SafetyCertifier
+        self.safety_certifier: Optional["SafetyCertifier"] = None
+        if config.safety_certifier and SAFETY_AVAILABLE:
+            self.safety_certifier = SafetyCertifier(
+                mode=config.safety_mode,
+                lyapunov_threshold=config.lyapunov_threshold,
+                alpha=config.lyapunov_alpha,
+                beta=config.lyapunov_beta,
+                gamma=config.lyapunov_gamma,
+            )
+        elif config.safety_certifier and not SAFETY_AVAILABLE:
+            logger.warning("safety_certifier enabled but rtmdk.support.safety_certifier not available")
+
         self.stats = {
             "total_adds": 0, "total_queries": 0, "consolidations": 0,
             "avg_response": 0.0, "active_nodes": 0,
@@ -3518,6 +3578,10 @@ class RTMDKField:
             "clarifications_generated": 0,
             "entropy": 0.0, "entropy_state": "normal",
             "triton_backend_used": False, "gpu_acceleration": False,
+            # Phase 16
+            "n_symbolic_rules": 0, "n_symbolic_inferences": 0, "n_symbolic_conflicts": 0,
+            "lyapunov_V": 0.0, "lyapunov_dV_dt": 0.0, "safety_regulation_factor": 1.0,
+            "safety_mode": "monitor_only",
         }
         self._step_counter = 0
         self._rollback_history: List[Dict] = []
@@ -3721,6 +3785,9 @@ class RTMDKField:
                 normalized = responses / (np.sum(responses) + 1e-8)
                 entropy = -np.sum(normalized * np.log(normalized + 1e-8))
                 self.meta_kernel.record_uncertainty(float(entropy))
+
+        # Phase 16 Track 2: Store results for SafetyCertifier
+        self._last_query_results = results
 
         if self.causal_engine and len(results) >= 2:
             self.causal_engine.record_cooccurrence(results[0][0], results[1][0])
@@ -4373,6 +4440,28 @@ class RTMDKField:
             self.stats["current_version"] = self.version_control.current_version
             self.stats["n_versions"] = self.version_control.n_versions
 
+        # Phase 16 Track 1: SymbolicOverlay — extract rules periodically
+        if self.symbolic_overlay and self._step_counter % 50 == 0:
+            causal_edges = None
+            if self.causal_engine:
+                causal_edges = self.causal_engine.causal_effects
+            self.symbolic_overlay.extract_rules_from_field(self.nodes, causal_edges)
+            self.stats["n_symbolic_rules"] = len(self.symbolic_overlay.rules)
+
+        # Phase 16 Track 2: SafetyCertifier — check stability
+        if self.safety_certifier and self._step_counter % 10 == 0:
+            resonance_scores = []
+            if hasattr(self, '_last_query_results') and self._last_query_results:
+                resonance_scores = [r[1] for r in self._last_query_results]
+            n_contradictions = len(self.causal_engine.contradictions) if self.causal_engine else 0
+            cert_result = self.safety_certifier.check_and_regulate(
+                self.nodes, resonance_scores, n_contradictions
+            )
+            self.stats["lyapunov_V"] = cert_result["V"]
+            self.stats["lyapunov_dV_dt"] = cert_result["dV_dt"]
+            self.stats["safety_regulation_factor"] = cert_result["regulation_factor"]
+            self.stats["safety_mode"] = self.safety_certifier.mode
+
     def _self_heal(self) -> List[Dict]:
         if not self.healer or len(self.nodes) < 3:
             return []
@@ -4855,6 +4944,119 @@ class RTMDKField:
         memory.field.stats = data.get("stats", memory.field.stats)
         return memory
 
+    def export_to_dict(self) -> Dict:
+        """Export field state to a dict (for UMP and other protocols)."""
+        cd = asdict(self.config) if hasattr(self, 'config') else asdict(self.cfg)
+        cd["consolidation_mode"] = cd["consolidation_mode"].value if isinstance(cd.get("consolidation_mode"), Enum) else cd.get("consolidation_mode", "dialectical")
+        cd["backend"] = cd["backend"].value if isinstance(cd.get("backend"), Enum) else cd.get("backend", "numpy")
+        cd["context_format"] = cd["context_format"].value if isinstance(cd.get("context_format"), Enum) else cd.get("context_format", "plain")
+        cd["eval_mode"] = cd["eval_mode"].value if isinstance(cd.get("eval_mode"), Enum) else cd.get("eval_mode", "production")
+        if "memory_tiers" in cd and isinstance(cd["memory_tiers"], set):
+            cd["memory_tiers"] = list(cd["memory_tiers"])
+        data = {"config": cd, "nodes": [n.to_dict() for n in self.nodes.values()], "stats": self.stats}
+        if self.projection_learner:
+            data["projection_state"] = self.projection_learner.get_state()
+        else:
+            data["projection"] = self._raw_projection.tolist()
+        if self.learnable_kernel:
+            data["learnable_kernel"] = self.learnable_kernel.get_state()
+        if self.meta_kernel:
+            data["meta_kernel"] = self.meta_kernel.get_state()
+        if self.healer:
+            data["healer"] = self.healer.get_state()
+        if self.causal_engine:
+            data["causal_engine"] = self.causal_engine.get_state()
+        if self.ode_dynamics:
+            data["ode_dynamics"] = self.ode_dynamics.get_state()
+        if self.meta_controller:
+            data["meta_controller"] = self.meta_controller.get_state()
+        if self.federated:
+            data["federated"] = self.federated.export_state()
+        if self.meta_memory_eval:
+            data["meta_memory_eval"] = self.meta_memory_eval.get_state()
+        if self.security:
+            data["security"] = self.security.get_state()
+        if self.swarm:
+            data["swarm"] = self.swarm.get_state()
+        if self.version_control:
+            data["version_control"] = self.version_control.export_state()
+        if self.entropy_ctrl:
+            data["entropy_ctrl"] = self.entropy_ctrl.get_state_dict()
+        if self.symbolic_overlay:
+            data["symbolic_overlay"] = self.symbolic_overlay.get_state()
+        if self.safety_certifier:
+            data["safety_certifier"] = self.safety_certifier.get_state()
+        return data
+
+    @classmethod
+    def import_from_dict(cls, data: Dict, embedder: Callable) -> "RTMDKMemory":
+        """Import field state from a dict (for UMP and other protocols)."""
+        cd = data["config"]
+        if isinstance(cd.get("consolidation_mode"), str):
+            cd["consolidation_mode"] = ConsolidationMode(cd["consolidation_mode"])
+        if isinstance(cd.get("backend"), str):
+            cd["backend"] = Backend(cd["backend"])
+        if isinstance(cd.get("context_format"), str):
+            cd["context_format"] = ContextFormat(cd["context_format"])
+        if isinstance(cd.get("eval_mode"), str):
+            cd["eval_mode"] = EvalMode(cd["eval_mode"])
+        if "memory_tiers" in cd and isinstance(cd["memory_tiers"], list):
+            cd["memory_tiers"] = set(cd["memory_tiers"])
+        if "causal_modeling" in cd and "causal_topological" not in cd:
+            cd["causal_topological"] = cd.pop("causal_modeling")
+        elif "causal_modeling" in cd:
+            cd.pop("causal_modeling")
+        valid_fields = set(f.name for f in RTMDKConfig.__dataclass_fields__.values())
+        cd = {k: v for k, v in cd.items() if k in valid_fields}
+        config = RTMDKConfig(**cd)
+        memory = RTMDKMemory(config=config, embedder=embedder)
+
+        if config.learn_projection and "projection_state" in data:
+            memory.field.projection_learner.load_state(data["projection_state"])
+        elif "projection" in data:
+            memory.field._raw_projection = np.array(data["projection"], dtype=np.float32)
+        if config.differentiable and "learnable_kernel" in data:
+            memory.field.learnable_kernel.load_state(data["learnable_kernel"])
+        if config.meta_adaptive and "meta_kernel" in data:
+            memory.field.meta_kernel.load_state(data["meta_kernel"])
+        if config.self_healing and "healer" in data:
+            memory.field.healer.load_state(data["healer"])
+        if config.causal_topological and "causal_engine" in data:
+            memory.field.causal_engine.load_state(data["causal_engine"])
+        if config.continuous_dynamics and "ode_dynamics" in data:
+            ode_state = data["ode_dynamics"]
+            memory.field.ode_dynamics.alpha = ode_state.get("alpha", 0.1)
+            memory.field.ode_dynamics.beta = ode_state.get("beta", 0.05)
+            memory.field.ode_dynamics.gamma = ode_state.get("gamma", 0.02)
+            if "W" in ode_state:
+                memory.field.ode_dynamics.W = np.array(ode_state["W"], dtype=np.float32)
+            memory.field.ode_dynamics.noise_level = ode_state.get("noise_level", 0.01)
+        if config.meta_controller and "meta_controller" in data:
+            memory.field.meta_controller.load_state(data["meta_controller"])
+        if config.federated and "federated" in data:
+            memory.field.federated.import_state(data["federated"])
+        if config.meta_memory and "meta_memory_eval" in data:
+            memory.field.meta_memory_eval.load_state(data["meta_memory_eval"])
+        if config.security_enabled and "security" in data:
+            memory.field.security.load_state(data["security"])
+        if config.swarm_memory and "swarm" in data:
+            memory.field.swarm.load_state(data["swarm"])
+        if config.version_control and "version_control" in data:
+            memory.field.version_control.import_state(data["version_control"])
+        if config.entropy_management and "entropy_ctrl" in data:
+            memory.field.entropy_ctrl.load_state_dict(data["entropy_ctrl"])
+        if config.symbolic_overlay and "symbolic_overlay" in data:
+            memory.field.symbolic_overlay.load_state(data["symbolic_overlay"])
+        if config.safety_certifier and "safety_certifier" in data:
+            memory.field.safety_certifier.load_state(data["safety_certifier"])
+
+        for nd in data["nodes"]:
+            node = MemoryNode.from_dict(nd)
+            memory.field.nodes[node.id] = node
+            memory.field.node_index.append(node.id)
+        memory.field.stats = data.get("stats", memory.field.stats)
+        return memory
+
 
 # ============================================================================
 # RTMDKMemory v7
@@ -4936,6 +5138,24 @@ class RTMDKMemory(BaseModel):
             self.field.stats["cognitive_compressions"] += 1
         else:
             context = format_context(results, self.config.context_format)
+
+        # Phase 16 Track 1: SymbolicOverlay — add symbolic context
+        if self.config.symbolic_overlay and self.field.symbolic_overlay and results:
+            # Extract facts from top results
+            facts = []
+            for nid, score, node in results[:3]:
+                text = node.content.get("text", "")
+                concepts = self.field.symbolic_overlay._extract_concepts(text)
+                facts.extend(concepts)
+            if facts:
+                symbolic_ctx = self.field.symbolic_overlay.get_symbolic_context(facts, max_depth=2)
+                if symbolic_ctx:
+                    context += "\n\n" + symbolic_ctx
+                    self.field.stats["n_symbolic_inferences"] += 1
+                    n_conflicts = sum(1 for r in self.field.symbolic_overlay.rules.values()
+                                     if r.is_contextual_exception)
+                    self.field.stats["n_symbolic_conflicts"] = n_conflicts
+
         return {"rtmdk_context": context}
 
     def _generate_clarification(self, results: List, query: str) -> str:
@@ -5132,3 +5352,29 @@ class RTMDKMemory(BaseModel):
     @classmethod
     def import_field(cls, path: str, embedder: Callable) -> "RTMDKMemory":
         return RTMDKField.import_field(path, embedder)
+
+    # Phase 16 Track 3: Universal Memory Protocol
+    def export_ump(self, path: str, source: str = "", comment: str = ""):
+        """Export to Universal Memory Protocol format."""
+        if not UMP_AVAILABLE:
+            raise ImportError("Universal Memory Protocol not available. Install rtmdk.support.ump")
+        ump = UniversalMemoryProtocol.export(self.field, self, source=source, comment=comment)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(ump, f, ensure_ascii=False, indent=2)
+
+    @classmethod
+    def import_ump(cls, path: str, embedder: Callable) -> "RTMDKMemory":
+        """Import from Universal Memory Protocol format."""
+        if not UMP_AVAILABLE:
+            raise ImportError("Universal Memory Protocol not available. Install rtmdk.support.ump")
+        with open(path, "r", encoding="utf-8") as f:
+            ump = json.load(f)
+        return UniversalMemoryProtocol.import_ump(ump, embedder, memory_class=cls)
+
+    def validate_ump(self, path: str) -> Dict:
+        """Validate a UMP file."""
+        if not UMP_AVAILABLE:
+            return {"valid": False, "issues": ["UMP not available"]}
+        with open(path, "r", encoding="utf-8") as f:
+            ump = json.load(f)
+        return UniversalMemoryProtocol.validate(ump)
