@@ -2,9 +2,10 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# System dependencies
+# System dependencies (curl for healthcheck, gcc for numpy)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Python dependencies
@@ -14,6 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Application code
 COPY rtmdk_memory_v8.py .
 COPY rtmdk_server.py .
+COPY rtmdk/ ./rtmdk/
 
 # Create memory directory
 RUN mkdir -p /root/.rtmdk
