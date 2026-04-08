@@ -963,7 +963,7 @@ class MetaController:
         self.optimization_freq = optimization_freq
         self._optuna_available = False
         self._best_params: Dict[str, float] = {}
-        self._optimization_history: List[Dict] = []
+        self._optimization_history: deque = deque(maxlen=50)
         self._step_counter = 0
         self._last_optimization_time: float = 0.0
         self._total_optimizations = 0
@@ -1183,7 +1183,7 @@ class FederatedRTMDK:
         self.min_resonance = min_resonance
         self.kuramoto = KuramotoSync(coupling_strength=coupling_strength)
         self.peers: Dict[str, FederatedNode] = {}
-        self._sync_history: List[Dict] = []
+        self._sync_history: deque = deque(maxlen=100)
         self._total_syncs = 0
         self._step_counter = 0
 
@@ -1601,7 +1601,7 @@ class ShadowModeEvaluator:
 
 class RAGASPlusEvaluator:
     def __init__(self):
-        self._eval_history: List[EvalResult] = []
+        self._eval_history: deque = deque(maxlen=500)
 
     def evaluate(self, question: str, answer: str, contexts: List[str],
                  ground_truth: Optional[str] = None,
@@ -1775,7 +1775,7 @@ class GoalTracker:
         self.goal_decay = goal_decay
         self.completion_threshold = completion_threshold
         self.goals: Dict[str, GoalNode] = {}
-        self._history: List[Dict] = []
+        self._history: deque = deque(maxlen=200)
 
     def add_goal(self, description: str, goal_id: Optional[str] = None,
                  subgoals: Optional[List[str]] = None,
@@ -3342,6 +3342,12 @@ class RTMDKField:
             self.gpu_backend = None
         self.hnsw_index = HNSWIndex(config.hnsw_m, config.hnsw_ef_construction) if config.use_hnsw else None
 
+        # Pre-select batch resonance backend to avoid branching in hot path
+        if self.gpu_backend and self.gpu_backend.available:
+            self._batch_resonance_fn = self._batch_resonance_torch
+        else:
+            self._batch_resonance_fn = self._batch_resonance_numpy
+
         self.learnable_kernel: Optional[LearnableKernel] = None
         self.diff_consolidation: Optional[DifferentiableConsolidation] = None
         if config.differentiable:
@@ -3613,7 +3619,7 @@ class RTMDKField:
             "field_integrity_issues": 0,
         }
         self._step_counter = 0
-        self._rollback_history: List[Dict] = []
+        self._rollback_history: deque = deque(maxlen=config.max_rollback_history)
         self._stability_buffer: deque = deque(maxlen=config.field_stability_window)
         self._active_node_history: deque = deque(maxlen=50)
 
@@ -3685,7 +3691,12 @@ class RTMDKField:
 
     def _batch_resonance(self, query_latents: NDArray, query_phases: NDArray,
                          node_ids: List[str]) -> NDArray:
-        """Batch resonance computation. Uses Torch if available, else numpy."""
+        """Batch resonance computation. Pre-selected backend avoids hot-path branching."""
+        return self._batch_resonance_fn(query_latents, query_phases, node_ids)
+
+    def _batch_resonance_numpy(self, query_latents: NDArray, query_phases: NDArray,
+                               node_ids: List[str]) -> NDArray:
+        """Pure numpy batch resonance — no branching, no torch overhead."""
         if not node_ids:
             return np.empty((len(query_latents), 0), dtype=np.float32)
 
@@ -3694,21 +3705,29 @@ class RTMDKField:
         node_amplitudes = np.array([self.nodes[nid].amplitude for nid in node_ids])
         node_saliences = np.array([self.nodes[nid].salience for nid in node_ids])
 
-        # Fix 1: Torch backend auto-switch for batch computation
-        if self.gpu_backend and self.gpu_backend.available:
-            return self.gpu_backend.batch_resonance(
-                query_latents, query_phases, node_positions, node_phases,
-                node_amplitudes, node_saliences,
-                self.cfg.bandwidth, self.cfg.phase_coupling
-            )
-
-        # Numpy fallback
         dists = cdist(query_latents, node_positions)
         spatial = np.exp(-dists / self.cfg.bandwidth)
         phase_diff = query_phases[:, np.newaxis] - node_phases[np.newaxis, :]
         phase_align = 0.5 + 0.5 * np.cos(phase_diff)
         response = spatial * ((1 - self.cfg.phase_coupling) + self.cfg.phase_coupling * phase_align)
         return response * node_amplitudes[np.newaxis, :] * node_saliences[np.newaxis, :]
+
+    def _batch_resonance_torch(self, query_latents: NDArray, query_phases: NDArray,
+                               node_ids: List[str]) -> NDArray:
+        """Torch batch resonance — GPU accelerated."""
+        if not node_ids:
+            return np.empty((len(query_latents), 0), dtype=np.float32)
+
+        node_positions = np.array([self.nodes[nid].latent_pos for nid in node_ids])
+        node_phases = np.array([self.nodes[nid].phase for nid in node_ids])
+        node_amplitudes = np.array([self.nodes[nid].amplitude for nid in node_ids])
+        node_saliences = np.array([self.nodes[nid].salience for nid in node_ids])
+
+        return self.gpu_backend.batch_resonance(
+            query_latents, query_phases, node_positions, node_phases,
+            node_amplitudes, node_saliences,
+            self.cfg.bandwidth, self.cfg.phase_coupling
+        )
 
     def query(self, embedding: NDArray, phase: float = 0.0, top_k: Optional[int] = None,
               modality: str = "text") -> List[Tuple[str, float, MemoryNode]]:
@@ -5035,13 +5054,18 @@ class RTMDKField:
         self.stats["avg_rl_reward"] = self.rl_feedback_loop.get_average_reward()
         return reward
 
-    def export_field(self, path: str):
+    def export_field(self, path: str, fmt: str = "json"):
+        """Export field state to file.
+
+        Args:
+            path: Output file path
+            fmt: "json" (default) or "msgpack" (binary, requires msgpack)
+        """
         cd = asdict(self.config) if hasattr(self, 'config') else asdict(self.cfg)
         cd["consolidation_mode"] = cd["consolidation_mode"].value if isinstance(cd.get("consolidation_mode"), Enum) else cd.get("consolidation_mode", "dialectical")
         cd["backend"] = cd["backend"].value if isinstance(cd.get("backend"), Enum) else cd.get("backend", "numpy")
         cd["context_format"] = cd["context_format"].value if isinstance(cd.get("context_format"), Enum) else cd.get("context_format", "plain")
         cd["eval_mode"] = cd["eval_mode"].value if isinstance(cd.get("eval_mode"), Enum) else cd.get("eval_mode", "production")
-        # Convert sets to lists for JSON serialization
         if "memory_tiers" in cd and isinstance(cd["memory_tiers"], set):
             cd["memory_tiers"] = list(cd["memory_tiers"])
         data = {"config": cd, "nodes": [n.to_dict() for n in self.nodes.values()], "stats": self.stats}
@@ -5051,8 +5075,6 @@ class RTMDKField:
             data["projection"] = self._raw_projection.tolist()
         if self.learnable_kernel:
             data["learnable_kernel"] = self.learnable_kernel.get_state()
-        if self.tda_monitor:
-            data["tda_history"] = self.tda_monitor.history
         if self.meta_kernel:
             data["meta_kernel"] = self.meta_kernel.get_state()
         if self.healer:
@@ -5061,25 +5083,62 @@ class RTMDKField:
             data["causal_engine"] = self.causal_engine.get_state()
         if self.ode_dynamics:
             data["ode_dynamics"] = self.ode_dynamics.get_state()
-        # Track 10 exports
         if self.meta_controller:
             data["meta_controller"] = self.meta_controller.get_state()
         if self.federated:
             data["federated"] = self.federated.export_state()
-        # Phase 14 exports
         if self.meta_memory_eval:
             data["meta_memory_eval"] = self.meta_memory_eval.get_state()
         if self.security:
             data["security"] = self.security.get_state()
         if self.swarm:
             data["swarm"] = self.swarm.get_state()
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        if self.version_control:
+            data["version_control"] = self.version_control.export_state()
+        if self.entropy_ctrl:
+            data["entropy_ctrl"] = self.entropy_ctrl.get_state_dict()
+        if self.symbolic_overlay:
+            data["symbolic_overlay"] = self.symbolic_overlay.get_state()
+        if self.safety_certifier:
+            data["safety_certifier"] = self.safety_certifier.get_state()
+
+        if fmt == "msgpack":
+            try:
+                import msgpack
+                import zlib
+                packed = msgpack.packb(data, use_bin_type=True)
+                compressed = zlib.compress(packed)
+                with open(path, "wb") as f:
+                    f.write(compressed)
+            except ImportError:
+                import warnings
+                warnings.warn("msgpack not installed, falling back to JSON. Install: pip install msgpack")
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+        else:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
 
     @classmethod
     def import_field(cls, path: str, embedder: Callable) -> "RTMDKMemory":
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        # Auto-detect format: msgpack files start with zlib magic bytes
+        with open(path, "rb") as f:
+            header = f.read(2)
+        is_msgpack = header[0:1] == b'x'  # zlib compressed
+
+        if is_msgpack:
+            try:
+                import msgpack
+                import zlib
+                with open(path, "rb") as f:
+                    compressed = f.read()
+                packed = zlib.decompress(compressed)
+                data = msgpack.unpackb(packed, raw=False)
+            except ImportError:
+                raise ImportError("msgpack required for binary import. Install: pip install msgpack")
+        else:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
         cd = data["config"]
         if isinstance(cd.get("consolidation_mode"), str):
             cd["consolidation_mode"] = ConsolidationMode(cd["consolidation_mode"])
