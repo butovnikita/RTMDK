@@ -285,6 +285,49 @@ class RTMDKConfig:
     swarm_max_agents: int = 10
     swarm_vote_weight: float = 0.3
 
+    # Phase 15 Track 1: Version Control (Memory Git)
+    version_control: bool = False
+    max_versions: int = 100
+
+    # Phase 15 Track 2: Proactive Clarification
+    proactive_clarification: bool = False
+    clarification_threshold_ratio: float = 0.5
+
+    # Phase 15 Track 3: Attention Tokens
+    attention_tokens: bool = True  # Enabled by default (extends attention_bias)
+
+    # Phase 15 Track 4: Entropy Control
+    entropy_management: bool = False
+    entropy_high_threshold: float = 3.0
+    entropy_low_threshold: float = 0.5
+
+    # Phase 15 Track 5: Triton/CUDA Backend
+    triton_backend: bool = False
+    min_nodes_for_gpu: int = 2000
+
+    # Phase 16 Track 1: SymbolicOverlay
+    symbolic_overlay: bool = False
+    symbolic_min_self_sup: float = 0.7
+    symbolic_max_tension: float = 0.15
+    symbolic_confidence_threshold: float = 0.65
+
+    # Phase 16 Track 2: SafetyCertifier
+    safety_certifier: bool = False
+    safety_mode: str = "soft_regulate"  # monitor_only | soft_regulate | hard_block
+    lyapunov_alpha: float = 0.4
+    lyapunov_beta: float = 0.4
+    lyapunov_gamma: float = 0.2
+    lyapunov_threshold: float = 0.1
+
+    # Phase 16 Track 3: Universal Memory Protocol
+    ump_enabled: bool = False
+
+    # Phase 17: RoleShardRouter
+    role_sharding: bool = False
+    role_shards: Set[str] = field(default_factory=lambda: {"default"})
+    cross_shard_threshold: float = 0.45
+    auto_role_detection: bool = True
+
     def __post_init__(self):
         logger.setLevel(getattr(logging, self.log_level.upper()))
         if not self.modality_phase_shifts:

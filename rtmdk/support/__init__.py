@@ -58,4 +58,14 @@ __all__ = [
     "ShadowModeEvaluator",
     "RAGASPlusEvaluator",
     "AutoRollbackManager",
+    # Phase 15
+    "VersionControl", "NodeDelta", "Version", "DiffResult",
+    "EntropyController",
+    "TritonBackend", "TRITON_AVAILABLE",
+    # Phase 16
+    "SymbolicOverlay", "SymbolicRule", "SymbolicInference",
+    "SafetyCertifier", "LyapunovFunction",
+    "UniversalMemoryProtocol", "UMP_VERSION", "UMP_SCHEMA",
+    # Phase 17
+    "RoleShardRouter", "RoleShard", "RoleDetector", "DEFAULT_ROLE",
 ]

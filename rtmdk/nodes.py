@@ -45,6 +45,7 @@ class MemoryNode:
     modal_embedding: Optional[NDArray[np.float32]] = None
     cross_modal_score: float = 0.0
     tier: str = "semantic"
+    role: str = "default"  # Phase 17: Role shard assignment
     goal_relevance: float = 0.0
     rl_reward: float = 0.0
 
