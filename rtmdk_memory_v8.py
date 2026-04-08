@@ -3366,19 +3366,16 @@ class RTMDKField:
             self.healer = TopologyHealer(config.dead_zone_threshold, config.hyperconvergence_threshold,
                                         config.fragmentation_threshold, config.healing_strength, config.max_healing_nodes_per_step)
 
-        self.causal_engine: Optional[CausalInferenceEngine] = None
-        if config.causal_topological:
-            self.causal_engine = CausalInferenceEngine(
-                min_samples=config.causal_discovery_min_samples,
-                p_threshold=config.causal_p_threshold,
-                adjustment_sets_enabled=config.causal_adjustment_sets)
+        # B2: Lazy module initialization — store flags but don't instantiate yet
+        self._causal_engine: Optional[CausalInferenceEngine] = None
+        self._causal_engine_initialized = config.causal_topological
 
-        self.ode_dynamics: Optional[NeuralODEDynamics] = None
-        if config.continuous_dynamics:
-            self.ode_dynamics = NeuralODEDynamics(
-                config.latent_dim, config.sde_noise_level, config.ode_time_horizon,
-                config.ode_n_steps, config.ode_chunk_size, config.ode_solver,
-                config.ode_atol, config.ode_rtol)
+        self._ode_dynamics: Optional[NeuralODEDynamics] = None
+        self._ode_dynamics_initialized = config.continuous_dynamics
+
+        # Track 10.2: Meta-controller — B2 lazy init
+        self._meta_controller: Optional[MetaController] = None
+        self._meta_controller_initialized = config.meta_controller
 
         self.agent_planner: Optional[AgentPlanner] = None
         self.hypothesis_verifier: Optional[HypothesisVerifier] = None
@@ -3398,15 +3395,6 @@ class RTMDKField:
                 self.ragas_evaluator = RAGASPlusEvaluator()
             if config.auto_rollback:
                 self.rollback_manager = AutoRollbackManager(config.auto_rollback_threshold)
-
-        # Track 10.2: Meta-controller
-        self.meta_controller: Optional[MetaController] = None
-        if config.meta_controller:
-            self.meta_controller = MetaController(
-                n_trials=config.meta_n_trials,
-                optimize_params=config.meta_optimize_params,
-                optimization_freq=config.meta_optimization_freq,
-            )
 
         # Track 10.3: Federated
         self.federated: Optional[FederatedRTMDK] = None
@@ -3451,6 +3439,12 @@ class RTMDKField:
         self._write_lock: Optional[asyncio.Lock] = None
         self._backpressure_events = 0
         self._heavy_modules_disabled = False
+
+        # B1: Tension caching
+        self._tension_cache: Dict[str, Tuple[float, float]] = {}  # node_id -> (tension, step)
+        self._tension_cache_max_age = 5  # steps
+        self._tension_cache_hits = 0
+        self._tension_cache_misses = 0
 
         # Phase 12 Track 4: Async pipeline queues
         self.query_q: Optional[asyncio.Queue] = None
@@ -3617,6 +3611,9 @@ class RTMDKField:
             "n_shards": 0, "shard_distribution": {},
             "cross_shard_exchanges": 0, "role_router_enabled": False,
             "field_integrity_issues": 0,
+            # B1: Tension cache stats
+            "tension_cache_hits": 0, "tension_cache_misses": 0,
+            "tension_cache_hit_rate": 0.0,
         }
         self._step_counter = 0
         self._rollback_history: deque = deque(maxlen=config.max_rollback_history)
@@ -3855,6 +3852,52 @@ class RTMDKField:
 
         return results[:top_k]
 
+    # B2: Lazy property for causal engine
+    @property
+    def causal_engine(self) -> Optional["CausalInferenceEngine"]:
+        if self._causal_engine_initialized and self._causal_engine is None:
+            self._causal_engine = CausalInferenceEngine(
+                min_samples=self.cfg.causal_discovery_min_samples,
+                p_threshold=self.cfg.causal_p_threshold,
+                adjustment_sets_enabled=self.cfg.causal_adjustment_sets)
+        return self._causal_engine
+
+    @causal_engine.setter
+    def causal_engine(self, value: Optional["CausalInferenceEngine"]):
+        self._causal_engine = value
+        self._causal_engine_initialized = value is not None
+
+    # B2: Lazy property for ODE dynamics
+    @property
+    def ode_dynamics(self) -> Optional["NeuralODEDynamics"]:
+        if self._ode_dynamics_initialized and self._ode_dynamics is None:
+            self._ode_dynamics = NeuralODEDynamics(
+                self.cfg.latent_dim, self.cfg.sde_noise_level, self.cfg.ode_time_horizon,
+                self.cfg.ode_n_steps, self.cfg.ode_chunk_size, self.cfg.ode_solver,
+                self.cfg.ode_atol, self.cfg.ode_rtol)
+        return self._ode_dynamics
+
+    @ode_dynamics.setter
+    def ode_dynamics(self, value: Optional["NeuralODEDynamics"]):
+        self._ode_dynamics = value
+        self._ode_dynamics_initialized = value is not None
+
+    # B2: Lazy property for meta-controller
+    @property
+    def meta_controller(self) -> Optional["MetaController"]:
+        if self._meta_controller_initialized and self._meta_controller is None:
+            self._meta_controller = MetaController(
+                n_trials=self.cfg.meta_n_trials,
+                optimize_params=self.cfg.meta_optimize_params,
+                optimization_freq=self.cfg.meta_optimization_freq,
+            )
+        return self._meta_controller
+
+    @meta_controller.setter
+    def meta_controller(self, value: Optional["MetaController"]):
+        self._meta_controller = value
+        self._meta_controller_initialized = value is not None
+
     def add_node(self, embedding: NDArray, content: Dict, phase: Optional[float] = None,
                  node_id: Optional[str] = None, session_id: Optional[str] = None, modality: str = "text") -> str:
         # Phase 14 Track 2: Security validation
@@ -3895,6 +3938,9 @@ class RTMDKField:
         self.node_index.append(nid)
         self.stats["total_adds"] += 1
 
+        # B1: Invalidate tension cache for neighbors (new node affects topology)
+        self._invalidate_tension_cache(nid)
+
         # Phase 17: Update shard distribution stats
         if self.role_router:
             self.stats["n_shards"] = len(self.role_router.shards)
@@ -3916,7 +3962,35 @@ class RTMDKField:
 
         return nid
 
+    def _invalidate_tension_cache(self, node_id: Optional[str] = None):
+        """B1: Invalidate tension cache. If node_id given, invalidate that node and neighbors.
+        Otherwise, invalidate entire cache."""
+        if node_id is not None:
+            # Remove specific node and mark neighbors for refresh
+            self._tension_cache.pop(node_id, None)
+            # Invalidate cache for nodes near the changed one
+            node = self.nodes.get(node_id)
+            if node:
+                for nid in list(self._tension_cache.keys()):
+                    if nid == node_id:
+                        continue
+                    # Simple proximity check: invalidate ~20% of cache
+                    if hash(nid) % 5 == 0:
+                        self._tension_cache.pop(nid, None)
+        else:
+            # Full invalidation
+            self._tension_cache.clear()
+
     def _compute_tension(self, node_id: str, neighborhood_radius: float = 2.0) -> float:
+        # B1: Tension cache check
+        if node_id in self._tension_cache:
+            cached_tension, cached_step = self._tension_cache[node_id]
+            if self._step_counter - cached_step < self._tension_cache_max_age:
+                self._tension_cache_hits += 1
+                return cached_tension
+
+        self._tension_cache_misses += 1
+
         node = self.nodes[node_id]
 
         # Use HNSW for fast k-NN, else fallback to deterministic k-NN via cdist
@@ -3960,18 +4034,21 @@ class RTMDKField:
                 neighbor_ids = [oid for oid, _ in radius_dists[:k_neighbors]]
 
         if len(neighbor_ids) < 2:
-            return 0.0
-
-        neighbors = [self.nodes[oid] for oid in neighbor_ids]
-        phases = np.array([n.phase for n in neighbors])
-        saliences = np.array([n.salience for n in neighbors])
-        tension = 0.6 * (np.std(np.cos(phases)) + np.std(np.sin(phases))) + 0.4 * np.std(saliences)
+            tension = 0.0
+        else:
+            neighbors = [self.nodes[oid] for oid in neighbor_ids]
+            phases = np.array([n.phase for n in neighbors])
+            saliences = np.array([n.salience for n in neighbors])
+            tension = 0.6 * (np.std(np.cos(phases)) + np.std(np.sin(phases))) + 0.4 * np.std(saliences)
 
         # Phase 14 Track 2: Security - detect tension spikes
         if self.security and not self.security.validate_tension_spike(float(tension)):
             self.stats["tension_spikes_blocked"] += 1
 
-        return float(tension)
+        # B1: Cache the computed tension
+        result = float(tension)
+        self._tension_cache[node_id] = (result, self._step_counter)
+        return result
 
     def _soft_gate(self, tension: float) -> float:
         if not self.cfg.soft_gates:
@@ -4184,6 +4261,9 @@ class RTMDKField:
         for pid in pending_deletions:
             if pid in self.nodes:
                 del self.nodes[pid]
+        # B1: Invalidate cache on consolidation (nodes removed/merged)
+        if pending_deletions:
+            self._invalidate_tension_cache()
         # Rebuild node_index in one pass
         self.node_index = [nid for nid in self.node_index if nid in self.nodes]
 
@@ -4330,6 +4410,9 @@ class RTMDKField:
             if self.cfg.bm25_fallback and self.bm25_index:
                 self.bm25_index.remove_document(nid)
             del self.nodes[nid]
+        # B1: Invalidate cache on node pruning
+        if to_remove:
+            self._invalidate_tension_cache()
         # FIX: Rebuild node_index once instead of O(N) remove per node
         self.node_index = [nid for nid in self.node_index if nid in self.nodes]
 
@@ -4514,13 +4597,17 @@ class RTMDKField:
         # Max nodes pruning: every 10 steps
         if self.cfg.max_nodes and len(self.nodes) > self.cfg.max_nodes and self._step_counter % 10 == 0:
             sorted_nodes = sorted(self.node_index, key=lambda nid: self.nodes[nid].salience * self.nodes[nid].amplitude)
-            for nid in sorted_nodes[:len(self.nodes) - self.cfg.max_nodes]:
+            n_pruned = len(self.nodes) - self.cfg.max_nodes
+            for nid in sorted_nodes[:n_pruned]:
                 if self.cfg.use_hnsw and self.hnsw_index:
                     self.hnsw_index.remove(nid)
                 if self.cfg.bm25_fallback and self.bm25_index:
                     self.bm25_index.remove_document(nid)
                 del self.nodes[nid]
                 self.node_index.remove(nid)
+            # B1: Invalidate cache on max_nodes pruning
+            if n_pruned > 0:
+                self._invalidate_tension_cache()
 
         # Self-supervision: every 20 steps
         if self.cfg.self_supervision and self._step_counter % 20 == 0:
@@ -4680,6 +4767,13 @@ class RTMDKField:
             if integrity["n_issues"] > 0:
                 logger.warning(f"Field integrity issues at step {self._step_counter}: {integrity['n_issues']} issues")
                 self.stats["field_integrity_issues"] = integrity["n_issues"]
+
+        # B1: Update tension cache stats every 50 steps
+        if self._step_counter % 50 == 0:
+            total = self._tension_cache_hits + self._tension_cache_misses
+            self.stats["tension_cache_hits"] = self._tension_cache_hits
+            self.stats["tension_cache_misses"] = self._tension_cache_misses
+            self.stats["tension_cache_hit_rate"] = (self._tension_cache_hits / total) if total > 0 else 0.0
 
     def _self_heal(self) -> List[Dict]:
         if not self.healer or len(self.nodes) < 3:

@@ -35,6 +35,7 @@ import logging
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from dataclasses import asdict
+from datetime import datetime, timezone
 
 import numpy as np
 from fastapi import FastAPI, HTTPException, Request
@@ -63,11 +64,46 @@ API_KEY = os.getenv("RTMDK_API_KEY", "rtmdk-local")
 ENABLE_LM_STUDIO = os.getenv("RTMDK_ENABLE_LM_STUDIO", "true").lower() == "true"
 AUTO_SAVE_INTERVAL = int(os.getenv("RTMDK_AUTO_SAVE", "60"))  # seconds
 
-# Logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-)
+# ============================================================================
+# C2: STRUCTURED JSON LOGGING
+# ============================================================================
+
+class JSONFormatter(logging.Formatter):
+    """C2: JSON structured log formatter for production logging."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        log_entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "level": record.levelname,
+            "module": record.name,
+            "message": record.getMessage(),
+        }
+        # Add trace_id if available in request state
+        if hasattr(record, "trace_id") and record.trace_id:
+            log_entry["trace_id"] = record.trace_id
+        # Add exception info if present
+        if record.exc_info and record.exc_info[0] is not None:
+            log_entry["exception"] = self.formatException(record.exc_info)
+        # Add extra fields
+        if hasattr(record, "extra"):
+            log_entry.update(record.extra)
+        return json.dumps(log_entry, ensure_ascii=False, default=str)
+
+
+# Configure logging based on env var
+LOG_FORMAT = os.getenv("RTMDK_LOG_FORMAT", "text").lower()
+if LOG_FORMAT == "json":
+    _json_handler = logging.StreamHandler(sys.stdout)
+    _json_handler.setFormatter(JSONFormatter())
+    logging.basicConfig(
+        level=logging.INFO,
+        handlers=[_json_handler],
+    )
+else:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    )
 logger = logging.getLogger("rtmdk_server")
 
 # ============================================================================
@@ -94,6 +130,12 @@ embedder_cache: Dict[str, np.ndarray] = {}
 lm_studio_available: bool = False
 chat_model: Optional[str] = None
 auto_save_task = None
+
+# C3: Prometheus metrics counters
+_metrics_queries_total = 0
+_metrics_consolidations_total = 0
+_metrics_query_latencies: List[float] = []  # in ms
+_metrics_field_health: int = 0  # 0=stable, 1=degraded, 2=critical
 
 # ============================================================================
 # PYDANTIC MODELS (OpenAI-compatible)
@@ -498,9 +540,14 @@ async def save_context(req: SaveContextRequest):
 @app.post("/v1/memory/query")
 async def query_memory(req: QueryMemoryRequest):
     """Query relevant memory."""
+    global _metrics_queries_total, _metrics_query_latencies
+    _metrics_queries_total += 1
+    t0 = time.time()
     if not memory:
         raise HTTPException(status_code=503, detail="Memory not initialized")
     ctx = memory.load_memory_variables({"input": req.query, "session_id": req.session_id})
+    latency_ms = (time.time() - t0) * 1000
+    _metrics_query_latencies.append(latency_ms)
     return {"context": ctx["rtmdk_context"]}
 
 
@@ -561,6 +608,82 @@ async def health_check():
 
 
 # ============================================================================
+# C3: PROMETHEUS /metrics ENDPOINT
+# ============================================================================
+
+def _compute_field_health() -> int:
+    """C3: Compute field health: 0=stable, 1=degraded, 2=critical."""
+    if not memory or not memory.field:
+        return 0
+    health = memory.field.stats.get("field_health", "stable")
+    health_map = {"stable": 0, "degraded": 1, "critical": 2, "healing": 1}
+    return health_map.get(str(health), 0)
+
+
+def _histogram_to_prometheus(buckets: List[float], name: str) -> str:
+    """Convert latency list to Prometheus histogram format."""
+    if not buckets:
+        return (
+            f"{name}_bucket{{le=\"10\"}} 0\n"
+            f"{name}_bucket{{le=\"50\"}} 0\n"
+            f"{name}_bucket{{le=\"100\"}} 0\n"
+            f"{name}_bucket{{le=\"500\"}} 0\n"
+            f"{name}_bucket{{le=\"1000\"}} 0\n"
+            f"{name}_bucket{{le=\"+Inf\"}} 0\n"
+            f"{name}_sum 0.0\n"
+            f"{name}_count 0\n"
+        )
+    bounds = [10, 50, 100, 500, 1000]
+    lines = []
+    cumulative = 0
+    for bound in bounds:
+        cumulative += sum(1 for v in buckets if v <= bound)
+        lines.append(f"{name}_bucket{{le=\"{bound}\"}} {cumulative}")
+    cumulative = len(buckets)
+    lines.append(f"{name}_bucket{{le=\"+Inf\"}} {cumulative}")
+    lines.append(f"{name}_sum {sum(buckets):.2f}")
+    lines.append(f"{name}_count {cumulative}")
+    return "\n".join(lines)
+
+
+@app.get("/metrics")
+async def prometheus_metrics():
+    """C3: Prometheus text exposition format metrics."""
+    global _metrics_queries_total, _metrics_consolidations_total
+    global _metrics_query_latencies, _metrics_field_health
+
+    nodes_total = len(memory.field.nodes) if memory and memory.field else 0
+    field_health = _compute_field_health()
+    _metrics_field_health = field_health
+
+    # Trim latency history to last 1000 entries
+    _metrics_query_latencies = _metrics_query_latencies[-1000:]
+
+    lines = [
+        "# HELP rtmdk_nodes_total Total number of memory nodes.",
+        "# TYPE rtmdk_nodes_total gauge",
+        f"rtmdk_nodes_total {nodes_total}",
+        "",
+        "# HELP rtmdk_queries_total Total number of queries.",
+        "# TYPE rtmdk_queries_total counter",
+        f"rtmdk_queries_total {_metrics_queries_total}",
+        "",
+        "# HELP rtmdk_consolidations_total Total number of consolidations.",
+        "# TYPE rtmdk_consolidations_total counter",
+        f"rtmdk_consolidations_total {_metrics_consolidations_total}",
+        "",
+        "# HELP rtmdk_query_latency_ms Query latency histogram.",
+        "# TYPE rtmdk_query_latency_ms histogram",
+        _histogram_to_prometheus(_metrics_query_latencies, "rtmdk_query_latency_ms"),
+        "",
+        "# HELP rtmdk_field_health Field health gauge (0=stable, 1=degraded, 2=critical).",
+        "# TYPE rtmdk_field_health gauge",
+        f"rtmdk_field_health {field_health}",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+# ============================================================================
 # STARTUP / SHUTDOWN
 # ============================================================================
 
@@ -585,14 +708,37 @@ async def startup():
 
 @app.on_event("shutdown")
 async def shutdown():
-    """Save memory on shutdown."""
+    """C4: Save memory and clean up on shutdown."""
+    logger.info("RTMDK server shutting down...")
     if memory:
         try:
             os.makedirs(os.path.dirname(MEMORY_FILE), exist_ok=True)
             memory.export_field(MEMORY_FILE)
-            logger.info(f"Memory saved to {MEMORY_FILE}")
+            logger.info(f"Memory saved to {MEMORY_FILE} ({len(memory.field.nodes)} nodes)")
         except Exception as e:
-            logger.error(f"Failed to save memory: {e}")
+            logger.error(f"Failed to save memory on shutdown: {e}")
+    logger.info("RTMDK server shutdown complete")
+
+
+# C4: Signal handlers for graceful shutdown
+def _graceful_shutdown(signum, frame):
+    """Handle SIGTERM/SIGINT for graceful shutdown."""
+    logger.info(f"Received signal {signum}, initiating graceful shutdown...")
+    if memory:
+        try:
+            os.makedirs(os.path.dirname(MEMORY_FILE), exist_ok=True)
+            memory.export_field(MEMORY_FILE)
+            logger.info(f"Memory saved on signal {signum}")
+        except Exception as e:
+            logger.error(f"Memory save failed on signal {signum}: {e}")
+    logger.info("Graceful shutdown complete")
+    sys.exit(0)
+
+
+# Register signal handlers (only on non-Windows for SIGTERM support)
+if os.name != "nt":
+    signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
 
 
 # ============================================================================

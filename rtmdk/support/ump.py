@@ -240,3 +240,104 @@ class UniversalMemoryProtocol:
             "issues": issues,
             "warnings": warnings,
         }
+
+    @staticmethod
+    def diff(base_state: Dict, new_state: Dict) -> Dict:
+        """D2: Compute delta between two RTMDK field states.
+
+        Args:
+            base_state: Original field state dict (from export_to_dict)
+            new_state: New field state dict
+
+        Returns:
+            Delta dict: {"added_nodes": [...], "removed_nodes": [...], "modified_nodes": [...]}
+        """
+        base_nodes = base_state.get("nodes", {})
+        new_nodes = new_state.get("nodes", {})
+
+        base_ids = set(base_nodes.keys())
+        new_ids = set(new_nodes.keys())
+
+        added_ids = new_ids - base_ids
+        removed_ids = base_ids - new_ids
+        common_ids = base_ids & new_ids
+
+        added_nodes = []
+        for nid in added_ids:
+            node = new_nodes[nid]
+            added_nodes.append({"id": nid, **node})
+
+        removed_nodes = []
+        for nid in removed_ids:
+            node = base_nodes[nid]
+            removed_nodes.append({"id": nid, **node})
+
+        modified_nodes = []
+        for nid in common_ids:
+            base_node = base_nodes[nid]
+            new_node = new_nodes[nid]
+            if base_node != new_node:
+                # Compute field-level diff
+                changes = {}
+                for key in set(list(base_node.keys()) + list(new_node.keys())):
+                    old_val = base_node.get(key)
+                    new_val = new_node.get(key)
+                    if old_val != new_val:
+                        changes[key] = {"old": old_val, "new": new_val}
+                if changes:
+                    modified_nodes.append({"id": nid, "changes": changes})
+
+        return {
+            "added_nodes": added_nodes,
+            "removed_nodes": removed_nodes,
+            "modified_nodes": modified_nodes,
+            "delta_hash": compute_sha256({
+                "added": len(added_nodes),
+                "removed": len(removed_nodes),
+                "modified": len(modified_nodes),
+            }),
+        }
+
+    @staticmethod
+    def apply_delta(state: Dict, delta: Dict) -> Dict:
+        """D2: Apply a delta patch to a field state.
+
+        Args:
+            state: Current field state dict (from export_to_dict)
+            delta: Delta dict from diff()
+
+        Returns:
+            Updated field state dict
+        """
+        import copy
+        result = copy.deepcopy(state)
+        nodes = result.get("nodes", {})
+
+        # Remove nodes
+        for removed in delta.get("removed_nodes", []):
+            nid = removed.get("id") if isinstance(removed, dict) else removed
+            nodes.pop(nid, None)
+
+        # Add nodes
+        for added in delta.get("added_nodes", []):
+            nid = added.get("id")
+            if nid:
+                node_data = {k: v for k, v in added.items() if k != "id"}
+                nodes[nid] = node_data
+
+        # Modify nodes
+        for modified in delta.get("modified_nodes", []):
+            nid = modified.get("id")
+            if nid and nid in nodes and "changes" in modified:
+                for field_name, change in modified["changes"].items():
+                    if isinstance(change, dict) and "new" in change:
+                        nodes[nid][field_name] = change["new"]
+                    else:
+                        nodes[nid][field_name] = change
+
+        result["nodes"] = nodes
+        # Update topology
+        if "topology" in result:
+            result["topology"]["n_nodes"] = len(nodes)
+
+        return result

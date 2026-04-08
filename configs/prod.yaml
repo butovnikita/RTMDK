@@ -1,0 +1,177 @@
+# RTMDK Production Config
+# Multi-user, all features enabled, HNSW, version_control
+embedding_dim: 768
+latent_dim: 64
+resonance_kernel: "gaussian_phase"
+phase_coupling: 0.3
+bandwidth: 1.0
+attraction_lr: 0.02
+phase_sync_lr: 0.01
+decay_rate: 0.997
+min_amplitude: 0.05
+tension_threshold: 0.15
+consolidation_mode: "dialectical"
+max_nodes: 50000
+top_k: 10
+min_response: 0.1
+enable_async: true
+log_level: "WARNING"
+
+context_format: "attention"
+use_structured_prompt: true
+adaptive_threshold: true
+adaptive_window: 30
+learn_projection: true
+projection_lr: 0.005
+projection_update_freq: 50
+bm25_fallback: true
+bm25_k1: 1.5
+bm25_b: 0.75
+
+soft_gates: true
+gate_temperature: 0.15
+self_supervision: true
+self_sup_verify_after_consolidate: true
+backend: "numpy"
+gpu_batch_size: 512
+l2_regularization: 0.0001
+false_merge_threshold: 0.4
+field_stability_window: 20
+enable_rollback: true
+max_rollback_history: 100
+
+multimodal: true
+modalities: ["text", "code", "metrics"]
+use_hnsw: true
+hnsw_m: 32
+hnsw_ef_construction: 400
+tda_monitoring: true
+tda_check_freq: 100
+
+differentiable: false
+meta_adaptive: true
+meta_adaptation_lr: 0.005
+self_healing: true
+healing_check_freq: 25
+dead_zone_threshold: 0.15
+hyperconvergence_threshold: 0.05
+fragmentation_threshold: 0.6
+healing_strength: 0.1
+max_healing_nodes_per_step: 5
+
+causal_topological: true
+causal_discovery_min_samples: 20
+causal_p_threshold: 0.05
+do_calculus_validation: true
+contradiction_detection: true
+contradiction_threshold: 0.3
+causal_adjustment_sets: true
+counterfactual_enabled: true
+counterfactual_max_depth: 3
+
+continuous_dynamics: true
+ode_solver: "RK45"
+ode_atol: 1e-6
+ode_rtol: 1e-5
+ode_time_horizon: 1.0
+ode_n_steps: 20
+sde_noise_level: 0.01
+
+meta_controller: true
+meta_optimization_freq: 500
+meta_n_trials: 20
+
+federated: false
+
+memory_tiers: ["episodic", "semantic", "procedural"]
+hyperbolic: false
+predictive_coding: true
+pc_latent_dim: 32
+pc_lr: 0.01
+counterfactual_imagination: true
+max_scenarios: 5
+differential_privacy: false
+
+sparse_routing: true
+num_shards: 16
+top_shards: 4
+cognitive_compression: true
+high_resonance_threshold: 0.6
+crystallization: true
+crystallization_freq: 200
+crystallization_similarity: 0.75
+crystallization_min_cluster: 3
+
+async_pipeline: true
+query_queue_size: 100
+save_queue_size: 200
+evolve_queue_size: 50
+
+goal_tracking: true
+max_goals: 50
+goal_decay: 0.995
+goal_completion_threshold: 0.8
+attention_bias: true
+bias_temperature: 1.0
+rl_feedback: false
+event_driven: true
+low_rank_compression: true
+compression_rank: 32
+compression_freq: 500
+
+meta_memory: true
+self_reflection_freq: 100
+memory_age_factor: 0.001
+recall_accuracy_threshold: 0.6
+
+security_enabled: true
+max_node_text_length: 10000
+tension_spike_threshold: 0.5
+causal_graph_integrity_check: true
+
+swarm_memory: false
+
+version_control: true
+max_versions: 200
+
+proactive_clarification: true
+clarification_threshold_ratio: 0.5
+attention_tokens: true
+entropy_management: true
+entropy_high_threshold: 3.0
+entropy_low_threshold: 0.5
+
+triton_backend: false
+min_nodes_for_gpu: 2000
+
+symbolic_overlay: true
+symbolic_min_self_sup: 0.7
+symbolic_max_tension: 0.15
+symbolic_confidence_threshold: 0.65
+
+safety_certifier: true
+safety_mode: "soft_regulate"
+lyapunov_alpha: 0.4
+lyapunov_beta: 0.4
+lyapunov_gamma: 0.2
+lyapunov_threshold: 0.1
+
+ump_enabled: true
+
+role_sharding: true
+role_shards: ["default", "technical", "contextual"]
+cross_shard_threshold: 0.45
+auto_role_detection: true
+
+production_mode: true
+eval_mode: "production"
+shadow_mode: false
+shadow_fallback_threshold: 0.3
+auto_rollback: true
+auto_rollback_threshold: 0.15
+ragas_enabled: true
+drift_detection: true
+drift_window: 100
+drift_threshold: 0.05
+eval_frequency: 100
+metrics_retention: 50000

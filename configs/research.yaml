@@ -1,0 +1,178 @@
+# RTMDK Research Config
+# Research mode with causal, ODE, symbolic_overlay, safety_certifier
+embedding_dim: 768
+latent_dim: 64
+resonance_kernel: "gaussian_phase"
+phase_coupling: 0.3
+bandwidth: 1.0
+attraction_lr: 0.02
+phase_sync_lr: 0.01
+decay_rate: 0.998
+min_amplitude: 0.05
+tension_threshold: 0.20
+consolidation_mode: "dialectical"
+max_nodes: 10000
+top_k: 5
+min_response: 0.1
+enable_async: true
+log_level: "DEBUG"
+
+context_format: "json"
+use_structured_prompt: true
+adaptive_threshold: true
+adaptive_window: 30
+learn_projection: true
+projection_lr: 0.005
+projection_update_freq: 25
+bm25_fallback: true
+
+soft_gates: true
+gate_temperature: 0.1
+self_supervision: true
+self_sup_verify_after_consolidate: true
+backend: "numpy"
+enable_rollback: true
+max_rollback_history: 200
+
+multimodal: true
+modalities: ["text", "code", "audio", "vision", "metrics"]
+use_hnsw: true
+hnsw_m: 16
+hnsw_ef_construction: 200
+tda_monitoring: true
+tda_check_freq: 50
+
+differentiable: true
+learnable_bandwidth: true
+learnable_phase_coupling: true
+gradient_clip: 1.0
+consolidation_loss_weight: 0.1
+
+meta_adaptive: true
+meta_adaptation_lr: 0.01
+self_healing: true
+healing_check_freq: 15
+
+causal_topological: true
+causal_discovery_min_samples: 10
+causal_p_threshold: 0.1
+do_calculus_validation: true
+contradiction_detection: true
+contradiction_threshold: 0.25
+causal_adjustment_sets: true
+counterfactual_enabled: true
+counterfactual_max_depth: 5
+
+continuous_dynamics: true
+ode_solver: "RK45"
+ode_atol: 1e-8
+ode_rtol: 1e-6
+ode_time_horizon: 2.0
+ode_n_steps: 40
+sde_noise_level: 0.005
+adjoint_enabled: true
+
+meta_controller: true
+meta_optimization_freq: 200
+meta_n_trials: 50
+meta_optimize_params: ["decay_rate", "tension_threshold", "phase_coupling", "bandwidth", "attraction_lr"]
+
+federated: false
+
+memory_tiers: ["episodic", "semantic", "procedural"]
+hyperbolic: true
+ball_radius: 0.85
+curvature: -1.0
+predictive_coding: true
+pc_latent_dim: 64
+pc_lr: 0.005
+counterfactual_imagination: true
+max_scenarios: 10
+differential_privacy: false
+
+sparse_routing: true
+num_shards: 8
+top_shards: 3
+cognitive_compression: true
+crystallization: true
+crystallization_freq: 100
+crystallization_similarity: 0.7
+crystallization_min_cluster: 2
+
+async_pipeline: true
+query_queue_size: 50
+save_queue_size: 100
+evolve_queue_size: 20
+
+goal_tracking: true
+max_goals: 20
+attention_bias: true
+bias_temperature: 0.5
+rl_feedback: true
+rl_learning_rate: 0.005
+rl_reward_window: 20
+event_driven: true
+low_rank_compression: true
+compression_rank: 16
+compression_freq: 200
+
+meta_memory: true
+self_reflection_freq: 50
+memory_age_factor: 0.005
+recall_accuracy_threshold: 0.5
+
+security_enabled: true
+max_node_text_length: 50000
+tension_spike_threshold: 0.4
+causal_graph_integrity_check: true
+
+swarm_memory: true
+swarm_consensus_threshold: 0.6
+swarm_max_agents: 5
+swarm_vote_weight: 0.4
+
+version_control: true
+max_versions: 500
+
+proactive_clarification: true
+attention_tokens: true
+entropy_management: true
+entropy_high_threshold: 2.5
+entropy_low_threshold: 0.3
+
+triton_backend: false
+
+symbolic_overlay: true
+symbolic_min_self_sup: 0.6
+symbolic_max_tension: 0.2
+symbolic_confidence_threshold: 0.5
+
+safety_certifier: true
+safety_mode: "monitor_only"
+lyapunov_alpha: 0.33
+lyapunov_beta: 0.33
+lyapunov_gamma: 0.34
+lyapunov_threshold: 0.15
+
+ump_enabled: true
+
+role_sharding: true
+role_shards: ["default", "research", "analysis", "creative"]
+cross_shard_threshold: 0.3
+auto_role_detection: true
+
+production_mode: false
+eval_mode: "evaluation"
+shadow_mode: true
+shadow_fallback_threshold: 0.2
+auto_rollback: true
+auto_rollback_threshold: 0.1
+ragas_enabled: true
+drift_detection: true
+drift_window: 50
+drift_threshold: 0.03
+eval_frequency: 50
+metrics_retention: 100000
+
+cross_modal: true
+cross_modal_kernel_weight: 0.5

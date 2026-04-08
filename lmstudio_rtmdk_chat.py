@@ -268,6 +268,7 @@ def interactive_session():
     print(f"           /whatif JSON, /imagine JSON,")
     print(f"           /format <json|yaml|plain>, /session <id>,")
     print(f"           /export, /clear, /quit")
+    print(f"           /забудь <тема>, /усиль <концепт>, /покажи_граф")
     print("-" * 60)
 
     while True:
@@ -404,6 +405,64 @@ def interactive_session():
         if user_input.startswith("/session "):
             session_id = user_input.split(" ", 1)[1].strip()
             print(f"\n  Session: {session_id}")
+            continue
+
+        # D1: NL commands
+        if user_input.lower().startswith("/забудь ") or user_input.lower().startswith("/zabud "):
+            topic = user_input.split(" ", 1)[1].strip()
+            found_nodes = []
+            for nid, node in memory.field.nodes.items():
+                text = node.content.get("text", "").lower()
+                if topic.lower() in text:
+                    found_nodes.append((nid, node.content.get("text", "")[:80]))
+            if found_nodes:
+                print(f"\n  Найдено узлов по теме \"{topic}\": {len(found_nodes)}")
+                for nid, text in found_nodes[:10]:
+                    print(f"    [{nid}] {text}")
+                    del memory.field.nodes[nid]
+                    if nid in memory.field.node_index:
+                        memory.field.node_index.remove(nid)
+                # Invalidate tension cache
+                memory.field._invalidate_tension_cache()
+                print(f"  Удалено {len(found_nodes)} узлов")
+            else:
+                print(f"\n  Не найдено узлов по теме \"{topic}\"")
+            continue
+
+        if user_input.lower().startswith("/усиль ") or user_input.lower().startswith("/usil "):
+            concept = user_input.split(" ", 1)[1].strip()
+            boosted = 0
+            for nid, node in memory.field.nodes.items():
+                text = node.content.get("text", "").lower()
+                if concept.lower() in text:
+                    node.salience = min(1.0, node.salience + 0.2)
+                    node.amplitude = min(1.0, node.amplitude + 0.15)
+                    boosted += 1
+            if boosted:
+                print(f"\n  Усилено {boosted} узлов по концепту \"{concept}\"")
+            else:
+                print(f"\n  Не найдено узлов по концепту \"{concept}\"")
+            continue
+
+        if user_input.lower() == "/покажи_граф" or user_input.lower() == "/show_graph":
+            if memory.field.causal_engine:
+                engine = memory.field.causal_engine
+                n_edges = len(engine.causal_effects)
+                n_contradictions = len(engine.contradictions)
+                print(f"\n  === Каузальный граф ===")
+                print(f"  Рёбер: {n_edges}")
+                print(f"  Противоречий: {n_contradictions}")
+                if engine.causal_effects:
+                    print("  Топ эффектов:")
+                    sorted_effects = sorted(
+                        engine.causal_effects.items(),
+                        key=lambda x: x[1].strength,
+                        reverse=True
+                    )
+                    for (cause, effect), edge in sorted_effects[:5]:
+                        print(f"    {cause} → {effect} (strength={edge.strength:.3f})")
+            else:
+                print("\n  Каузальный граф не инициализирован (causal_topological=False)")
             continue
 
         print("\n  Thinking...", end="", flush=True)

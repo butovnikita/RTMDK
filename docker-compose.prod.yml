@@ -1,0 +1,44 @@
+# C4: Docker Compose for RTMDK Production Deployment
+version: "3.8"
+
+services:
+  rtmdk:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rtmdk-server
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - RTMDK_HOST=0.0.0.0
+      - RTMDK_PORT=8080
+      - RTMDK_LOG_FORMAT=json
+      - RTMDK_MEMORY_FILE=/data/memory.json
+      - RTMDK_ENABLE_LM_STUDIO=false
+    volumes:
+      - rtmdk-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 8G
+        reservations:
+          cpus: "1.0"
+          memory: 2G
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+    stop_grace_period: 30s
+
+volumes:
+  rtmdk-data:
+    driver: local

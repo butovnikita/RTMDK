@@ -1,0 +1,86 @@
+# RTMDK Local Development Config
+# Single user, minimal features, no GPU
+embedding_dim: 768
+latent_dim: 64
+resonance_kernel: "gaussian_phase"
+phase_coupling: 0.3
+bandwidth: 1.0
+attraction_lr: 0.02
+phase_sync_lr: 0.01
+decay_rate: 0.998
+min_amplitude: 0.05
+tension_threshold: 0.25
+consolidation_mode: "dialectical"
+max_nodes: 1000
+top_k: 5
+min_response: 0.1
+enable_async: false
+log_level: "INFO"
+
+context_format: "plain"
+use_structured_prompt: true
+adaptive_threshold: false
+learn_projection: false
+bm25_fallback: false
+
+soft_gates: false
+backend: "numpy"
+l2_regularization: 0.0001
+false_merge_threshold: 0.4
+enable_rollback: false
+
+multimodal: false
+use_hnsw: false
+tda_monitoring: false
+
+differentiable: false
+meta_adaptive: false
+self_healing: false
+
+causal_topological: false
+counterfactual_enabled: false
+contradiction_detection: false
+
+continuous_dynamics: false
+meta_controller: false
+federated: false
+
+memory_tiers: ["episodic", "semantic", "procedural"]
+hyperbolic: false
+predictive_coding: false
+counterfactual_imagination: false
+differential_privacy: false
+
+sparse_routing: false
+cognitive_compression: false
+crystallization: false
+async_pipeline: false
+
+goal_tracking: false
+attention_bias: false
+rl_feedback: false
+event_driven: false
+low_rank_compression: false
+
+meta_memory: false
+security_enabled: false
+swarm_memory: false
+
+version_control: false
+proactive_clarification: false
+attention_tokens: true
+entropy_management: false
+triton_backend: false
+
+symbolic_overlay: false
+safety_certifier: false
+ump_enabled: false
+
+role_sharding: false
+
+production_mode: false
+eval_mode: "production"
+shadow_mode: false
+auto_rollback: false
+ragas_enabled: false
+drift_detection: false
