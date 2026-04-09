@@ -410,12 +410,13 @@ def create_dashboard_router(memory=None, config: Dict[str, Any] = None) -> APIRo
     @router.post("/api/provider")
     async def api_set_provider(data: dict):
         """Switch API provider, model, and embedder."""
+        mem = _get_mem()
         provider = data.get("provider", "lm_studio")
         model = data.get("model", "")
         embedder = data.get("embedder", "")
         api_key = data.get("api_key", "")
         custom_url = data.get("custom_url", "")
-        
+
         if config:
             config["RTMDK_API_PROVIDER"] = provider
             config["RTMDK_LLM_MODEL"] = model
@@ -424,16 +425,17 @@ def create_dashboard_router(memory=None, config: Dict[str, Any] = None) -> APIRo
                 config[f"{provider.upper()}_API_KEY"] = api_key
             if custom_url:
                 config["CUSTOM_API_URL"] = custom_url
-        
-        nodes = len(memory.field.nodes) if memory else 0
+
+        nodes = len(mem.field.nodes) if mem else 0
         return {"status": "ok", "provider": provider, "model": model, "embedder": embedder, "nodes": nodes}
-    
+
     @router.post("/api/preset")
     async def api_apply_preset(data: dict = {}):
+        mem = _get_mem()
         preset = data.get("preset", "local")
-        nodes = len(memory.field.nodes) if memory else 0
+        nodes = len(mem.field.nodes) if mem else 0
         return {"status": "ok", "preset": preset, "nodes": nodes}
-    
+
     @router.post("/api/feature")
     async def api_toggle_feature(data: dict):
         feature = data.get("feature", "")
@@ -444,37 +446,38 @@ def create_dashboard_router(memory=None, config: Dict[str, Any] = None) -> APIRo
     
     @router.post("/api/action")
     async def api_action(data: dict):
+        mem = _get_mem()
         action = data.get("action", "")
-        if not memory:
+        if not mem:
             return {"error": "Memory not available"}
         
         if action == "backup":
             from rtmdk.production.backup_restore import BackupManager
-            bm = BackupManager(memory)
+            bm = BackupManager(mem)
             path = bm.create_backup("manual")
             return {"status": "ok", "path": path}
         elif action == "prune":
             from rtmdk.production.smart_pruning import SmartPruner
-            sp = SmartPruner(memory, dry_run=False)
+            sp = SmartPruner(mem, dry_run=False)
             return sp.prune()
         elif action == "export_md":
             from rtmdk.production.export import MemoryExporter
-            return {"content": MemoryExporter(memory).to_markdown()[:500]}
+            return {"content": MemoryExporter(mem).to_markdown()[:500]}
         elif action == "export_json":
             from rtmdk.production.export import MemoryExporter
-            return MemoryExporter(memory).to_dict()
+            return MemoryExporter(mem).to_dict()
         elif action == "clear_cache":
             return {"status": "ok", "message": "Cache cleared"}
         elif action == "clear_memory":
-            memory.field.nodes.clear()
-            memory.field.node_index.clear()
+            mem.field.nodes.clear()
+            mem.field.node_index.clear()
             return {"status": "ok", "message": "Memory cleared"}
         elif action == "analytics":
             from rtmdk.production.analytics import MemoryAnalytics
-            return MemoryAnalytics(memory).export_report()
+            return MemoryAnalytics(mem).export_report()
         elif action == "health":
             from rtmdk.production.health_monitor import HealthMonitor
-            return HealthMonitor(memory).check_health()
+            return HealthMonitor(mem).check_health()
         return {"error": f"Unknown action: {action}"}
     
     return router
