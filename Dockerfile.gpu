@@ -1,16 +1,20 @@
-# RTMDK — CPU-only version (lean image)
+# RTMDK — GPU-enabled version
 FROM python:3.10-slim
 
 WORKDIR /app
 
-# Minimal system dependencies
+# System dependencies + CUDA runtime libs
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Python dependencies (only what's needed)
+# Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# PyTorch with CUDA support
+RUN pip install --no-cache-dir \
+    torch --index-url https://download.pytorch.org/whl/cu121
 
 # Application code
 COPY rtmdk_memory_v8.py .

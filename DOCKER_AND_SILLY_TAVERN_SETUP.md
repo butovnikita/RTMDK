@@ -1,6 +1,6 @@
-# RTMDK Docker + Silly Tavern Setup Guide
+# RTMDK Docker + Silly Tavern + External APIs Setup Guide
 
-> Полная инструкция по запуску RTMDK через Docker и интеграции с Silly Tavern
+> Полная инструкция по запуску RTMDK через Docker с внешними API и Silly Tavern
 
 ---
 
@@ -12,10 +12,12 @@
 # 1. Скопируйте .env.example в .env
 cp .env.example .env
 
-# 2. Запустите контейнер
+# 2. Настройте .env (выберите API провайдера — см. ниже)
+
+# 3. Запустите контейнер
 docker-compose up -d
 
-# 3. Проверьте работоспособность
+# 4. Проверьте работоспособность
 curl http://localhost:8080/health
 ```
 
@@ -24,22 +26,49 @@ curl http://localhost:8080/health
 {
   "status": "ok",
   "version": "8.0.0",
-  "lm_studio": false,
+  "api_provider": "openrouter",
   "memory_nodes": 0
 }
 ```
 
-### 1.2. Настройка .env
+### 1.2. Настройка .env — Выбор API провайдера
 
-Откройте `.env` и настройте переменные:
+Откройте `.env` и настройте **один** из провайдеров:
 
+#### Вариант A: LM Studio (локально, бесплатно)
 ```bash
-# ── Если LM Studio запущен на хосте ──
-RTMDK_ENABLE_LM_STUDIO=true
+RTMDK_API_PROVIDER=lm_studio
 LM_STUDIO_URL=http://host.docker.internal:12345/v1
+RTMDK_EMBED_MODEL=nomic-ai/nomic-embed-text-v1.5-GGUF
+```
 
-# ── Если LM Studio НЕ запущен ──
-RTMDK_ENABLE_LM_STUDIO=false
+#### Вариант B: OpenRouter (унифицированный API, много моделей)
+```bash
+RTMDK_API_PROVIDER=openrouter
+OPENROUTER_API_KEY=sk-or-v1-ваш_ключ
+OPENROUTER_MODEL=anthropic/claude-3.5-sonnet
+```
+
+#### Вариант C: OpenAI (официальный API)
+```bash
+RTMDK_API_PROVIDER=openai
+OPENAI_API_KEY=sk-proj-ваш_ключ
+OPENAI_MODEL=gpt-4o
+```
+
+#### Вариант D: Anthropic (официальный API)
+```bash
+RTMDK_API_PROVIDER=anthropic
+ANTHROPIC_API_KEY=sk-ant-ваш_ключ
+ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
+```
+
+#### Вариант E: Любой OpenAI-совместимый API (Groq, Together AI, LocalAI)
+```bash
+RTMDK_API_PROVIDER=custom
+CUSTOM_API_URL=https://api.groq.com/openai/v1
+CUSTOM_API_KEY=gsk-ваш_ключ
+CUSTOM_API_MODEL=llama-3.1-70b-versatile
 ```
 
 ### 1.3. Все переменные окружения
@@ -48,20 +77,32 @@ RTMDK_ENABLE_LM_STUDIO=false
 |-----------|:---:|---|
 | `RTMDK_HOST` | `0.0.0.0` | Хост сервера |
 | `RTMDK_PORT` | `8080` | Порт API |
-| `RTMDK_API_KEY` | `rtmdk-local` | API ключ |
+| `RTMDK_API_KEY` | `rtmdk-local` | API ключ для аутентификации |
 | `RTMDK_LOG_FORMAT` | `text` | Формат логов: `text` или `json` |
 | `RTMDK_MEMORY_FILE` | `/data/memory.json` | Путь к файлу памяти внутри контейнера |
 | `RTMDK_AUTO_SAVE` | `60` | Интервал автосохранения (сек) |
-| `RTMDK_ENABLE_LM_STUDIO` | `true` | Включить интеграцию с LM Studio |
+| `RTMDK_API_PROVIDER` | `lm_studio` | Провайдер: `lm_studio`, `openrouter`, `openai`, `anthropic`, `custom` |
+| `RTMDK_API_TIMEOUT` | `30` | Таймаут запросов к API (сек) |
 | `LM_STUDIO_URL` | `http://host.docker.internal:12345/v1` | URL LM Studio API |
-| `RTMDK_EMBED_MODEL` | `nomic-ai/nomic-embed-text-v1.5-GGUF` | Модель эмбеддингов |
-| `RTMDK_LM_STUDIO_TIMEOUT` | `30` | Таймаут запросов к LM Studio (сек) |
+| `RTMDK_EMBED_MODEL` | `nomic-embed-text-v1.5-GGUF` | Модель эмбеддингов |
+| `OPENROUTER_API_KEY` | — | Ключ OpenRouter |
+| `OPENROUTER_MODEL` | `anthropic/claude-3.5-sonnet` | Модель OpenRouter |
+| `OPENAI_API_KEY` | — | Ключ OpenAI |
+| `OPENAI_MODEL` | `gpt-4o` | Модель OpenAI |
+| `ANTHROPIC_API_KEY` | — | Ключ Anthropic |
+| `ANTHROPIC_MODEL` | `claude-3-5-sonnet-20241022` | Модель Anthropic |
+| `CUSTOM_API_URL` | — | URL кастомного API |
+| `CUSTOM_API_KEY` | — | Ключ кастомного API |
+| `CUSTOM_API_MODEL` | — | Модель кастомного API |
 
 ### 1.4. Полезные команды
 
 ```bash
-# Запуск
+# Запуск (CPU)
 docker-compose up -d
+
+# Запуск (GPU — раскомментируйте секцию rtmdk-api-gpu в docker-compose.yml)
+# docker-compose up -d rtmdk-api-gpu
 
 # Остановка
 docker-compose down
@@ -95,6 +136,55 @@ curl http://localhost:8080/health
 | POST | `/v1/memory/save` | Сохранить контекст |
 | POST | `/v1/memory/query` | Запросить память |
 | POST | `/v1/memory/clear` | Очистить память |
+
+### 1.6. Запуск с GPU
+
+Для GPU-версии:
+
+1. Откройте `docker-compose.yml`
+2. Раскомментируйте секцию `rtmdk-api-gpu`
+3. Закомментируйте секцию `rtmdk-api` (CPU)
+4. Убедитесь что установлен NVIDIA Container Toolkit:
+```bash
+# Ubuntu/Debian
+sudo apt-get install -y nvidia-container-toolkit
+sudo systemctl restart docker
+```
+
+5. Запустите:
+```bash
+docker-compose up -d rtmdk-api-gpu
+```
+
+**Проверка GPU:**
+```bash
+docker exec rtmdk-memory-gpu nvidia-smi
+```
+
+**Требования для GPU:**
+- NVIDIA GPU с поддержкой CUDA 12.1+
+- NVIDIA Container Toolkit установлен
+- Docker с поддержкой GPU
+
+### 1.7. Сравнение CPU vs GPU
+
+| Параметр | CPU Docker | GPU Docker |
+|----------|:---:|:---:|
+| Размер образа | ~200 MB | ~4 GB |
+| RAM контейнера | ~200 MB | ~2 GB |
+| VRAM | 0 MB | ~50-200 MB |
+| Скорость (батч 1000) | ~150ms | ~15ms |
+| Скорость (1 запрос) | ~25ms | ~8ms |
+
+**Когда использовать GPU:**
+- High-throughput сервер (>100 запросов/сек)
+- Батчевая обработка эмбеддингов
+- Нейронное ОДУ (continuous dynamics)
+
+**Когда достаточно CPU:**
+- Персональный ассистент (<10 запросов/сек)
+- Тестирование и разработка
+- Обычное использование RTMDK
 
 ---
 

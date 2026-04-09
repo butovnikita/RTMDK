@@ -1,7 +1,9 @@
 version: "3.9"
 
 services:
-  # RTMDK Memory API Server
+  # ─────────────────────────────────────────────────────────
+  # RTMDK Memory API Server — CPU version
+  # ─────────────────────────────────────────────────────────
   rtmdk-api:
     build:
       context: .
@@ -12,16 +14,35 @@ services:
     env_file:
       - .env
     environment:
+      # Server
       - RTMDK_HOST=0.0.0.0
       - RTMDK_PORT=${RTMDK_PORT:-8080}
-      - RTMDK_MEMORY_FILE=/data/memory.json
       - RTMDK_API_KEY=${RTMDK_API_KEY:-rtmdk-local}
-      - RTMDK_ENABLE_LM_STUDIO=${RTMDK_ENABLE_LM_STUDIO:-true}
+      - RTMDK_LOG_FORMAT=${RTMDK_LOG_FORMAT:-text}
+      # Memory
+      - RTMDK_MEMORY_FILE=/data/memory.json
+      - RTMDK_AUTO_SAVE=${RTMDK_AUTO_SAVE:-60}
+      # API Provider
+      - RTMDK_API_PROVIDER=${RTMDK_API_PROVIDER:-lm_studio}
+      - RTMDK_API_TIMEOUT=${RTMDK_API_TIMEOUT:-30}
+      # LM Studio
       - LM_STUDIO_URL=${LM_STUDIO_URL:-http://host.docker.internal:12345/v1}
       - RTMDK_EMBED_MODEL=${RTMDK_EMBED_MODEL:-nomic-ai/nomic-embed-text-v1.5-GGUF}
-      - RTMDK_AUTO_SAVE=${RTMDK_AUTO_SAVE:-60}
-      - RTMDK_LM_STUDIO_TIMEOUT=${RTMDK_LM_STUDIO_TIMEOUT:-30}
-      - RTMDK_LOG_FORMAT=${RTMDK_LOG_FORMAT:-text}
+      # OpenRouter
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-anthropic/claude-3.5-sonnet}
+      - OPENROUTER_BASE_URL=${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      # OpenAI
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      # Anthropic
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-3-5-sonnet-20241022}
+      # Custom OpenAI-compatible API
+      - CUSTOM_API_URL=${CUSTOM_API_URL:-}
+      - CUSTOM_API_KEY=${CUSTOM_API_KEY:-}
+      - CUSTOM_API_MODEL=${CUSTOM_API_MODEL:-}
     volumes:
       - rtmdk-data:/data
     extra_hosts:
@@ -35,6 +56,45 @@ services:
       start_period: 10s
     networks:
       - rtmdk-network
+
+  # ─────────────────────────────────────────────────────────
+  # RTMDK Memory API Server — GPU version (uncomment to use)
+  # ─────────────────────────────────────────────────────────
+  # rtmdk-api-gpu:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.gpu
+  #   container_name: rtmdk-memory-gpu
+  #   ports:
+  #     - "${RTMDK_PORT:-8080}:8080"
+  #   env_file:
+  #     - .env
+  #   environment:
+  #     - RTMDK_HOST=0.0.0.0
+  #     - RTMDK_PORT=${RTMDK_PORT:-8080}
+  #     - RTMDK_API_KEY=${RTMDK_API_KEY:-rtmdk-local}
+  #     - RTMDK_MEMORY_FILE=/data/memory.json
+  #     - RTMDK_API_PROVIDER=${RTMDK_API_PROVIDER:-openrouter}
+  #     - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+  #     - OPENROUTER_MODEL=${OPENROUTER_MODEL:-anthropic/claude-3.5-sonnet}
+  #   volumes:
+  #     - rtmdk-data:/data
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+  #     interval: 30s
+  #     timeout: 5s
+  #     retries: 3
+  #     start_period: 10s
+  #   networks:
+  #     - rtmdk-network
 
 volumes:
   rtmdk-data:
