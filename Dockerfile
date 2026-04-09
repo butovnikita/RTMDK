@@ -16,6 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY rtmdk_memory_v8.py .
 COPY rtmdk_server.py .
 COPY rtmdk_server_ux.py .
+COPY rtmdk_dashboard_ui.py .
 COPY rtmdk/ ./rtmdk/
 
 # Data dirs

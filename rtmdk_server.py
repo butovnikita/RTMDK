@@ -276,6 +276,23 @@ def init_memory() -> RTMDKMemory:
     return mem
 
 
+# ═══════════════════════════════════════════════════════════
+# UX Endpoints & Dashboard Integration
+# ═══════════════════════════════════════════════════════════
+
+from rtmdk_server_ux import create_ux_router
+from rtmdk_dashboard_ui import create_dashboard_router
+
+_ux_config = {
+    "RTMDK_BACKUP_DIR": os.path.join(os.path.expanduser("~"), ".rtmdk", "backups"),
+    "RTMDK_SESSION_DIR": os.path.join(os.path.expanduser("~"), ".rtmdk", "sessions"),
+    "RTMDK_CACHE_DIR": os.path.join(os.path.expanduser("~"), ".rtmdk", "embedding_cache"),
+    "RTMDK_CACHE_MAX_SIZE": "100000",
+}
+app.include_router(create_ux_router(memory, _ux_config))
+app.include_router(create_dashboard_router(memory, _ux_config))
+
+
 def auto_save():
     """Auto-save memory to file."""
     if memory:
@@ -772,8 +789,9 @@ def main():
     print("    POST /v1/memory/clear      — Clear memory")
     print()
     print("  IDE Integration:")
-    print("    Cursor/Continue/Aider: set base URL to http://localhost:80801/v1")
+    print("    Cursor/Continue/Aider: set base URL to http://localhost:8080/v1")
     print("    API Key: rtmdk-local")
+    print(f"    🎛️  Dashboard: http://{SERVER_HOST}:{SERVER_PORT}/dashboard")
     print("-" * 60)
 
     uvicorn.run(
