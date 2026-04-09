@@ -1,19 +1,23 @@
 # RTMDK Fine-Tuning Guide
 
 > Полное руководство по настройке RTMDK для максимальной эффективности.
+> Версия: 2.0 (обновлено с Phase 18-19 и 8 профилями)
 
 ---
 
 ## Оглавление
 
 1. [Быстрый старт](#1-быстрый-старт)
-2. [Core переменные](#2-core-переменные)
-3. [Retrieval переменные](#3-retrieval-переменные)
-4. [Performance переменные](#4-performance-переменные)
-5. [Production переменные](#5-production-переменные)
-6. [Scaling переменные](#6-scaling-переменные)
-7. [Готовые пресеты](#7-готовые-пресеты)
-8. [Troubleshooting](#8-troubleshooting)
+2. [8 готовых профилей](#2-8-готовых-профилей) — **НОВОЕ**
+3. [Core переменные](#3-core-переменные)
+4. [Retrieval переменные](#4-retrieval-переменные)
+5. [Performance переменные](#5-performance-переменные)
+6. [Production переменные](#6-production-переменные)
+7. [Phase 18: Энграммы](#7-phase-18-энграммы) — **НОВОЕ**
+8. [Phase 19: Advanced](#8-phase-19-advanced) — **НОВОЕ**
+9. [Scaling переменные](#9-scaling-переменные)
+10. [8 Профилей](#10-8-профилей) — **НОВОЕ**
+11. [Troubleshooting](#11-troubleshooting)
 
 ---
 
@@ -190,7 +194,64 @@ config = RTMDKConfig(
 
 ---
 
-## 6. Scaling переменные
+## 7. Phase 18: Энграммы
+
+### enable_engrams
+**Что:** Группировка коактивированных узлов в единые воспоминания
+**По умолчанию:** True
+**Влияние:**
+- ↑ True = pattern completion, 3x faster search
+- ↓ False = стандартный поиск по узлам
+
+### engram_min_nodes / engram_max_nodes
+**Что:** Мин/макс узлов в одной энграмме
+**По умолчанию:** 2 / 20
+**Когда менять:** ↓ min=5 для только сильных воспоминаний
+
+### engram_creation_threshold
+**Что:** Порог создания энграммы [0-1]
+**По умолчанию:** 0.6
+**Влияние:** ↓ 0.4 = лёгкое создание, ↑ 0.8 = только сильные
+
+### engram_pattern_completion
+**Что:** Дополнение частичного запроса до полной энграммы
+**По умолчанию:** True
+**Влияние:** 20% совпадение → 100% воспоминание
+
+---
+
+## 8. Phase 19: Advanced
+
+### offline_dreaming
+**Что:** Фоновые циклы для TDA, кристаллизации, topology repair
+**По умолчанию:** True (кроме local/streaming)
+**Влияние:**
+- ↑ True = -90% latency spikes
+- ↓ False = всё в real-time (может тормозить)
+
+### causal_traversal
+**Что:** Поиск по каузальному графу при retrieval
+**По умолчанию:** True
+**Влияние:** +15-25% на "почему"-вопросах, +5ms к latency
+
+### ssm_dynamics
+**Что:** State Space Models (O(N)) вместо NeuralODE (O(N³))
+**По умолчанию:** True для production/enterprise/streaming
+**Когда менять:** True для N > 10K
+
+### trust_consensus
+**Что:** DAG доверия для федерации
+**По умолчанию:** False
+**Когда менять:** True для multi-agent deployments
+
+### neuro_symbolic_prover
+**Что:** Z3/Prolog для разрешения противоречий
+**По умолчанию:** False
+**Когда менять:** True для legal/medical доменов
+
+---
+
+## 9. Scaling переменные
 
 ### sparse_routing
 **Что:** MoE-style шардирование
@@ -211,39 +272,73 @@ config = RTMDKConfig(
 
 ---
 
-## 7. Готовые пресеты
+## 10. 8 Профилей
 
 ### RTMDKConfig.local()
 ```python
 # Персональный ассистент
-# RAM: ~15MB, Latency: ~2ms, Nodes: до 10K
+# RAM: ~16MB, Latency: ~5ms, Nodes: до 10K
 latent_dim=256, top_k=5, decay_rate=0.999
+enable_engrams=True, offline_dreaming=False
 ```
 
 ### RTMDKConfig.production()
 ```python
 # Продакшен сервер
 # RAM: ~50MB, Latency: ~6ms, Nodes: до 100K
-latent_dim=256, top_k=5, hnsw_m=32, version_control=True
+latent_dim=256, top_k=5, ssm_dynamics=True
+offline_dreaming=True, trust_consensus=True
 ```
 
 ### RTMDKConfig.research()
 ```python
 # Максимальная точность
 # RAM: ~200MB, Latency: ~50ms, Nodes: unlimited
-latent_dim=512, top_k=10, causal_topological=True
+latent_dim=512, top_k=10, neuro_symbolic_prover=True
+causal_max_hops=5
 ```
 
 ### RTMDKConfig.enterprise()
 ```python
 # Распределённая система
 # RAM: ~250MB/shard, Latency: ~15ms, Nodes: 500K+
-sparse_routing=True, num_shards=32, hnsw_m=64
+ssm_state_dim=128, sparse_routing=True, num_shards=32
+```
+
+### RTMDKConfig.agent()
+```python
+# Автономный агент
+# С активным выводом и каузальным поиском
+causal_max_hops=4, ssm_dynamics=True
+```
+
+### RTMDKConfig.legal()
+```python
+# Юриспруденция
+# Z3 prover для обнаружения противоречий
+neuro_symbolic_prover=True, prover_backend="z3"
+causal_max_hops=5
+```
+
+### RTMDKConfig.medical()
+```python
+# Медицина
+# Высокий trust + audit trail
+trust_min_reputation=0.5, neuro_symbolic_prover=True
+version_control=True
+```
+
+### RTMDKConfig.streaming()
+```python
+# High-throughput real-time
+# RAM: ~30MB, Latency: ~3ms
+offline_dreaming=False, causal_traversal=False
+ssm_dynamics=True, attention_bias=False
 ```
 
 ---
 
-## 8. Troubleshooting
+## 11. Troubleshooting
 
 | Симптом | Причина | Решение |
 |---------|---------|---------|
