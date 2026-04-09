@@ -292,6 +292,12 @@ _ux_config = {
 app.include_router(create_ux_router(memory, _ux_config))
 app.include_router(create_dashboard_router(memory, _ux_config))
 
+from rtmdk_sillytavern_compat import create_sillytavern_router
+app.include_router(create_sillytavern_router(
+    memory, _ux_config, lm_studio_available, chat_model, LM_STUDIO_URL,
+    build_system_prompt, get_embedding
+))
+
 
 def auto_save():
     """Auto-save memory to file."""
