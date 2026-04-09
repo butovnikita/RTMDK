@@ -50,7 +50,10 @@ def create_sillytavern_router(memory, config: Dict[str, Any], lm_studio_availabl
         max_tokens = data.get("max_new_tokens", data.get("max_tokens", 512))
         temperature = data.get("temperature", 0.7)
 
+        print(f"!!! ST REQUEST: prompt_len={len(prompt)}, stream={stream}")
+
         if not _lm_studio_available():
+            print("!!! ST: LM Studio NOT available")
             return {"results": [{"text": "[Error: LLM backend not available. Start LM Studio and ensure it's running on the configured port.]"}]}
 
         # Build system prompt with memory context
@@ -97,14 +100,14 @@ def create_sillytavern_router(memory, config: Dict[str, Any], lm_studio_availabl
                     last_content_time = time.time()
                     stream_timeout = 30  # seconds without data = end stream
                     
-                    logger.info(f"[ST Stream] Starting text completion streaming")
+                    print(f"!!! ST STREAMING STARTED")
 
                     try:
                         for line in resp.iter_lines(chunk_size=64, decode_unicode=False):
                             if not line:
                                 # Check for timeout on empty lines
                                 if time.time() - last_content_time > stream_timeout and accumulated_text:
-                                    logger.warning(f"[ST Stream] Timeout after {stream_timeout}s")
+                                    print(f"!!! ST STREAM TIMEOUT after {stream_timeout}s")
                                     break
                                 continue
                             try:
@@ -116,10 +119,12 @@ def create_sillytavern_router(memory, config: Dict[str, Any], lm_studio_availabl
                                 data_str = line_str[6:]
                                 last_content_time = time.time()
                                 chunk_count += 1
-                                logger.debug(f"[ST Stream] Chunk {chunk_count}: {data_str[:100]}")
+                                
+                                if chunk_count <= 3 or chunk_count % 10 == 0:
+                                    print(f"!!! ST STREAM CHUNK {chunk_count}: {data_str[:120]}")
                                 
                                 if data_str.strip() == '[DONE]':
-                                    logger.info(f"[ST Stream] Complete: {chunk_count} chunks, {len(accumulated_text)} chars")
+                                    print(f"!!! ST STREAM DONE marker received")
                                     # Send final result with finish_reason
                                     yield f'data: {json.dumps({"results": [{"text": accumulated_text}], "finish_reason": "stop"})}\n\n'
                                     break
@@ -128,7 +133,7 @@ def create_sillytavern_router(memory, config: Dict[str, Any], lm_studio_availabl
                                     choices = chunk.get('choices', [{}])
                                     if not choices:
                                         # Empty choices = end of stream
-                                        logger.info(f"[ST Stream] Empty choices, ending stream")
+                                        print(f"!!! ST STREAM empty choices, ending")
                                         if accumulated_text:
                                             yield f'data: {json.dumps({"results": [{"text": accumulated_text}], "finish_reason": "stop"})}\n\n'
                                         break
@@ -147,26 +152,25 @@ def create_sillytavern_router(memory, config: Dict[str, Any], lm_studio_availabl
                                     
                                     if finish == 'stop':
                                         # Send final with finish_reason
-                                        logger.info(f"[ST Stream] finish_reason=stop: {chunk_count} chunks, {len(accumulated_text)} chars")
+                                        print(f"!!! ST STREAM finish_reason=stop: {chunk_count} chunks, {len(accumulated_text)} chars")
                                         yield f'data: {json.dumps({"results": [{"text": accumulated_text}], "finish_reason": "stop"})}\n\n'
                                         break
                                         
                                     # Check if delta is empty and no finish_reason - might be end
                                     if not content and not finish and not delta:
                                         # Stream might be ending
-                                        logger.info(f"[ST Stream] Empty delta, might be ending")
+                                        print(f"!!! ST STREAM empty delta, might be ending")
                                         if accumulated_text:
                                             yield f'data: {json.dumps({"results": [{"text": accumulated_text}], "finish_reason": "stop"})}\n\n'
                                             
                                 except json.JSONDecodeError:
-                                    logger.debug(f"[ST Stream] JSON decode error: {data_str[:100]}")
                                     pass
                     except Exception as e:
-                        logger.error(f"[ST Stream] Error after {chunk_count} chunks: {e}")
+                        print(f"!!! ST STREAM ERROR after {chunk_count} chunks: {e}")
                     finally:
                         # Always send final result with finish_reason
                         if accumulated_text:
-                            logger.info(f"[ST Stream] Final: {len(accumulated_text)} chars")
+                            print(f"!!! ST STREAM FINAL: {len(accumulated_text)} chars, {chunk_count} chunks")
                             yield f'data: {json.dumps({"results": [{"text": accumulated_text}], "finish_reason": "stop"})}\n\n'
                         yield 'data: [DONE]\n\n'
                 
@@ -187,20 +191,53 @@ def create_sillytavern_router(memory, config: Dict[str, Any], lm_studio_availabl
     @router.post("/api/v1/generate")
     async def st_generate_v1(request: Request):
         data = await request.json()
-        return await _handle_generate(data, data.get("stream", False))
+        
+        # Debug: print full request body to see what ST actually sends
+        stream = data.get("stream", False)
+        
+        # Check alternative stream parameter names that SillyTavern might use
+        if not stream:
+            for key in ["streaming", "is_streaming", "stream_mode"]:
+                if data.get(key):
+                    stream = True
+                    print(f"!!! ST: Found stream parameter as '{key}'")
+                    break
+        
+        # If still no stream but SillyTavern sent it, check the raw headers/body
+        print(f"!!! ST REQUEST KEYS: {list(data.keys())}")
+        print(f"!!! ST REQUEST stream value: {repr(data.get('stream', 'MISSING'))}")
+        print(f"!!! ST REQUEST full body (first 500 chars): {json.dumps(data, ensure_ascii=False)[:500]}")
+        
+        return await _handle_generate(data, stream)
 
     # Alternative ST endpoint
     @router.post("/api/backends/text-completions/generate")
     async def st_generate_backend(request: Request):
         data = await request.json()
-        return await _handle_generate(data, data.get("stream", False))
+        
+        stream = data.get("stream", False)
+        if not stream:
+            for key in ["streaming", "is_streaming"]:
+                if data.get(key):
+                    stream = True
+                    break
+        
+        print(f"!!! ST-BACKEND REQUEST KEYS: {list(data.keys())}")
+        print(f"!!! ST-BACKEND stream: {repr(data.get('stream', 'MISSING'))}")
+        
+        return await _handle_generate(data, stream)
     
     # OpenAI completions format (for backward compatibility)
     @router.post("/v1/completions")
     async def openai_completions(request: Request):
         data = await request.json()
         prompt = data.get("prompt", "")
-        result = await _handle_generate({"prompt": prompt, **data})
+        stream = data.get("stream", False)
+        
+        print(f"!!! OPENAI-COMPLETE KEYS: {list(data.keys())}")
+        print(f"!!! OPENAI-COMPLETE stream: {repr(data.get('stream', 'MISSING'))}")
+        
+        result = await _handle_generate({"prompt": prompt, **data}, stream)
         return {
             "id": f"cmpl-{int(time.time())}",
             "object": "text_completion",

@@ -380,7 +380,10 @@ async def list_models():
 @app.post("/v1/chat/completions")
 async def chat_completions(req: ChatCompletionRequest):
     """Chat completions with RTMDK memory context."""
+    print(f"!!! CHAT REQUEST: stream={req.stream}, model={req.model}, messages={len(req.messages)}")
+    
     if not lm_studio_available:
+        print("!!! LM Studio NOT available!")
         raise HTTPException(
             status_code=503,
             detail="LM Studio not available. Start LM Studio and enable server on port 12345."
@@ -451,17 +454,19 @@ async def chat_completions(req: ChatCompletionRequest):
         raise HTTPException(status_code=502, detail=last_error)
 
     if req.stream:
+        print(f"!!! STREAMING ENABLED, timeout={lm_timeout}s")
         async def stream_generator():
             chunk_count = 0
             total_chars = 0
-            logger.info("Starting streaming response...")
+            print("!!! STREAMING STARTED")
             
             try:
                 # Check if response is actually streaming
                 if not hasattr(resp, 'iter_lines'):
-                    logger.warning("Response doesn't support streaming, falling back to non-streaming")
+                    print("!!! WARNING: Response doesn't support streaming, falling back")
                     data = resp.json()
                     text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    print(f"!!! FALLBACK TEXT: {text[:100]}")
                     yield f'data: {json.dumps({"choices": [{"delta": {"content": text}, "finish_reason": "stop"}]})}\n\n'
                     yield 'data: [DONE]\n\n'
                     return
@@ -472,17 +477,18 @@ async def chat_completions(req: ChatCompletionRequest):
                         if line.startswith("data: "):
                             chunk_count += 1
                             total_chars += len(line)
-                            logger.debug(f"Stream chunk {chunk_count}: {line[:100]}")
+                            if chunk_count <= 3 or chunk_count % 10 == 0:
+                                print(f"!!! STREAM CHUNK {chunk_count}: {line[:120]}")
                             yield f"{line}\n\n"
                         elif line.strip() == '[DONE]':
-                            logger.info(f"Streaming complete: {chunk_count} chunks, {total_chars} chars")
+                            print(f"!!! STREAM DONE marker received")
                             yield 'data: [DONE]\n\n'
                             break
             
             except Exception as e:
-                logger.error(f"Streaming error after {chunk_count} chunks: {e}")
+                print(f"!!! STREAMING ERROR after {chunk_count} chunks: {e}")
             finally:
-                logger.info(f"Stream generator finished: {chunk_count} chunks, {total_chars} total chars")
+                print(f"!!! STREAMING ENDED: {chunk_count} chunks, {total_chars} chars")
                 # Save final response to memory
                 if memory:
                     try:
@@ -493,7 +499,7 @@ async def chat_completions(req: ChatCompletionRequest):
                                 {"output": "[streamed response]"}
                             )
                     except Exception as e:
-                        logger.error(f"Memory save failed: {e}")
+                        print(f"!!! MEMORY SAVE ERROR: {e}")
 
         return StreamingResponse(stream_generator(), media_type="text/event-stream", headers={
             "Cache-Control": "no-cache",
