@@ -1,9 +1,6 @@
 version: "3.9"
 
 services:
-  # ─────────────────────────────────────────────────────────
-  # RTMDK Memory API Server — CPU version
-  # ─────────────────────────────────────────────────────────
   rtmdk-api:
     build:
       context: .
@@ -14,37 +11,56 @@ services:
     env_file:
       - .env
     environment:
-      # Server
+      # ── Server ──
       - RTMDK_HOST=0.0.0.0
       - RTMDK_PORT=${RTMDK_PORT:-8080}
       - RTMDK_API_KEY=${RTMDK_API_KEY:-rtmdk-local}
       - RTMDK_LOG_FORMAT=${RTMDK_LOG_FORMAT:-text}
-      # Memory
+      # ── Memory ──
       - RTMDK_MEMORY_FILE=/data/memory.json
       - RTMDK_AUTO_SAVE=${RTMDK_AUTO_SAVE:-60}
-      # API Provider
+      # ── API Provider ──
       - RTMDK_API_PROVIDER=${RTMDK_API_PROVIDER:-lm_studio}
       - RTMDK_API_TIMEOUT=${RTMDK_API_TIMEOUT:-30}
-      # LM Studio
+      # ── LM Studio ──
       - LM_STUDIO_URL=${LM_STUDIO_URL:-http://host.docker.internal:12345/v1}
       - RTMDK_EMBED_MODEL=${RTMDK_EMBED_MODEL:-nomic-ai/nomic-embed-text-v1.5-GGUF}
-      # OpenRouter
+      - RTMDK_ENABLE_LM_STUDIO=${RTMDK_ENABLE_LM_STUDIO:-true}
+      # ── OpenRouter ──
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - OPENROUTER_MODEL=${OPENROUTER_MODEL:-anthropic/claude-3.5-sonnet}
       - OPENROUTER_BASE_URL=${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
-      # OpenAI
+      # ── OpenAI ──
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
-      # Anthropic
+      # ── Anthropic ──
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-3-5-sonnet-20241022}
-      # Custom OpenAI-compatible API
+      # ── Custom ──
       - CUSTOM_API_URL=${CUSTOM_API_URL:-}
       - CUSTOM_API_KEY=${CUSTOM_API_KEY:-}
       - CUSTOM_API_MODEL=${CUSTOM_API_MODEL:-}
+      # ── UX Features ──
+      - RTMDK_BACKUP_DIR=/data/backups
+      - RTMDK_SESSION_DIR=/data/sessions
+      - RTMDK_CACHE_DIR=/data/embedding_cache
+      - RTMDK_BACKUP_COMPRESSION=${RTMDK_BACKUP_COMPRESSION:-true}
+      - RTMDK_BACKUP_ROTATION=${RTMDK_BACKUP_ROTATION:-5}
+      - RTMDK_AUTO_SAVE_INTERVAL=${RTMDK_AUTO_SAVE_INTERVAL:-60}
+      - RTMDK_PRUNE_AGE_DAYS=${RTMDK_PRUNE_AGE_DAYS:-90}
+      - RTMDK_PRUNE_MIN_SALIENCE=${RTMDK_PRUNE_MIN_SALIENCE:-0.05}
+      - RTMDK_RATE_LIMIT_PER_MINUTE=${RTMDK_RATE_LIMIT_PER_MINUTE:-60}
+      - RTMDK_RATE_LIMIT_PER_HOUR=${RTMDK_RATE_LIMIT_PER_HOUR:-1000}
+      - RTMDK_CACHE_MAX_SIZE=${RTMDK_CACHE_MAX_SIZE:-100000}
+      - RTMDK_MAX_CONTEXT_TOKENS=${RTMDK_MAX_CONTEXT_TOKENS:-300}
+      - RTMDK_LLM_MODEL=${RTMDK_LLM_MODEL:-default}
+      - RTMDK_FEEDBACK_LR=${RTMDK_FEEDBACK_LR:-0.05}
     volumes:
       - rtmdk-data:/data
+      - rtmdk-backups:/data/backups
+      - rtmdk-sessions:/data/sessions
+      - rtmdk-cache:/data/embedding_cache
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
@@ -57,47 +73,14 @@ services:
     networks:
       - rtmdk-network
 
-  # ─────────────────────────────────────────────────────────
-  # RTMDK Memory API Server — GPU version (uncomment to use)
-  # ─────────────────────────────────────────────────────────
-  # rtmdk-api-gpu:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile.gpu
-  #   container_name: rtmdk-memory-gpu
-  #   ports:
-  #     - "${RTMDK_PORT:-8080}:8080"
-  #   env_file:
-  #     - .env
-  #   environment:
-  #     - RTMDK_HOST=0.0.0.0
-  #     - RTMDK_PORT=${RTMDK_PORT:-8080}
-  #     - RTMDK_API_KEY=${RTMDK_API_KEY:-rtmdk-local}
-  #     - RTMDK_MEMORY_FILE=/data/memory.json
-  #     - RTMDK_API_PROVIDER=${RTMDK_API_PROVIDER:-openrouter}
-  #     - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
-  #     - OPENROUTER_MODEL=${OPENROUTER_MODEL:-anthropic/claude-3.5-sonnet}
-  #   volumes:
-  #     - rtmdk-data:/data
-  #   deploy:
-  #     resources:
-  #       reservations:
-  #         devices:
-  #           - driver: nvidia
-  #             count: 1
-  #             capabilities: [gpu]
-  #   restart: unless-stopped
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-  #     interval: 30s
-  #     timeout: 5s
-  #     retries: 3
-  #     start_period: 10s
-  #   networks:
-  #     - rtmdk-network
-
 volumes:
   rtmdk-data:
+    driver: local
+  rtmdk-backups:
+    driver: local
+  rtmdk-sessions:
+    driver: local
+  rtmdk-cache:
     driver: local
 
 networks:

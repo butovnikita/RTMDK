@@ -1,6 +1,39 @@
 # RTMDK — Полная документация
 
-> Версия 8.0 | Модульная архитектура | 72+ публичных класса/функции | 36 файлов пакета | 7 коммитов
+> Версия 8.0 | Модульная архитектура | 45+ модулей | 27 UX-функций | 100+ файлов
+
+---
+
+## Все API Endpoints (30+)
+
+| Метод | Путь | Описание |
+|-------|------|----------|
+| GET | `/health` | Базовый health check |
+| GET | `/v1/models` | Список моделей |
+| POST | `/v1/chat/completions` | Чат с памятью (OpenAI-compatible) |
+| POST | `/v1/embeddings` | Эмбеддинги |
+| POST | `/v1/feedback` | Feedback Loop |
+| POST | `/v1/session/save` | Сохранить сессию |
+| POST | `/v1/session/load` | Загрузить сессию |
+| GET | `/v1/session/list` | Список сессий |
+| POST | `/v1/backup/create` | Создать бэкап |
+| POST | `/v1/backup/restore` | Восстановить бэкап |
+| GET | `/v1/backup/list` | Список бэкапов |
+| POST | `/v1/import/json` | Импорт JSON |
+| POST | `/v1/import/url` | Импорт URL |
+| GET | `/v1/analytics` | Аналитика |
+| GET | `/v1/health` | Детальный health check |
+| GET | `/v1/metrics` | Prometheus metrics |
+| GET | `/v1/export?format=md` | Экспорт (md/txt/json) |
+| GET/POST/DELETE | `/v1/tags/{node_id}` | Теги |
+| GET | `/v1/rate-limit` | Rate limit status |
+| GET | `/v1/events` | SSE events |
+| GET | `/v1/cache/stats` | Cache stats |
+| POST | `/v1/cache/clear` | Clear cache |
+| POST | `/v1/memory/save` | Сохранить контекст |
+| POST | `/v1/memory/query` | Запросить память |
+| POST | `/v1/memory/clear` | Очистить память |
+| GET | `/v1/memory/stats` | Статистика |
 
 ---
 
