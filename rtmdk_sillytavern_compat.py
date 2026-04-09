@@ -20,11 +20,12 @@ logger = logging.getLogger("rtmdk.st_compat")
 
 
 def create_sillytavern_router(memory, config: Dict[str, Any], lm_studio_available_fn,
-                              chat_model: str, lm_studio_url: str, *args, **kwargs) -> APIRouter:
+                              chat_model_fn, lm_studio_url: str, *args, **kwargs) -> APIRouter:
     """Create Silly Tavern compatible endpoints.
     
     Args:
         lm_studio_available_fn: Callable that returns current LM Studio availability
+        chat_model_fn: Callable that returns current chat model name
     """
     router = APIRouter()
 
@@ -35,6 +36,10 @@ def create_sillytavern_router(memory, config: Dict[str, Any], lm_studio_availabl
     def _lm_studio_available():
         if callable(lm_studio_available_fn): return lm_studio_available_fn()
         return lm_studio_available_fn
+    
+    def _get_chat_model():
+        if callable(chat_model_fn): return chat_model_fn()
+        return chat_model_fn
 
     async def _handle_generate(data: dict, stream: bool = False):
         """Handle text completion request."""
@@ -74,7 +79,7 @@ def create_sillytavern_router(memory, config: Dict[str, Any], lm_studio_availabl
             resp = requests.post(
                 f"{lm_studio_url}/chat/completions",
                 json={
-                    "model": chat_model or "local-model",
+                    "model": _get_chat_model() or "local-model",
                     "messages": messages,
                     "temperature": temperature,
                     "max_tokens": max_tokens,
@@ -149,7 +154,7 @@ def create_sillytavern_router(memory, config: Dict[str, Any], lm_studio_availabl
             "id": f"cmpl-{int(time.time())}",
             "object": "text_completion",
             "created": int(time.time()),
-            "model": chat_model or "rtmdk",
+            "model": _get_chat_model() or "rtmdk",
             "choices": [{"text": r["text"], "index": i, "finish_reason": "stop"} 
                        for i, r in enumerate(result.get("results", []))],
         }
