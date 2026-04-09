@@ -94,20 +94,20 @@ def create_sillytavern_router(memory, config: Dict[str, Any], lm_studio_availabl
             
             if stream:
                 # Convert LM Studio streaming to Silly Tavern format
+                # ST expects: {"choices":[{"text":"delta text","index":0}]} or {"content":"delta"}
+                # Each chunk should contain ONLY the new delta, not cumulative text
                 async def stream_generator():
-                    accumulated_text = ""
                     chunk_count = 0
                     last_content_time = time.time()
                     stream_timeout = 30  # seconds without data = end stream
                     
-                    print(f"!!! ST STREAMING STARTED")
+                    print(f"!!! ST STREAMING STARTED (fixed format)")
 
                     try:
                         for line in resp.iter_lines(chunk_size=64, decode_unicode=False):
                             if not line:
-                                # Check for timeout on empty lines
-                                if time.time() - last_content_time > stream_timeout and accumulated_text:
-                                    print(f"!!! ST STREAM TIMEOUT after {stream_timeout}s")
+                                if time.time() - last_content_time > stream_timeout:
+                                    print(f"!!! ST STREAM TIMEOUT")
                                     break
                                 continue
                             try:
@@ -120,58 +120,48 @@ def create_sillytavern_router(memory, config: Dict[str, Any], lm_studio_availabl
                                 last_content_time = time.time()
                                 chunk_count += 1
                                 
+                                if data_str.strip() == '[DONE]':
+                                    print(f"!!! ST STREAM DONE marker")
+                                    break
+                                
                                 if chunk_count <= 3 or chunk_count % 10 == 0:
                                     print(f"!!! ST STREAM CHUNK {chunk_count}: {data_str[:120]}")
                                 
-                                if data_str.strip() == '[DONE]':
-                                    print(f"!!! ST STREAM DONE marker received")
-                                    # Send final result with finish_reason
-                                    yield f'data: {json.dumps({"results": [{"text": accumulated_text}], "finish_reason": "stop"})}\n\n'
-                                    break
                                 try:
                                     chunk = json.loads(data_str)
                                     choices = chunk.get('choices', [{}])
+                                    
                                     if not choices:
-                                        # Empty choices = end of stream
                                         print(f"!!! ST STREAM empty choices, ending")
-                                        if accumulated_text:
-                                            yield f'data: {json.dumps({"results": [{"text": accumulated_text}], "finish_reason": "stop"})}\n\n'
                                         break
                                         
                                     choice = choices[0]
-                                    # Check for finish_reason in the choice
                                     finish = choice.get('finish_reason')
+                                    
+                                    # Try different delta content locations
+                                    # LM Studio chat: choices[0].delta.content
+                                    # LM Studio completion: choices[0].text
                                     delta = choice.get('delta', {})
-                                    content = delta.get('content', '')
+                                    content = delta.get('content', '') or choice.get('text', '')
                                     
                                     if content:
-                                        accumulated_text += content
-                                        last_content_time = time.time()
-                                        # Silly Tavern format: {"results": [{"text": "..."}]}
-                                        yield f"data: {json.dumps({'results': [{'text': accumulated_text}]})}\n\n"
-                                    
+                                        # Send in ST-expected format: {"choices":[{"text":"delta","index":0}]}
+                                        st_chunk = {"choices": [{"text": content, "index": 0}]}
+                                        yield f"data: {json.dumps(st_chunk)}\n\n"
+                                        
+                                        # Also try llama.cpp format as fallback: {"content":"delta"}
+                                        # ST checks both formats: data?.choices?.[0]?.text || data?.content
+                                        
                                     if finish == 'stop':
-                                        # Send final with finish_reason
-                                        print(f"!!! ST STREAM finish_reason=stop: {chunk_count} chunks, {len(accumulated_text)} chars")
-                                        yield f'data: {json.dumps({"results": [{"text": accumulated_text}], "finish_reason": "stop"})}\n\n'
+                                        print(f"!!! ST STREAM finish_reason=stop")
                                         break
                                         
-                                    # Check if delta is empty and no finish_reason - might be end
-                                    if not content and not finish and not delta:
-                                        # Stream might be ending
-                                        print(f"!!! ST STREAM empty delta, might be ending")
-                                        if accumulated_text:
-                                            yield f'data: {json.dumps({"results": [{"text": accumulated_text}], "finish_reason": "stop"})}\n\n'
-                                            
                                 except json.JSONDecodeError:
                                     pass
                     except Exception as e:
-                        print(f"!!! ST STREAM ERROR after {chunk_count} chunks: {e}")
+                        print(f"!!! ST STREAM ERROR: {e}")
                     finally:
-                        # Always send final result with finish_reason
-                        if accumulated_text:
-                            print(f"!!! ST STREAM FINAL: {len(accumulated_text)} chars, {chunk_count} chunks")
-                            yield f'data: {json.dumps({"results": [{"text": accumulated_text}], "finish_reason": "stop"})}\n\n'
+                        print(f"!!! ST STREAM ENDED: {chunk_count} chunks")
                         yield 'data: [DONE]\n\n'
                 
                 return StreamingResponse(
@@ -203,12 +193,15 @@ def create_sillytavern_router(memory, config: Dict[str, Any], lm_studio_availabl
                     print(f"!!! ST: Found stream parameter as '{key}'")
                     break
         
-        # If still no stream but SillyTavern sent it, check the raw headers/body
         print(f"!!! ST REQUEST KEYS: {list(data.keys())}")
         print(f"!!! ST REQUEST stream value: {repr(data.get('stream', 'MISSING'))}")
-        print(f"!!! ST REQUEST full body (first 500 chars): {json.dumps(data, ensure_ascii=False)[:500]}")
         
-        return await _handle_generate(data, stream)
+        # If streaming, return StreamingResponse directly
+        if stream:
+            return await _handle_generate(data, True)
+        else:
+            result = await _handle_generate(data, False)
+            return result
 
     # Alternative ST endpoint
     @router.post("/api/backends/text-completions/generate")
@@ -225,7 +218,10 @@ def create_sillytavern_router(memory, config: Dict[str, Any], lm_studio_availabl
         print(f"!!! ST-BACKEND REQUEST KEYS: {list(data.keys())}")
         print(f"!!! ST-BACKEND stream: {repr(data.get('stream', 'MISSING'))}")
         
-        return await _handle_generate(data, stream)
+        if stream:
+            return await _handle_generate(data, True)
+        else:
+            return await _handle_generate(data, False)
     
     # OpenAI completions format (for backward compatibility)
     @router.post("/v1/completions")
@@ -237,13 +233,16 @@ def create_sillytavern_router(memory, config: Dict[str, Any], lm_studio_availabl
         print(f"!!! OPENAI-COMPLETE KEYS: {list(data.keys())}")
         print(f"!!! OPENAI-COMPLETE stream: {repr(data.get('stream', 'MISSING'))}")
         
-        result = await _handle_generate({"prompt": prompt, **data}, stream)
-        return {
+        if stream:
+            return await _handle_generate({"prompt": prompt, **data}, True)
+        else:
+            result = await _handle_generate({"prompt": prompt, **data}, False)
+            return {
             "id": f"cmpl-{int(time.time())}",
             "object": "text_completion",
             "created": int(time.time()),
             "model": _get_chat_model() or "rtmdk",
-            "choices": [{"text": r["text"], "index": i, "finish_reason": "stop"} 
+            "choices": [{"text": r["text"], "index": i, "finish_reason": "stop"}
                        for i, r in enumerate(result.get("results", []))],
         }
     
