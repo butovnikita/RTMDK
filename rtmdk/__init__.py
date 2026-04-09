@@ -87,6 +87,18 @@ from rtmdk.support.role_shard_router import RoleShardRouter, RoleShard, RoleDete
 # Phase 18: Engrams
 from rtmdk.engrams import EngramPattern, EngramIndex, EngramManager, PatternCompleter
 
+# Phase 19: Advanced
+from rtmdk.production.offline_dreamer import OfflineDreamer
+from rtmdk.engines.causal_traversal import CausalTraversalEngine, CausalExplanationGenerator
+from rtmdk.engines.ssm_dynamics import SSMDynamics
+from rtmdk.engines.trust_consensus import TrustConsensusEngine, TrustDAG
+from rtmdk.engines.neuro_symbolic_prover import NeuroSymbolicProver
+
+# Phase 19 (Research modes)
+from rtmdk.production.active_inference import ActiveInferenceLoop
+from rtmdk.production.tpr import TensorProductRepresentation
+from rtmdk.production.adversarial_arena import AdversarialArena
+
 # ---------------------------------------------------------------------------
 # Core classes from monolithic file (not yet modularized)
 # ---------------------------------------------------------------------------
@@ -177,6 +189,14 @@ __all__ = [
     "RoleShardRouter", "RoleShard", "RoleDetector", "DEFAULT_ROLE",
     # Phase 18: Engrams
     "EngramPattern", "EngramIndex", "EngramManager", "PatternCompleter",
+    # Phase 19: Advanced
+    "OfflineDreamer", "DreamTask",
+    "CausalTraversalEngine", "CausalExplanationGenerator",
+    "SSMDynamics",
+    "TrustConsensusEngine", "TrustDAG",
+    "NeuroSymbolicProver",
+    # Phase 19 (Research)
+    "ActiveInferenceLoop", "TensorProductRepresentation", "AdversarialArena",
     # Monolithic core
     "RTMDKField",
     "RTMDKMemory",

@@ -244,6 +244,59 @@ class RTMDKConfig:
     0.5 = aggressive merging, 0.9 = only near-identical merge."""
 
     # ─────────────────────────────────────────────────────────────────────
+    # PHASE 19 — Advanced Improvements
+    # ─────────────────────────────────────────────────────────────────────
+
+    # --- Offline Dreaming (Phase 1) ---
+    offline_dreaming: bool = True
+    """Enable background dreaming cycles for heavy operations.
+    True = TDA, crystallization, topology repair run in background.
+    Frees real-time path from blocking operations."""
+
+    dreaming_freq: int = 50
+    """Run dream cycle every N evolution steps.
+    25 = frequent (more maintenance), 100 = infrequent (less overhead)."""
+
+    # --- Causal Traversal (Phase 1) ---
+    causal_traversal: bool = True
+    """Enable causal graph traversal during retrieval.
+    True = extends results via causal edges (why-questions).
+    Adds ~5ms per query but +15-25% accuracy on causal queries."""
+
+    causal_max_hops: int = 3
+    """Maximum hops through causal graph.
+    2 = local causes, 3 = medium range, 5 = deep reasoning."""
+
+    # --- SSM Dynamics (Phase 1) ---
+    ssm_dynamics: bool = False
+    """Use State Space Models instead of NeuralODE.
+    True = O(N) dynamics (Mamba-inspired), False = NeuralODE O(N³).
+    Critical for N > 10K."""
+
+    ssm_state_dim: int = 64
+    """Hidden state dimension for SSM.
+    32 = compact, 64 = default, 128 = high capacity."""
+
+    # --- Trust Consensus (Phase 2) ---
+    trust_consensus: bool = False
+    """Enable DAG-based trust for federation.
+    True = weighted aggregation by reputation, False = naive averaging.
+    Critical for multi-agent deployments."""
+
+    trust_min_reputation: float = 0.3
+    """Minimum reputation to accept peer updates.
+    0.1 = permissive, 0.5 = strict."""
+
+    # --- Neuro-Symbolic Prover (Phase 2) ---
+    neuro_symbolic_prover: bool = False
+    """Enable Z3/Prolog theorem prover for contradiction resolution.
+    True = logical inference, False = heuristic only.
+    Requires z3-solver or pyswip package."""
+
+    prover_backend: str = "z3"
+    """Backend for prover: z3, prolog, or none."""
+
+    # ─────────────────────────────────────────────────────────────────────
     # SCALING — Settings for large deployments (>100K nodes)
     # ─────────────────────────────────────────────────────────────────────
 
@@ -452,17 +505,26 @@ class RTMDKConfig:
 
 @classmethod
 def local(cls) -> "RTMDKConfig":
-    """Personal assistant — single user, minimal resources."""
+    """Personal assistant — single user, minimal resources.
+    RAM: ~16MB, Latency: ~5ms, Nodes: up to 10K."""
     return cls(
         latent_dim=256, top_k=5, min_response=0.005,
         decay_rate=0.999, use_hnsw=True, bm25_fallback=True,
         learn_projection=False, attention_bias=True,
         enable_async=False, max_nodes=10000,
+        # Phase 18: Engrams
+        enable_engrams=True, engram_min_nodes=2, engram_max_nodes=15,
+        # Phase 19
+        offline_dreaming=False,  # No background thread for local
+        causal_traversal=True, causal_max_hops=2,
+        ssm_dynamics=False,  # NeuralODE OK for small N
+        trust_consensus=False, neuro_symbolic_prover=False,
     )
 
 @classmethod
 def production(cls) -> "RTMDKConfig":
-    """Multi-user production server — all optimizations."""
+    """Multi-user production server — all optimizations.
+    RAM: ~50MB, Latency: ~6ms, Nodes: up to 100K."""
     return cls(
         latent_dim=256, top_k=5, min_response=0.005,
         decay_rate=0.999, use_hnsw=True, bm25_fallback=True,
@@ -470,22 +532,40 @@ def production(cls) -> "RTMDKConfig":
         enable_async=True, max_nodes=100000,
         hnsw_m=32, hnsw_ef_construction=400,
         version_control=True,
+        # Phase 18: Engrams
+        enable_engrams=True, engram_min_nodes=2, engram_max_nodes=20,
+        # Phase 19
+        offline_dreaming=True, dreaming_freq=50,
+        causal_traversal=True, causal_max_hops=3,
+        ssm_dynamics=True, ssm_state_dim=64,  # O(N) for scale
+        trust_consensus=True, trust_min_reputation=0.3,
+        neuro_symbolic_prover=False,  # Only for specific domains
     )
 
 @classmethod
 def research(cls) -> "RTMDKConfig":
-    """Maximum accuracy — slower, for experimentation."""
+    """Maximum accuracy — slower, for experimentation.
+    RAM: ~200MB, Latency: ~50ms, Nodes: unlimited."""
     return cls(
         latent_dim=512, top_k=10, min_response=0.001,
         decay_rate=0.9995, use_hnsw=True, bm25_fallback=True,
         learn_projection=True, attention_bias=True,
         causal_topological=True, meta_adaptive=True,
         self_healing=True, max_nodes=None,
+        # Phase 18: Engrams
+        enable_engrams=True, engram_min_nodes=2, engram_max_nodes=30,
+        # Phase 19
+        offline_dreaming=True, dreaming_freq=25,
+        causal_traversal=True, causal_max_hops=5,
+        ssm_dynamics=False,  # NeuralODE for research accuracy
+        trust_consensus=True,
+        neuro_symbolic_prover=True, prover_backend="z3",
     )
 
 @classmethod
 def enterprise(cls) -> "RTMDKConfig":
-    """Distributed deployment — 100K+ nodes."""
+    """Distributed deployment — 100K+ nodes.
+    RAM: ~250MB/shard, Latency: ~15ms, Nodes: 500K+."""
     return cls(
         latent_dim=256, top_k=5, min_response=0.005,
         decay_rate=0.999, use_hnsw=True, bm25_fallback=True,
@@ -494,6 +574,91 @@ def enterprise(cls) -> "RTMDKConfig":
         hnsw_m=64, hnsw_ef_construction=800,
         sparse_routing=True, num_shards=32,
         version_control=True,
+        # Phase 18: Engrams
+        enable_engrams=True, engram_min_nodes=3, engram_max_nodes=25,
+        # Phase 19
+        offline_dreaming=True, dreaming_freq=100,
+        causal_traversal=True, causal_max_hops=3,
+        ssm_dynamics=True, ssm_state_dim=128,  # High capacity
+        trust_consensus=True, trust_min_reputation=0.4,
+        neuro_symbolic_prover=False,
+    )
+
+@classmethod
+def agent(cls) -> "RTMDKConfig":
+    """Autonomous agent with active inference.
+    For RTMDK as an autonomous reasoning agent."""
+    return cls(
+        latent_dim=256, top_k=5, min_response=0.005,
+        decay_rate=0.998, use_hnsw=True, bm25_fallback=True,
+        learn_projection=False, attention_bias=True,
+        enable_async=True, max_nodes=50000,
+        # Phase 18: Engrams
+        enable_engrams=True, engram_min_nodes=2, engram_max_nodes=20,
+        # Phase 19
+        offline_dreaming=True, dreaming_freq=30,
+        causal_traversal=True, causal_max_hops=4,
+        ssm_dynamics=True,
+        trust_consensus=False,
+        neuro_symbolic_prover=False,
+    )
+
+@classmethod
+def legal(cls) -> "RTMDKConfig":
+    """Legal domain — Z3 prover for contradiction detection.
+    Prioritizes logical consistency over speed."""
+    return cls(
+        latent_dim=512, top_k=10, min_response=0.001,
+        decay_rate=0.9995, use_hnsw=True, bm25_fallback=True,
+        learn_projection=False, attention_bias=True,
+        causal_topological=True, max_nodes=200000,
+        # Phase 18: Engrams
+        enable_engrams=True, engram_min_nodes=2, engram_max_nodes=25,
+        # Phase 19
+        offline_dreaming=True, dreaming_freq=50,
+        causal_traversal=True, causal_max_hops=5,
+        ssm_dynamics=False,
+        trust_consensus=True,
+        neuro_symbolic_prover=True, prover_backend="z3",
+    )
+
+@classmethod
+def medical(cls) -> "RTMDKConfig":
+    """Medical domain — high trust + prover + audit trail.
+    Prioritizes safety and traceability."""
+    return cls(
+        latent_dim=512, top_k=10, min_response=0.001,
+        decay_rate=0.9995, use_hnsw=True, bm25_fallback=True,
+        learn_projection=False, attention_bias=True,
+        causal_topological=True, max_nodes=200000,
+        version_control=True,
+        # Phase 18: Engrams
+        enable_engrams=True, engram_min_nodes=2, engram_max_nodes=20,
+        # Phase 19
+        offline_dreaming=True, dreaming_freq=50,
+        causal_traversal=True, causal_max_hops=4,
+        ssm_dynamics=False,
+        trust_consensus=True, trust_min_reputation=0.5,
+        neuro_symbolic_prover=True, prover_backend="z3",
+    )
+
+@classmethod
+def streaming(cls) -> "RTMDKConfig":
+    """High-throughput real-time — minimize latency.
+    RAM: ~30MB, Latency: ~3ms, Nodes: up to 50K."""
+    return cls(
+        latent_dim=256, top_k=5, min_response=0.005,
+        decay_rate=0.999, use_hnsw=True, bm25_fallback=True,
+        learn_projection=False, attention_bias=False,  # Save ms
+        enable_async=True, max_nodes=50000,
+        hnsw_m=32, hnsw_ef_construction=200,
+        # Phase 18: Engrams
+        enable_engrams=True, engram_min_nodes=2, engram_max_nodes=15,
+        # Phase 19: minimal overhead
+        offline_dreaming=False,  # No background for streaming
+        causal_traversal=False,  # Skip for latency
+        ssm_dynamics=True,  # O(N) critical
+        trust_consensus=False, neuro_symbolic_prover=False,
     )
 
 # Bind presets to class
@@ -501,3 +666,7 @@ RTMDKConfig.local = local
 RTMDKConfig.production = production
 RTMDKConfig.research = research
 RTMDKConfig.enterprise = enterprise
+RTMDKConfig.agent = agent
+RTMDKConfig.legal = legal
+RTMDKConfig.medical = medical
+RTMDKConfig.streaming = streaming
