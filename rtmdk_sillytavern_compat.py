@@ -21,34 +21,42 @@ logger = logging.getLogger("rtmdk.st_compat")
 
 def create_sillytavern_router(memory, config: Dict[str, Any], lm_studio_available: bool,
                               chat_model: str, lm_studio_url: str, *args, **kwargs) -> APIRouter:
-    """Create Silly Tavern compatible endpoints."""
-    router = APIRouter()
+    """Create Silly Tavern compatible endpoints.
     
+    memory can be an instance or a callable returning current instance.
+    """
+    router = APIRouter()
+
+    def _get_mem():
+        if callable(memory): return memory()
+        return memory
+
     async def _handle_generate(data: dict, stream: bool = False):
         """Handle text completion request."""
         import requests
-        
+
+        mem = _get_mem()
         prompt = data.get("prompt", "")
         max_tokens = data.get("max_new_tokens", data.get("max_tokens", 512))
         temperature = data.get("temperature", 0.7)
-        
+
         if not lm_studio_available:
             return {"results": [{"text": "[Error: LLM backend not available. Start LM Studio or configure provider.]"}]}
-        
+
         # Build system prompt with memory context
         session_id = data.get("session_id", "default")
-        if memory and prompt:
+        if mem and prompt:
             try:
-                memory.save_context(
+                mem.save_context(
                     {"input": prompt, "session_id": session_id},
                     {"output": ""}
                 )
             except Exception as e:
                 logger.warning(f"Memory save failed: {e}")
-        
+
         messages = []
-        if memory:
-            ctx = memory.load_memory_variables({"input": prompt, "session_id": session_id})
+        if mem:
+            ctx = mem.load_memory_variables({"input": prompt, "session_id": session_id})
             context = ctx.get("rtmdk_context", "")
             if context:
                 messages.append({"role": "system", "content": f"Use this context: {context}"})

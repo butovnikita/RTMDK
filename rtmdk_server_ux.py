@@ -12,9 +12,21 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse, PlainTextResponse
 
 def create_ux_router(memory, config: Dict[str, Any]) -> APIRouter:
+    """Create FastAPI router with all UX endpoints.
+    
+    memory can be:
+    - RTMDKMemory instance (direct)
+    - Callable that returns current memory instance
+    """
     router = APIRouter(prefix="/v1", tags=["ux"])
     _m = {}
-    
+
+    def _get_mem():
+        """Resolve current memory instance."""
+        if callable(memory):
+            return memory()
+        return memory
+
     def _init():
         if _m: return
         from rtmdk.production.context_optimizer import ContextOptimizer
@@ -34,19 +46,22 @@ def create_ux_router(memory, config: Dict[str, Any]) -> APIRouter:
         bd=config.get("RTMDK_BACKUP_DIR","/data/backups")
         sd=config.get("RTMDK_SESSION_DIR","/data/sessions")
         cd=config.get("RTMDK_CACHE_DIR","/data/embedding_cache")
+        mem = _get_mem()
+        if mem is None:
+            raise RuntimeError("Memory not initialized yet")
         _m["co"]=ContextOptimizer(model=config.get("RTMDK_LLM_MODEL","default"),max_tokens=int(config.get("RTMDK_MAX_CONTEXT_TOKENS","300")))
-        _m["fb"]=FeedbackLoop(memory,learning_rate=float(config.get("RTMDK_FEEDBACK_LR","0.05")))
-        _m["ss"]=SessionPersistence(memory,save_dir=sd,auto_save_interval=int(config.get("RTMDK_AUTO_SAVE_INTERVAL","60")))
-        _m["sp"]=SmartPruner(memory,max_age_days=int(config.get("RTMDK_PRUNE_AGE_DAYS","90")),min_salience=float(config.get("RTMDK_PRUNE_MIN_SALIENCE","0.05")))
-        _m["bk"]=BackupManager(memory,backup_dir=bd,compression=config.get("RTMDK_BACKUP_COMPRESSION","true").lower()=="true")
-        _m["ip"]=ImportPipeline(memory)
-        _m["hm"]=HealthMonitor(memory)
-        _m["an"]=MemoryAnalytics(memory)
+        _m["fb"]=FeedbackLoop(mem,learning_rate=float(config.get("RTMDK_FEEDBACK_LR","0.05")))
+        _m["ss"]=SessionPersistence(mem,save_dir=sd,auto_save_interval=int(config.get("RTMDK_AUTO_SAVE_INTERVAL","60")))
+        _m["sp"]=SmartPruner(mem,max_age_days=int(config.get("RTMDK_PRUNE_AGE_DAYS","90")),min_salience=float(config.get("RTMDK_PRUNE_MIN_SALIENCE","0.05")))
+        _m["bk"]=BackupManager(mem,backup_dir=bd,compression=config.get("RTMDK_BACKUP_COMPRESSION","true").lower()=="true")
+        _m["ip"]=ImportPipeline(mem)
+        _m["hm"]=HealthMonitor(mem)
+        _m["an"]=MemoryAnalytics(mem)
         _m["ev"]=EventSystem()
-        _m["tg"]=TaggingSystem(memory)
+        _m["tg"]=TaggingSystem(mem)
         _m["rl"]=RateLimiter(max_per_minute=int(config.get("RTMDK_RATE_LIMIT_PER_MINUTE","60")),max_per_hour=int(config.get("RTMDK_RATE_LIMIT_PER_HOUR","1000")))
-        _m["mr"]=MemoryRefresh(memory)
-        _m["ex"]=MemoryExporter(memory)
+        _m["mr"]=MemoryRefresh(mem)
+        _m["ex"]=MemoryExporter(mem)
         _m["ec"]=EmbeddingCache(cache_dir=cd,max_size=int(config.get("RTMDK_CACHE_MAX_SIZE","100000")))
     
     @router.post("/feedback")

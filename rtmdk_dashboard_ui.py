@@ -391,8 +391,15 @@ from fastapi import APIRouter, HTTPException
 
 
 def create_dashboard_router(memory=None, config: Dict[str, Any] = None) -> APIRouter:
-    """Create FastAPI router for the dashboard UI."""
+    """Create FastAPI router for the dashboard UI.
+    
+    memory can be an instance or a callable returning current instance.
+    """
     router = APIRouter()
+    
+    def _get_mem():
+        if callable(memory): return memory()
+        return memory
     
     @router.get("/dashboard")
     @router.get("/")
