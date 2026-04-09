@@ -418,6 +418,87 @@ class RTMDKConfig:
     cross_shard_threshold: float = 0.45
     auto_role_detection: bool = True
 
+    # Phase 18: Engrams
+    enable_engrams: bool = True
+    engram_min_nodes: int = 2
+    engram_max_nodes: int = 20
+    engram_creation_threshold: float = 0.6
+    engram_decay_rate: float = 0.998
+    engram_pattern_completion: bool = True
+    engram_overlap_threshold: float = 0.7
+
+    # Phase 19: Advanced
+    offline_dreaming: bool = True
+    dreaming_freq: int = 50
+    causal_traversal: bool = True
+    causal_max_hops: int = 3
+    ssm_dynamics: bool = False
+    ssm_state_dim: int = 64
+    trust_consensus: bool = False
+    trust_min_reputation: float = 0.3
+    neuro_symbolic_prover: bool = False
+    prover_backend: str = "z3"
+    max_versions: int = 100
+    entropy_management: bool = False
+    entropy_threshold: float = 0.5
+    clarification_threshold_ratio: float = 2.0
+    cognitive_compression: bool = False
+    triton_backend: bool = False
+    bias_temperature: float = 1.0
+    top_shards: int = 3
+    ball_radius: float = 0.85
+    hyperbolic: bool = False
+    curvature: float = -1.0
+    predictive_coding: bool = False
+    counterfactual_imagination: bool = False
+    differential_privacy: bool = False
+    dp_epsilon: float = 2.0
+    dp_delta: float = 1e-5
+    dp_max_norm: float = 1.0
+    goal_tracking: bool = False
+    max_goals: int = 20
+    goal_decay: float = 0.995
+    goal_completion_threshold: float = 0.8
+    rl_feedback: bool = False
+    rl_learning_rate: float = 0.01
+    rl_reward_window: int = 10
+    low_rank_compression: bool = False
+    compression_rank: int = 32
+    compression_freq: int = 500
+    meta_memory: bool = False
+    self_reflection_freq: int = 100
+    memory_age_factor: float = 0.001
+    recall_accuracy_threshold: float = 0.6
+    max_node_text_length: int = 10000
+    tension_spike_threshold: float = 0.5
+    causal_graph_integrity_check: bool = True
+    swarm_memory: bool = False
+    swarm_consensus_threshold: float = 0.5
+    swarm_max_agents: int = 10
+    swarm_vote_weight: float = 0.3
+    symbolic_overlay: bool = False
+    symbolic_min_self_sup: float = 0.7
+    symbolic_max_tension: float = 0.15
+    symbolic_confidence_threshold: float = 0.65
+    safety_certifier: bool = False
+    safety_mode: str = "soft_regulate"
+    lyapunov_alpha: float = 0.4
+    lyapunov_beta: float = 0.4
+    lyapunov_gamma: float = 0.2
+    lyapunov_threshold: float = 0.1
+    production_mode: bool = False
+    eval_mode: str = "production"
+    shadow_mode: bool = False
+    shadow_fallback_threshold: float = 0.3
+    auto_rollback: bool = False
+    auto_rollback_threshold: float = 0.15
+    ragas_enabled: bool = False
+    drift_detection: bool = False
+    drift_window: int = 100
+    drift_threshold: float = 0.05
+    metrics_retention: int = 10000
+    eval_frequency: int = 100
+
     def __post_init__(self):
         logger.setLevel(getattr(logging, self.log_level.upper()))
         if not self.modality_phase_shifts:
@@ -3619,6 +3700,8 @@ class RTMDKField:
             # Phase 17
             "n_shards": 0, "shard_distribution": {},
             "cross_shard_exchanges": 0, "role_router_enabled": False,
+            # Phase 18: Engrams
+            "engram_retrievals": 0, "engrams_created": 0, "engrams_merged": 0,
             "field_integrity_issues": 0,
             # B1: Tension cache stats
             "tension_cache_hits": 0, "tension_cache_misses": 0,

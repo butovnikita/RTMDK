@@ -1,88 +1,27 @@
-# RTMDK Local Development Config
-# Single user, optimized defaults for real embeddings
+# RTMDK Local Config (v8.0) — personal assistant
+# RAM: ~16MB, Latency: ~5ms, Nodes: up to 10K
 embedding_dim: 768
 latent_dim: 256
-resonance_kernel: "gaussian_phase"
-phase_coupling: 0.3
-bandwidth: 1.0
-attraction_lr: 0.02
-phase_sync_lr: 0.01
 decay_rate: 0.999
-min_amplitude: 0.05
-tension_threshold: 0.25
-consolidation_mode: "dialectical"
-max_nodes: 1000
+max_nodes: 10000
 top_k: 5
 min_response: 0.005
 enable_async: false
-log_level: "INFO"
-
-context_format: "plain"
-use_structured_prompt: true
-adaptive_threshold: false
 learn_projection: true
 bm25_fallback: true
-
-soft_gates: false
-backend: "numpy"
-l2_regularization: 0.0001
-false_merge_threshold: 0.4
-enable_rollback: false
-
-multimodal: false
 use_hnsw: true
-hnsw_m: 16
-hnsw_ef_construction: 200
-tda_monitoring: false
+attention_bias: true
 
-differentiable: false
-meta_adaptive: false
-self_healing: false
+# Phase 18: Engrams
+enable_engrams: true
+engram_min_nodes: 2
+engram_max_nodes: 15
+engram_pattern_completion: true
 
-causal_topological: false
-counterfactual_enabled: false
-contradiction_detection: false
-
-continuous_dynamics: false
-meta_controller: false
-federated: false
-
-memory_tiers: ["episodic", "semantic", "procedural"]
-hyperbolic: false
-predictive_coding: false
-counterfactual_imagination: false
-differential_privacy: false
-
-sparse_routing: false
-cognitive_compression: false
-crystallization: false
-async_pipeline: false
-
-goal_tracking: false
-attention_bias: false
-rl_feedback: false
-event_driven: false
-low_rank_compression: false
-
-meta_memory: false
-security_enabled: false
-swarm_memory: false
-
-version_control: false
-proactive_clarification: false
-attention_tokens: true
-entropy_management: false
-triton_backend: false
-
-symbolic_overlay: false
-safety_certifier: false
-ump_enabled: false
-
-role_sharding: false
-
-production_mode: false
-eval_mode: "production"
-shadow_mode: false
-auto_rollback: false
-ragas_enabled: false
-drift_detection: false
+# Phase 19: Advanced
+offline_dreaming: false
+causal_traversal: true
+causal_max_hops: 2
+ssm_dynamics: false
+trust_consensus: false
+neuro_symbolic_prover: false
