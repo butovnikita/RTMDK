@@ -834,6 +834,7 @@ async def shutdown():
 def _graceful_shutdown(signum, frame):
     """Handle SIGTERM/SIGINT for graceful shutdown."""
     logger.info(f"Received signal {signum}, initiating graceful shutdown...")
+    global memory
     if memory:
         try:
             os.makedirs(os.path.dirname(MEMORY_FILE), exist_ok=True)
@@ -842,13 +843,22 @@ def _graceful_shutdown(signum, frame):
         except Exception as e:
             logger.error(f"Memory save failed on signal {signum}: {e}")
     logger.info("Graceful shutdown complete")
-    sys.exit(0)
+    # Don't call sys.exit(0) - let uvicorn handle shutdown
+    raise KeyboardInterrupt()
 
 
-# Register signal handlers (only on non-Windows for SIGTERM support)
-if os.name != "nt":
-    signal.signal(signal.SIGTERM, _graceful_shutdown)
-signal.signal(signal.SIGINT, _graceful_shutdown)
+def _register_signal_handlers():
+    """Register signal handlers for graceful shutdown."""
+    if os.name != "nt":
+        # SIGTERM not available on Windows
+        signal.signal(signal.SIGTERM, _graceful_shutdown)
+        signal.signal(signal.SIGINT, _graceful_shutdown)
+    else:
+        # On Windows, SIGINT works but we need to handle it carefully
+        try:
+            signal.signal(signal.SIGINT, _graceful_shutdown)
+        except (ValueError, OSError):
+            pass  # Signal registration failed, uvicorn will handle shutdown
 
 
 # ============================================================================
@@ -896,6 +906,9 @@ def main():
     print("    API Key: rtmdk-local")
     print(f"    🎛️  Dashboard: http://{SERVER_HOST}:{SERVER_PORT}/dashboard")
     print("-" * 60)
+
+    # Register signal handlers for graceful shutdown
+    _register_signal_handlers()
 
     uvicorn.run(
         "rtmdk_server:app",
