@@ -211,6 +211,39 @@ class RTMDKConfig:
     True for production debugging, adds ~10% RAM."""
 
     # ─────────────────────────────────────────────────────────────────────
+    # PHASE 18 — Engrams (biological memory patterns)
+    # ─────────────────────────────────────────────────────────────────────
+
+    enable_engrams: bool = True
+    """Enable engram-based memory retrieval.
+    True = groups of co-activated nodes = one memory, enables pattern completion.
+    Adds ~2MB RAM for 1K nodes, speeds up retrieval by searching engrams not nodes."""
+
+    engram_min_nodes: int = 2
+    """Minimum nodes required to form an engram.
+    2 = easy to form, 5 = only strong memories become engrams."""
+
+    engram_max_nodes: int = 20
+    """Maximum nodes in one engram.
+    Lower = more focused memories, Higher = richer but more RAM."""
+
+    engram_creation_threshold: float = 0.6
+    """Minimum average activation to create engram [0-1].
+    0.4 = easy formation, 0.8 = only very strong co-activation."""
+
+    engram_decay_rate: float = 0.998
+    """Decay rate for engram strength.
+    0.998 = half-life ~346 steps, 0.995 = ~138 steps."""
+
+    engram_pattern_completion: bool = True
+    """Enable pattern completion: partial query → full engram retrieval.
+    True = 20% match retrieves 100% of engram, False = exact match only."""
+
+    engram_overlap_threshold: float = 0.7
+    """Jaccard threshold for merging overlapping engrams.
+    0.5 = aggressive merging, 0.9 = only near-identical merge."""
+
+    # ─────────────────────────────────────────────────────────────────────
     # SCALING — Settings for large deployments (>100K nodes)
     # ─────────────────────────────────────────────────────────────────────
 

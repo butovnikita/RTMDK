@@ -266,6 +266,15 @@ class RTMDKConfig:
         "decay_rate", "tension_threshold", "phase_coupling", "bandwidth"
     ])
 
+    # Phase 18: Engrams (biological memory patterns)
+    enable_engrams: bool = True
+    engram_min_nodes: int = 2
+    engram_max_nodes: int = 20
+    engram_creation_threshold: float = 0.6
+    engram_decay_rate: float = 0.998
+    engram_pattern_completion: bool = True
+    engram_overlap_threshold: float = 0.7
+
     # Track 10.3: Federated sync
     federated: bool = False
     federated_sync_lr: float = 0.01
@@ -5449,8 +5458,23 @@ class RTMDKMemory(BaseModel):
                 loop = asyncio.get_running_loop()
                 loop.create_task(self.field._start_workers())
             except RuntimeError:
-                # No running loop yet; workers will start on first save_context
                 pass
+        # Phase 18: Initialize Engram Manager
+        if self.config.enable_engrams:
+            try:
+                from rtmdk.engrams import EngramManager
+                object.__setattr__(self, "engram_manager", EngramManager(
+                    min_nodes=self.config.engram_min_nodes,
+                    max_nodes=self.config.engram_max_nodes,
+                    creation_threshold=self.config.engram_creation_threshold,
+                    decay_rate=self.config.engram_decay_rate,
+                    pattern_completion=self.config.engram_pattern_completion,
+                    overlap_threshold=self.config.engram_overlap_threshold,
+                ))
+            except Exception:
+                object.__setattr__(self, "engram_manager", None)
+        else:
+            object.__setattr__(self, "engram_manager", None)
 
     @property
     def memory_variables(self) -> List[str]:
@@ -5471,7 +5495,33 @@ class RTMDKMemory(BaseModel):
             return {"rtmdk_context": ""}
         embedding = self.embedder(query)
         phase = self._get_phase(session_id, embedding)
-        results = self.field.query(embedding, phase, top_k=self.field.cfg.top_k)
+
+        # Phase 18: Engram-based retrieval (if enabled)
+        if self.engram_manager is not None and self.engram_manager.index.size > 0:
+            # Collect node embeddings for pattern completion
+            node_embs = {}
+            for nid, node in self.field.nodes.items():
+                emb = self._get_node_embedding(nid, node)
+                if emb is not None:
+                    node_embs[nid] = emb
+
+            # Retrieve engrams
+            engram_results = self.engram_manager.retrieve_engrams(
+                embedding, node_embs, top_k=self.field.cfg.top_k
+            )
+
+            if engram_results:
+                # Expand engrams to node-level results
+                results = self.engram_manager.expand_engrams(
+                    engram_results, self.field, top_k=self.field.cfg.top_k
+                )
+                self.field.stats["engram_retrievals"] += 1
+            else:
+                # Fallback to standard node-level retrieval
+                results = self.field.query(embedding, phase, top_k=self.field.cfg.top_k)
+        else:
+            # Standard node-level retrieval
+            results = self.field.query(embedding, phase, top_k=self.field.cfg.top_k)
 
         # Phase 15 Track 2: Proactive Clarification
         if self.config.proactive_clarification and results:
@@ -5519,6 +5569,21 @@ class RTMDKMemory(BaseModel):
 
         return {"rtmdk_context": context}
 
+    def _get_node_embedding(self, nid: str, node) -> Optional[np.ndarray]:
+        """Retrieve stored embedding for a node, or reconstruct from latent position."""
+        # Check if node has modal_embedding (cross-modal)
+        if hasattr(node, 'modal_embedding') and node.modal_embedding is not None:
+            return node.modal_embedding
+        # Check projection learner cache
+        if hasattr(self, 'field') and self.field.projection_learner is not None:
+            if hasattr(self.field.projection_learner, 'buffer'):
+                for emb in self.field.projection_learner.buffer:
+                    # Approximate: use projected + reconstructed (lossy)
+                    projected = node.latent_pos
+                    return self.field.projection_learner.projection @ projected
+        # Fallback: return None (engram creation will skip this node)
+        return None
+
     def _generate_clarification(self, results: List, query: str) -> str:
         """Generate a clarification prompt from weak-resonance nodes."""
         lines = [f"[CLARIFICATION] Не нашёл точных воспоминаний по запросу: \"{query[:80]}\""]
@@ -5549,6 +5614,36 @@ class RTMDKMemory(BaseModel):
         if self.field.node_index:
             nid = self.field.node_index[-1]
             self.field.nodes[nid].tier = tier
+
+        # Phase 18: Create/update engrams from co-activated nodes
+        if self.engram_manager is not None:
+            # Find related nodes via semantic similarity
+            related_nodes = []
+            for existing_nid, existing_node in self.field.nodes.items():
+                existing_emb = self._get_node_embedding(existing_nid, existing_node)
+                if existing_emb is not None:
+                    sim = float(np.dot(embedding, existing_emb) / (
+                        (np.linalg.norm(embedding) + 1e-8) * (np.linalg.norm(existing_emb) + 1e-8)))
+                    if sim > 0.5:  # Threshold for co-activation
+                        related_nodes.append((existing_nid, sim))
+            # Include the new node
+            related_nodes.append((self.field.node_index[-1] if self.field.node_index else "latest", 1.0))
+
+            if len(related_nodes) >= self.config.engram_min_nodes:
+                # Build node embeddings dict
+                node_embs = {}
+                for nid, _ in related_nodes:
+                    emb = self._get_node_embedding(nid, self.field.nodes.get(nid))
+                    if emb is not None:
+                        node_embs[nid] = emb
+
+                self.engram_manager.create_engram_from_nodes(
+                    activated_nodes=related_nodes[:self.config.engram_max_nodes],
+                    node_embeddings=node_embs,
+                    semantic_core=text[:100],
+                    context_tags={tier, session_id},
+                    tier=tier,
+                )
 
         if self.config.enable_async:
             # Fix 4: Lazy async worker startup

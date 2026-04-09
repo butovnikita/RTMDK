@@ -84,6 +84,9 @@ from rtmdk.support.ump import UniversalMemoryProtocol, UMP_VERSION, UMP_SCHEMA
 # Phase 17
 from rtmdk.support.role_shard_router import RoleShardRouter, RoleShard, RoleDetector, DEFAULT_ROLE
 
+# Phase 18: Engrams
+from rtmdk.engrams import EngramPattern, EngramIndex, EngramManager, PatternCompleter
+
 # ---------------------------------------------------------------------------
 # Core classes from monolithic file (not yet modularized)
 # ---------------------------------------------------------------------------
@@ -160,6 +163,8 @@ __all__ = [
     "ShadowModeEvaluator",
     "RAGASPlusEvaluator",
     "AutoRollbackManager",
+    # Phase 18: Engrams
+    "EngramPattern", "EngramIndex", "EngramManager", "PatternCompleter",
     # Phase 15
     "VersionControl", "NodeDelta", "Version", "DiffResult",
     "EntropyController",
@@ -170,6 +175,8 @@ __all__ = [
     "UniversalMemoryProtocol", "UMP_VERSION", "UMP_SCHEMA",
     # Phase 17
     "RoleShardRouter", "RoleShard", "RoleDetector", "DEFAULT_ROLE",
+    # Phase 18: Engrams
+    "EngramPattern", "EngramIndex", "EngramManager", "PatternCompleter",
     # Monolithic core
     "RTMDKField",
     "RTMDKMemory",
