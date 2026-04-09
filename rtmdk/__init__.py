@@ -1,11 +1,7 @@
 """RTMDK — Resonance-Topological Memory for LLMs v8.0
 
 Quick Start:
-    from rtmdk import create_rtmdk
-    memory = create_rtmdk("production", embedder=my_embedder)
-
-    # Or even simpler:
-    from rtmdk import quickstart
+    from rtmdk import create_rtmdk, quickstart
     memory = quickstart()  # Auto-detects LM Studio
 
 Available presets: local, production, research, enterprise, agent, legal, medical, streaming
@@ -91,12 +87,7 @@ def create_rtmdk(preset: str = "production", embedder=None, **kwargs) -> RTMDKMe
 
 
 def quickstart(preset: str = "local") -> RTMDKMemory:
-    """Quickstart: auto-detect LM Studio and create memory in one line.
-    
-    Usage:
-        from rtmdk import quickstart
-        memory = quickstart()
-    """
+    """Quickstart: auto-detect LM Studio and create memory in one line."""
     try:
         from embedder_lmstudio import get_embedder
         embedder = get_embedder()
@@ -104,7 +95,7 @@ def quickstart(preset: str = "local") -> RTMDKMemory:
     except ImportError:
         raise ImportError(
             "quickstart() requires embedder_lmstudio.py.\n"
-            "Install it or pass embedder manually: create_rtmdk('local', embedder=my_embedder)"
+            "Pass embedder manually: create_rtmdk('local', embedder=my_embedder)"
         )
 
 
@@ -135,7 +126,7 @@ def list_presets() -> dict:
 
 
 # ─────────────────────────────────────────────────────────────────
-# Lazy imports
+# Lazy imports — loaded on demand
 # ─────────────────────────────────────────────────────────────────
 
 def __getattr__(name):
@@ -157,24 +148,42 @@ def __getattr__(name):
         "EngramIndex": ("rtmdk.engrams", ["EngramIndex"]),
         "EngramManager": ("rtmdk.engrams", ["EngramManager"]),
         "PatternCompleter": ("rtmdk.engrams", ["PatternCompleter"]),
-        # Phase 19
+        # Phase 19 Engines
         "OfflineDreamer": ("rtmdk.production.offline_dreamer", ["OfflineDreamer"]),
         "CausalTraversalEngine": ("rtmdk.engines.causal_traversal", ["CausalTraversalEngine"]),
         "SSMDynamics": ("rtmdk.engines.ssm_dynamics", ["SSMDynamics"]),
         "TrustConsensusEngine": ("rtmdk.engines.trust_consensus", ["TrustConsensusEngine"]),
         "NeuroSymbolicProver": ("rtmdk.engines.neuro_symbolic_prover", ["NeuroSymbolicProver"]),
-        # Production UX
+        # Phase 1 UX
         "ContextOptimizer": ("rtmdk.production.context_optimizer", ["ContextOptimizer"]),
         "FeedbackLoop": ("rtmdk.production.feedback_loop", ["FeedbackLoop"]),
         "SmartPruner": ("rtmdk.production.smart_pruning", ["SmartPruner"]),
         "SessionPersistence": ("rtmdk.production.session_persistence", ["SessionPersistence"]),
         "TenantRouter": ("rtmdk.production.multi_tenant", ["TenantRouter"]),
         "TenantConfig": ("rtmdk.production.multi_tenant", ["TenantConfig"]),
+        # Phase 2 UX
         "LLMEvaluator": ("rtmdk.production.llm_eval", ["LLMEvaluator"]),
         "StreamingResponse": ("rtmdk.production.streaming", ["StreamingResponse"]),
         "ABTesting": ("rtmdk.production.ab_testing", ["ABTesting"]),
         "MemoryRefresh": ("rtmdk.production.memory_refresh", ["MemoryRefresh"]),
         "DashboardGenerator": ("rtmdk.dashboard", ["DashboardGenerator"]),
+        # Phase C UX (new)
+        "EmbeddingCache": ("rtmdk.production.embedding_cache", ["EmbeddingCache"]),
+        "ImportPipeline": ("rtmdk.production.import_pipeline", ["ImportPipeline"]),
+        "RTMDKRetriever": ("rtmdk.production.langchain_adapter", ["RTMDKRetriever"]),
+        "RTMDKChatMessageHistory": ("rtmdk.production.langchain_adapter", ["RTMDKChatMessageHistory"]),
+        "RTMDKVectorStore": ("rtmdk.production.langchain_adapter", ["RTMDKVectorStore"]),
+        "HealthMonitor": ("rtmdk.production.health_monitor", ["HealthMonitor"]),
+        "BackupManager": ("rtmdk.production.backup_restore", ["BackupManager"]),
+        "MemoryAnalytics": ("rtmdk.production.analytics", ["MemoryAnalytics"]),
+        "EventSystem": ("rtmdk.production.events", ["EventSystem"]),
+        "MemoryDiff": ("rtmdk.production.memory_diff", ["MemoryDiff"]),
+        "CircuitBreaker": ("rtmdk.production.circuit_breaker", ["CircuitBreaker"]),
+        "ConversationReplay": ("rtmdk.production.replay", ["ConversationReplay"]),
+        "TaggingSystem": ("rtmdk.production.tagging", ["TaggingSystem"]),
+        "RateLimiter": ("rtmdk.production.rate_limiter", ["RateLimiter"]),
+        "OnboardingWizard": ("rtmdk.production.onboarding", ["OnboardingWizard"]),
+        "MemoryExporter": ("rtmdk.production.export", ["MemoryExporter"]),
         # Config enums
         "ConsolidationMode": ("rtmdk.config", ["ConsolidationMode"]),
     }
@@ -200,14 +209,45 @@ __all__ = [
     "RTMDKConfig",
     "RTMDKMemory",
     "RTMDKField",
+    # Core
+    "MemoryNode",
+    "CausalEdge",
+    # Engrams
+    "EngramPattern",
+    "EngramManager",
+    # Phase 19 Engines
+    "OfflineDreamer",
+    "CausalTraversalEngine",
+    "SSMDynamics",
+    "TrustConsensusEngine",
+    "NeuroSymbolicProver",
+    # Phase 1 UX
     "ContextOptimizer",
     "FeedbackLoop",
     "SmartPruner",
     "SessionPersistence",
     "TenantRouter",
+    # Phase 2 UX
     "LLMEvaluator",
     "StreamingResponse",
     "ABTesting",
     "MemoryRefresh",
     "DashboardGenerator",
+    # Phase C UX (new)
+    "EmbeddingCache",
+    "ImportPipeline",
+    "RTMDKRetriever",
+    "RTMDKChatMessageHistory",
+    "RTMDKVectorStore",
+    "HealthMonitor",
+    "BackupManager",
+    "MemoryAnalytics",
+    "EventSystem",
+    "MemoryDiff",
+    "CircuitBreaker",
+    "ConversationReplay",
+    "TaggingSystem",
+    "RateLimiter",
+    "OnboardingWizard",
+    "MemoryExporter",
 ]
