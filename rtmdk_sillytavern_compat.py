@@ -93,30 +93,69 @@ def create_sillytavern_router(memory, config: Dict[str, Any], lm_studio_availabl
                 # Convert LM Studio streaming to Silly Tavern format
                 async def stream_generator():
                     accumulated_text = ""
+                    last_content_time = time.time()
+                    stream_timeout = 30  # seconds without data = end stream
+                    
                     try:
-                        for line in resp.iter_lines():
+                        for line in resp.iter_lines(chunk_size=64, decode_unicode=False):
                             if not line:
+                                # Check for timeout on empty lines
+                                if time.time() - last_content_time > stream_timeout and accumulated_text:
+                                    break
                                 continue
-                            line_str = line.decode('utf-8')
+                            try:
+                                line_str = line.decode('utf-8')
+                            except UnicodeDecodeError:
+                                continue
+                                
                             if line_str.startswith('data: '):
                                 data_str = line_str[6:]
+                                last_content_time = time.time()
+                                
                                 if data_str.strip() == '[DONE]':
+                                    # Send final result with finish_reason
+                                    yield f'data: {json.dumps({"results": [{"text": accumulated_text}], "finish_reason": "stop"})}\n\n'
                                     break
                                 try:
                                     chunk = json.loads(data_str)
-                                    delta = chunk.get('choices', [{}])[0].get('delta', {})
+                                    choices = chunk.get('choices', [{}])
+                                    if not choices:
+                                        # Empty choices = end of stream
+                                        if accumulated_text:
+                                            yield f'data: {json.dumps({"results": [{"text": accumulated_text}], "finish_reason": "stop"})}\n\n'
+                                        break
+                                        
+                                    choice = choices[0]
+                                    # Check for finish_reason in the choice
+                                    finish = choice.get('finish_reason')
+                                    delta = choice.get('delta', {})
                                     content = delta.get('content', '')
+                                    
                                     if content:
                                         accumulated_text += content
+                                        last_content_time = time.time()
                                         # Silly Tavern format: {"results": [{"text": "..."}]}
                                         yield f"data: {json.dumps({'results': [{'text': accumulated_text}]})}\n\n"
+                                    
+                                    if finish == 'stop':
+                                        # Send final with finish_reason
+                                        yield f'data: {json.dumps({"results": [{"text": accumulated_text}], "finish_reason": "stop"})}\n\n'
+                                        break
+                                        
+                                    # Check if delta is empty and no finish_reason - might be end
+                                    if not content and not finish and not delta:
+                                        # Stream might be ending
+                                        if accumulated_text:
+                                            yield f'data: {json.dumps({"results": [{"text": accumulated_text}], "finish_reason": "stop"})}\n\n'
+                                            
                                 except json.JSONDecodeError:
                                     pass
                     except Exception as e:
                         logger.error(f"Stream error: {e}")
                     finally:
-                        # Send final result
-                        yield f"data: {json.dumps({'results': [{'text': accumulated_text}]})}\n\n"
+                        # Always send final result with finish_reason
+                        if accumulated_text:
+                            yield f'data: {json.dumps({"results": [{"text": accumulated_text}], "finish_reason": "stop"})}\n\n'
                         yield 'data: [DONE]\n\n'
                 
                 return StreamingResponse(
