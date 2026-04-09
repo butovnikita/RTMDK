@@ -80,7 +80,40 @@ def create_sillytavern_router(memory, config: Dict[str, Any], lm_studio_availabl
             )
             
             if stream:
-                return resp  # Return streaming response directly
+                # Convert LM Studio streaming to Silly Tavern format
+                async def stream_generator():
+                    accumulated_text = ""
+                    try:
+                        for line in resp.iter_lines():
+                            if not line:
+                                continue
+                            line_str = line.decode('utf-8')
+                            if line_str.startswith('data: '):
+                                data_str = line_str[6:]
+                                if data_str.strip() == '[DONE]':
+                                    break
+                                try:
+                                    chunk = json.loads(data_str)
+                                    delta = chunk.get('choices', [{}])[0].get('delta', {})
+                                    content = delta.get('content', '')
+                                    if content:
+                                        accumulated_text += content
+                                        # Silly Tavern format: {"results": [{"text": "..."}]}
+                                        yield f"data: {json.dumps({'results': [{'text': accumulated_text}]})}\n\n"
+                                except json.JSONDecodeError:
+                                    pass
+                    except Exception as e:
+                        logger.error(f"Stream error: {e}")
+                    finally:
+                        # Send final result
+                        yield f"data: {json.dumps({'results': [{'text': accumulated_text}]})}\n\n"
+                        yield 'data: [DONE]\n\n'
+                
+                return StreamingResponse(
+                    stream_generator(),
+                    media_type="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+                )
             else:
                 data = resp.json()
                 text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
@@ -93,33 +126,13 @@ def create_sillytavern_router(memory, config: Dict[str, Any], lm_studio_availabl
     @router.post("/api/v1/generate")
     async def st_generate_v1(request: Request):
         data = await request.json()
-        stream = data.get("stream", False)
-        result = await _handle_generate(data, stream)
-        
-        if stream and hasattr(result, 'iter_lines'):
-            async def gen():
-                for line in result.iter_lines():
-                    if line:
-                        yield line.decode('utf-8') + '\n'
-            return StreamingResponse(gen(), media_type="text/event-stream")
-        
-        return result
-    
+        return await _handle_generate(data, data.get("stream", False))
+
     # Alternative ST endpoint
     @router.post("/api/backends/text-completions/generate")
     async def st_generate_backend(request: Request):
         data = await request.json()
-        stream = data.get("stream", False)
-        result = await _handle_generate(data, stream)
-        
-        if stream and hasattr(result, 'iter_lines'):
-            async def gen():
-                for line in result.iter_lines():
-                    if line:
-                        yield line.decode('utf-8') + '\n'
-            return StreamingResponse(gen(), media_type="text/event-stream")
-        
-        return result
+        return await _handle_generate(data, data.get("stream", False))
     
     # OpenAI completions format (for backward compatibility)
     @router.post("/v1/completions")
