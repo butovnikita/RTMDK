@@ -19,17 +19,22 @@ from fastapi.responses import StreamingResponse
 logger = logging.getLogger("rtmdk.st_compat")
 
 
-def create_sillytavern_router(memory, config: Dict[str, Any], lm_studio_available: bool,
+def create_sillytavern_router(memory, config: Dict[str, Any], lm_studio_available_fn,
                               chat_model: str, lm_studio_url: str, *args, **kwargs) -> APIRouter:
     """Create Silly Tavern compatible endpoints.
     
-    memory can be an instance or a callable returning current instance.
+    Args:
+        lm_studio_available_fn: Callable that returns current LM Studio availability
     """
     router = APIRouter()
 
     def _get_mem():
         if callable(memory): return memory()
         return memory
+    
+    def _lm_studio_available():
+        if callable(lm_studio_available_fn): return lm_studio_available_fn()
+        return lm_studio_available_fn
 
     async def _handle_generate(data: dict, stream: bool = False):
         """Handle text completion request."""
@@ -40,8 +45,8 @@ def create_sillytavern_router(memory, config: Dict[str, Any], lm_studio_availabl
         max_tokens = data.get("max_new_tokens", data.get("max_tokens", 512))
         temperature = data.get("temperature", 0.7)
 
-        if not lm_studio_available:
-            return {"results": [{"text": "[Error: LLM backend not available. Start LM Studio or configure provider.]"}]}
+        if not _lm_studio_available():
+            return {"results": [{"text": "[Error: LLM backend not available. Start LM Studio and ensure it's running on the configured port.]"}]}
 
         # Build system prompt with memory context
         session_id = data.get("session_id", "default")

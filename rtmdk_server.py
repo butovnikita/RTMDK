@@ -774,7 +774,8 @@ signal.signal(signal.SIGINT, _graceful_shutdown)
 
 from rtmdk_sillytavern_compat import create_sillytavern_router
 app.include_router(create_sillytavern_router(
-    lambda: memory, _ux_config, lm_studio_available, chat_model, LM_STUDIO_URL
+    lambda: memory, _ux_config, lambda: lm_studio_available,
+    lambda: chat_model, LM_STUDIO_URL
 ))
 
 # ============================================================================

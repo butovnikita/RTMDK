@@ -157,7 +157,14 @@ button.success { background: var(--green); color: #fff; border-color: var(--gree
     <div class="card"><h3>Consolidations</h3><div class="stat" id="stat-consol">0</div></div>
     <div class="card"><h3>Cache Hit Rate</h3><div class="stat green" id="stat-cache">—</div></div>
     <div class="card"><h3>Engram Retrievals</h3><div class="stat" id="stat-engram">0</div></div>
-    <div class="card"><h3>BM25 Fallbacks</h3><div class="stat yellow" id="stat-bm25">0</div></div>
+    <div class="card">
+        <h3>Server Diagnostics</h3>
+        <div style="font-size:0.85em;color:var(--text-dim);">
+            <div>Memory: <span id="diag-memory" class="status err">—</span></div>
+            <div>Nodes: <span id="diag-nodes">—</span></div>
+            <div>LM Studio: <span id="diag-lm" class="status err">—</span></div>
+        </div>
+    </div>
 </div>
 
 <!-- UX TOGGLES -->
@@ -351,9 +358,10 @@ async function doAction(action) {
 
 async function updateStats() {
     try {
-        const [healthR, cacheR] = await Promise.all([
+        const [healthR, cacheR, diagR] = await Promise.all([
             fetch(`${API_BASE}/v1/health`),
-            fetch(`${API_BASE}/v1/cache/stats`).catch(() => null)
+            fetch(`${API_BASE}/v1/cache/stats`).catch(() => null),
+            fetch(`${API_BASE}/api/diagnostics`).catch(() => null)
         ]);
         
         if (healthR.ok) {
@@ -370,6 +378,36 @@ async function updateStats() {
         if (cacheR && cacheR.ok) {
             const c = await cacheR.json();
             document.getElementById('stat-cache').textContent = c.hit_rate ? `${(c.hit_rate*100).toFixed(0)}%` : '—';
+        }
+        
+        if (diagR && diagR.ok) {
+            const d = await diagR.json();
+            const memSpan = document.getElementById('diag-memory');
+            const nodesSpan = document.getElementById('diag-nodes');
+            const lmSpan = document.getElementById('diag-lm');
+            
+            if (d.memory_initialized) {
+                memSpan.textContent = 'Ready';
+                memSpan.className = 'status ok';
+                nodesSpan.textContent = d.node_count;
+            } else {
+                memSpan.textContent = 'Not initialized';
+                memSpan.className = 'status err';
+            }
+            
+            // Check LM Studio via health endpoint
+            try {
+                const h2 = await fetch(`${API_BASE}/health`).then(r => r.json());
+                if (h2.lm_studio) {
+                    lmSpan.textContent = 'Connected';
+                    lmSpan.className = 'status ok';
+                } else {
+                    lmSpan.textContent = 'Not connected';
+                    lmSpan.className = 'status err';
+                }
+            } catch(e) {
+                lmSpan.textContent = 'Unknown';
+            }
         }
     } catch(e) {
         document.querySelector('#conn-status .status').className = 'status err';
@@ -479,5 +517,15 @@ def create_dashboard_router(memory=None, config: Dict[str, Any] = None) -> APIRo
             from rtmdk.production.health_monitor import HealthMonitor
             return HealthMonitor(mem).check_health()
         return {"error": f"Unknown action: {action}"}
+    
+    @router.get("/api/diagnostics")
+    async def api_diagnostics():
+        """Get diagnostic info for debugging."""
+        mem = _get_mem()
+        return {
+            "memory_initialized": mem is not None,
+            "node_count": len(mem.field.nodes) if mem else 0,
+            "memory_file": config.get("RTMDK_MEMORY_FILE", "N/A") if config else "N/A",
+        }
     
     return router
