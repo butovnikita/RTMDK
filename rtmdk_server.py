@@ -269,7 +269,17 @@ def init_memory() -> RTMDKMemory:
             logger.info(f"Loaded memory from {MEMORY_FILE}: {len(mem.field.nodes)} nodes")
             return mem
         except Exception as e:
-            logger.warning(f"Failed to load memory: {e}")
+            logger.warning(f"Failed to load memory from {MEMORY_FILE}: {e}")
+            # Backup corrupted file and start fresh
+            import shutil
+            backup_path = MEMORY_FILE + f".corrupted.{int(time.time())}"
+            try:
+                shutil.copy2(MEMORY_FILE, backup_path)
+                logger.info(f"Backed up corrupted memory file to: {backup_path}")
+                os.remove(MEMORY_FILE)
+                logger.warning(f"Deleted corrupted memory file. Starting with fresh memory.")
+            except Exception as backup_err:
+                logger.error(f"Failed to backup corrupted memory: {backup_err}")
 
     mem = RTMDKMemory(config=config, embedder=get_embedding)
     logger.info("Initialized new RTMDK memory")
