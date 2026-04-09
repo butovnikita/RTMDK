@@ -451,25 +451,34 @@ async def chat_completions(req: ChatCompletionRequest):
         raise HTTPException(status_code=502, detail=last_error)
 
     if req.stream:
-        def stream_generator():
-            for chunk in resp.iter_lines():
-                if chunk:
-                    line = chunk.decode("utf-8")
-                    if line.startswith("data: "):
-                        yield f"{line}\n\n"
-            # Save final response to memory
-            if memory:
-                try:
-                    last_user = next((m.content for m in reversed(req.messages) if m.role == "user"), "")
-                    if last_user:
-                        memory.save_context(
-                            {"input": last_user, "session_id": req.session_id},
-                            {"output": "[streamed response]"}
-                        )
-                except:
-                    pass
+        async def stream_generator():
+            try:
+                for chunk in resp.iter_lines():
+                    if chunk:
+                        line = chunk.decode("utf-8")
+                        if line.startswith("data: "):
+                            # Forward LM Studio stream as-is
+                            yield f"{line}\n\n"
+            except Exception as e:
+                logger.error(f"Streaming error: {e}")
+            finally:
+                # Save final response to memory
+                if memory:
+                    try:
+                        last_user = next((m.content for m in reversed(req.messages) if m.role == "user"), "")
+                        if last_user:
+                            memory.save_context(
+                                {"input": last_user, "session_id": req.session_id},
+                                {"output": "[streamed response]"}
+                            )
+                    except:
+                        pass
 
-        return StreamingResponse(stream_generator(), media_type="text/event-stream")
+        return StreamingResponse(stream_generator(), media_type="text/event-stream", headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        })
 
     data = resp.json()
     response_content = data["choices"][0]["message"]["content"]
@@ -487,6 +496,42 @@ async def chat_completions(req: ChatCompletionRequest):
             logger.warning(f"Memory update failed: {e}")
 
     return data
+
+
+@app.get("/v1/test/streaming")
+async def test_streaming():
+    """Diagnostic endpoint to test LM Studio streaming capability."""
+    if not lm_studio_available:
+        return {"streaming": False, "error": "LM Studio not available"}
+
+    import requests
+    try:
+        resp = requests.post(
+            f"{LM_STUDIO_URL}/chat/completions",
+            json={
+                "model": chat_model or "local-model",
+                "messages": [{"role": "user", "content": "Say 'test' in one word."}],
+                "stream": True,
+                "max_tokens": 10,
+            },
+            timeout=30,
+            stream=True,
+        )
+
+        chunks = []
+        for line in resp.iter_lines():
+            if line:
+                chunks.append(line.decode('utf-8'))
+                if len(chunks) > 10:  # Limit for diagnostic
+                    break
+
+        return {
+            "streaming": True,
+            "chunks_received": len(chunks),
+            "first_chunk": chunks[0] if chunks else None,
+        }
+    except Exception as e:
+        return {"streaming": False, "error": str(e)}
 
 
 @app.post("/v1/embeddings")
