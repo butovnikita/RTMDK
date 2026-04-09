@@ -2,14 +2,11 @@
 
 Quick Start:
     from rtmdk import create_rtmdk
-    
-    # Create with preset
     memory = create_rtmdk("production", embedder=my_embedder)
-    
-    # Or create manually
-    from rtmdk import RTMDKConfig, RTMDKMemory
-    config = RTMDKConfig.local()
-    memory = RTMDKMemory(config=config, embedder=my_embedder)
+
+    # Or even simpler:
+    from rtmdk import quickstart
+    memory = quickstart()  # Auto-detects LM Studio
 
 Available presets: local, production, research, enterprise, agent, legal, medical, streaming
 """
@@ -19,7 +16,7 @@ import sys
 import importlib
 
 # ─────────────────────────────────────────────────────────────────
-# Core: Config and monolith (always available)
+# Core: Config and monolith
 # ─────────────────────────────────────────────────────────────────
 from rtmdk.config import (
     RTMDKConfig,
@@ -36,22 +33,11 @@ if _monolith_dir not in sys.path:
 from rtmdk_memory_v8 import RTMDKField, RTMDKMemory
 
 # ─────────────────────────────────────────────────────────────────
-# Factory function — easiest way to create RTMDK
+# Factory functions
 # ─────────────────────────────────────────────────────────────────
 
 def create_rtmdk(preset: str = "production", embedder=None, **kwargs) -> RTMDKMemory:
-    """Create an RTMDKMemory instance with a preset configuration.
-    
-    Args:
-        preset: One of 'local', 'production', 'research', 'enterprise',
-                'agent', 'legal', 'medical', 'streaming'
-        embedder: Callable that takes text and returns np.ndarray
-        **kwargs: Override any config parameter
-    
-    Returns:
-        RTMDKMemory instance ready to use
-    """
-    # Use the monolith's own RTMDKConfig to avoid type mismatch
+    """Create an RTMDKMemory instance with a preset configuration."""
     from rtmdk_memory_v8 import RTMDKConfig as MonoConfig
     
     preset_defaults = {
@@ -104,6 +90,24 @@ def create_rtmdk(preset: str = "production", embedder=None, **kwargs) -> RTMDKMe
     return RTMDKMemory(config=config, embedder=embedder)
 
 
+def quickstart(preset: str = "local") -> RTMDKMemory:
+    """Quickstart: auto-detect LM Studio and create memory in one line.
+    
+    Usage:
+        from rtmdk import quickstart
+        memory = quickstart()
+    """
+    try:
+        from embedder_lmstudio import get_embedder
+        embedder = get_embedder()
+        return create_rtmdk(preset, embedder=embedder)
+    except ImportError:
+        raise ImportError(
+            "quickstart() requires embedder_lmstudio.py.\n"
+            "Install it or pass embedder manually: create_rtmdk('local', embedder=my_embedder)"
+        )
+
+
 def list_presets() -> dict:
     """List available presets with their key settings."""
     result = {}
@@ -131,26 +135,24 @@ def list_presets() -> dict:
 
 
 # ─────────────────────────────────────────────────────────────────
-# Lazy imports — loaded on demand to avoid heavy startup cost
+# Lazy imports
 # ─────────────────────────────────────────────────────────────────
 
 def __getattr__(name):
     """Lazy load modules on first access."""
-    _lazy_imports = {
-        # Nodes
+    _lazy = {
+        # Core
         "MemoryNode": ("rtmdk.nodes", ["MemoryNode"]),
         "CausalEdge": ("rtmdk.nodes", ["CausalEdge"]),
         "EvalResult": ("rtmdk.nodes", ["EvalResult"]),
-        "FederatedNode": ("rtmdk.nodes", ["FederatedNode"]),
-        "GoalNode": ("rtmdk.nodes", ["GoalNode"]),
         # Utils
         "detect_modality": ("rtmdk.utils.modality", ["detect_modality"]),
         "detect_tier": ("rtmdk.utils.modality", ["detect_tier"]),
         "poincare_dist": ("rtmdk.utils.hyperbolic", ["poincare_dist"]),
-        "apply_attention_bias": ("rtmdk.utils.attention", ["apply_attention_bias"]),
         "format_context": ("rtmdk.utils.formatting", ["format_context"]),
         "build_system_prompt": ("rtmdk.utils.formatting", ["build_system_prompt"]),
-        # Engrams (Phase 18)
+        "recommend_preset": ("rtmdk.utils.preset_recommender", ["recommend_preset"]),
+        # Engrams
         "EngramPattern": ("rtmdk.engrams", ["EngramPattern"]),
         "EngramIndex": ("rtmdk.engrams", ["EngramIndex"]),
         "EngramManager": ("rtmdk.engrams", ["EngramManager"]),
@@ -161,16 +163,24 @@ def __getattr__(name):
         "SSMDynamics": ("rtmdk.engines.ssm_dynamics", ["SSMDynamics"]),
         "TrustConsensusEngine": ("rtmdk.engines.trust_consensus", ["TrustConsensusEngine"]),
         "NeuroSymbolicProver": ("rtmdk.engines.neuro_symbolic_prover", ["NeuroSymbolicProver"]),
-        "ActiveInferenceLoop": ("rtmdk.production.active_inference", ["ActiveInferenceLoop"]),
-        "AdversarialArena": ("rtmdk.production.adversarial_arena", ["AdversarialArena"]),
+        # Production UX
+        "ContextOptimizer": ("rtmdk.production.context_optimizer", ["ContextOptimizer"]),
+        "FeedbackLoop": ("rtmdk.production.feedback_loop", ["FeedbackLoop"]),
+        "SmartPruner": ("rtmdk.production.smart_pruning", ["SmartPruner"]),
+        "SessionPersistence": ("rtmdk.production.session_persistence", ["SessionPersistence"]),
+        "TenantRouter": ("rtmdk.production.multi_tenant", ["TenantRouter"]),
+        "TenantConfig": ("rtmdk.production.multi_tenant", ["TenantConfig"]),
+        "LLMEvaluator": ("rtmdk.production.llm_eval", ["LLMEvaluator"]),
+        "StreamingResponse": ("rtmdk.production.streaming", ["StreamingResponse"]),
+        "ABTesting": ("rtmdk.production.ab_testing", ["ABTesting"]),
+        "MemoryRefresh": ("rtmdk.production.memory_refresh", ["MemoryRefresh"]),
+        "DashboardGenerator": ("rtmdk.dashboard", ["DashboardGenerator"]),
         # Config enums
         "ConsolidationMode": ("rtmdk.config", ["ConsolidationMode"]),
-        "Backend": ("rtmdk.config", ["Backend"]),
-        "ContextFormat": ("rtmdk.config", ["ContextFormat"]),
     }
     
-    if name in _lazy_imports:
-        module_path, names = _lazy_imports[name]
+    if name in _lazy:
+        module_path, names = _lazy[name]
         mod = importlib.import_module(module_path)
         for n in names:
             globals()[n] = getattr(mod, n)
@@ -184,25 +194,20 @@ def __getattr__(name):
 # ─────────────────────────────────────────────────────────────────
 __all__ = [
     "create_rtmdk",
+    "quickstart",
     "list_presets",
+    "recommend_preset",
     "RTMDKConfig",
     "RTMDKMemory",
     "RTMDKField",
-    "ConsolidationMode",
-    "Backend",
-    "ContextFormat",
-    "FieldHealth",
-    "EvalMode",
-    "MemoryNode",
-    "CausalEdge",
-    "EngramPattern",
-    "EngramIndex",
-    "EngramManager",
-    "OfflineDreamer",
-    "CausalTraversalEngine",
-    "SSMDynamics",
-    "TrustConsensusEngine",
-    "NeuroSymbolicProver",
-    "detect_modality",
-    "format_context",
+    "ContextOptimizer",
+    "FeedbackLoop",
+    "SmartPruner",
+    "SessionPersistence",
+    "TenantRouter",
+    "LLMEvaluator",
+    "StreamingResponse",
+    "ABTesting",
+    "MemoryRefresh",
+    "DashboardGenerator",
 ]
