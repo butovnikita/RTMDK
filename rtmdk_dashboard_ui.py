@@ -1,18 +1,16 @@
-"""rtmdk_dashboard_ui.py — Web UI Dashboard for RTMDK.
+"""rtmdk_dashboard_ui.py — Web UI Dashboard for RTMDK v2.
 
-Simple UI for:
-- Selecting presets on the fly
-- Toggling UX functions on/off
-- Viewing live stats
-- Quick actions (backup, prune, export)
+Adds:
+- Provider selection (LM Studio, OpenRouter, OpenAI, Anthropic, Custom)
+- Model selection per provider
+- Embedder selection
+- API key input
+- Test Connection button
+- All previous features (presets, UX toggles, stats, actions)
 
 Usage:
-    # Integrated with server:
     from rtmdk_dashboard_ui import create_dashboard_router
     app.include_router(create_dashboard_router(memory, config))
-    
-    # Or standalone:
-    python rtmdk_dashboard_ui.py --port 8081
 """
 
 HTML_PAGE = """<!DOCTYPE html>
@@ -36,15 +34,17 @@ h2 { color: var(--text); margin: 20px 0 10px; font-size: 1.2em; border-bottom: 1
 .card h3 { font-size: 0.9em; color: var(--text-dim); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
 .stat { font-size: 2em; font-weight: bold; }
 .stat.green { color: var(--green); } .stat.red { color: var(--red); } .stat.accent { color: var(--accent); } .stat.yellow { color: var(--yellow); }
-select, button { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-size: 0.95em; cursor: pointer; }
-select:hover, button:hover { border-color: var(--accent); }
+select, input[type="text"], input[type="password"] { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-size: 0.95em; width: 100%; margin-bottom: 8px; }
+button { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-size: 0.95em; cursor: pointer; }
+button:hover { border-color: var(--accent); }
 button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
 button.primary:hover { background: #4090e0; }
 button.danger { background: var(--red); color: #fff; border-color: var(--red); }
+button.success { background: var(--green); color: #fff; border-color: var(--green); }
 .toggle-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); }
 .toggle-row:last-child { border: none; }
 .toggle-label { font-size: 0.9em; }
-.toggle { position: relative; width: 44px; height: 24px; }
+.toggle { position: relative; width: 44px; height: 24px; flex-shrink: 0; }
 .toggle input { opacity: 0; width: 0; height: 0; }
 .toggle-slider { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: var(--border); border-radius: 24px; cursor: pointer; transition: 0.3s; }
 .toggle-slider:before { content: ''; position: absolute; height: 18px; width: 18px; left: 3px; bottom: 3px; background: var(--text); border-radius: 50%; transition: 0.3s; }
@@ -57,16 +57,84 @@ button.danger { background: var(--red); color: #fff; border-color: var(--red); }
 .preset-desc { font-size: 0.8em; color: var(--text-dim); margin-top: 4px; }
 .log { background: #000; padding: 12px; border-radius: 6px; font-family: monospace; font-size: 0.85em; max-height: 200px; overflow-y: auto; margin-top: 10px; }
 .log-line { padding: 2px 0; border-bottom: 1px solid #111; }
+.form-group { margin-bottom: 12px; }
+.form-group label { display: block; font-size: 0.85em; color: var(--text-dim); margin-bottom: 4px; }
+.test-result { padding: 8px; border-radius: 6px; margin-top: 8px; font-size: 0.9em; }
+.test-result.ok { background: rgba(63,185,80,0.1); color: var(--green); }
+.test-result.err { background: rgba(248,81,73,0.1); color: var(--red); }
+.sillytavern-hint { background: rgba(88,166,255,0.1); border: 1px solid var(--accent); border-radius: 6px; padding: 12px; margin-top: 12px; font-size: 0.85em; }
+.sillytavern-hint code { background: var(--bg); padding: 2px 6px; border-radius: 4px; color: var(--accent); }
 </style>
 </head>
 <body>
 <div id="status-bar"></div>
 
-<h1>🧠 RTMDK Dashboard <span id="conn-status"><span class="status ok"></span>Connected</span></h1>
+<h1>🧠 RTMDK Dashboard v2.0 <span id="conn-status"><span class="status ok"></span>Connected</span></h1>
+
+<!-- PROVIDER / MODEL / EMBEDDER -->
+<div class="card" style="margin-bottom:20px;">
+    <h3>🔌 API Provider & Model</h3>
+    <div class="grid" style="grid-template-columns: 1fr 1fr 1fr; margin-bottom: 0;">
+        <div>
+            <div class="form-group">
+                <label>Provider</label>
+                <select id="provider-select" onchange="onProviderChange()">
+                    <option value="lm_studio">LM Studio (local)</option>
+                    <option value="openrouter">OpenRouter</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="anthropic">Anthropic</option>
+                    <option value="custom">Custom (OpenAI-compatible)</option>
+                </select>
+            </div>
+        </div>
+        <div>
+            <div class="form-group">
+                <label>Chat Model</label>
+                <select id="model-select">
+                    <!-- Populated by JS -->
+                </select>
+            </div>
+        </div>
+        <div>
+            <div class="form-group">
+                <label>Embedder</label>
+                <select id="embedder-select">
+                    <option value="nomic-embed-text-v1.5">Nomic Embed v1.5 (768d)</option>
+                    <option value="text-embedding-3-small">OpenAI text-embedding-3-small (1536d)</option>
+                    <option value="text-embedding-3-large">OpenAI text-embedding-3-large (3072d)</option>
+                    <option value="all-MiniLM-L6-v2">all-MiniLM-L6-v2 (384d)</option>
+                    <option value="custom">Custom URL</option>
+                </select>
+            </div>
+        </div>
+    </div>
+    <div class="form-group">
+        <label>API Key (leave empty for LM Studio)</label>
+        <input type="password" id="api-key-input" placeholder="sk-... or leave empty">
+    </div>
+    <div class="form-group" id="custom-url-group" style="display:none;">
+        <label>Custom Base URL</label>
+        <input type="text" id="custom-url-input" placeholder="https://api.example.com/v1">
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+        <button class="primary" onclick="applyProvider()">Apply Provider</button>
+        <button class="success" onclick="testConnection()">🔗 Test Connection</button>
+    </div>
+    <div id="test-result" class="test-result" style="display:none;"></div>
+    
+    <div class="sillytavern-hint">
+        <strong>📱 Silly Tavern Setup:</strong><br>
+        1. API Type: <code>OpenAI</code> (NOT Text Completion!)<br>
+        2. Base URL: <code>http://localhost:8080/v1</code><br>
+        3. API Key: <code>rtmdk-local</code><br>
+        4. Model: <code>rtmdk</code><br>
+        ⚠️ Error 404 means wrong API type selected in ST — use OpenAI type!
+    </div>
+</div>
 
 <!-- PRESET SELECTOR -->
 <div class="card" style="margin-bottom:20px;">
-    <h3>Configuration Preset</h3>
+    <h3>⚙️ Configuration Preset</h3>
     <select id="preset-select" style="width:100%;font-size:1.1em;padding:10px;">
         <option value="local">🏠 Local (16MB, ~5ms, 10K nodes)</option>
         <option value="production">⚡ Production (50MB, ~6ms, 100K nodes)</option>
@@ -150,14 +218,89 @@ const presets = {
     streaming: "High-throughput real-time, minimal latency (~3ms, 50K nodes)"
 };
 
+const models = {
+    lm_studio: ["Local model (auto-detected)"],
+    openrouter: ["anthropic/claude-3.5-sonnet","openai/gpt-4o","google/gemini-2.5-flash","meta-llama/llama-4-maverick","mistral/mistral-large"],
+    openai: ["gpt-4o","gpt-4o-mini","gpt-3.5-turbo"],
+    anthropic: ["claude-3-5-sonnet-20241022","claude-3-opus-20240229","claude-3-haiku-20240307"],
+    custom: ["custom-model"]
+};
+
 document.getElementById('preset-select').addEventListener('change', function() {
     document.getElementById('preset-desc').textContent = presets[this.value] || '';
 });
 
+function onProviderChange() {
+    const provider = document.getElementById('provider-select').value;
+    const modelSelect = document.getElementById('model-select');
+    const apiKeyInput = document.getElementById('api-key-input');
+    const customUrlGroup = document.getElementById('custom-url-group');
+    
+    // Populate models
+    modelSelect.innerHTML = '';
+    (models[provider] || []).forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m; opt.textContent = m;
+        modelSelect.appendChild(opt);
+    });
+    
+    // Show/hide API key
+    if (provider === 'lm_studio') {
+        apiKeyInput.value = '';
+        apiKeyInput.placeholder = 'Not needed for LM Studio';
+        apiKeyInput.disabled = true;
+    } else {
+        apiKeyInput.disabled = false;
+        apiKeyInput.placeholder = 'sk-...';
+    }
+    
+    // Show/hide custom URL
+    customUrlGroup.style.display = provider === 'custom' ? 'block' : 'none';
+}
+
+async function applyProvider() {
+    const provider = document.getElementById('provider-select').value;
+    const model = document.getElementById('model-select').value;
+    const embedder = document.getElementById('embedder-select').value;
+    const apiKey = document.getElementById('api-key-input').value;
+    const customUrl = document.getElementById('custom-url-input').value;
+    
+    try {
+        const r = await fetch(`${API_BASE}/api/provider`, {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({provider, model, embedder, api_key: apiKey, custom_url: customUrl})
+        });
+        const d = await r.json();
+        notify(`Provider "${provider}" applied with model "${model}"`);
+    } catch(e) { notify('Error: ' + e.message, 'err'); }
+}
+
+async function testConnection() {
+    const resultDiv = document.getElementById('test-result');
+    resultDiv.style.display = 'block';
+    resultDiv.textContent = 'Testing...';
+    resultDiv.className = 'test-result';
+    
+    try {
+        const r = await fetch(`${API_BASE}/v1/models`);
+        if (r.ok) {
+            const data = await r.json();
+            resultDiv.textContent = `✅ Connected! Models: ${(data.data||[]).length} available`;
+            resultDiv.className = 'test-result ok';
+        } else {
+            resultDiv.textContent = `❌ Connection failed: ${r.status}`;
+            resultDiv.className = 'test-result err';
+        }
+    } catch(e) {
+        resultDiv.textContent = `❌ Error: ${e.message}`;
+        resultDiv.className = 'test-result err';
+    }
+}
+
 function notify(msg, type='ok') {
     const bar = document.getElementById('status-bar');
     bar.textContent = msg;
-    bar.style.background = Type==='err' ? 'var(--red)' : 'var(--green)';
+    bar.style.background = type==='err' ? 'var(--red)' : 'var(--green)';
     bar.style.display = 'block';
     setTimeout(() => bar.style.display = 'none', 3000);
     logAction(msg);
@@ -234,7 +377,8 @@ async function updateStats() {
     }
 }
 
-// Update stats every 3 seconds
+// Init
+onProviderChange();
 setInterval(updateStats, 3000);
 updateStats();
 </script>
@@ -247,27 +391,38 @@ from fastapi import APIRouter, HTTPException
 
 
 def create_dashboard_router(memory=None, config: Dict[str, Any] = None) -> APIRouter:
-    """Create FastAPI router for the dashboard UI.
-    
-    Args:
-        memory: RTMDKMemory instance (optional for standalone mode)
-        config: Configuration dict
-        
-    Returns:
-        FastAPI APIRouter
-    """
+    """Create FastAPI router for the dashboard UI."""
     router = APIRouter()
     
-    # Serve dashboard HTML
     @router.get("/dashboard")
     @router.get("/")
     async def dashboard():
         from fastapi.responses import HTMLResponse
         return HTMLResponse(content=HTML_PAGE)
     
-    # API endpoints for dashboard control
+    @router.post("/api/provider")
+    async def api_set_provider(data: dict):
+        """Switch API provider, model, and embedder."""
+        provider = data.get("provider", "lm_studio")
+        model = data.get("model", "")
+        embedder = data.get("embedder", "")
+        api_key = data.get("api_key", "")
+        custom_url = data.get("custom_url", "")
+        
+        if config:
+            config["RTMDK_API_PROVIDER"] = provider
+            config["RTMDK_LLM_MODEL"] = model
+            config["RTMDK_EMBED_MODEL"] = embedder
+            if api_key:
+                config[f"{provider.upper()}_API_KEY"] = api_key
+            if custom_url:
+                config["CUSTOM_API_URL"] = custom_url
+        
+        nodes = len(memory.field.nodes) if memory else 0
+        return {"status": "ok", "provider": provider, "model": model, "embedder": embedder, "nodes": nodes}
+    
     @router.post("/api/preset")
-    async def api_apply_preset(data: dict):
+    async def api_apply_preset(data: dict = {}):
         preset = data.get("preset", "local")
         nodes = len(memory.field.nodes) if memory else 0
         return {"status": "ok", "preset": preset, "nodes": nodes}
@@ -283,68 +438,36 @@ def create_dashboard_router(memory=None, config: Dict[str, Any] = None) -> APIRo
     @router.post("/api/action")
     async def api_action(data: dict):
         action = data.get("action", "")
-        
         if not memory:
-            return {"error": "Memory not available in standalone mode"}
+            return {"error": "Memory not available"}
         
         if action == "backup":
             from rtmdk.production.backup_restore import BackupManager
             bm = BackupManager(memory)
             path = bm.create_backup("manual")
             return {"status": "ok", "path": path}
-        
         elif action == "prune":
             from rtmdk.production.smart_pruning import SmartPruner
             sp = SmartPruner(memory, dry_run=False)
-            result = sp.prune()
-            return result
-        
+            return sp.prune()
         elif action == "export_md":
             from rtmdk.production.export import MemoryExporter
-            me = MemoryExporter(memory)
-            return {"content": me.to_markdown()[:500]}
-        
+            return {"content": MemoryExporter(memory).to_markdown()[:500]}
         elif action == "export_json":
             from rtmdk.production.export import MemoryExporter
-            me = MemoryExporter(memory)
-            return me.to_dict()
-        
+            return MemoryExporter(memory).to_dict()
         elif action == "clear_cache":
             return {"status": "ok", "message": "Cache cleared"}
-        
         elif action == "clear_memory":
             memory.field.nodes.clear()
             memory.field.node_index.clear()
             return {"status": "ok", "message": "Memory cleared"}
-        
         elif action == "analytics":
             from rtmdk.production.analytics import MemoryAnalytics
-            an = MemoryAnalytics(memory)
-            return an.export_report()
-        
+            return MemoryAnalytics(memory).export_report()
         elif action == "health":
             from rtmdk.production.health_monitor import HealthMonitor
-            hm = HealthMonitor(memory)
-            return hm.check_health()
-        
+            return HealthMonitor(memory).check_health()
         return {"error": f"Unknown action: {action}"}
     
     return router
-
-
-# Standalone mode
-if __name__ == "__main__":
-    import argparse
-    from fastapi import FastAPI
-    
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--port", type=int, default=8081)
-    parser.add_argument("--host", default="0.0.0.0")
-    args = parser.parse_args()
-    
-    app = FastAPI(title="RTMDK Dashboard")
-    app.include_router(create_dashboard_router())
-    
-    import uvicorn
-    print(f"Dashboard running at http://localhost:{args.port}/dashboard")
-    uvicorn.run(app, host=args.host, port=args.port)
