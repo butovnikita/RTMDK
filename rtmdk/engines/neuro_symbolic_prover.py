@@ -142,9 +142,16 @@ class NeuroSymbolicProver:
             result = self._solver.check()
             if result == self._z3.sat:
                 model = self._solver.model()
+                # Extract model assignments
+                model_dict = {}
+                for decl in model.decls():
+                    try:
+                        model_dict[str(decl.name())] = bool(model[decl])
+                    except:
+                        model_dict[str(decl.name())] = str(model[decl])
                 return {
                     "consistent": True,
-                    "model": {str(d.name()): model[d] for d in model.declarations()},
+                    "model": model_dict,
                     "contradictions": [],
                 }
             else:

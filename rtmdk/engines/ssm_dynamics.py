@@ -49,6 +49,11 @@ class SSMDynamics:
         self.dt = dt
         self.learnable = learnable
         
+        self.stats = {
+            "steps": 0,
+            "total_time_s": 0.0,
+        }
+        
         # Initialize SSM parameters
         # A: stable dynamics (eigenvalues < 1)
         self.A = self._init_stable_matrix(state_dim)
