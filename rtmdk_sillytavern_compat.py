@@ -20,7 +20,7 @@ logger = logging.getLogger("rtmdk.st_compat")
 
 
 def create_sillytavern_router(memory, config: Dict[str, Any], lm_studio_available: bool,
-                              chat_model: str, lm_studio_url: str, build_system_prompt_fn, get_embedding_fn) -> APIRouter:
+                              chat_model: str, lm_studio_url: str, *args, **kwargs) -> APIRouter:
     """Create Silly Tavern compatible endpoints."""
     router = APIRouter()
     
@@ -83,7 +83,8 @@ def create_sillytavern_router(memory, config: Dict[str, Any], lm_studio_availabl
     
     # Text Generation WebUI format (most common for ST)
     @router.post("/api/v1/generate")
-    async def st_generate_v1(data: dict):
+    async def st_generate_v1(request: Request):
+        data = await request.json()
         stream = data.get("stream", False)
         result = await _handle_generate(data, stream)
         
@@ -114,7 +115,8 @@ def create_sillytavern_router(memory, config: Dict[str, Any], lm_studio_availabl
     
     # OpenAI completions format (for backward compatibility)
     @router.post("/v1/completions")
-    async def openai_completions(data: dict):
+    async def openai_completions(request: Request):
+        data = await request.json()
         prompt = data.get("prompt", "")
         result = await _handle_generate({"prompt": prompt, **data})
         return {
