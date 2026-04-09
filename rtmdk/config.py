@@ -490,7 +490,10 @@ class RTMDKConfig:
     auto_role_detection: bool = True
 
     def __post_init__(self):
-        logger.setLevel(getattr(logging, self.log_level.upper()))
+        try:
+            logging.getLogger("rtmdk").setLevel(getattr(logging, self.log_level.upper()))
+        except Exception:
+            pass
         if not self.modality_phase_shifts:
             self.modality_phase_shifts = {
                 "text": 0.0, "audio": 1.047, "image": 1.571, "video": 3.142,
