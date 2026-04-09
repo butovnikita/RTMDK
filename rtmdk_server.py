@@ -452,16 +452,37 @@ async def chat_completions(req: ChatCompletionRequest):
 
     if req.stream:
         async def stream_generator():
+            chunk_count = 0
+            total_chars = 0
+            logger.info("Starting streaming response...")
+            
             try:
-                for chunk in resp.iter_lines():
+                # Check if response is actually streaming
+                if not hasattr(resp, 'iter_lines'):
+                    logger.warning("Response doesn't support streaming, falling back to non-streaming")
+                    data = resp.json()
+                    text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    yield f'data: {json.dumps({"choices": [{"delta": {"content": text}, "finish_reason": "stop"}]})}\n\n'
+                    yield 'data: [DONE]\n\n'
+                    return
+
+                for chunk in resp.iter_lines(chunk_size=1):
                     if chunk:
-                        line = chunk.decode("utf-8")
+                        line = chunk.decode("utf-8", errors='replace')
                         if line.startswith("data: "):
-                            # Forward LM Studio stream as-is
+                            chunk_count += 1
+                            total_chars += len(line)
+                            logger.debug(f"Stream chunk {chunk_count}: {line[:100]}")
                             yield f"{line}\n\n"
+                        elif line.strip() == '[DONE]':
+                            logger.info(f"Streaming complete: {chunk_count} chunks, {total_chars} chars")
+                            yield 'data: [DONE]\n\n'
+                            break
+            
             except Exception as e:
-                logger.error(f"Streaming error: {e}")
+                logger.error(f"Streaming error after {chunk_count} chunks: {e}")
             finally:
+                logger.info(f"Stream generator finished: {chunk_count} chunks, {total_chars} total chars")
                 # Save final response to memory
                 if memory:
                     try:
@@ -471,13 +492,14 @@ async def chat_completions(req: ChatCompletionRequest):
                                 {"input": last_user, "session_id": req.session_id},
                                 {"output": "[streamed response]"}
                             )
-                    except:
-                        pass
+                    except Exception as e:
+                        logger.error(f"Memory save failed: {e}")
 
         return StreamingResponse(stream_generator(), media_type="text/event-stream", headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
+            "Transfer-Encoding": "chunked",
         })
 
     data = resp.json()
@@ -519,18 +541,28 @@ async def test_streaming():
         )
 
         chunks = []
+        content_type = resp.headers.get('Content-Type', 'unknown')
+        is_chunked = resp.headers.get('Transfer-Encoding', '') == 'chunked'
+        
+        logger.info(f"LM Studio response: Content-Type={content_type}, Chunked={is_chunked}")
+
         for line in resp.iter_lines():
             if line:
-                chunks.append(line.decode('utf-8'))
-                if len(chunks) > 10:  # Limit for diagnostic
+                decoded = line.decode('utf-8', errors='replace')
+                chunks.append(decoded)
+                if len(chunks) >= 10:
                     break
 
         return {
             "streaming": True,
+            "content_type": content_type,
+            "is_chunked": is_chunked,
             "chunks_received": len(chunks),
             "first_chunk": chunks[0] if chunks else None,
+            "sample_chunks": chunks[:5],
         }
     except Exception as e:
+        logger.error(f"Streaming test failed: {e}")
         return {"streaming": False, "error": str(e)}
 
 

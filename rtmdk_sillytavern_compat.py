@@ -93,14 +93,18 @@ def create_sillytavern_router(memory, config: Dict[str, Any], lm_studio_availabl
                 # Convert LM Studio streaming to Silly Tavern format
                 async def stream_generator():
                     accumulated_text = ""
+                    chunk_count = 0
                     last_content_time = time.time()
                     stream_timeout = 30  # seconds without data = end stream
                     
+                    logger.info(f"[ST Stream] Starting text completion streaming")
+
                     try:
                         for line in resp.iter_lines(chunk_size=64, decode_unicode=False):
                             if not line:
                                 # Check for timeout on empty lines
                                 if time.time() - last_content_time > stream_timeout and accumulated_text:
+                                    logger.warning(f"[ST Stream] Timeout after {stream_timeout}s")
                                     break
                                 continue
                             try:
@@ -111,8 +115,11 @@ def create_sillytavern_router(memory, config: Dict[str, Any], lm_studio_availabl
                             if line_str.startswith('data: '):
                                 data_str = line_str[6:]
                                 last_content_time = time.time()
+                                chunk_count += 1
+                                logger.debug(f"[ST Stream] Chunk {chunk_count}: {data_str[:100]}")
                                 
                                 if data_str.strip() == '[DONE]':
+                                    logger.info(f"[ST Stream] Complete: {chunk_count} chunks, {len(accumulated_text)} chars")
                                     # Send final result with finish_reason
                                     yield f'data: {json.dumps({"results": [{"text": accumulated_text}], "finish_reason": "stop"})}\n\n'
                                     break
@@ -121,6 +128,7 @@ def create_sillytavern_router(memory, config: Dict[str, Any], lm_studio_availabl
                                     choices = chunk.get('choices', [{}])
                                     if not choices:
                                         # Empty choices = end of stream
+                                        logger.info(f"[ST Stream] Empty choices, ending stream")
                                         if accumulated_text:
                                             yield f'data: {json.dumps({"results": [{"text": accumulated_text}], "finish_reason": "stop"})}\n\n'
                                         break
@@ -139,22 +147,26 @@ def create_sillytavern_router(memory, config: Dict[str, Any], lm_studio_availabl
                                     
                                     if finish == 'stop':
                                         # Send final with finish_reason
+                                        logger.info(f"[ST Stream] finish_reason=stop: {chunk_count} chunks, {len(accumulated_text)} chars")
                                         yield f'data: {json.dumps({"results": [{"text": accumulated_text}], "finish_reason": "stop"})}\n\n'
                                         break
                                         
                                     # Check if delta is empty and no finish_reason - might be end
                                     if not content and not finish and not delta:
                                         # Stream might be ending
+                                        logger.info(f"[ST Stream] Empty delta, might be ending")
                                         if accumulated_text:
                                             yield f'data: {json.dumps({"results": [{"text": accumulated_text}], "finish_reason": "stop"})}\n\n'
                                             
                                 except json.JSONDecodeError:
+                                    logger.debug(f"[ST Stream] JSON decode error: {data_str[:100]}")
                                     pass
                     except Exception as e:
-                        logger.error(f"Stream error: {e}")
+                        logger.error(f"[ST Stream] Error after {chunk_count} chunks: {e}")
                     finally:
                         # Always send final result with finish_reason
                         if accumulated_text:
+                            logger.info(f"[ST Stream] Final: {len(accumulated_text)} chars")
                             yield f'data: {json.dumps({"results": [{"text": accumulated_text}], "finish_reason": "stop"})}\n\n'
                         yield 'data: [DONE]\n\n'
                 
