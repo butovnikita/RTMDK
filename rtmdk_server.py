@@ -913,7 +913,7 @@ def main():
     print("  IDE Integration:")
     print("    Cursor/Continue/Aider: set base URL to http://localhost:8080/v1")
     print("    API Key: rtmdk-local")
-    print(f"    🎛️  Dashboard: http://{SERVER_HOST}:{SERVER_PORT}/dashboard")
+    print(f"    Dashboard: http://{SERVER_HOST}:{SERVER_PORT}/dashboard")
     print("-" * 60)
 
     # Register signal handlers for graceful shutdown
