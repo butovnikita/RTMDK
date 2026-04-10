@@ -282,6 +282,15 @@ def init_memory() -> RTMDKMemory:
                 logger.error(f"Failed to backup corrupted memory: {backup_err}")
 
     mem = RTMDKMemory(config=config, embedder=get_embedding)
+    
+    # Save initial empty memory file so it exists for next startup
+    try:
+        os.makedirs(os.path.dirname(MEMORY_FILE), exist_ok=True)
+        mem.export_field(MEMORY_FILE)
+        logger.info(f"Created new memory file at {MEMORY_FILE}")
+    except Exception as e:
+        logger.warning(f"Failed to create initial memory file: {e}")
+    
     logger.info("Initialized new RTMDK memory")
     return mem
 
