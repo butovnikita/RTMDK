@@ -75,8 +75,9 @@ def start_rtmdk_server():
         rtmdk_process = subprocess.Popen(
             [sys.executable, str(config.rtmdk_server_script)],
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+            stderr=subprocess.STDOUT,  # Capture errors
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
+            text=True
         )
         
         # Wait for startup
@@ -84,7 +85,14 @@ def start_rtmdk_server():
             print(f"  ✅ RTMDK Server started successfully")
             return True
         else:
-            print(f"  ❌ RTMDK Server failed to start")
+            print(f"  ❌ RTMDK Server failed to start. Output:")
+            # Print recent output for debugging
+            try:
+                output = rtmdk_process.communicate(timeout=2)[0]
+                for line in output.split('\n')[-5:]:
+                    if line.strip(): print(f"    {line}")
+            except:
+                pass
             return False
             
     except Exception as e:
@@ -105,8 +113,9 @@ def start_proxy():
         proxy_process = subprocess.Popen(
             [sys.executable, str(config.rtmdk_proxy_script)],
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+            stderr=subprocess.STDOUT,  # Capture errors
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
+            text=True
         )
         
         # Wait for startup
@@ -114,7 +123,14 @@ def start_proxy():
             print(f"  ✅ SillyTavern Proxy started successfully")
             return True
         else:
-            print(f"  ❌ SillyTavern Proxy failed to start")
+            print(f"  ❌ SillyTavern Proxy failed to start. Output:")
+            # Print recent output for debugging
+            try:
+                output = proxy_process.communicate(timeout=2)[0]
+                for line in output.split('\n')[-5:]:
+                    if line.strip(): print(f"    {line}")
+            except:
+                pass
             return False
             
     except Exception as e:

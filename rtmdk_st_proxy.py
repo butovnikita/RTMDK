@@ -478,7 +478,7 @@ def main():
     
     # Update config with CLI args
     config.config["rtmdk_url"] = args.rtmdk
-    config.config["lm_studio_url"] = args.lm_studio_url
+    config.config["lm_studio_url"] = args.lm_studio
     config.config["proxy_port"] = args.port
     memory_mgr.rtmdk_url = args.rtmdk
     
