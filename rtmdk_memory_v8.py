@@ -5308,10 +5308,10 @@ class RTMDKField:
                 import warnings
                 warnings.warn("msgpack not installed, falling back to JSON. Install: pip install msgpack")
                 with open(path, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
+                    json.dump(data, f, ensure_ascii=False, indent=2, default=str)
         else:
             with open(path, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
+                json.dump(data, f, ensure_ascii=False, indent=2, default=str)
 
     @classmethod
     def import_field(cls, path: str, embedder: Callable) -> "RTMDKMemory":
