@@ -2990,8 +2990,10 @@ class IncPCAProjection:
             self.ipca = IncrementalPCA(n_components=self.latent_dim, batch_size=min(64, self.update_freq))
             self.use_sklearn = True
             self._ipca_fitted = False
+            self._ipca_error = None  # Store any sklearn errors for fallback
         except ImportError:
             self.use_sklearn = False
+            self._ipca_error = "sklearn not installed"
 
     def update(self, embedding: NDArray) -> NDArray:
         self.n_samples += 1
@@ -3000,10 +3002,21 @@ class IncPCAProjection:
             batch = np.array(self.buffer, dtype=np.float32)
             self.buffer = []
             if self.use_sklearn:
-                self.ipca.partial_fit(batch)
-                self._ipca_fitted = True
-                self.projection = self.ipca.components_.T.astype(np.float32)
-                self.mean = self.ipca.mean_.astype(np.float32)
+                try:
+                    self.ipca.partial_fit(batch)
+                    # Only mark as fitted if we have enough samples
+                    if self.ipca.n_samples_seen_ >= self.latent_dim:
+                        self._ipca_fitted = True
+                        self.projection = self.ipca.components_.T.astype(np.float32)
+                        self.mean = self.ipca.mean_.astype(np.float32)
+                    else:
+                        # Not enough samples yet, use manual update
+                        self._ipca_fitted = False
+                        alpha = self.lr / (1 + self.n_samples * self.lr * 0.01)
+                        self.mean += alpha * (batch.mean(axis=0) - self.mean)
+                except Exception as e:
+                    self._ipca_error = str(e)
+                    self._ipca_fitted = False
             else:
                 alpha = self.lr / (1 + self.n_samples * self.lr * 0.01)
                 self.mean += alpha * (batch.mean(axis=0) - self.mean)
@@ -3019,36 +3032,40 @@ class IncPCAProjection:
         return self.project(embedding)
 
     def project(self, embedding: NDArray) -> NDArray:
-        if self.use_sklearn and self._ipca_fitted:
-            return self.ipca.transform(embedding.reshape(1, -1))[0].astype(np.float32)
+        # Only use sklearn transform if properly fitted
+        if self.use_sklearn and self._ipca_fitted and self._ipca_error is None:
+            try:
+                return self.ipca.transform(embedding.reshape(1, -1))[0].astype(np.float32)
+            except Exception:
+                self._ipca_fitted = False
+        # Fallback to manual projection
         return ((embedding - self.mean) @ self.projection).astype(np.float32)
 
     def get_state(self) -> Dict:
-        return {"projection": self.projection.tolist(), "mean": self.mean.tolist(), "n_samples": self.n_samples, "use_sklearn": self.use_sklearn}
+        return {
+            "projection": self.projection.tolist(),
+            "mean": self.mean.tolist(),
+            "n_samples": self.n_samples,
+            "use_sklearn": self.use_sklearn,
+            "ipca_fitted": self._ipca_fitted,
+        }
 
     def set_matrix(self, matrix: NDArray):
         """Set projection matrix directly (for import/initialization)."""
         assert matrix.shape == (self.input_dim, self.latent_dim), \
             f"Expected shape ({self.input_dim}, {self.latent_dim}), got {matrix.shape}"
         self.projection = matrix.astype(np.float32)
-        if self.use_sklearn:
-            self._ipca_fitted = True
-            self.ipca = IncrementalPCA(n_components=self.latent_dim)
-            self.ipca.components_ = self.projection.T
-            self.ipca.mean_ = self.mean
-            self.ipca.n_samples_seen_ = max(self.n_samples, 1)
+        # Don't try to initialize sklearn here - it's safer to use manual projection
+        self._ipca_fitted = False
+        self.use_sklearn = False
 
     def load_state(self, state: Dict):
         self.projection = np.array(state["projection"], dtype=np.float32)
         self.mean = np.array(state["mean"], dtype=np.float32)
         self.n_samples = state.get("n_samples", 0)
-        if self.use_sklearn and state.get("use_sklearn"):
-            from sklearn.decomposition import IncrementalPCA
-            self.ipca = IncrementalPCA(n_components=self.latent_dim)
-            self.ipca.mean_ = self.mean
-            self.ipca.components_ = self.projection.T
-            self.ipca.n_samples_seen_ = self.n_samples
-            self._ipca_fitted = True
+        self._ipca_fitted = state.get("ipca_fitted", False)
+        # Don't re-initialize sklearn from state - use manual projection
+        self.use_sklearn = False
 
 
 class BM25Index:
@@ -5657,14 +5674,8 @@ class RTMDKMemory(BaseModel):
         # Check if node has modal_embedding (cross-modal)
         if hasattr(node, 'modal_embedding') and node.modal_embedding is not None:
             return node.modal_embedding
-        # Check projection learner cache
-        if hasattr(self, 'field') and self.field.projection_learner is not None:
-            if hasattr(self.field.projection_learner, 'buffer'):
-                for emb in self.field.projection_learner.buffer:
-                    # Approximate: use projected + reconstructed (lossy)
-                    projected = node.latent_pos
-                    return self.field.projection_learner.projection @ projected
         # Fallback: return None (engram creation will skip this node)
+        # Note: We can't reliably reconstruct from latent_pos without the inverse projection
         return None
 
     def _generate_clarification(self, results: List, query: str) -> str:
