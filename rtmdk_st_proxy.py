@@ -187,6 +187,47 @@ memory_mgr = MemoryManager(config.rtmdk_url)
 memory_mgr.lm_studio_url = config.lm_studio_url
 
 # ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
+
+def _collect_stream_text(url: str, payload: Dict) -> str:
+    """Helper to consume an LM Studio stream and return the full text."""
+    payload["stream"] = True
+    full_text = ""
+    try:
+        logger.info(f"Collecting stream from LM Studio: {url}")
+        with requests.post(url, json=payload, stream=True, timeout=180) as resp:
+            if not resp.ok:
+                error_body = resp.text[:200]
+                logger.error(f"LM Studio Stream Error: HTTP {resp.status_code} - {error_body}")
+                return f"[Error: HTTP {resp.status_code}]"
+            
+            for line in resp.iter_lines():
+                if not line:
+                    continue
+                line_str = line.decode('utf-8', errors='ignore')
+                if line_str.startswith('data: '):
+                    data_str = line_str[6:]
+                    if data_str.strip() == '[DONE]':
+                        break
+                    try:
+                        chunk = json.loads(data_str)
+                        logger.debug(f"Stream chunk: {json.dumps(chunk)[:100]}")
+                        choices = chunk.get("choices", [])
+                        if choices:
+                            delta = choices[0].get("delta", {})
+                            content = delta.get("content", "")
+                            if content:
+                                full_text += content
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"Failed to parse stream chunk: {data_str[:100]} - {e}")
+    except Exception as e:
+        logger.error(f"Stream consumption failed: {e}")
+        return f"[Error: {str(e)}]"
+    logger.info(f"Collected {len(full_text)} chars from stream")
+    return full_text
+
+# ============================================================================
 # SILLYTAVERN PROXY ENDPOINTS
 # ============================================================================
 
@@ -319,81 +360,114 @@ async def proxy_chat_completions(request: Request):
     
     lm_url = f"{config.lm_studio_url}/chat/completions"
     
+    # Prepare LM Studio request. 
+    # We ALWAYS request stream: true from LM Studio for reliability, 
+    # then decide whether to stream to client or collect text based on client request.
+    lm_request = {
+        "model": model,
+        "messages": messages,
+        "temperature": body.get("temperature", 0.7),
+        "max_tokens": body.get("max_tokens", 1024),
+        "stream": True,  # Force stream from LM Studio
+        "top_p": body.get("top_p", 1.0),
+        "frequency_penalty": body.get("frequency_penalty", 0.0),
+        "presence_penalty": body.get("presence_penalty", 0.0),
+    }
+
+    # --- Case 1: SillyTavern wants Streaming ---
     if stream:
-        # Handle streaming
         def stream_generator():
             try:
-                with requests.post(
-                    lm_url,
-                    json=lm_request,
-                    stream=True,
-                    timeout=120
-                ) as resp:
-                    full_content = ""
+                with requests.post(lm_url, json=lm_request, stream=True, timeout=120) as resp:
+                    if not resp.ok:
+                        logger.error(f"LM Studio Stream Error: HTTP {resp.status_code}")
+                        return
+
                     for line in resp.iter_lines():
-                        if line:
-                            line_str = line.decode('utf-8')
-                            yield f"{line_str}\n\n"
-                            # Accumulate content for memory saving
-                            if "content" in line_str:
-                                import re
-                                match = re.search(r'"content":"([^"]*)"', line_str)
-                                if match:
-                                    full_content += match.group(1)
-                    
-                    # Save AI response to memory after stream ends
-                    if mem_config.get("save_ai_messages", True) and full_content:
-                        memory_mgr.save_message(session_id, "assistant", full_content)
-                        
+                        if not line:
+                            continue
+                        line_str = line.decode('utf-8')
+                        yield f"{line_str}\n\n"
             except Exception as e:
                 logger.error(f"Streaming error: {e}")
         
         return StreamingResponse(stream_generator(), media_type="text/event-stream")
-    
+
+    # --- Case 2: SillyTavern wants JSON (Non-Streaming) ---
     else:
-        # Handle non-streaming
-        try:
-            resp = requests.post(lm_url, json=lm_request, timeout=120)
-            
-            # Check for HTTP errors first
-            if not resp.ok:
-                logger.error(f"LM Studio returned HTTP {resp.status_code}: {resp.text[:200]}")
-                raise HTTPException(status_code=502, detail=f"LM Studio Error: HTTP {resp.status_code}")
-            
-            # Try to parse JSON
-            try:
-                result = resp.json()
-            except ValueError:
-                logger.error(f"LM Studio returned invalid JSON: {resp.text[:200]}")
-                raise HTTPException(status_code=502, detail="LM Studio Error: Invalid JSON response")
-            
-            # Save AI response to memory
-            if mem_config.get("save_ai_messages", True):
-                choices = result.get("choices", [])
-                if choices:
-                    ai_message = choices[0].get("message", {}).get("content", "")
-                    if ai_message:
-                        memory_mgr.save_message(session_id, "assistant", ai_message)
-            
-            return JSONResponse(content=result)
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"LM Studio request failed: {e}")
-            raise HTTPException(status_code=502, detail=f"LM Studio request failed: {str(e)}")
+        # Consume the stream from LM Studio to get the full text
+        full_text = _collect_stream_text(lm_url, lm_request)
+        
+        # Save AI response to memory
+        if mem_config.get("save_ai_messages", True) and full_text:
+            memory_mgr.save_message(session_id, "assistant", full_text)
+        
+        # Return standard OpenAI JSON format
+        return JSONResponse(content={
+            "id": f"chatcmpl-{int(time.time())}",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": model,
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": full_text
+                },
+                "finish_reason": "stop"
+            }],
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        })
 
 
-@app.post("/v1/completions")
-async def proxy_completions(request: Request):
-    """Proxy text completions for older SillyTavern API."""
+@app.post("/api/v1/generate")
+async def api_v1_generate(request: Request):
+    """SillyTavern Text Completion API - main endpoint."""
     try:
         body = await request.json()
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
     
-    # Convert to chat format
+    logger.info(f"ST /api/v1/generate request: stream={body.get('stream', False)}, prompt_len={len(body.get('prompt', ''))}")
+    
+    return await _handle_text_completion(body)
+
+
+@app.post("/api/backends/text-completions/generate")
+async def api_backend_generate(request: Request):
+    """SillyTavern backend endpoint - delegates to same logic."""
+    try:
+        body = await request.json()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
+    
+    logger.info(f"ST /api/backends generate request: stream={body.get('stream', False)}, prompt_len={len(body.get('prompt', ''))}")
+    
+    return await _handle_text_completion(body)
+
+
+@app.post("/api/backends/text-completions/status")
+async def api_backend_status():
+    """SillyTavern status check endpoint."""
+    return {
+        "result": "success",
+        "model": "rtmdk-proxy",
+        "max_length": 4096,
+        "max_context_length": 8192,
+    }
+
+
+async def _handle_text_completion(body: Dict):
+    """
+    Handle text completion request from SillyTavern.
+    Returns response in SillyTavern-expected format.
+    """
     prompt = body.get("prompt", "")
     session_id = extract_session_id(body)
+    stream_requested = body.get("stream", False)
+    
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Empty prompt")
     
     # Save user message
     mem_config = config.config.get("memory", {})
@@ -401,8 +475,8 @@ async def proxy_completions(request: Request):
         memory_mgr.save_message(session_id, "user", prompt)
     
     # Retrieve memories
-    ret_config = config.config.get("retrieval", {})
     memories = []
+    ret_config = config.config.get("retrieval", {})
     if ret_config.get("enabled", True) and prompt:
         max_memories = ret_config.get("max_memories", 3)
         memories = memory_mgr.retrieve_memories(session_id, prompt, top_k=max_memories)
@@ -412,55 +486,88 @@ async def proxy_completions(request: Request):
     if memories:
         messages = inject_memories_into_prompt(messages, memories)
     
-    # Forward to LM Studio as Chat Completion
+    # Build LM Studio request
     lm_request = {
-        "model": body.get("model", ""),
+        "model": body.get("model", "") or body.get("name", ""),
         "messages": messages,
         "temperature": body.get("temperature", 0.7),
         "max_tokens": body.get("max_new_tokens", body.get("max_tokens", 256)),
-        "stream": body.get("stream", False),
+        "stream": True,  # Always stream from LM Studio for reliability
+        "top_p": body.get("top_p", 1.0),
+        "frequency_penalty": body.get("frequency_penalty", 0.0),
+        "presence_penalty": body.get("presence_penalty", 0.0),
+        "stop": body.get("stop", []),
     }
     
     lm_url = f"{config.lm_studio_url}/chat/completions"
     
-    try:
-        resp = requests.post(lm_url, json=lm_request, timeout=120)
+    # --- Case 1: SillyTavern wants Streaming ---
+    if stream_requested:
+        logger.info(f"Streaming response requested for session {session_id}")
         
-        if not resp.ok:
-            logger.error(f"LM Studio returned HTTP {resp.status_code}: {resp.text[:200]}")
-            raise HTTPException(status_code=502, detail=f"LM Studio Error: HTTP {resp.status_code}")
+        async def stream_generator():
+            try:
+                with requests.post(lm_url, json=lm_request, stream=True, timeout=180) as resp:
+                    if not resp.ok:
+                        logger.error(f"LM Studio Error: HTTP {resp.status_code} - {resp.text[:200]}")
+                        error_chunk = {"error": f"LM Studio HTTP {resp.status_code}"}
+                        yield f"data: {json.dumps(error_chunk)}\n\n"
+                        yield "data: [DONE]\n\n"
+                        return
+
+                    for line in resp.iter_lines():
+                        if not line:
+                            continue
+                        line_str = line.decode('utf-8', errors='ignore')
+                        
+                        if line_str.startswith('data: '):
+                            data_str = line_str[6:]
+                            if data_str.strip() == '[DONE]':
+                                yield "data: [DONE]\n\n"
+                                break
+                            
+                            try:
+                                chunk = json.loads(data_str)
+                                choices = chunk.get("choices", [])
+                                if choices:
+                                    delta = choices[0].get("delta", {})
+                                    content = delta.get("content", "")
+                                    finish_reason = choices[0].get("finish_reason")
+                                    
+                                    # SillyTavern expects: {"choices":[{"text":"...","index":0}]}
+                                    # OR: {"content":"...","index":0}
+                                    st_chunk = {"choices": [{"text": content, "index": 0}]}
+                                    if finish_reason:
+                                        st_chunk["choices"][0]["finish_reason"] = finish_reason
+                                    
+                                    yield f"data: {json.dumps(st_chunk)}\n\n"
+                            except json.JSONDecodeError as e:
+                                logger.warning(f"Failed to parse chunk: {data_str[:80]} - {e}")
+                                pass
+                                
+            except Exception as e:
+                logger.error(f"Streaming error: {e}")
+                yield f"data: {{\"error\": \"{str(e)}\"}}\n\n"
+                yield "data: [DONE]\n\n"
+
+        return StreamingResponse(stream_generator(), media_type="text/event-stream")
+
+    # --- Case 2: SillyTavern wants JSON (non-streaming) ---
+    else:
+        logger.info(f"Non-streaming response requested for session {session_id}")
         
-        try:
-            result = resp.json()
-        except ValueError:
-            logger.error(f"LM Studio returned invalid JSON: {resp.text[:200]}")
-            raise HTTPException(status_code=502, detail="LM Studio Error: Invalid JSON response")
+        # Consume the stream to get full text
+        full_text = _collect_stream_text(lm_url, lm_request)
         
         # Save AI response
-        if mem_config.get("save_ai_messages", True):
-            choices = result.get("choices", [])
-            if choices:
-                ai_message = choices[0].get("message", {}).get("content", "")
-                if ai_message:
-                    memory_mgr.save_message(session_id, "assistant", ai_message)
+        if mem_config.get("save_ai_messages", True) and full_text and not full_text.startswith("[Error"):
+            memory_mgr.save_message(session_id, "assistant", full_text)
         
-        # Convert back to text completion format
-        text = ""
-        if choices:
-            text = choices[0].get("message", {}).get("content", "")
-        
+        # SillyTavern Text Completion format:
+        # {"results": [{"text": "..."}]}
         return JSONResponse(content={
-            "id": "cmpl-st-proxy",
-            "object": "text_completion",
-            "created": int(time.time()),
-            "model": body.get("model", ""),
-            "choices": [{"text": text, "index": 0, "finish_reason": "stop"}]
+            "results": [{"text": full_text}]
         })
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"LM Studio request failed: {e}")
-        raise HTTPException(status_code=502, detail=f"LM Studio request failed: {str(e)}")
 
 
 @app.get("/status")
