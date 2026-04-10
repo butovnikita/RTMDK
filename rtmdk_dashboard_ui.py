@@ -97,14 +97,13 @@ button.success { background: var(--green); color: #fff; border-color: var(--gree
         </div>
         <div>
             <div class="form-group">
-                <label>Embedder</label>
-                <select id="embedder-select">
-                    <option value="nomic-embed-text-v1.5">Nomic Embed v1.5 (768d)</option>
-                    <option value="text-embedding-3-small">OpenAI text-embedding-3-small (1536d)</option>
-                    <option value="text-embedding-3-large">OpenAI text-embedding-3-large (3072d)</option>
-                    <option value="all-MiniLM-L6-v2">all-MiniLM-L6-v2 (384d)</option>
-                    <option value="custom">Custom URL</option>
-                </select>
+                <label>Embedder Model</label>
+                <div style="display:flex;gap:8px;">
+                    <select id="embedder-select" style="flex:1;">
+                        <option value="nomic-embed-text-v1.5">Loading...</option>
+                    </select>
+                    <button class="primary" onclick="applyEmbedder()">Apply</button>
+                </div>
             </div>
         </div>
     </div>
@@ -118,6 +117,7 @@ button.success { background: var(--green); color: #fff; border-color: var(--gree
     </div>
     <div style="display:flex;gap:8px;align-items:center;">
         <button class="primary" onclick="applyProvider()">Apply Provider</button>
+        <button onclick="fetchModels()">🔄 Refresh Models</button>
         <button class="success" onclick="testConnection()">🔗 Test Connection</button>
     </div>
     <div id="test-result" class="test-result" style="display:none;"></div>
@@ -225,45 +225,77 @@ const presets = {
     streaming: "High-throughput real-time, minimal latency (~3ms, 50K nodes)"
 };
 
-const models = {
-    lm_studio: ["Local model (auto-detected)"],
-    openrouter: ["anthropic/claude-3.5-sonnet","openai/gpt-4o","google/gemini-2.5-flash","meta-llama/llama-4-maverick","mistral/mistral-large"],
-    openai: ["gpt-4o","gpt-4o-mini","gpt-3.5-turbo"],
-    anthropic: ["claude-3-5-sonnet-20241022","claude-3-opus-20240229","claude-3-haiku-20240307"],
-    custom: ["custom-model"]
-};
+// Models are fetched dynamically from the API
+// No hardcoded model lists needed
 
 document.getElementById('preset-select').addEventListener('change', function() {
     document.getElementById('preset-desc').textContent = presets[this.value] || '';
 });
 
-function onProviderChange() {
-    const provider = document.getElementById('provider-select').value;
-    const modelSelect = document.getElementById('model-select');
-    const apiKeyInput = document.getElementById('api-key-input');
-    const customUrlGroup = document.getElementById('custom-url-group');
-    
-    // Populate models
-    modelSelect.innerHTML = '';
-    (models[provider] || []).forEach(m => {
-        const opt = document.createElement('option');
-        opt.value = m; opt.textContent = m;
-        modelSelect.appendChild(opt);
-    });
-    
-    // Show/hide API key
-    if (provider === 'lm_studio') {
-        apiKeyInput.value = '';
-        apiKeyInput.placeholder = 'Not needed for LM Studio';
-        apiKeyInput.disabled = true;
-    } else {
-        apiKeyInput.disabled = false;
-        apiKeyInput.placeholder = 'sk-...';
+    async function onProviderChange() {
+        const provider = document.getElementById('provider-select').value;
+        const modelSelect = document.getElementById('model-select');
+        const embedderSelect = document.getElementById('embedder-select');
+        const apiKeyInput = document.getElementById('api-key-input');
+        const customUrlGroup = document.getElementById('custom-url-group');
+        
+        // Clear and show loading
+        modelSelect.innerHTML = '<option>Loading...</option>';
+        embedderSelect.innerHTML = '<option>Loading...</option>';
+        
+        // Show/hide API key
+        if (provider === 'lm_studio') {
+            apiKeyInput.value = '';
+            apiKeyInput.placeholder = 'Not needed for LM Studio';
+            apiKeyInput.disabled = true;
+        } else {
+            apiKeyInput.disabled = false;
+            apiKeyInput.placeholder = 'sk-...';
+        }
+        customUrlGroup.style.display = provider === 'custom' ? 'block' : 'none';
+        
+        // Fetch models from API
+        await fetchModels();
     }
-    
-    // Show/hide custom URL
-    customUrlGroup.style.display = provider === 'custom' ? 'block' : 'none';
-}
+
+    async function fetchModels() {
+        const modelSelect = document.getElementById('model-select');
+        const embedderSelect = document.getElementById('embedder-select');
+        
+        try {
+            const resp = await fetch(`${API_BASE}/v1/models`);
+            if (!resp.ok) throw new Error('Failed to fetch models');
+            
+            const data = await resp.json();
+            
+            // Populate chat models
+            modelSelect.innerHTML = '';
+            if (data.chat && data.chat.length > 0) {
+                data.chat.forEach(m => {
+                    const opt = document.createElement('option');
+                    opt.value = m; opt.textContent = m;
+                    modelSelect.appendChild(opt);
+                });
+            } else {
+                modelSelect.innerHTML = '<option value="local-model">local-model</option>';
+            }
+            
+            // Populate embedder models
+            embedderSelect.innerHTML = '';
+            if (data.embedder && data.embedder.length > 0) {
+                data.embedder.forEach(m => {
+                    const opt = document.createElement('option');
+                    opt.value = m; opt.textContent = m;
+                    embedderSelect.appendChild(opt);
+                });
+            } else {
+                embedderSelect.innerHTML = '<option value="nomic-embed-text-v1.5">nomic-embed-text-v1.5</option>';
+            }
+        } catch(e) {
+            modelSelect.innerHTML = '<option value="local-model">local-model (fetch failed)</option>';
+            embedderSelect.innerHTML = '<option value="nomic-embed-text-v1.5">nomic-embed-text-v1.5</option>';
+        }
+    }
 
 async function applyProvider() {
     const provider = document.getElementById('provider-select').value;
@@ -279,6 +311,18 @@ async function applyProvider() {
         });
         const d = await r.json();
         notify(`Provider "${provider}" applied with model "${model}"`);
+    } catch(e) { notify('Error: ' + e.message, 'err'); }
+}
+
+async function applyEmbedder() {
+    const embedder = document.getElementById('embedder-select').value;
+    try {
+        const r = await fetch(`${API_BASE}/v1/embedder`, {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({model: embedder})
+        });
+        const d = await r.json();
+        notify(`Embedder set to "${embedder}"`);
     } catch(e) { notify('Error: ' + e.message, 'err'); }
 }
 
@@ -416,7 +460,9 @@ async function updateStats() {
 }
 
 // Init
-onProviderChange();
+document.addEventListener('DOMContentLoaded', () => {
+    fetchModels();
+});
 setInterval(updateStats, 3000);
 updateStats();
 </script>
@@ -517,6 +563,15 @@ def create_dashboard_router(memory=None, config: Dict[str, Any] = None) -> APIRo
             from rtmdk.production.health_monitor import HealthMonitor
             return HealthMonitor(mem).check_health()
         return {"error": f"Unknown action: {action}"}
+    
+    @router.post("/v1/embedder")
+    async def api_set_embedder(data: dict):
+        """Switch embedder model at runtime."""
+        model = data.get("model", "")
+        if model:
+            config["RTMDK_EMBED_MODEL"] = model
+            return {"status": "ok", "model": model}
+        return {"error": "Missing model name"}
     
     @router.get("/api/diagnostics")
     async def api_diagnostics():

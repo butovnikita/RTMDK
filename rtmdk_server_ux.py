@@ -166,8 +166,79 @@ def create_ux_router(memory, config: Dict[str, Any]) -> APIRouter:
     
     @router.get("/cache/stats")
     async def cache_stats(): _init(); return _m["ec"].get_stats()
-    
+
     @router.post("/cache/clear")
     async def cache_clear(): _init(); _m["ec"].clear(); return {"cleared":True}
+
+    @router.get("/models")
+    async def list_models():
+        """List available LLM and embedder models from current provider."""
+        import requests
+        provider = config.get("RTMDK_API_PROVIDER", "lm_studio")
+        api_key = config.get("OPENAI_API_KEY", "") or config.get("OPENROUTER_API_KEY", "") or config.get("ANTHROPIC_API_KEY", "")
+        
+        models = {"chat": [], "embedder": [], "provider": provider}
+        
+        try:
+            if provider == "lm_studio":
+                lm_url = config.get("LM_STUDIO_URL", "http://host.docker.internal:12345/v1")
+                resp = requests.get(f"{lm_url}/models", timeout=10)
+                if resp.ok:
+                    data = resp.json()
+                    models["chat"] = [m["id"] for m in data.get("data", [])]
+                models["embedder"] = ["nomic-embed-text-v1.5", "all-MiniLM-L6-v2", "text-embedding-3-small"]
+                
+            elif provider == "openrouter":
+                resp = requests.get(
+                    "https://openrouter.ai/api/v1/models",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    timeout=15
+                )
+                if resp.ok:
+                    data = resp.json()
+                    all_models = data.get("data", [])
+                    models["chat"] = [m["id"] for m in all_models[:50]]
+                models["embedder"] = ["nomic-embed-text-v1.5", "text-embedding-3-small", "text-embedding-3-large"]
+                
+            elif provider == "openai":
+                resp = requests.get(
+                    "https://api.openai.com/v1/models",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    timeout=15
+                )
+                if resp.ok:
+                    data = resp.json()
+                    chat_models = [m["id"] for m in data.get("data", []) if "gpt" in m["id"]]
+                    models["chat"] = list(set(chat_models))[:20]
+                models["embedder"] = ["text-embedding-3-small", "text-embedding-3-large", "text-embedding-ada-002"]
+                
+            elif provider == "anthropic":
+                models["chat"] = ["claude-3-5-sonnet-20241022", "claude-3-opus-20240229", "claude-3-haiku-20240307", "claude-3-5-sonnet-latest"]
+                models["embedder"] = ["nomic-embed-text-v1.5", "text-embedding-3-small"]
+                
+            elif provider == "custom":
+                custom_url = config.get("CUSTOM_API_URL", "")
+                if custom_url:
+                    resp = requests.get(f"{custom_url}/models", timeout=10)
+                    if resp.ok:
+                        data = resp.json()
+                        models["chat"] = [m.get("id", m) for m in data.get("data", [])]
+                models["embedder"] = ["nomic-embed-text-v1.5", "all-MiniLM-L6-v2"]
+                
+        except Exception as e:
+            models["error"] = str(e)
+            if not models["chat"]: models["chat"] = ["local-model"]
+            if not models["embedder"]: models["embedder"] = ["nomic-embed-text-v1.5"]
+        
+        return models
     
+    @router.post("/embedder")
+    async def set_embedder(data: dict):
+        """Switch embedder model at runtime."""
+        model = data.get("model", "")
+        if model:
+            config["RTMDK_EMBED_MODEL"] = model
+            return {"status": "ok", "model": model}
+        return {"error": "Missing model name"}
+
     return router
