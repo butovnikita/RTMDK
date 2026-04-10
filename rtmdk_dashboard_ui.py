@@ -276,27 +276,42 @@ document.getElementById('preset-select').addEventListener('change', function() {
         const embedderSelect = document.getElementById('embedder-select');
         
         try {
+            // Try main OpenAI endpoint first
             const resp = await fetch(`${API_BASE}/v1/models`);
             if (!resp.ok) throw new Error('Failed to fetch models');
             
             const data = await resp.json();
             
+            // Check if it's OpenAI format (has "data" array) or UX format (has "chat"/"embedder")
+            let chatModels = [];
+            let embedderModels = [];
+            
+            if (data.data && Array.isArray(data.data)) {
+                // OpenAI format - separate by model ID
+                chatModels = data.data.filter(m => !m.id.toLowerCase().includes('embed')).map(m => m.id);
+                embedderModels = data.data.filter(m => m.id.toLowerCase().includes('embed')).map(m => m.id);
+            } else if (data.chat) {
+                // UX format
+                chatModels = data.chat || [];
+                embedderModels = data.embedder || [];
+            }
+            
             // Populate chat models
             modelSelect.innerHTML = '';
-            if (data.chat && data.chat.length > 0) {
-                data.chat.forEach(m => {
+            if (chatModels.length > 0) {
+                chatModels.forEach(m => {
                     const opt = document.createElement('option');
                     opt.value = m; opt.textContent = m;
                     modelSelect.appendChild(opt);
                 });
             } else {
-                modelSelect.innerHTML = '<option value="local-model">local-model</option>';
+                modelSelect.innerHTML = '<option value="rtmdk">rtmdk (default)</option>';
             }
             
             // Populate embedder models
             embedderSelect.innerHTML = '';
-            if (data.embedder && data.embedder.length > 0) {
-                data.embedder.forEach(m => {
+            if (embedderModels.length > 0) {
+                embedderModels.forEach(m => {
                     const opt = document.createElement('option');
                     opt.value = m; opt.textContent = m;
                     embedderSelect.appendChild(opt);
@@ -305,7 +320,8 @@ document.getElementById('preset-select').addEventListener('change', function() {
                 embedderSelect.innerHTML = '<option value="nomic-embed-text-v1.5">nomic-embed-text-v1.5</option>';
             }
         } catch(e) {
-            modelSelect.innerHTML = '<option value="local-model">local-model (fetch failed)</option>';
+            console.error('Model fetch failed:', e);
+            modelSelect.innerHTML = '<option value="rtmdk">rtmdk (fetch failed)</option>';
             embedderSelect.innerHTML = '<option value="nomic-embed-text-v1.5">nomic-embed-text-v1.5</option>';
         }
     }
@@ -324,6 +340,9 @@ async function applyProvider() {
         });
         const d = await r.json();
         notify(`Provider "${provider}" applied with model "${model}"`);
+        
+        // Refresh models after provider change
+        setTimeout(fetchModels, 500);
     } catch(e) { notify('Error: ' + e.message, 'err'); }
 }
 
@@ -336,27 +355,33 @@ async function applyEmbedder() {
         });
         const d = await r.json();
         notify(`Embedder set to "${embedder}"`);
+        
+        // Refresh models after embedder change
+        setTimeout(fetchModels, 500);
     } catch(e) { notify('Error: ' + e.message, 'err'); }
 }
 
 async function testConnection() {
     const resultDiv = document.getElementById('test-result');
     resultDiv.style.display = 'block';
-    resultDiv.textContent = 'Testing...';
+    resultDiv.textContent = 'Testing connection...';
     resultDiv.className = 'test-result';
     
     try {
-        const r = await fetch(`${API_BASE}/v1/models`);
-        if (r.ok) {
-            const data = await r.json();
-            resultDiv.textContent = `✅ Connected! Models: ${(data.data||[]).length} available`;
-            resultDiv.className = 'test-result ok';
-        } else {
-            resultDiv.textContent = `❌ Connection failed: ${r.status}`;
-            resultDiv.className = 'test-result err';
-        }
+        // Test health endpoint
+        const healthResp = await fetch(`${API_BASE}/health`);
+        if (!healthResp.ok) throw new Error('Health check failed');
+        const health = await healthResp.json();
+        
+        // Test models endpoint
+        const modelsResp = await fetch(`${API_BASE}/v1/models`);
+        const models = await modelsResp.json();
+        const modelCount = models.data ? models.data.length : (models.chat ? models.chat.length : 0);
+        
+        resultDiv.innerHTML = `✅ Connected! Server v${health.version || '?'}<br>Models: ${modelCount} available<br>LM Studio: ${health.lm_studio ? 'Yes' : 'No'}`;
+        resultDiv.className = 'test-result ok';
     } catch(e) {
-        resultDiv.textContent = `❌ Error: ${e.message}`;
+        resultDiv.textContent = `❌ Connection failed: ${e.message}`;
         resultDiv.className = 'test-result err';
     }
 }

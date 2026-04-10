@@ -183,8 +183,9 @@ def create_ux_router(memory, config: Dict[str, Any]) -> APIRouter:
     async def cache_clear(): _init(); _m["ec"].clear(); return {"cleared":True}
 
     @router.get("/models")
-    async def list_models():
-        """List available LLM and embedder models from current provider."""
+    async def list_models_ux():
+        """List models with UX-specific format (chat, embedder, provider).
+        This is separate from the main /v1/models OpenAI endpoint."""
         import requests
         provider = config.get("RTMDK_API_PROVIDER", "lm_studio")
         api_key = config.get("OPENAI_API_KEY", "") or config.get("OPENROUTER_API_KEY", "") or config.get("ANTHROPIC_API_KEY", "")

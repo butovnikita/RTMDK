@@ -183,37 +183,112 @@ class QueryMemoryRequest(BaseModel):
 # HELPER FUNCTIONS
 # ============================================================================
 
+# ============================================================================
+# MODEL MANAGEMENT
+# ============================================================================
+
+class ModelManager:
+    """Manages model discovery and caching from LM Studio."""
+    
+    def __init__(self, lm_studio_url: str):
+        self.lm_studio_url = lm_studio_url
+        self._chat_models: List[Dict] = []
+        self._embedder_models: List[Dict] = []
+        self._all_models: List[Dict] = []
+        self._last_refresh: float = 0
+        self._refresh_interval: int = 60  # Refresh every 60 seconds
+    
+    def refresh_models(self) -> bool:
+        """Fetch models from LM Studio."""
+        import requests
+        try:
+            resp = requests.get(f"{self.lm_studio_url}/models", timeout=5)
+            data = resp.json()
+            models = data.get("data", [])
+            
+            self._all_models = models
+            self._chat_models = []
+            self._embedder_models = []
+            
+            # Separate by capabilities
+            for model in models:
+                model_id = model.get("id", "")
+                # Simple heuristic: embedding models have "embed" in name
+                if "embed" in model_id.lower():
+                    self._embedder_models.append(model)
+                else:
+                    self._chat_models.append(model)
+            
+            self._last_refresh = time.time()
+            logger.info(f"Model refresh: {len(self._chat_models)} chat, {len(self._embedder_models)} embedder")
+            return True
+        except Exception as e:
+            logger.warning(f"Model refresh failed: {e}")
+            return False
+    
+    @property
+    def chat_models(self) -> List[Dict]:
+        if not self._chat_models or (time.time() - self._last_refresh > self._refresh_interval):
+            self.refresh_models()
+        return self._chat_models
+    
+    @property
+    def embedder_models(self) -> List[Dict]:
+        if not self._embedder_models or (time.time() - self._last_refresh > self._refresh_interval):
+            self.refresh_models()
+        return self._embedder_models
+    
+    @property
+    def all_models(self) -> List[Dict]:
+        if not self._all_models or (time.time() - self._last_refresh > self._refresh_interval):
+            self.refresh_models()
+        return self._all_models
+    
+    @property
+    def default_chat_model(self) -> str:
+        models = self.chat_models
+        return models[0]["id"] if models else "rtmdk"
+    
+    @property
+    def default_embedder_model(self) -> str:
+        models = self.embedder_models
+        return models[0]["id"] if models else EMBED_MODEL
+
+
+# Global model manager
+model_manager: Optional[ModelManager] = None
+
+
 def check_lm_studio() -> bool:
-    """Check if LM Studio is available."""
-    import requests
+    """Check if LM Studio is available and initialize model manager."""
+    global model_manager, chat_model
     try:
-        resp = requests.get(f"{LM_STUDIO_URL}/models", timeout=3)
-        global chat_model
-        models = resp.json().get("data", [])
-        if models:
-            chat_model = models[0]["id"]
+        model_manager = ModelManager(LM_STUDIO_URL)
+        if model_manager.refresh_models():
+            chat_model = model_manager.default_chat_model
             logger.info(f"LM Studio detected: {chat_model}")
             return True
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"LM Studio init failed: {e}")
     logger.warning("LM Studio not available at %s", LM_STUDIO_URL)
     return False
 
 
-def get_embedding(text: str) -> np.ndarray:
+def get_embedding(text: str, model: str = None) -> np.ndarray:
     """Get embedding from LM Studio or cache."""
     if text in embedder_cache:
         return embedder_cache[text]
 
     import requests
-    # FIX: Retry logic with exponential backoff
+    embedder_model = model or model_manager.default_embedder_model if model_manager else EMBED_MODEL
+    
     max_retries = 3
     base_timeout = int(os.getenv("RTMDK_LM_STUDIO_TIMEOUT", "30"))
     for attempt in range(max_retries):
         try:
             resp = requests.post(
                 f"{LM_STUDIO_URL}/embeddings",
-                json={"model": EMBED_MODEL, "input": text},
+                json={"model": embedder_model, "input": text},
                 timeout=base_timeout,
             )
             data = resp.json()
@@ -359,31 +434,28 @@ def build_system_prompt(user_messages: List[ChatMessage], session_id: str) -> st
 
 @app.get("/v1/models")
 async def list_models():
-    """List available models."""
-    models = [
-        {
-            "id": "rtmdk",
-            "object": "model",
-            "created": int(time.time()),
-            "owned_by": "rtmdk",
-            "description": "RTMDK Memory with LLM integration",
-        },
-        {
-            "id": "rtmdk-embed",
-            "object": "model",
-            "created": int(time.time()),
-            "owned_by": "rtmdk",
-            "description": "RTMDK Embedding model",
-        },
-    ]
-    if lm_studio_available and chat_model:
-        models.append({
-            "id": chat_model,
-            "object": "model",
-            "created": int(time.time()),
-            "owned_by": "lm-studio",
-        })
-    return {"object": "list", "data": models}
+    """List available models from LM Studio in OpenAI format."""
+    global model_manager
+    
+    if model_manager and model_manager.all_models:
+        # Return all models from LM Studio in OpenAI format
+        return {
+            "object": "list",
+            "data": model_manager.all_models
+        }
+    else:
+        # Fallback: return minimal model list
+        return {
+            "object": "list",
+            "data": [
+                {
+                    "id": chat_model or "rtmdk",
+                    "object": "model",
+                    "created": int(time.time()),
+                    "owned_by": "lm-studio"
+                }
+            ]
+        }
 
 
 @app.post("/v1/chat/completions")
@@ -422,6 +494,10 @@ async def chat_completions(req: ChatCompletionRequest):
 
     # Call LM Studio
     lm_timeout = int(os.getenv("RTMDK_LM_STUDIO_TIMEOUT", "120"))
+    # Use model from request, fallback to default
+    request_model = req.model if hasattr(req, 'model') and req.model and req.model != "rtmdk" else None
+    actual_model = request_model or chat_model or "local-model"
+    
     max_retries = 2
     last_error = None
 
@@ -430,7 +506,7 @@ async def chat_completions(req: ChatCompletionRequest):
             resp = requests.post(
                 f"{LM_STUDIO_URL}/chat/completions",
                 json={
-                    "model": chat_model or "local-model",
+                    "model": actual_model,
                     "messages": messages,
                     "temperature": req.temperature,
                     "max_tokens": req.max_tokens,
@@ -518,6 +594,8 @@ async def chat_completions(req: ChatCompletionRequest):
         })
 
     data = resp.json()
+    # Ensure response has correct model name
+    data["model"] = actual_model
     response_content = data["choices"][0]["message"]["content"]
 
     # Update memory with response
@@ -583,11 +661,14 @@ async def test_streaming():
 
 @app.post("/v1/embeddings")
 async def create_embeddings(req: EmbeddingRequest):
-    """Create embeddings."""
+    """Create embeddings using specified model."""
+    # Use model from request if provided
+    embedder_model = req.model if hasattr(req, 'model') and req.model else None
+    
     inputs = req.input if isinstance(req.input, list) else [req.input]
     data = []
     for i, text in enumerate(inputs):
-        embedding = get_embedding(text)
+        embedding = get_embedding(text, model=embedder_model)
         data.append({
             "object": "embedding",
             "embedding": embedding.tolist(),
