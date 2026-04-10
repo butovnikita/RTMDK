@@ -460,7 +460,7 @@ def main():
     parser = argparse.ArgumentParser(description="RTMDK SillyTavern Proxy")
     parser.add_argument("--port", type=int, default=config.proxy_port, help="Proxy port")
     parser.add_argument("--rtmdk", default=config.rtmdk_url, help="RTMDK server URL")
-    parser.add_argument("--lm-studio", default=config.lm_studio_url, help="LM Studio URL")
+    parser.add_argument("--lm_studio", default=config.lm_studio_url, help="LM Studio URL")
     args = parser.parse_args()
     
     print("=" * 60)
@@ -468,7 +468,7 @@ def main():
     print("=" * 60)
     print(f"  Proxy:     http://0.0.0.0:{args.port}")
     print(f"  RTMDK:     {args.rtmdk}")
-    print(f"  LM Studio: {args.lm_studio_url}")
+    print(f"  LM Studio: {args.lm_studio}")
     print()
     print("  SillyTavern Configuration:")
     print(f"    API Type: OpenAI")
