@@ -110,6 +110,16 @@ class MemoryManager:
     
     def __init__(self, rtmdk_url: str):
         self.rtmdk_url = rtmdk_url
+        self.lm_studio_url = None  # Will be set by config
+    
+    def check_lm_studio(self) -> bool:
+        """Check if LM Studio is reachable."""
+        url = self.lm_studio_url.replace("/v1", "/v1/models") if "/v1" in self.lm_studio_url else f"{self.lm_studio_url}/v1/models"
+        try:
+            resp = requests.get(url, timeout=5)
+            return resp.ok
+        except Exception:
+            return False
     
     def save_message(self, session_id: str, role: str, content: str) -> bool:
         """Save a message to RTMDK memory."""
@@ -174,6 +184,7 @@ class MemoryManager:
 
 # Global memory manager
 memory_mgr = MemoryManager(config.rtmdk_url)
+memory_mgr.lm_studio_url = config.lm_studio_url
 
 # ============================================================================
 # SILLYTAVERN PROXY ENDPOINTS
@@ -343,8 +354,18 @@ async def proxy_chat_completions(request: Request):
         # Handle non-streaming
         try:
             resp = requests.post(lm_url, json=lm_request, timeout=120)
-            resp.raise_for_status()
-            result = resp.json()
+            
+            # Check for HTTP errors first
+            if not resp.ok:
+                logger.error(f"LM Studio returned HTTP {resp.status_code}: {resp.text[:200]}")
+                raise HTTPException(status_code=502, detail=f"LM Studio Error: HTTP {resp.status_code}")
+            
+            # Try to parse JSON
+            try:
+                result = resp.json()
+            except ValueError:
+                logger.error(f"LM Studio returned invalid JSON: {resp.text[:200]}")
+                raise HTTPException(status_code=502, detail="LM Studio Error: Invalid JSON response")
             
             # Save AI response to memory
             if mem_config.get("save_ai_messages", True):
@@ -355,9 +376,11 @@ async def proxy_chat_completions(request: Request):
                         memory_mgr.save_message(session_id, "assistant", ai_message)
             
             return JSONResponse(content=result)
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"LM Studio request failed: {e}")
-            raise HTTPException(status_code=502, detail=f"LM Studio error: {str(e)}")
+            raise HTTPException(status_code=502, detail=f"LM Studio request failed: {str(e)}")
 
 
 @app.post("/v1/completions")
@@ -389,7 +412,7 @@ async def proxy_completions(request: Request):
     if memories:
         messages = inject_memories_into_prompt(messages, memories)
     
-    # Forward to LM Studio
+    # Forward to LM Studio as Chat Completion
     lm_request = {
         "model": body.get("model", ""),
         "messages": messages,
@@ -402,8 +425,16 @@ async def proxy_completions(request: Request):
     
     try:
         resp = requests.post(lm_url, json=lm_request, timeout=120)
-        resp.raise_for_status()
-        result = resp.json()
+        
+        if not resp.ok:
+            logger.error(f"LM Studio returned HTTP {resp.status_code}: {resp.text[:200]}")
+            raise HTTPException(status_code=502, detail=f"LM Studio Error: HTTP {resp.status_code}")
+        
+        try:
+            result = resp.json()
+        except ValueError:
+            logger.error(f"LM Studio returned invalid JSON: {resp.text[:200]}")
+            raise HTTPException(status_code=502, detail="LM Studio Error: Invalid JSON response")
         
         # Save AI response
         if mem_config.get("save_ai_messages", True):
@@ -425,9 +456,11 @@ async def proxy_completions(request: Request):
             "model": body.get("model", ""),
             "choices": [{"text": text, "index": 0, "finish_reason": "stop"}]
         })
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"LM Studio request failed: {e}")
-        raise HTTPException(status_code=502, detail=f"LM Studio error: {str(e)}")
+        raise HTTPException(status_code=502, detail=f"LM Studio request failed: {str(e)}")
 
 
 @app.get("/status")
@@ -474,6 +507,14 @@ def main():
     print(f"    API Type: OpenAI")
     print(f"    Base URL: http://127.0.0.1:{args.port}/v1")
     print(f"    API Key:  (any value)")
+    # Check LM Studio connectivity
+    print("\n🔍 Checking LM Studio connection...")
+    if memory_mgr.check_lm_studio():
+        print(f"  ✅ LM Studio connected at {config.lm_studio_url}")
+    else:
+        print(f"  ⚠️  LM Studio not reachable at {config.lm_studio_url}")
+        print("  ⚠️  Please make sure LM Studio is running and server is enabled!")
+    
     print("-" * 60)
     
     # Update config with CLI args
