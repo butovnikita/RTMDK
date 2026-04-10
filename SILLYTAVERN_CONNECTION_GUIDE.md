@@ -8,67 +8,74 @@ All endpoints tested and verified:
 - `/v1/chat/completions` → OpenAI chat format (WORKS)
 - `/v1/embeddings` → Embedding endpoint (WORKS)
 - `/api/v1/generate` → SillyTavern text completion format (WORKS)
-- `/v1/completions` → OpenAI completions format (WORKS)
+- `/api/backends/text-completions/generate` → ST backend format (WORKS)
+- `/api/backends/text-completions/status` → ST status check (WORKS)
 - `/dashboard` → Web UI (WORKS)
 
-## SillyTavern Configuration
+## ⚠️ FIX: Port Mismatch Error
 
-### Option 1: OpenAI API Type (RECOMMENDED)
+The error you're seeing:
+```
+:8000/api/backends/text-completions/status:1 Failed to load resource
+```
+
+This means SillyTavern is configured for port **8000**, but RTMDK server runs on port **8080**.
+
+### How to Fix
+
+1. In SillyTavern → API Connections
+2. Change the port from `8000` to `8080`
+3. Make sure Base URL is: `http://127.0.0.1:8080`
+
+## SillyTavern Configuration Options
+
+### Option 1: Text Completion API Type (RECOMMENDED for RTMDK)
 
 1. Open SillyTavern → Extensions → API Connections
-2. Select **API Type**: `OpenAI`
+2. Select **API Type**: `Text Completion` or `KoboldAI`
 3. Configure:
+   - **Base URL**: `http://127.0.0.1:8080`
+   - **API Key**: `rtmdk-local` (or leave empty)
+4. Click **Connect** - should show "Connected"
+
+### Option 2: OpenAI API Type
+
+1. Select **API Type**: `OpenAI`
+2. Configure:
    - **Base URL**: `http://127.0.0.1:8080/v1`
    - **API Key**: `rtmdk-local` (or leave empty)
    - **Model**: `rtmdk` or select from list
-4. Click **Connect** - should show "Connected"
-
-### Option 2: Text Completion API Type
-
-1. Select **API Type**: `Text Completion`
-2. Configure:
-   - **Base URL**: `http://127.0.0.1:8080`
-   - **API Key**: `rtmdk-local`
-3. Click **Connect**
-
-## Common Issues & Solutions
-
-### Issue 1: "Failed to connect"
-**Cause**: Server not running
-**Solution**: Run `python rtmdk_server.py`
-
-### Issue 2: "Model not found"
-**Cause**: SillyTavern looking for specific model
-**Solution**: The server accepts any model name, but shows LM Studio models
-
-### Issue 3: "401 Unauthorized"
-**Cause**: Wrong API key
-**Solution**: Use `rtmdk-local` or check your `.env` file
-
-### Issue 4: Streaming doesn't work
-**Cause**: SillyTavern expects specific streaming format
-**Solution**: Try disabling streaming in SillyTavern settings
+3. Click **Connect** - should show "Connected"
 
 ## Testing Connection
 
-### Manual Test
+### Manual Tests
 ```bash
 # Test health
 curl http://127.0.0.1:8080/health
 
-# Test models
-curl http://127.0.0.1:8080/v1/models
-
-# Test chat (OpenAI format)
-curl -X POST http://127.0.0.1:8080/v1/chat/completions ^
+# Test status (SillyTavern format)
+curl -X POST http://127.0.0.1:8080/api/backends/text-completions/status ^
   -H "Content-Type: application/json" ^
-  -d "{\"model\":\"rtmdk\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}],\"stream\":false}"
+  -d "{}"
 
 # Test text generation (SillyTavern format)
 curl -X POST http://127.0.0.1:8080/api/v1/generate ^
   -H "Content-Type: application/json" ^
   -d "{\"prompt\":\"Hello\",\"max_new_tokens\":50,\"stream\":false}"
 ```
+
+## Common Issues & Solutions
+
+### Issue 1: "Failed to connect" or 400 Bad Request
+**Cause**: Wrong port (8000 vs 8080)
+**Solution**: Change SillyTavern to use port 8080
+
+### Issue 2: Server not running
+**Solution**: Run `python rtmdk_server.py`
+
+### Issue 3: Streaming doesn't work
+**Solution**: Try disabling streaming in SillyTavern settings
 
 ## Web UI Dashboard
 
@@ -80,7 +87,3 @@ Features:
 - Memory statistics
 - Backup/Restore
 - UX feature toggles
-
-## Server Logs
-
-Check `server_test2.log` for startup logs and errors.

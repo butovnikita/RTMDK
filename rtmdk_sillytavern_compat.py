@@ -215,13 +215,20 @@ def create_sillytavern_router(memory, config: Dict[str, Any], lm_studio_availabl
                     stream = True
                     break
         
-        print(f"!!! ST-BACKEND REQUEST KEYS: {list(data.keys())}")
-        print(f"!!! ST-BACKEND stream: {repr(data.get('stream', 'MISSING'))}")
-        
         if stream:
             return await _handle_generate(data, True)
         else:
             return await _handle_generate(data, False)
+    
+    @router.post("/api/backends/text-completions/status")
+    async def st_status():
+        """SillyTavern status check endpoint."""
+        return {
+            "result": "success",
+            "model": _get_chat_model() or "rtmdk",
+            "max_length": 4096,
+            "max_context_length": 8192,
+        }
     
     # OpenAI completions format (for backward compatibility)
     @router.post("/v1/completions")
