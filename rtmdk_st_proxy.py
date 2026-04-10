@@ -427,9 +427,22 @@ async def api_v1_generate(request: Request):
         body = await request.json()
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
-    
+
     logger.info(f"ST /api/v1/generate request: stream={body.get('stream', False)}, prompt_len={len(body.get('prompt', ''))}")
-    
+
+    return await _handle_text_completion(body)
+
+
+@app.post("/v1/completions")
+async def api_v1_completions(request: Request):
+    """OpenAI-style text completion endpoint - delegates to same logic."""
+    try:
+        body = await request.json()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
+
+    logger.info(f"ST /v1/completions request: stream={body.get('stream', False)}, prompt_len={len(body.get('prompt', ''))}")
+
     return await _handle_text_completion(body)
 
 
@@ -462,9 +475,19 @@ async def _handle_text_completion(body: Dict):
     Handle text completion request from SillyTavern.
     Returns response in SillyTavern-expected format.
     """
+    # Support both text completion and chat formats
     prompt = body.get("prompt", "")
     session_id = extract_session_id(body)
     stream_requested = body.get("stream", False)
+
+    # If no prompt but messages exist (OpenAI format), convert
+    if not prompt and body.get("messages"):
+        messages = body.get("messages", [])
+        # Get last user message as prompt
+        for msg in reversed(messages):
+            if msg.get("role") == "user":
+                prompt = msg.get("content", "")
+                break
     
     if not prompt:
         raise HTTPException(status_code=400, detail="Empty prompt")
