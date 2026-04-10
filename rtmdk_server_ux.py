@@ -123,6 +123,7 @@ def create_ux_router(memory, config: Dict[str, Any]) -> APIRouter:
     
     @router.get("/health")
     async def health():
+        _init()
         mem = _get_mem()
         node_count = len(mem.field.nodes) if mem else 0
         result = _m["hm"].check_health()
