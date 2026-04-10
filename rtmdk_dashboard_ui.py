@@ -486,7 +486,7 @@ async function uploadBackup() {
 async function updateStats() {
     try {
         const [healthR, cacheR, diagR] = await Promise.all([
-            fetch(`${API_BASE}/v1/health`),
+            fetch(`${API_BASE}/health`),
             fetch(`${API_BASE}/v1/cache/stats`).catch(() => null),
             fetch(`${API_BASE}/api/diagnostics`).catch(() => null)
         ]);
@@ -496,17 +496,16 @@ async function updateStats() {
         if (healthR.ok) {
             const h = await healthR.json();
             
-            // Try multiple locations for node count
-            nodeCount = h.node_count || h.memory_nodes || 0;
+            // Try multiple locations for node count (server returns memory_nodes)
+            nodeCount = h.memory_nodes || h.node_count || 0;
             if (!nodeCount && h.checks) {
                 nodeCount = h.checks.node_count?.value || 0;
             }
             
-            const checks = h.checks || {};
-            const statQueries = checks.field_stats?.total_queries || h.total_queries || 0;
-            const statConsol = checks.field_stats?.consolidations || h.consolidations || 0;
-            const statBM25 = checks.field_stats?.bm25_fallbacks || 0;
-            const statEngram = h.stats?.engram_retrievals || 0;
+            const statQueries = h.total_queries || 0;
+            const statConsol = h.consolidations || 0;
+            const statBM25 = 0;
+            const statEngram = h.engram_retrievals || 0;
             
             document.getElementById('stat-nodes').textContent = nodeCount;
             document.getElementById('stat-queries').textContent = statQueries;
@@ -554,6 +553,7 @@ async function updateStats() {
             }
         }
     } catch(e) {
+        console.error('Stats update failed:', e);
         document.querySelector('#conn-status .status').className = 'status err';
         document.getElementById('conn-status').innerHTML = '<span class="status err"></span>Disconnected';
     }
