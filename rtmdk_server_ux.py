@@ -8,8 +8,9 @@ Usage:
 """
 import json, time
 from typing import Dict, Any
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse, PlainTextResponse
+from rtmdk_memory_v8 import RTMDKMemory
 
 def create_ux_router(memory, config: Dict[str, Any]) -> APIRouter:
     """Create FastAPI router with all UX endpoints.
@@ -121,7 +122,17 @@ def create_ux_router(memory, config: Dict[str, Any]) -> APIRouter:
     async def analytics(): _init(); return _m["an"].export_report()
     
     @router.get("/health")
-    async def health(): _init(); return _m["hm"].check_health()
+    async def health():
+        mem = _get_mem()
+        node_count = len(mem.field.nodes) if mem else 0
+        result = _m["hm"].check_health()
+        # Ensure consistent node count format
+        result["node_count"] = node_count
+        result["memory_nodes"] = node_count
+        result["checks"] = result.get("checks", {})
+        result["checks"]["node_count"] = result["checks"].get("node_count", {"value": node_count})
+        result["checks"]["node_count"]["value"] = node_count
+        return result
     
     @router.get("/metrics",response_class=PlainTextResponse)
     async def metrics(): _init(); return _m["hm"].get_metrics_text()
@@ -240,5 +251,52 @@ def create_ux_router(memory, config: Dict[str, Any]) -> APIRouter:
             config["RTMDK_EMBED_MODEL"] = model
             return {"status": "ok", "model": model}
         return {"error": "Missing model name"}
+
+    @router.post("/backup/upload")
+    async def upload_backup(request: Request):
+        """Upload and restore a memory backup file."""
+        import tempfile
+        import zipfile
+        
+        mem = _get_mem()
+        if not mem:
+            return {"error": "Memory not initialized"}
+        
+        # Parse multipart form data
+        form = await request.form()
+        file = form.get("file")
+        if not file or not hasattr(file, 'filename'):
+            return {"error": "No file provided"}
+        
+        # Save temp file
+        content = await file.read()
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+            f.write(content)
+            temp_path = f.name
+        
+        try:
+            # Restore memory from backup
+            mem2 = RTMDKMemory.import_field(temp_path, mem.embedder)
+            if not mem2 or len(mem2.field.nodes) == 0:
+                return {"error": "Failed to restore: no nodes found"}
+            
+            # Copy nodes to current memory
+            mem.field.nodes.clear()
+            mem.field.node_index.clear()
+            for nid, node in mem2.field.nodes.items():
+                mem.field.nodes[nid] = node
+                mem.field.node_index.append(nid)
+            
+            # Copy stats
+            mem.field.stats.update(mem2.field.stats)
+            
+            node_count = len(mem.field.nodes)
+            return {"status": "ok", "nodes_restored": node_count}
+        except Exception as e:
+            return {"error": f"Restore failed: {str(e)}"}
+        finally:
+            import os
+            try: os.unlink(temp_path)
+            except: pass
 
     return router

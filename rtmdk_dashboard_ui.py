@@ -196,6 +196,19 @@ button.success { background: var(--green); color: #fff; border-color: var(--gree
     </div>
 </div>
 
+<!-- BACKUP MANAGEMENT -->
+<h2>💾 Backup & Restore</h2>
+<div class="card">
+    <h3>Upload Memory Backup</h3>
+    <div style="display:flex;gap:8px;align-items:center;">
+        <input type="file" id="backup-file" accept=".json,.json.gz" style="flex:1;">
+        <button class="primary" onclick="uploadBackup()">📤 Upload & Restore</button>
+    </div>
+    <div id="backup-status" style="margin-top:8px;font-size:0.9em;color:var(--text-dim);">
+        Upload a .json backup file to restore memory state.
+    </div>
+</div>
+
 <!-- QUICK ACTIONS -->
 <h2>⚡ Quick Actions</h2>
 <div class="card">
@@ -400,6 +413,51 @@ async function doAction(action) {
     } catch(e) { notify('Error: ' + e.message, 'err'); }
 }
 
+async function uploadBackup() {
+    const fileInput = document.getElementById('backup-file');
+    const statusEl = document.getElementById('backup-status');
+    const file = fileInput.files[0];
+    
+    if (!file) {
+        statusEl.textContent = '⚠️ Please select a backup file first.';
+        statusEl.style.color = 'var(--yellow)';
+        return;
+    }
+    
+    statusEl.textContent = '📤 Uploading and restoring...';
+    statusEl.style.color = 'var(--text-dim)';
+    logAction(`Uploading backup: ${file.name}`);
+    
+    try {
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        const r = await fetch(`${API_BASE}/v1/backup/upload`, {
+            method: 'POST',
+            body: formData
+        });
+        
+        const d = await r.json();
+        
+        if (d.error) {
+            statusEl.textContent = `❌ Error: ${d.error}`;
+            statusEl.style.color = 'var(--red)';
+            logAction(`Backup restore failed: ${d.error}`);
+        } else {
+            statusEl.textContent = `✅ Restored ${d.nodes_restored} nodes from backup!`;
+            statusEl.style.color = 'var(--green)';
+            logAction(`Backup restored: ${d.nodes_restored} nodes`);
+            fileInput.value = '';
+            // Refresh stats
+            setTimeout(updateStats, 500);
+        }
+    } catch(e) {
+        statusEl.textContent = `❌ Upload failed: ${e.message}`;
+        statusEl.style.color = 'var(--red)';
+        logAction(`Backup upload error: ${e.message}`);
+    }
+}
+
 async function updateStats() {
     try {
         const [healthR, cacheR, diagR] = await Promise.all([
@@ -408,14 +466,28 @@ async function updateStats() {
             fetch(`${API_BASE}/api/diagnostics`).catch(() => null)
         ]);
         
+        let nodeCount = 0;
+        
         if (healthR.ok) {
             const h = await healthR.json();
+            
+            // Try multiple locations for node count
+            nodeCount = h.node_count || h.memory_nodes || 0;
+            if (!nodeCount && h.checks) {
+                nodeCount = h.checks.node_count?.value || 0;
+            }
+            
             const checks = h.checks || {};
-            document.getElementById('stat-nodes').textContent = checks.node_count?.value || 0;
-            document.getElementById('stat-queries').textContent = checks.field_stats?.total_queries || 0;
-            document.getElementById('stat-consol').textContent = checks.field_stats?.consolidations || 0;
-            document.getElementById('stat-bm25').textContent = checks.field_stats?.bm25_fallbacks || 0;
-            document.getElementById('stat-engram').textContent = h.stats?.engram_retrievals || 0;
+            const statQueries = checks.field_stats?.total_queries || h.total_queries || 0;
+            const statConsol = checks.field_stats?.consolidations || h.consolidations || 0;
+            const statBM25 = checks.field_stats?.bm25_fallbacks || 0;
+            const statEngram = h.stats?.engram_retrievals || 0;
+            
+            document.getElementById('stat-nodes').textContent = nodeCount;
+            document.getElementById('stat-queries').textContent = statQueries;
+            document.getElementById('stat-consol').textContent = statConsol;
+            document.getElementById('stat-bm25').textContent = statBM25;
+            document.getElementById('stat-engram').textContent = statEngram;
             document.querySelector('#conn-status .status').className = 'status ok';
         }
         
@@ -430,10 +502,13 @@ async function updateStats() {
             const nodesSpan = document.getElementById('diag-nodes');
             const lmSpan = document.getElementById('diag-lm');
             
+            // Use diagnostic node count if health didn't have it
+            if (nodeCount === 0 && d.node_count) nodeCount = d.node_count;
+            nodesSpan.textContent = nodeCount;
+            
             if (d.memory_initialized) {
                 memSpan.textContent = 'Ready';
                 memSpan.className = 'status ok';
-                nodesSpan.textContent = d.node_count;
             } else {
                 memSpan.textContent = 'Not initialized';
                 memSpan.className = 'status err';
