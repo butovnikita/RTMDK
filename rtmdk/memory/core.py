@@ -1401,7 +1401,6 @@ class NeuralODEDynamics:
         self.gamma = 0.02
         self.W = np.random.randn(latent_dim, latent_dim).astype(np.float32) * 0.01
         self._response_history: deque = deque(maxlen=100)
-        self._state_history: deque = deque(maxlen=2)
 
     def _sigma(self, x: NDArray) -> NDArray:
         return np.tanh(x)
@@ -4692,6 +4691,11 @@ class RTMDKField:
         input_signal = None
         if inputs:
             input_signal = np.array([self._project(inp["embedding"]) for inp in inputs]).flatten()
+            # Validate input_signal length matches node count to prevent ODE reshape crash
+            expected_len = len(ordered_nodes) * self.cfg.latent_dim
+            if len(input_signal) != expected_len:
+                logger.warning(f"ODE input_signal length {len(input_signal)} != expected {expected_len} (nodes={len(ordered_nodes)}). Falling back to no input signal.")
+                input_signal = None
         topo_grad = self.ode_dynamics.compute_topology_gradient(self.nodes)
         if use_sde:
             trajectory = self.ode_dynamics.evolve_with_noise(initial_state, input_signal, topo_grad)
@@ -4776,6 +4780,10 @@ class RTMDKField:
         if inputs:
             for inp in inputs:
                 emb = inp["embedding"]
+                # Validate embedding dimension to prevent silent corruption
+                if len(emb) != self.cfg.embedding_dim:
+                    logger.warning(f"Embedding dimension mismatch in step(): expected {self.cfg.embedding_dim}, got {len(emb)}. Skipping.")
+                    continue
                 phase = inp.get("phase", 0.0)
                 content = inp.get("content", {})
                 session_id = inp.get("session_id")
@@ -5822,12 +5830,22 @@ class RTMDKMemory(BaseModel):
         return {"rtmdk_context": context}
 
     def _get_node_embedding(self, nid: str, node) -> Optional[np.ndarray]:
-        """Retrieve stored embedding for a node, or reconstruct from latent position."""
+        """Retrieve stored embedding for a node, or approximate from latent position."""
         # Check if node has modal_embedding (cross-modal)
         if hasattr(node, 'modal_embedding') and node.modal_embedding is not None:
             return node.modal_embedding
-        # Fallback: return None (engram creation will skip this node)
-        # Note: We can't reliably reconstruct from latent_pos without the inverse projection
+        # Fallback: approximate embedding by inverse-projection from latent_pos
+        # This is lossy but better than nothing for engram similarity
+        if hasattr(node, 'latent_pos') and node.latent_pos is not None:
+            # Pad latent_pos (64d) to embedding_dim (768d) with zeros
+            # Engram similarity uses cosine — zeros won't dominate
+            emb_dim = self.field.cfg.embedding_dim
+            latent = node.latent_pos
+            if len(latent) < emb_dim:
+                approx = np.zeros(emb_dim, dtype=np.float32)
+                approx[:len(latent)] = latent
+                return approx
+            return latent[:emb_dim] if len(latent) > emb_dim else latent
         return None
 
     def _detect_tags(self, text: str) -> List[str]:
