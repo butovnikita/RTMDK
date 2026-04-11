@@ -38,10 +38,10 @@ def test_embedder_connection():
         emb = embedder("test embedding")
         assert emb is not None, "Embedding should not be None"
         assert emb.shape[0] == 768, f"Expected 768 dimensions, got {emb.shape[0]}"
-        print(f"✅ Embedder connected: dim={emb.shape[0]}")
+        print(f"[OK] Embedder connected: dim={emb.shape[0]}")
         return embedder
     except Exception as e:
-        print(f"❌ Embedder FAILED: {e}")
+        print(f"[FAIL] Embedder FAILED: {e}")
         print("   Make sure LM Studio is running with embedding model loaded")
         raise
 
@@ -61,7 +61,7 @@ def test_memory_with_real_embeddings(embedder):
     )
     
     memory = RTMDKMemory(config=config, embedder=embedder)
-    print(f"✅ Memory created with real embedder")
+    print(f"[OK] Memory created with real embedder")
     
     # Save test messages
     test_messages = [
@@ -78,9 +78,9 @@ def test_memory_with_real_embeddings(embedder):
                 {"input": input_text, "session_id": "real_test"},
                 {"output": output_text}
             )
-            print(f"✅ Message {i+1} saved")
+            print(f"[OK] Message {i+1} saved")
         except Exception as e:
-            print(f"❌ Message {i+1} FAILED: {e}")
+            print(f"[FAIL] Message {i+1} FAILED: {e}")
             raise
     
     node_count = len(memory.field.nodes)
@@ -112,16 +112,16 @@ def test_query_real_memory(memory):
             
             if context and context not in ("No relevant memory.", "[]"):
                 found = expected_keyword.lower() in context.lower()
-                status = "✅" if found else "⚠️"
+                status = "[OK]" if found else "[WARN]"
                 print(f"{status} Query: '{query}'")
                 print(f"   Keyword '{expected_keyword}': {'FOUND' if found else 'NOT FOUND'}")
                 results.append({"query": query, "found": found, "keyword": expected_keyword})
             else:
-                print(f"❌ Query: '{query}' - No context")
+                print(f"[FAIL] Query: '{query}' - No context")
                 results.append({"query": query, "found": False, "keyword": expected_keyword})
                 
         except Exception as e:
-            print(f"❌ Query FAILED: '{query}' - {e}")
+            print(f"[FAIL] Query FAILED: '{query}' - {e}")
             results.append({"query": query, "found": False, "error": str(e)})
     
     # Calculate recall
@@ -151,7 +151,7 @@ def test_sillytavern_endpoints(memory):
             "http://127.0.0.1:12345/v1"  # lm_studio_url
         )
         
-        print("✅ SillyTavern router created successfully")
+        print("[OK] SillyTavern router created successfully")
         print(f"   Number of routes: {len(router.routes)}")
         
         # Check all expected routes exist
@@ -160,14 +160,14 @@ def test_sillytavern_endpoints(memory):
         
         for path in expected_paths:
             if any(path in rp for rp in route_paths):
-                print(f"✅ Route {path} exists")
+                print(f"[OK] Route {path} exists")
             else:
-                print(f"⚠️  Route {path} not found")
+                print(f"[WARN]  Route {path} not found")
         
         return True
         
     except Exception as e:
-        print(f"❌ SillyTavern router FAILED: {e}")
+        print(f"[FAIL] SillyTavern router FAILED: {e}")
         return False
 
 
@@ -197,7 +197,7 @@ def test_health_endpoint():
         router = create_ux_router(memory, {})
         
         # Check router created
-        print(f"✅ UX router created: {len(router.routes)} routes")
+        print(f"[OK] UX router created: {len(router.routes)} routes")
         
         # Check health route exists
         health_route = None
@@ -207,14 +207,14 @@ def test_health_endpoint():
                 break
         
         if health_route:
-            print(f"✅ Health endpoint exists")
+            print(f"[OK] Health endpoint exists")
         else:
-            print(f"⚠️  Health endpoint not found")
+            print(f"[WARN]  Health endpoint not found")
         
         return True
         
     except Exception as e:
-        print(f"❌ Health endpoint FAILED: {e}")
+        print(f"[FAIL] Health endpoint FAILED: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -236,19 +236,19 @@ def test_backup_restore(memory):
         # Export
         node_count_before = len(memory.field.nodes)
         memory.export_field(save_path)
-        print(f"✅ Memory exported: {node_count_before} nodes, {os.path.getsize(save_path)} bytes")
+        print(f"[OK] Memory exported: {node_count_before} nodes, {os.path.getsize(save_path)} bytes")
         
         # Import
         embedder = LMStudioEmbedder()
         memory2 = RTMDKMemory.import_field(save_path, embedder)
         node_count_after = len(memory2.field.nodes)
         
-        print(f"✅ Memory imported: {node_count_after} nodes")
+        print(f"[OK] Memory imported: {node_count_after} nodes")
         
         assert node_count_before == node_count_after, \
             f"Node count mismatch: {node_count_before} before, {node_count_after} after"
         
-        print(f"✅ Node counts match")
+        print(f"[OK] Node counts match")
         
         # Verify a node
         first_nid = list(memory.field.nodes.keys())[0]
@@ -256,12 +256,12 @@ def test_backup_restore(memory):
         node2 = memory2.field.nodes[first_nid]
         
         assert node1.content.get("text") == node2.content.get("text"), "Content mismatch"
-        print(f"✅ Node content verified")
+        print(f"[OK] Node content verified")
         
         return True
         
     except Exception as e:
-        print(f"❌ Backup/restore FAILED: {e}")
+        print(f"[FAIL] Backup/restore FAILED: {e}")
         return False
     finally:
         import shutil
@@ -273,9 +273,9 @@ def test_backup_restore(memory):
 
 def run_all_real_tests():
     """Run all real integration tests."""
-    print("\n" + "🧪 " * 35)
+    print("\n" + "[TEST] " * 35)
     print("RTMDK REAL INTEGRATION TEST SUITE (LM Studio)")
-    print("🧪 " * 35 + "\n")
+    print("[TEST] " * 35 + "\n")
     
     all_passed = True
     recall = 0
@@ -301,15 +301,15 @@ def run_all_real_tests():
         
         print("\n" + "=" * 70)
         if recall >= 80:
-            print(f"🎉 ALL TESTS PASSED! Recall@5: {recall:.0f}%")
+            print(f"[PASS] ALL TESTS PASSED! Recall@5: {recall:.0f}%")
         else:
-            print(f"⚠️  TESTS COMPLETED with low recall: {recall:.0f}%")
+            print(f"[WARN]  TESTS COMPLETED with low recall: {recall:.0f}%")
             print("   This may indicate embedding quality issues")
         print("=" * 70)
         
     except Exception as e:
         print("\n" + "=" * 70)
-        print(f"❌ TEST FAILED: {e}")
+        print(f"[FAIL] TEST FAILED: {e}")
         print("=" * 70)
         import traceback
         traceback.print_exc()

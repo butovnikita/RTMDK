@@ -64,7 +64,7 @@ def test_1_memory_creation():
     assert memory.field is not None, "Field should exist"
     assert len(memory.field.nodes) == 0, "Should start with 0 nodes"
     
-    print("✅ Memory initialized successfully")
+    print("[OK] Memory initialized successfully")
     print(f"   Config: latent_dim={config.latent_dim}, learn_projection={config.learn_projection}")
     print(f"   Initial nodes: {len(memory.field.nodes)}")
     return memory
@@ -90,9 +90,9 @@ def test_2_save_context(memory):
                 {"input": input_text, "session_id": "test"},
                 {"output": output_text}
             )
-            print(f"✅ Message {i+1} saved: '{input_text[:40]}...'")
+            print(f"[OK] Message {i+1} saved: '{input_text[:40]}...'")
         except Exception as e:
-            print(f"❌ Message {i+1} FAILED: {e}")
+            print(f"[FAIL] Message {i+1} FAILED: {e}")
             raise
     
     node_count = len(memory.field.nodes)
@@ -129,18 +129,18 @@ def test_3_query_memory(memory):
             if context and context not in ("No relevant memory.", "[]"):
                 # Check if we got some context
                 found = expected_keyword.lower() in context.lower()
-                status = "✅" if found else "⚠️"
+                status = "[OK]" if found else "[WARN]"
                 print(f"{status} Query: '{query}'")
                 print(f"   Context length: {len(context)} chars")
                 if not found:
                     print(f"   Keyword '{expected_keyword}' NOT found in context")
                     print(f"   Context preview: {context[:100]}...")
             else:
-                print(f"❌ Query: '{query}' - No context returned")
+                print(f"[FAIL] Query: '{query}' - No context returned")
                 print(f"   Context: {context}")
-                
+
         except Exception as e:
-            print(f"❌ Query FAILED: '{query}' - {e}")
+            print(f"[FAIL] Query FAILED: '{query}' - {e}")
             raise
     
     # Check query stats
@@ -161,11 +161,11 @@ def test_4_memory_persistence(memory, temp_dir):
     
     try:
         memory.export_field(save_path)
-        print(f"✅ Memory exported to: {save_path}")
+        print(f"[OK] Memory exported to: {save_path}")
         print(f"   File size: {os.path.getsize(save_path)} bytes")
         print(f"   Nodes before save: {node_count_before}")
     except Exception as e:
-        print(f"❌ Export FAILED: {e}")
+        print(f"[FAIL] Export FAILED: {e}")
         raise
     
     # Load memory into new instance
@@ -174,27 +174,27 @@ def test_4_memory_persistence(memory, temp_dir):
         memory2 = RTMDKMemory.import_field(save_path, embedder)
         node_count_after = len(memory2.field.nodes)
         
-        print(f"✅ Memory imported successfully")
+        print(f"[OK] Memory imported successfully")
         print(f"   Nodes after load: {node_count_after}")
-        
+
         assert node_count_before == node_count_after, \
             f"Node count mismatch: {node_count_before} before, {node_count_after} after"
-        
+
         # Verify nodes have same data
         for nid in list(memory.field.nodes.keys())[:5]:
             node1 = memory.field.nodes[nid]
             node2 = memory2.field.nodes[nid]
-            
+
             assert node1.salience == node2.salience, f"Salience mismatch for {nid}"
             assert node1.amplitude == node2.amplitude, f"Amplitude mismatch for {nid}"
             assert node1.content.get("text") == node2.content.get("text"), f"Content mismatch for {nid}"
-        
-        print(f"✅ All verified nodes match")
-        
+
+        print(f"[OK] All verified nodes match")
+
         return memory2
-        
+
     except Exception as e:
-        print(f"❌ Import FAILED: {e}")
+        print(f"[FAIL] Import FAILED: {e}")
         raise
 
 
@@ -214,26 +214,26 @@ def test_5_projection_logic(memory):
         if hasattr(memory.field, '_project'):
             latent = memory.field._project(test_embedding)
             assert latent.shape == (256,), f"Expected shape (256,), got {latent.shape}"
-            print(f"✅ _project works: output shape {latent.shape}")
-        
+            print(f"[OK] _project works: output shape {latent.shape}")
+
         # Test projection_learner if exists
         if hasattr(memory.field, 'projection_learner') and memory.field.projection_learner is not None:
             proj = memory.field.projection_learner
             result = proj.project(test_embedding)
             assert result.shape == (256,), f"Expected shape (256,), got {result.shape}"
-            print(f"✅ projection_learner.project works: output shape {result.shape}")
-            
+            print(f"[OK] projection_learner.project works: output shape {result.shape}")
+
             # Test update doesn't crash
             result2 = proj.update(test_embedding)
             assert result2.shape == (256,), f"Expected shape (256,), got {result2.shape}"
-            print(f"✅ projection_learner.update works: output shape {result2.shape}")
-            
+            print(f"[OK] projection_learner.update works: output shape {result2.shape}")
+
         else:
-            print("⚠️  No projection_learner (using manual projection)")
-            print("✅ Manual projection works (verified by successful queries)")
-            
+            print("[WARN]  No projection_learner (using manual projection)")
+            print("[OK] Manual projection works (verified by successful queries)")
+
     except Exception as e:
-        print(f"❌ Projection FAILED: {e}")
+        print(f"[FAIL] Projection FAILED: {e}")
         raise
 
 
@@ -253,9 +253,9 @@ def test_6_stats_consistency(memory):
     
     for key in expected_keys:
         if key in stats:
-            print(f"✅ Stat '{key}': {stats[key]}")
+            print(f"[OK] Stat '{key}': {stats[key]}")
         else:
-            print(f"⚠️  Stat '{key}' missing (optional)")
+            print(f"[WARN]  Stat '{key}' missing (optional)")
     
     # Verify node count matches
     node_count = len(memory.field.nodes)
@@ -264,8 +264,8 @@ def test_6_stats_consistency(memory):
     
     assert node_count == len(memory.field.node_index), \
         f"Node count mismatch: {node_count} nodes, {len(memory.field.node_index)} in index"
-    
-    print("✅ Stats consistent")
+
+    print("[OK] Stats consistent")
     return True
 
 
@@ -287,29 +287,29 @@ def test_7_error_handling():
     # Test empty query
     try:
         ctx = memory.load_memory_variables({"input": "", "session_id": "test"})
-        print("✅ Empty query handled gracefully")
+        print("[OK] Empty query handled gracefully")
     except Exception as e:
-        print(f"❌ Empty query FAILED: {e}")
+        print(f"[FAIL] Empty query FAILED: {e}")
         raise
-    
+
     # Test very long query
     try:
         long_query = "test " * 1000
         ctx = memory.load_memory_variables({"input": long_query, "session_id": "test"})
-        print("✅ Long query handled gracefully")
+        print("[OK] Long query handled gracefully")
     except Exception as e:
-        print(f"❌ Long query FAILED: {e}")
+        print(f"[FAIL] Long query FAILED: {e}")
         raise
-    
+
     # Test invalid session
     try:
         memory.save_context(
             {"input": "test", "session_id": None},
             {"output": "test"}
         )
-        print("✅ None session_id handled gracefully")
+        print("[OK] None session_id handled gracefully")
     except Exception as e:
-        print(f"❌ None session_id FAILED: {e}")
+        print(f"[FAIL] None session_id FAILED: {e}")
         raise
     
     return True
@@ -317,9 +317,9 @@ def test_7_error_handling():
 
 def run_all_tests():
     """Run all integration tests."""
-    print("\n" + "🧪 " * 35)
+    print("\n" + "[TEST] " * 35)
     print("RTMDK INTEGRATION TEST SUITE")
-    print("🧪 " * 35 + "\n")
+    print("[TEST] " * 35 + "\n")
     
     temp_dir = tempfile.mkdtemp(prefix="rtmdk_test_")
     all_passed = True
@@ -335,12 +335,12 @@ def run_all_tests():
         test_7_error_handling()
         
         print("\n" + "=" * 70)
-        print("🎉 ALL TESTS PASSED!")
+        print("[PASS] ALL TESTS PASSED!")
         print("=" * 70)
-        
+
     except Exception as e:
         print("\n" + "=" * 70)
-        print(f"❌ TEST FAILED: {e}")
+        print(f"[FAIL] TEST FAILED: {e}")
         print("=" * 70)
         import traceback
         traceback.print_exc()

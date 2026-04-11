@@ -1,0 +1,71 @@
+# RTMDK Home / SillyTavern Docker Compose
+# Includes main server (8080) + SillyTavern proxy (5000).
+version: "3.8"
+
+services:
+  # RTMDK Memory Server — main API with SillyTavern compat endpoints
+  rtmdk-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.home
+    container_name: rtmdk-home-server
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - RTMDK_HOST=0.0.0.0
+      - RTMDK_PORT=8080
+      - RTMDK_LOG_LEVEL=INFO
+      - RTMDK_MEMORY_FILE=/root/.rtmdk/memory.json
+      - LM_STUDIO_URL=${LM_STUDIO_URL:-http://host.docker.internal:12345/v1}
+      - RTMDK_EMBED_MODEL=${RTMDK_EMBED_MODEL:-nomic-embed-text-v1.5}
+      - RTMDK_API_KEY=${RTMDK_API_KEY:-rtmdk-local}
+      - RTMDK_ENABLE_LM_STUDIO=${RTMDK_ENABLE_LM_STUDIO:-true}
+      - RTMDK_AUTO_SAVE_INTERVAL=${RTMDK_AUTO_SAVE_INTERVAL:-60}
+    volumes:
+      - rtmdk-memory:/root/.rtmdk
+      - ./st_config.json:/app/st_config.json:ro
+    networks:
+      - rtmdk-home-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # SillyTavern Proxy — sits between ST and LM Studio with memory integration
+  rtmdk-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.home
+    container_name: rtmdk-home-proxy
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - RTMDK_URL=http://rtmdk-server:8080
+      - LM_STUDIO_URL=${LM_STUDIO_URL:-http://host.docker.internal:12345/v1}
+      - PROXY_PORT=5000
+    volumes:
+      - ./st_config.json:/app/st_config.json:ro
+    networks:
+      - rtmdk-home-network
+    depends_on:
+      rtmdk-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    command: ["python", "rtmdk_st_proxy.py", "--rtmdk", "http://rtmdk-server:8080", "--port", "5000"]
+
+volumes:
+  rtmdk-memory:
+    driver: local
+
+networks:
+  rtmdk-home-network:
+    driver: bridge

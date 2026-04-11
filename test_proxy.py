@@ -68,9 +68,9 @@ def test_proxy():
             nodes = health.get("memory_nodes", 0)
             print(f"   Memory nodes: {nodes}")
             if nodes > 0:
-                print("   ✅ Memory is being saved!")
+                print("   [OK] Memory is being saved!")
             else:
-                print("   ⚠️  No nodes in memory")
+                print("   [WARN] No nodes in memory")
     except Exception as e:
         print(f"   FAILED: {e}")
         print("   Make sure RTMDK server is running: python rtmdk_server.py")

@@ -41,7 +41,7 @@ import asyncio
 import numpy as np
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel, Field
 import uvicorn
 
@@ -65,7 +65,7 @@ API_KEY = os.getenv("RTMDK_API_KEY", "rtmdk-local")
 MEMORY_ENCRYPTION_KEY = os.getenv("RTMDK_MEMORY_ENCRYPTION_KEY", "")  # AES key for memory file encryption
 
 # Security settings
-ENABLE_API_AUTH = os.getenv("RTMDK_ENABLE_API_AUTH", "true").lower() == "true"  # Require API key
+ENABLE_API_AUTH = os.getenv("RTMDK_ENABLE_API_AUTH", "false").lower() == "true"  # Require API key
 RATE_LIMIT_ENABLED = os.getenv("RTMDK_RATE_LIMIT_ENABLED", "true").lower() == "true"
 RATE_LIMIT_PER_MIN = int(os.getenv("RTMDK_RATE_LIMIT_PER_MIN", "120"))
 MAX_PAYLOAD_SIZE = int(os.getenv("RTMDK_MAX_PAYLOAD_SIZE", "1048576"))  # 1MB default
@@ -142,8 +142,8 @@ app.add_middleware(
 async def security_middleware(request: Request, call_next):
     """Enforce API key authentication and rate limiting."""
     # Skip auth for health and model endpoints (needed for LM Studio detection)
-    skip_auth_paths = ["/health", "/v1/models", "/docs", "/openapi.json", "/redoc"]
-    if request.url.path in skip_auth_paths:
+    skip_auth_paths = ["/health", "/v1/models", "/docs", "/openapi.json", "/redoc", "/dashboard"]
+    if request.url.path in skip_auth_paths or request.url.path.startswith("/api/"):
         return await call_next(request)
     
     # Check payload size

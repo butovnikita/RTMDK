@@ -4121,7 +4121,8 @@ class RTMDKField:
         self._meta_controller_initialized = value is not None
 
     def add_node(self, embedding: NDArray, content: Dict, phase: Optional[float] = None,
-                 node_id: Optional[str] = None, session_id: Optional[str] = None, modality: str = "text") -> str:
+                 node_id: Optional[str] = None, session_id: Optional[str] = None, modality: str = "text",
+                 skip_projection: bool = False) -> str:
         # Phase 14 Track 2: Security validation
         if self.security:
             text = content.get("text", "")
@@ -4132,7 +4133,15 @@ class RTMDKField:
                 return ""  # Reject node
 
         nid = node_id or f"n_{len(self.nodes)}_{int(time.time() * 1000)}"
-        if self.projection_learner:
+        if skip_projection:
+            # Input is already in latent space (e.g., crystallization)
+            if len(embedding) != self.cfg.latent_dim:
+                raise ValueError(
+                    f"skip_projection=True but embedding dim {len(embedding)} != "
+                    f"latent_dim {self.cfg.latent_dim}"
+                )
+            latent = embedding
+        elif self.projection_learner:
             latent = self.projection_learner.update(embedding)
             self.stats["projection_updates"] += 1
         else:
@@ -5183,14 +5192,14 @@ class RTMDKField:
             lines.append(f"• High resonance ({len(high_res)} nodes): " + " | ".join(summaries))
         if contradictions:
             texts = [n.content.get("text", "unknown")[:40] for n in contradictions[:3]]
-            lines.append(f"⚠️ Conflicting nodes: " + " | ".join(texts))
+            lines.append(f"[WARN] Conflicting nodes: " + " | ".join(texts))
         if procedural:
-            lines.append("🛠 Procedural patterns available (how-to)")
+            lines.append("[TOOL] Procedural patterns available (how-to)")
 
         # Add lineage summary for complex nodes
         lineage_nodes = [(nid, n) for nid, r, n in results if n.lineage]
         if lineage_nodes:
-            lines.append(f"📊 Consolidated memories: {len(lineage_nodes)} nodes with synthesis history")
+            lines.append(f"[STATS] Consolidated memories: {len(lineage_nodes)} nodes with synthesis history")
 
         return "\n".join(lines)
 
@@ -5230,7 +5239,7 @@ class RTMDKField:
                     "crystallized_from": [m.id for m in members],
                     "crystallized_at": time.time(),
                 }
-                new_id = self.add_node(new_pos, new_content, phase=float(new_phase % (2 * np.pi)))
+                new_id = self.add_node(new_pos, new_content, phase=float(new_phase % (2 * np.pi)), skip_projection=True)
                 self.nodes[new_id].tier = "semantic"
                 # Mark originals as archived
                 for m in members:

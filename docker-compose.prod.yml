@@ -1,4 +1,5 @@
-# C4: Docker Compose for RTMDK Production Deployment
+# RTMDK Production Docker Compose
+# Clean deployment — No SillyTavern modules.
 version: "3.8"
 
 services:
@@ -13,9 +14,14 @@ services:
     environment:
       - RTMDK_HOST=0.0.0.0
       - RTMDK_PORT=8080
-      - RTMDK_LOG_FORMAT=json
+      - RTMDK_LOG_LEVEL=INFO
       - RTMDK_MEMORY_FILE=/data/memory.json
-      - RTMDK_ENABLE_LM_STUDIO=false
+      - LM_STUDIO_URL=${LM_STUDIO_URL:-http://host.docker.internal:12345/v1}
+      - RTMDK_EMBED_MODEL=${RTMDK_EMBED_MODEL:-nomic-embed-text-v1.5}
+      - RTMDK_API_KEY=${RTMDK_API_KEY:-rtmdk-local}
+      - RTMDK_ENABLE_API_AUTH=${RTMDK_ENABLE_API_AUTH:-true}
+      - RTMDK_ENABLE_LM_STUDIO=${RTMDK_ENABLE_LM_STUDIO:-true}
+      - RTMDK_AUTO_SAVE_INTERVAL=${RTMDK_AUTO_SAVE_INTERVAL:-60}
     volumes:
       - rtmdk-data:/data
     healthcheck:

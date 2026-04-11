@@ -1,10 +1,10 @@
 @echo off
-title RTMDK SillyTavern Launcher
+title RTMDK Production Server
 chcp 65001 >nul
 echo.
 echo ╔══════════════════════════════════════════════════╗
-echo ║       RTMDK SillyTavern Launcher v1.0.0         ║
-echo ║  Starts RTMDK Server + SillyTavern Proxy        ║
+echo ║       RTMDK Production Server v8.0.0            ║
+echo ║  OpenAI-compatible API (No SillyTavern)         ║
 echo ╚══════════════════════════════════════════════════╝
 echo.
 
@@ -21,7 +21,7 @@ echo [*] Checking dependencies...
 python -c "import fastapi" 2>nul
 if errorlevel 1 (
     echo [!] Installing dependencies...
-    pip install -r requirements-home.txt
+    pip install -r requirements-prod.txt
     if errorlevel 1 (
         echo [ERROR] Failed to install dependencies!
         pause
@@ -31,8 +31,8 @@ if errorlevel 1 (
 echo [+] Dependencies OK
 echo.
 
-REM Start launcher
-echo [*] Starting RTMDK + SillyTavern Proxy...
+REM Start production server
+echo [*] Starting RTMDK Production Server...
 echo.
-python rtmdk_sillytavern_launcher.py %*
+python start_production.py %*
 pause

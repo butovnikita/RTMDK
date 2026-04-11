@@ -348,7 +348,7 @@ select:disabled {
   <!-- Header -->
   <div class="header">
     <div>
-      <h1>🧠 RTMDK Dashboard</h1>
+      <h1>RTMDK Dashboard</h1>
       <div class="version">Resonance-Topological Memory v8.0.0</div>
     </div>
     <div id="conn-status">
@@ -359,28 +359,28 @@ select:disabled {
   <!-- Status Bar -->
   <div class="status-bar">
     <div class="status-item">
-      <div class="icon blue">📦</div>
+      <div class="icon blue">Nodes</div>
       <div class="info">
         <div class="label">Memory Nodes</div>
         <div class="value" id="stat-nodes">0</div>
       </div>
     </div>
     <div class="status-item">
-      <div class="icon green">🔍</div>
+      <div class="icon green">Search</div>
       <div class="info">
         <div class="label">Queries</div>
         <div class="value" id="stat-queries">0</div>
       </div>
     </div>
     <div class="status-item">
-      <div class="icon yellow">🔗</div>
+      <div class="icon yellow">Links</div>
       <div class="info">
         <div class="label">Consolidations</div>
         <div class="value" id="stat-consol">0</div>
       </div>
     </div>
     <div class="status-item">
-      <div class="icon red">💾</div>
+      <div class="icon red">Storage</div>
       <div class="info">
         <div class="label">Cache Hit Rate</div>
         <div class="value" id="stat-cache">—</div>
@@ -391,7 +391,7 @@ select:disabled {
   <!-- Provider & Model Configuration -->
   <div class="grid-2">
     <div class="card">
-      <h2>🔌 API Configuration</h2>
+      <h2>API Configuration</h2>
       <div class="form-group">
         <label>Provider</label>
         <select id="provider-select" onchange="onProviderChange()">
@@ -424,21 +424,21 @@ select:disabled {
         <input type="text" id="custom-url-input" placeholder="https://api.example.com/v1">
       </div>
       <div class="btn-group">
-        <button class="btn btn-primary" onclick="applyProvider()">💾 Apply Provider</button>
-        <button class="btn btn-secondary" onclick="fetchModels()">🔄 Refresh Models</button>
-        <button class="btn btn-success" onclick="testConnection()">🔗 Test Connection</button>
+        <button class="btn btn-primary" onclick="applyProvider()">Apply Provider</button>
+        <button class="btn btn-secondary" onclick="fetchModels()">Refresh Models</button>
+        <button class="btn btn-success" onclick="testConnection()">Test Connection</button>
       </div>
       <div id="test-result" class="test-result" style="display: none;"></div>
     </div>
 
     <!-- Backup & Restore -->
     <div class="card">
-      <h2>💾 Backup & Restore</h2>
+      <h2>Backup & Restore</h2>
       <div class="form-group">
         <label>Upload Memory Backup (.json)</label>
         <div class="file-input-wrapper">
           <input type="file" id="backup-file" accept=".json,.json.gz">
-          <button class="btn btn-primary" onclick="uploadBackup()">📤 Upload</button>
+          <button class="btn btn-primary" onclick="uploadBackup()">Upload</button>
         </div>
       </div>
       <div id="backup-status" style="color: var(--text-dim); font-size: 13px; margin-top: 8px;">
@@ -446,12 +446,12 @@ select:disabled {
       </div>
       <h3>Quick Actions</h3>
       <div class="actions-grid">
-        <button class="action-btn" onclick="doAction('backup')">💾 Create Backup</button>
-        <button class="action-btn" onclick="doAction('prune')">🧹 Run Pruning</button>
-        <button class="action-btn" onclick="doAction('export_md')">📄 Export MD</button>
-        <button class="action-btn" onclick="doAction('export_json')">📋 Export JSON</button>
-        <button class="action-btn" onclick="doAction('clear_cache')">🗑️ Clear Cache</button>
-        <button class="action-btn" style="color: var(--error);" onclick="doAction('clear_memory')">⚠️ Clear Memory</button>
+        <button class="action-btn" onclick="doAction('backup')">Create Backup</button>
+        <button class="action-btn" onclick="doAction('prune')">Run Pruning</button>
+        <button class="action-btn" onclick="doAction('export_md')">Export MD</button>
+        <button class="action-btn" onclick="doAction('export_json')">Export JSON</button>
+        <button class="action-btn" onclick="doAction('clear_cache')">Clear Cache</button>
+        <button class="action-btn" style="color: var(--error);" onclick="doAction('clear_memory')">[WARN] Clear Memory</button>
       </div>
       <div class="log-box" id="action-log"><div class="log-line">Actions will appear here...</div></div>
     </div>
@@ -459,7 +459,7 @@ select:disabled {
 
   <!-- Server Diagnostics -->
   <div class="card">
-    <h2>🔧 Server Diagnostics</h2>
+    <h2>Server Diagnostics</h2>
     <div class="grid-2" style="gap: 12px;">
       <div class="form-group">
         <label>Memory Status</label>
@@ -647,7 +647,9 @@ async function applyProvider() {
     });
     const d = await r.json();
     notify(`Provider "${provider}" applied with model "${model}"`);
-    setTimeout(fetchModels, 500);
+    const curModel = document.getElementById('model-select').value;
+    const curEmbedder = document.getElementById('embedder-select').value;
+    setTimeout(() => fetchModels(curModel, curEmbedder), 500);
   } catch(e) { notify('Error: ' + e.message, 'error'); }
 }
 
@@ -661,7 +663,9 @@ async function applyEmbedder() {
     });
     const d = await r.json();
     notify(`Embedder set to "${embedder}"`);
-    setTimeout(fetchModels, 500);
+    const curModel = document.getElementById('model-select').value;
+    const curEmbedder = document.getElementById('embedder-select').value;
+    setTimeout(() => fetchModels(curModel, curEmbedder), 500);
   } catch(e) { notify('Error: ' + e.message, 'error'); }
 }
 
@@ -681,10 +685,10 @@ async function testConnection() {
     const models = await modelsResp.json();
     const modelCount = models.data ? models.data.length : (models.chat ? models.chat.length : 0);
 
-    resultDiv.innerHTML = `✅ Connected! Server v${health.version || '?'}<br>Models: ${modelCount} available<br>LM Studio: ${health.lm_studio ? 'Yes' : 'No'}`;
+    resultDiv.innerHTML = `OK Connected! Server v${health.version || '?'}<br>Models: ${modelCount} available<br>LM Studio: ${health.lm_studio ? 'Yes' : 'No'}`;
     resultDiv.className = 'test-result ok';
   } catch(e) {
-    resultDiv.textContent = `❌ Connection failed: ${e.message}`;
+    resultDiv.textContent = `[FAIL] Connection failed: ${e.message}`;
     resultDiv.className = 'test-result err';
   }
 }
@@ -709,12 +713,12 @@ async function uploadBackup() {
   const file = fileInput.files[0];
 
   if (!file) {
-    statusEl.textContent = '⚠️ Please select a backup file first.';
+    statusEl.textContent = '[WARN] Please select a backup file first.';
     statusEl.style.color = 'var(--warning)';
     return;
   }
 
-  statusEl.textContent = '📤 Uploading and restoring...';
+  statusEl.textContent = 'Uploading and restoring...';
   statusEl.style.color = 'var(--text-dim)';
   logAction(`Uploading backup: ${file.name}`);
 
@@ -730,18 +734,18 @@ async function uploadBackup() {
     const d = await r.json();
 
     if (d.error) {
-      statusEl.textContent = `❌ Error: ${d.error}`;
+      statusEl.textContent = `[FAIL] Error: ${d.error}`;
       statusEl.style.color = 'var(--error)';
       logAction(`Backup restore failed: ${d.error}`);
     } else {
-      statusEl.textContent = `✅ Restored ${d.nodes_restored} nodes from backup!`;
+      statusEl.textContent = `OK Restored ${d.nodes_restored} nodes from backup!`;
       statusEl.style.color = 'var(--success)';
       logAction(`Backup restored: ${d.nodes_restored} nodes`);
       fileInput.value = '';
       setTimeout(updateStats, 500);
     }
   } catch(e) {
-    statusEl.textContent = `❌ Upload failed: ${e.message}`;
+    statusEl.textContent = `[FAIL] Upload failed: ${e.message}`;
     statusEl.style.color = 'var(--error)';
     logAction(`Backup upload error: ${e.message}`);
   }

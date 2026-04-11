@@ -121,9 +121,9 @@ def monitor_server(server_url="http://127.0.0.1:8080", interval=30, duration=600
         if node_counts:
             print(f"Node count: started at {node_counts[0]}, ended at {node_counts[-1]}")
             if node_counts[0] == node_counts[-1]:
-                print("⚠️  Node count did NOT change during monitoring!")
+                print("[WARN] Node count did NOT change during monitoring!")
             else:
-                print(f"✅ Node count changed by {node_counts[-1] - node_counts[0]} nodes")
+                print(f"[OK] Node count changed by {node_counts[-1] - node_counts[0]} nodes")
         
         # LM Studio status
         lm_statuses = [e.get("lm_studio") for e in log if "lm_studio" in e]

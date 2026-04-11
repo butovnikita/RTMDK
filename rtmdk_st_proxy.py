@@ -654,12 +654,12 @@ def main():
     print(f"    Base URL: http://127.0.0.1:{args.port}/v1")
     print(f"    API Key:  (any value)")
     # Check LM Studio connectivity
-    print("\n🔍 Checking LM Studio connection...")
+    print("\n[CHECK] Checking LM Studio connection...")
     if memory_mgr.check_lm_studio():
-        print(f"  ✅ LM Studio connected at {config.lm_studio_url}")
+        print(f"  [OK] LM Studio connected at {config.lm_studio_url}")
     else:
-        print(f"  ⚠️  LM Studio not reachable at {config.lm_studio_url}")
-        print("  ⚠️  Please make sure LM Studio is running and server is enabled!")
+        print(f"  [WARN] LM Studio not reachable at {config.lm_studio_url}")
+        print("  [WARN] Please make sure LM Studio is running and server is enabled!")
     
     print("-" * 60)
     

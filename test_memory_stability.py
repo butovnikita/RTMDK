@@ -146,10 +146,10 @@ def run_all_tests():
         print(f"  Steps {steps:5d}: recall = {r:.2%}")
     results["longterm_retention"] = recalls
     if recalls.get(200, 0) >= 0.15:
-        print(f"  ✅ PASS: Retention at 200 steps = {recalls[200]:.2%} (>= 15%)")
+        print(f"  [OK] PASS: Retention at 200 steps = {recalls[200]:.2%} (>= 15%)")
         passed += 1
     else:
-        print(f"  ❌ FAIL: Retention at 500 steps = {recalls.get(500, 0):.2%} (< 20%)")
+        print(f"  [FAIL] FAIL: Retention at 500 steps = {recalls.get(500, 0):.2%} (< 20%)")
         failed += 1
 
     # Test 2: Field Stability (NaN/Inf check)
@@ -162,10 +162,10 @@ def run_all_tests():
           f"Inf: {integrity['inf']}, NegAmp: {integrity['neg_amp']}, NegSal: {integrity['neg_sal']}")
     results["field_stability"] = integrity
     if integrity["nan"] == 0 and integrity["inf"] == 0 and integrity["neg_amp"] == 0 and integrity["neg_sal"] == 0:
-        print(f"  ✅ PASS: No NaN/Inf/negative values after 500 steps")
+        print(f"  [OK] PASS: No NaN/Inf/negative values after 500 steps")
         passed += 1
     else:
-        print(f"  ❌ FAIL: Found integrity issues")
+        print(f"  [FAIL] FAIL: Found integrity issues")
         failed += 1
 
     # Test 3: Interference Resistance
@@ -182,10 +182,10 @@ def run_all_tests():
     print(f"  After interference:  {r1:.2%}")
     results["interference"] = {"before": r0, "after": r1}
     if r1 >= r0 * 0.4:
-        print(f"  ✅ PASS: Recall retained {r1/r0:.0%} of original (>= 40%)")
+        print(f"  [OK] PASS: Recall retained {r1/r0:.0%} of original (>= 40%)")
         passed += 1
     else:
-        print(f"  ❌ FAIL: Recall dropped to {r1/r0:.0%} of original (< 40%)")
+        print(f"  [FAIL] FAIL: Recall dropped to {r1/r0:.0%} of original (< 40%)")
         failed += 1
 
     # Test 4: Consolidation Quality
@@ -200,10 +200,10 @@ def run_all_tests():
     print(f"  After consolidation:  {r_after:.2%}")
     results["consolidation"] = {"before": r_before, "after": r_after}
     if r_after >= r_before * 0.5:
-        print(f"  ✅ PASS: Recall after consolidation = {r_after/r_before:.0%} of before (>= 50%)")
+        print(f"  [OK] PASS: Recall after consolidation = {r_after/r_before:.0%} of before (>= 50%)")
         passed += 1
     else:
-        print(f"  ❌ FAIL: Recall dropped to {r_after/r_before:.0%} of before (< 50%)")
+        print(f"  [FAIL] FAIL: Recall dropped to {r_after/r_before:.0%} of before (< 50%)")
         failed += 1
 
     # Test 5: Graceful Degradation
@@ -222,10 +222,10 @@ def run_all_tests():
     print(f"  After 25% loss:     {r1:.2%}")
     results["graceful_degradation"] = {"initial": r0, "after_25pct": r1}
     if r1 >= r0 * 0.3:
-        print(f"  ✅ PASS: Recall retained {r1/r0:.0%} after 25% node loss (>= 30%)")
+        print(f"  [OK] PASS: Recall retained {r1/r0:.0%} after 25% node loss (>= 30%)")
         passed += 1
     else:
-        print(f"  ❌ FAIL: Recall dropped to {r1/r0:.0%} after 25% node loss (< 30%)")
+        print(f"  [FAIL] FAIL: Recall dropped to {r1/r0:.0%} after 25% node loss (< 30%)")
         failed += 1
 
     # Test 6: Cross-Session Persistence
@@ -242,10 +242,10 @@ def run_all_tests():
     print(f"  Session 3 recall: {r_s3:.2%}")
     results["cross_session"] = {"session_2": r_s2, "session_3": r_s3}
     if r_s2 >= 0.10 or r_s3 >= 0.10:
-        print(f"  ✅ PASS: Memories persisted across sessions")
+        print(f"  [OK] PASS: Memories persisted across sessions")
         passed += 1
     else:
-        print(f"  ❌ FAIL: All memories lost between sessions")
+        print(f"  [FAIL] FAIL: All memories lost between sessions")
         failed += 1
 
     # Test 7: Scalability Stability
@@ -260,10 +260,10 @@ def run_all_tests():
         print(f"  N={n:5d}: recall = {r:.2%}")
     results["scalability"] = scale_recalls
     if scale_recalls[50] > 0 and scale_recalls[200] >= scale_recalls[50] * 0.3:
-        print(f"  ✅ PASS: Recall at N=200 is {scale_recalls[200]/scale_recalls[50]:.0%} of N=50 (>= 30%)")
+        print(f"  [OK] PASS: Recall at N=200 is {scale_recalls[200]/scale_recalls[50]:.0%} of N=50 (>= 30%)")
         passed += 1
     else:
-        print(f"  ❌ FAIL: Recall collapsed at scale")
+        print(f"  [FAIL] FAIL: Recall collapsed at scale")
         failed += 1
 
     # Summary

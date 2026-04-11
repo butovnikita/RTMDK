@@ -302,7 +302,7 @@ class SymbolicOverlay:
             lines.append("")
             lines.append("Contextual exceptions (competing interpretations):")
             for inf in conflicts:
-                lines.append(f"  ⚠ [CF:{inf.confidence:.2f}] {inf.conclusion}: {inf.contextual_note}")
+                lines.append(f"  [WARN] [CF:{inf.confidence:.2f}] {inf.conclusion}: {inf.contextual_note}")
 
         return "\n".join(lines)
 

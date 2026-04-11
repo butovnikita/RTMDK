@@ -2,21 +2,81 @@
 
 > Долгосрочная память для LLM на основе резонансной топологии и диалектической консолидации
 
+---
+
+## 📦 Две версии проекта
+
+Проект разделён на **две конфигурации** для разных сценариев использования:
+
+| | 🏭 Production | 🏠 Home / SillyTavern |
+|---|---|---|
+| **Назначение** | API-сервер для продакшена, микросервисы | Домашнее использование с SillyTavern |
+| **Порты** | `8080` (один) | `8080` + `5000` (proxy) |
+| **SillyTavern** | ❌ Не включён | ✅ Полная поддержка |
+| **Dashboard** | ✅ Веб-UI | ✅ Веб-UI |
+| **Dockerfile** | `Dockerfile` | `Dockerfile.home` |
+| **Compose** | `docker-compose.prod.yml` | `docker-compose.home.yml` |
+| **Зависимости** | Минимальные | Полные |
+| **Запуск** | `start_production.bat` / `start_production.py` | `start_sillytavern.bat` / `rtmdk_server.py` |
+
+---
+
 ## 🚀 Быстрый старт
 
+### 🏭 Production (без SillyTavern)
+
 ```bash
-# 1. Клонировать
-git clone <repo> && cd llm_lab
+# 1. Установить минимальные зависимости
+pip install -r requirements-prod.txt
 
-# 2. Установить зависимости
-pip install -r requirements.txt
+# 2. Запустить сервер
+python start_production.py
 
-# 3. Запустить (локально)
-python rtmdk_server.py
+# Или через Windows batch-файл:
+start_production.bat
 
-# 4. Или через Docker
-cp .env.example .env && docker-compose up -d
+# Docker
+docker-compose -f docker-compose.prod.yml up -d
 ```
+
+### 🏠 Home / SillyTavern
+
+```bash
+# 1. Установить полные зависимости
+pip install -r requirements-home.txt
+
+# 2. Запустить сервер + SillyTavern proxy
+python rtmdk_sillytavern_launcher.py
+
+# Или через Windows batch-файл:
+start_sillytavern.bat
+
+# Docker
+docker-compose -f docker-compose.home.yml up -d
+```
+
+### 🔧 Monolith (один процесс, ST endpoints встроены)
+
+```bash
+# Альтернативный вариант — всё в одном процессе
+python rtmdk_server.py
+```
+
+> Monolith-версия включает SillyTavern-совместимые endpoints (`/api/v1/generate` и др.) прямо в основной сервер на порту 8080. Proxy на порту 5000 не запускается.
+
+---
+
+## 🔌 SillyTavern подключение
+
+| Режим | API Type | Base URL | API Key |
+|-------|----------|----------|---------|
+| **Proxy** (рекомендуется) | OpenAI | `http://127.0.0.1:5000/v1` | любой |
+| **Monolith** | OpenAI | `http://127.0.0.1:8080/v1` | `rtmdk-local` |
+| **Monolith** (Text Completion) | Text Completion | `http://127.0.0.1:8080` | — |
+
+Подробнее: [SILLYTAVERN_CONNECTION_GUIDE.md](SILLYTAVERN_CONNECTION_GUIDE.md)
+
+---
 
 ## 📚 Документация
 

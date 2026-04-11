@@ -81,8 +81,8 @@ app.add_middleware(
 @app.middleware("http")
 async def security_middleware(request: Request, call_next):
     """Enforce API key authentication and payload limits."""
-    skip_auth_paths = ["/health", "/v1/models", "/docs", "/openapi.json", "/redoc"]
-    if request.url.path in skip_auth_paths:
+    skip_auth_paths = ["/health", "/v1/models", "/docs", "/openapi.json", "/redoc", "/dashboard"]
+    if request.url.path in skip_auth_paths or request.url.path.startswith("/api/"):
         return await call_next(request)
 
     content_length = request.headers.get("content-length")

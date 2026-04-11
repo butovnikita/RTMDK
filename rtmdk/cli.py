@@ -86,10 +86,10 @@ def cmd_list_presets():
     
     for name, p in presets.items():
         print(f"  {name:<15} {p['latent_dim']:>5} {p['top_k']:>3} "
-              f"{p['decay_rate']:>6} {'✅' if p['engrams'] else '❌':>7} "
-              f"{'✅' if p['dreaming'] else '❌':>6} "
-              f"{'✅' if p['causal'] else '❌':>6} "
-              f"{'✅' if p['ssm'] else '❌':>4}")
+              f"{p['decay_rate']:>6} {'[OK]' if p['engrams'] else '[FAIL]':>7} "
+              f"{'[OK]' if p['dreaming'] else '[FAIL]':>6} "
+              f"{'[OK]' if p['causal'] else '[FAIL]':>6} "
+              f"{'[OK]' if p['ssm'] else '[FAIL]':>4}")
 
 
 def main():
