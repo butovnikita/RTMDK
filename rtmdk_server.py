@@ -70,7 +70,7 @@ ENABLE_API_AUTH = os.getenv("RTMDK_ENABLE_API_AUTH", "false").lower() == "true" 
 RATE_LIMIT_ENABLED = os.getenv("RTMDK_RATE_LIMIT_ENABLED", "true").lower() == "true"
 RATE_LIMIT_PER_MIN = int(os.getenv("RTMDK_RATE_LIMIT_PER_MIN", "120"))
 MAX_PAYLOAD_SIZE = int(os.getenv("RTMDK_MAX_PAYLOAD_SIZE", "1048576"))  # 1MB default
-ALLOWED_ORIGINS = os.getenv("RTMDK_ALLOWED_ORIGINS", "*").split(",")
+ALLOWED_ORIGINS = os.getenv("RTMDK_ALLOWED_ORIGINS", "http://localhost:8080,http://127.0.0.1:8080").split(",")
 ENABLE_LM_STUDIO = os.getenv("RTMDK_ENABLE_LM_STUDIO", "true").lower() == "true"
 AUTO_SAVE_INTERVAL = int(os.getenv("RTMDK_AUTO_SAVE", "60"))  # seconds
 
@@ -176,6 +176,7 @@ async def security_middleware(request: Request, call_next):
 memory: Optional[RTMDKMemory] = None
 embedder_cache: OrderedDict[str, np.ndarray] = OrderedDict()
 EMBEDDER_CACHE_MAX_SIZE = 10000  # Max 10K entries to prevent memory exhaustion
+_import_lock = asyncio.Lock()  # Prevent race condition on memory import
 lm_studio_available: bool = False
 chat_model: Optional[str] = None
 auto_save_task = None
@@ -819,11 +820,12 @@ async def export_memory():
 
 @app.post("/v1/memory/import")
 async def import_memory():
-    """Import memory state."""
+    """Import memory state. Uses lock to prevent race condition."""
     global memory
     if not os.path.exists(MEMORY_FILE):
         raise HTTPException(status_code=404, detail=f"Memory file not found: {MEMORY_FILE}")
-    memory = RTMDKMemory.import_field(MEMORY_FILE, get_embedding)
+    async with _import_lock:
+        memory = RTMDKMemory.import_field(MEMORY_FILE, get_embedding)
     return {"status": "ok", "nodes": len(memory.field.nodes)}
 
 

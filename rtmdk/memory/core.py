@@ -127,15 +127,15 @@ class EvalMode(Enum):
 @dataclass
 class RTMDKConfig:
     embedding_dim: int = 768
-    latent_dim: int = 256  # OPTIMIZED: 4x larger → less projection loss
+    latent_dim: int = 64  # Matches server default — change only if you know the impact
     resonance_kernel: str = "gaussian_phase"
     phase_coupling: float = 0.3
     bandwidth: float = 1.0
     attraction_lr: float = 0.02
     phase_sync_lr: float = 0.01
-    decay_rate: float = 0.999  # OPTIMIZED: slower decay for better retention
+    decay_rate: float = 0.997  # Matches server default — half-life ~230 steps
     min_amplitude: float = 0.05
-    tension_threshold: float = 0.25
+    tension_threshold: float = 0.15  # Matches server default — moderate consolidation
     consolidation_mode: ConsolidationMode = ConsolidationMode.DIALECTICAL
     max_nodes: Optional[int] = 5000
     top_k: int = 5
@@ -417,87 +417,6 @@ class RTMDKConfig:
     role_shards: Set[str] = field(default_factory=lambda: {"default"})
     cross_shard_threshold: float = 0.45
     auto_role_detection: bool = True
-
-    # Phase 18: Engrams
-    enable_engrams: bool = True
-    engram_min_nodes: int = 2
-    engram_max_nodes: int = 20
-    engram_creation_threshold: float = 0.6
-    engram_decay_rate: float = 0.998
-    engram_pattern_completion: bool = True
-    engram_overlap_threshold: float = 0.7
-
-    # Phase 19: Advanced
-    offline_dreaming: bool = True
-    dreaming_freq: int = 50
-    causal_traversal: bool = True
-    causal_max_hops: int = 3
-    ssm_dynamics: bool = False
-    ssm_state_dim: int = 64
-    trust_consensus: bool = False
-    trust_min_reputation: float = 0.3
-    neuro_symbolic_prover: bool = False
-    prover_backend: str = "z3"
-    max_versions: int = 100
-    entropy_management: bool = False
-    entropy_threshold: float = 0.5
-    clarification_threshold_ratio: float = 2.0
-    cognitive_compression: bool = False
-    triton_backend: bool = False
-    bias_temperature: float = 1.0
-    top_shards: int = 3
-    ball_radius: float = 0.85
-    hyperbolic: bool = False
-    curvature: float = -1.0
-    predictive_coding: bool = False
-    counterfactual_imagination: bool = False
-    differential_privacy: bool = False
-    dp_epsilon: float = 2.0
-    dp_delta: float = 1e-5
-    dp_max_norm: float = 1.0
-    goal_tracking: bool = False
-    max_goals: int = 20
-    goal_decay: float = 0.995
-    goal_completion_threshold: float = 0.8
-    rl_feedback: bool = False
-    rl_learning_rate: float = 0.01
-    rl_reward_window: int = 10
-    low_rank_compression: bool = False
-    compression_rank: int = 32
-    compression_freq: int = 500
-    meta_memory: bool = False
-    self_reflection_freq: int = 100
-    memory_age_factor: float = 0.001
-    recall_accuracy_threshold: float = 0.6
-    max_node_text_length: int = 10000
-    tension_spike_threshold: float = 0.5
-    causal_graph_integrity_check: bool = True
-    swarm_memory: bool = False
-    swarm_consensus_threshold: float = 0.5
-    swarm_max_agents: int = 10
-    swarm_vote_weight: float = 0.3
-    symbolic_overlay: bool = False
-    symbolic_min_self_sup: float = 0.7
-    symbolic_max_tension: float = 0.15
-    symbolic_confidence_threshold: float = 0.65
-    safety_certifier: bool = False
-    safety_mode: str = "soft_regulate"
-    lyapunov_alpha: float = 0.4
-    lyapunov_beta: float = 0.4
-    lyapunov_gamma: float = 0.2
-    lyapunov_threshold: float = 0.1
-    production_mode: bool = False
-    eval_mode: str = "production"
-    shadow_mode: bool = False
-    shadow_fallback_threshold: float = 0.3
-    auto_rollback: bool = False
-    auto_rollback_threshold: float = 0.15
-    ragas_enabled: bool = False
-    drift_detection: bool = False
-    drift_window: int = 100
-    drift_threshold: float = 0.05
-    metrics_retention: int = 10000
-    eval_frequency: int = 100
 
     def __post_init__(self):
         logger.setLevel(getattr(logging, self.log_level.upper()))
@@ -1401,6 +1320,7 @@ class NeuralODEDynamics:
         self.gamma = 0.02
         self.W = np.random.randn(latent_dim, latent_dim).astype(np.float32) * 0.01
         self._response_history: deque = deque(maxlen=100)
+        self._state_history: deque = deque(maxlen=2)
 
     def _sigma(self, x: NDArray) -> NDArray:
         return np.tanh(x)
@@ -6009,14 +5929,17 @@ class RTMDKMemory(BaseModel):
         # Detect memory tier
         tier = detect_tier(text_for_embedding, inputs)
         content["tier"] = tier
-        
-        self.field.add_node(embedding, content, phase, session_id=session_id, modality=modality)
-        
+
+        nid = self.field.add_node(embedding, content, phase, session_id=session_id, modality=modality)
+
+        # Bug 3: If add_node returned empty string (security reject), skip engram creation
+        if not nid:
+            return {"rtmdk_context": ""}
+
         # Set tier on the newly added node
-        if self.field.node_index:
-            nid = self.field.node_index[-1]
+        if nid in self.field.nodes:
             self.field.nodes[nid].tier = tier
-        
+
         # Phase 18: Create/update engrams from co-activated nodes
         if self.engram_manager is not None:
             related_nodes = []
@@ -6027,7 +5950,7 @@ class RTMDKMemory(BaseModel):
                         (np.linalg.norm(embedding) + 1e-8) * (np.linalg.norm(existing_emb) + 1e-8)))
                     if sim > 0.5:
                         related_nodes.append((existing_nid, sim))
-            related_nodes.append((self.field.node_index[-1] if self.field.node_index else "latest", 1.0))
+            related_nodes.append((nid, 1.0))
             
             if len(related_nodes) >= self.config.engram_min_nodes:
                 node_embs = {}
