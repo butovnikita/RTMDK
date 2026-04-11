@@ -14,7 +14,11 @@ def poincare_dist(u: NDArray, v: NDArray, ball_radius: float = 0.85) -> float:
         v_norm = np.linalg.norm(v)
     delta = u - v
     sq_delta = np.sum(delta ** 2)
-    denom = (1 - u_norm ** 2) * (1 - v_norm ** 2)
+    # Bug #3 FIX: Use ball_radius^2 in denominator for non-unit ball
+    # Standard formula for unit ball: denom = (1 - ||u||^2) * (1 - ||v||^2)
+    # For ball_radius r: denom = (r^2 - ||u||^2) * (r^2 - ||v||^2) / r^2
+    r_sq = ball_radius ** 2
+    denom = ((r_sq - u_norm ** 2) * (r_sq - v_norm ** 2)) / max(r_sq, 1e-8)
     arg = 1 + 2 * sq_delta / max(denom, 1e-8)
     return float(np.arccosh(np.clip(arg, 1.0, None)))
 
