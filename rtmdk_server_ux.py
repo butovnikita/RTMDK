@@ -6,7 +6,7 @@ Usage:
     from rtmdk_server_ux import create_ux_router
     app.include_router(create_ux_router(memory, config))
 """
-import json, time, os, logging
+import json, time, os, logging, importlib
 from typing import Dict, Any
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse, PlainTextResponse
@@ -15,14 +15,26 @@ from rtmdk_memory_v8 import RTMDKMemory
 logger = logging.getLogger("rtmdk.ux")
 
 def _safe_import(module_path: str, **kwargs):
-    """Safely import a module, return None if it fails."""
+    """Safely import a class from a module path, return None if it fails."""
     try:
-        module = __import__(module_path, fromlist=[module_path.split(".")[-1]])
-        cls = getattr(module, module_path.split(".")[-1], None)
+        # Split into module and class
+        parts = module_path.rsplit(".", 1)
+        if len(parts) != 2:
+            return None
+        module_path_str, class_name = parts
+        
+        # Try standard import (will trigger __init__.py chain)
+        mod = __import__(module_path_str, fromlist=[class_name])
+        cls = getattr(mod, class_name, None)
         if cls:
             return cls(**kwargs)
     except Exception as e:
-        logger.warning(f"Failed to import {module_path}: {e}")
+        # Log only first failure per module
+        if not hasattr(_safe_import, '_logged'):
+            _safe_import._logged = set()
+        if module_path_str not in _safe_import._logged:
+            _safe_import._logged.add(module_path_str)
+            logger.debug(f"Module {module_path_str} unavailable: {type(e).__name__}")
     return None
 
 def create_ux_router(memory, config: Dict[str, Any]) -> APIRouter:
@@ -71,29 +83,29 @@ def create_ux_router(memory, config: Dict[str, Any]) -> APIRouter:
             max_tokens=int(config.get("RTMDK_MAX_CONTEXT_TOKENS", "300")))
 
         _m["fb"] = _safe_import("rtmdk.production.feedback_loop.FeedbackLoop",
-            mem=mem, learning_rate=float(config.get("RTMDK_FEEDBACK_LR", "0.05")))
+            memory=mem, learning_rate=float(config.get("RTMDK_FEEDBACK_LR", "0.05")))
 
         _m["ss"] = _safe_import("rtmdk.production.session_persistence.SessionPersistence",
-            mem=mem, save_dir=sd, auto_save_interval=int(config.get("RTMDK_AUTO_SAVE_INTERVAL", "60")))
+            memory=mem, save_dir=sd, auto_save_interval=int(config.get("RTMDK_AUTO_SAVE_INTERVAL", "60")))
 
         _m["sp"] = _safe_import("rtmdk.production.smart_pruning.SmartPruner",
-            mem=mem, max_age_days=int(config.get("RTMDK_PRUNE_AGE_DAYS", "90")),
+            memory=mem, max_age_days=int(config.get("RTMDK_PRUNE_AGE_DAYS", "90")),
             min_salience=float(config.get("RTMDK_PRUNE_MIN_SALIENCE", "0.05")))
 
         _m["bk"] = _safe_import("rtmdk.production.backup_restore.BackupManager",
-            mem=mem, backup_dir=bd,
+            memory=mem, backup_dir=bd,
             compression=config.get("RTMDK_BACKUP_COMPRESSION", "true").lower() == "true")
 
-        _m["ip"] = _safe_import("rtmdk.production.import_pipeline.ImportPipeline", mem=mem)
-        _m["hm"] = _safe_import("rtmdk.production.health_monitor.HealthMonitor", mem=mem)
-        _m["an"] = _safe_import("rtmdk.production.analytics.MemoryAnalytics", mem=mem)
+        _m["ip"] = _safe_import("rtmdk.production.import_pipeline.ImportPipeline", memory=mem)
+        _m["hm"] = _safe_import("rtmdk.production.health_monitor.HealthMonitor", memory=mem)
+        _m["an"] = _safe_import("rtmdk.production.analytics.MemoryAnalytics", memory=mem)
         _m["ev"] = _safe_import("rtmdk.production.events.EventSystem")
-        _m["tg"] = _safe_import("rtmdk.production.tagging.TaggingSystem", mem=mem)
+        _m["tg"] = _safe_import("rtmdk.production.tagging.TaggingSystem", memory=mem)
         _m["rl"] = _safe_import("rtmdk.production.rate_limiter.RateLimiter",
             max_per_minute=int(config.get("RTMDK_RATE_LIMIT_PER_MINUTE", "60")),
             max_per_hour=int(config.get("RTMDK_RATE_LIMIT_PER_HOUR", "1000")))
-        _m["mr"] = _safe_import("rtmdk.production.memory_refresh.MemoryRefresh", mem=mem)
-        _m["ex"] = _safe_import("rtmdk.production.export.MemoryExporter", mem=mem)
+        _m["mr"] = _safe_import("rtmdk.production.memory_refresh.MemoryRefresh", memory=mem)
+        _m["ex"] = _safe_import("rtmdk.production.export.MemoryExporter", memory=mem)
         _m["ec"] = _safe_import("rtmdk.production.embedding_cache.EmbeddingCache",
             cache_dir=cd, max_size=int(config.get("RTMDK_CACHE_MAX_SIZE", "100000")))
 
@@ -324,6 +336,10 @@ def create_ux_router(memory, config: Dict[str, Any]) -> APIRouter:
             if key in data:
                 config[key] = data[key]
                 updates[key] = data[key]
+            elif key.lower() in data:
+                # Support lowercase keys too
+                config[key] = data[key.lower()]
+                updates[key] = data[key.lower()]
         
         if updates:
             # Save to .env file for persistence

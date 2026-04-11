@@ -589,6 +589,17 @@ async function fetchModels(preserveModel, preserveEmbedder) {
       modelSelect.innerHTML = '<option value="rtmdk">rtmdk (default)</option>';
     }
 
+    // Auto-save model selection on change
+    modelSelect.onchange = async () => {
+      try {
+        await fetch(`${API_BASE}/api/config`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({RTMDK_LLM_MODEL: modelSelect.value})
+        });
+      } catch(e) { /* ignore */ }
+    };
+
     // Populate embedder models
     embedderSelect.innerHTML = '';
     if (embedderModels.length > 0) {
@@ -603,6 +614,17 @@ async function fetchModels(preserveModel, preserveEmbedder) {
     } else {
       embedderSelect.innerHTML = '<option value="nomic-embed-text-v1.5">nomic-embed-text-v1.5</option>';
     }
+
+    // Auto-save embedder selection on change
+    embedderSelect.onchange = async () => {
+      try {
+        await fetch(`${API_BASE}/api/config`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({RTMDK_EMBED_MODEL: embedderSelect.value})
+        });
+      } catch(e) { /* ignore */ }
+    };
   } catch(e) {
     console.error('Model fetch failed:', e);
     modelSelect.innerHTML = '<option value="rtmdk">rtmdk (fetch failed)</option>';
@@ -789,8 +811,46 @@ async function updateStats() {
 }
 
 // Init
-document.addEventListener('DOMContentLoaded', () => {
-  fetchModels();
+document.addEventListener('DOMContentLoaded', async () => {
+  // Load current config from server
+  try {
+    const resp = await fetch(`${API_BASE}/api/config`);
+    if (resp.ok) {
+      const cfg = await resp.json();
+      
+      // Set provider
+      if (cfg.provider) {
+        document.getElementById('provider-select').value = cfg.provider;
+      }
+      
+      // Fetch models first
+      await fetchModels();
+      
+      // Set saved model if it exists in list
+      if (cfg.llm_model) {
+        const modelSelect = document.getElementById('model-select');
+        if ([...modelSelect.options].some(o => o.value === cfg.llm_model)) {
+          modelSelect.value = cfg.llm_model;
+        }
+      }
+      
+      // Set saved embedder if it exists in list
+      if (cfg.embed_model) {
+        const embedderSelect = document.getElementById('embedder-select');
+        if ([...embedderSelect.options].some(o => o.value === cfg.embed_model)) {
+          embedderSelect.value = cfg.embed_model;
+        }
+      }
+      
+      // Show/hide API key based on provider
+      onProviderChange();
+    } else {
+      await fetchModels();
+    }
+  } catch(e) {
+    console.error('Config load failed:', e);
+    await fetchModels();
+  }
 });
 setInterval(updateStats, 3000);
 updateStats();
