@@ -251,11 +251,15 @@ document.getElementById('preset-select').addEventListener('change', function() {
         const embedderSelect = document.getElementById('embedder-select');
         const apiKeyInput = document.getElementById('api-key-input');
         const customUrlGroup = document.getElementById('custom-url-group');
-        
+
+        // Save currently selected model before clearing
+        const currentModel = modelSelect.value;
+        const currentEmbedder = embedderSelect.value;
+
         // Clear and show loading
         modelSelect.innerHTML = '<option>Loading...</option>';
         embedderSelect.innerHTML = '<option>Loading...</option>';
-        
+
         // Show/hide API key
         if (provider === 'lm_studio') {
             apiKeyInput.value = '';
@@ -266,36 +270,45 @@ document.getElementById('preset-select').addEventListener('change', function() {
             apiKeyInput.placeholder = 'sk-...';
         }
         customUrlGroup.style.display = provider === 'custom' ? 'block' : 'none';
-        
+
         // Fetch models from API
-        await fetchModels();
+        await fetchModels(currentModel, currentEmbedder);
     }
 
-    async function fetchModels() {
+    async function fetchModels(preserveModel, preserveEmbedder) {
         const modelSelect = document.getElementById('model-select');
         const embedderSelect = document.getElementById('embedder-select');
-        
+
         try {
-            // Try main OpenAI endpoint first
-            const resp = await fetch(`${API_BASE}/v1/models`);
-            if (!resp.ok) throw new Error('Failed to fetch models');
-            
-            const data = await resp.json();
-            
-            // Check if it's OpenAI format (has "data" array) or UX format (has "chat"/"embedder")
+            // Try UX endpoint first (has provider-specific models)
+            // UX router prefix is /api, and the endpoint is /models
+            let data = null;
+            try {
+                const uxResp = await fetch(`${API_BASE}/api/models`);
+                if (uxResp.ok) data = await uxResp.json();
+            } catch(e) { console.log('UX models fetch failed:', e); }
+
+            // Fallback to server's models endpoint
+            if (!data || (!data.chat && !data.data)) {
+                const resp = await fetch(`${API_BASE}/v1/models`);
+                if (resp.ok) data = await resp.json();
+            }
+
             let chatModels = [];
             let embedderModels = [];
-            
-            if (data.data && Array.isArray(data.data)) {
-                // OpenAI format - separate by model ID
-                chatModels = data.data.filter(m => !m.id.toLowerCase().includes('embed')).map(m => m.id);
-                embedderModels = data.data.filter(m => m.id.toLowerCase().includes('embed')).map(m => m.id);
-            } else if (data.chat) {
-                // UX format
-                chatModels = data.chat || [];
-                embedderModels = data.embedder || [];
+
+            if (data) {
+                if (data.data && Array.isArray(data.data)) {
+                    // OpenAI format - separate by model ID
+                    chatModels = data.data.filter(m => !m.id.toLowerCase().includes('embed')).map(m => m.id);
+                    embedderModels = data.data.filter(m => m.id.toLowerCase().includes('embed')).map(m => m.id);
+                } else if (data.chat) {
+                    // UX format
+                    chatModels = data.chat || [];
+                    embedderModels = data.embedder || [];
+                }
             }
-            
+
             // Populate chat models
             modelSelect.innerHTML = '';
             if (chatModels.length > 0) {
@@ -304,10 +317,14 @@ document.getElementById('preset-select').addEventListener('change', function() {
                     opt.value = m; opt.textContent = m;
                     modelSelect.appendChild(opt);
                 });
+                // Restore previously selected model if it still exists
+                if (preserveModel && [...modelSelect.options].some(o => o.value === preserveModel)) {
+                    modelSelect.value = preserveModel;
+                }
             } else {
                 modelSelect.innerHTML = '<option value="rtmdk">rtmdk (default)</option>';
             }
-            
+
             // Populate embedder models
             embedderSelect.innerHTML = '';
             if (embedderModels.length > 0) {
@@ -316,6 +333,10 @@ document.getElementById('preset-select').addEventListener('change', function() {
                     opt.value = m; opt.textContent = m;
                     embedderSelect.appendChild(opt);
                 });
+                // Restore previously selected embedder if it still exists
+                if (preserveEmbedder && [...embedderSelect.options].some(o => o.value === preserveEmbedder)) {
+                    embedderSelect.value = preserveEmbedder;
+                }
             } else {
                 embedderSelect.innerHTML = '<option value="nomic-embed-text-v1.5">nomic-embed-text-v1.5</option>';
             }

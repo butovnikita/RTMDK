@@ -12,6 +12,9 @@ from rtmdk.memory.core import (
     ContextFormat,
     apply_attention_bias,
     format_cognitive_context,
+    detect_modality,
+    detect_tier,
+    MemoryNode,
 )
 
 # Re-export everything for backward compatibility
@@ -22,4 +25,7 @@ __all__ = [
     "ContextFormat",
     "apply_attention_bias",
     "format_cognitive_context",
+    "detect_modality",
+    "detect_tier",
+    "MemoryNode",
 ]

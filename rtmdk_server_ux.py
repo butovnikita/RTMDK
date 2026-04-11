@@ -19,7 +19,7 @@ def create_ux_router(memory, config: Dict[str, Any]) -> APIRouter:
     - RTMDKMemory instance (direct)
     - Callable that returns current memory instance
     """
-    router = APIRouter(prefix="/v1", tags=["ux"])
+    router = APIRouter(prefix="/api", tags=["ux"])
     _m = {}
 
     def _get_mem():
