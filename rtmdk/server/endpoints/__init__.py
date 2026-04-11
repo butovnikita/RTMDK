@@ -1,1 +1,0 @@
-"""RTMDK Server Endpoints."""

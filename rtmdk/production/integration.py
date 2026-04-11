@@ -40,14 +40,11 @@ from collections import OrderedDict, defaultdict
 from dataclasses import dataclass, field
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-
 try:
-    from rtmdk_memory_v8 import RTMDKMemory, RTMDKConfig
+    from rtmdk.memory.core import RTMDKMemory, RTMDKConfig
 except ImportError:
     # Fallback when running from project root
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from rtmdk_memory_v8 import RTMDKMemory, RTMDKConfig
+    from rtmdk.memory.core import RTMDKMemory, RTMDKConfig
 from rtmdk.production.query_cache import QueryCache
 from rtmdk.production.bm25_fallback import BM25FallbackRetriever
 

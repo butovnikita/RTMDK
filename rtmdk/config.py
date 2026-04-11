@@ -558,21 +558,13 @@ class RTMDKConfig:
         "ignore previous", "system prompt", "you are now", "disregard",
     ])
     swarm_vote_weight: float = 0.3
-    auto_role_detection: bool = True
-    role_sharding: bool = False
     symbolic_overlay: bool = False
     symbolic_min_self_sup: float = 0.7
     symbolic_max_tension: float = 0.15
     symbolic_confidence_threshold: float = 0.65
     safety_certifier: bool = False
-    safety_mode: str = "soft_regulate"
-    lyapunov_alpha: float = 0.4
-    lyapunov_beta: float = 0.4
-    lyapunov_gamma: float = 0.2
-    lyapunov_threshold: float = 0.1
-    ump_enabled: bool = False
     production_mode: bool = False
-    eval_mode: EvalMode = None  # type: ignore
+    eval_mode: str = "production"
     shadow_mode: bool = False
     shadow_fallback_threshold: float = 0.3
     auto_rollback: bool = False

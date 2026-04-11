@@ -22,9 +22,7 @@ from typing import List, Dict, Tuple, Optional, Any
 from collections import defaultdict
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-
-from rtmdk_memory_v8 import RTMDKMemory, RTMDKConfig, MemoryNode
+from rtmdk.memory.core import RTMDKMemory, RTMDKConfig, MemoryNode
 from rtmdk.production.bm25_fallback import BM25FallbackRetriever
 
 
