@@ -5503,16 +5503,24 @@ class RTMDKField:
                 import zlib
                 packed = msgpack.packb(data, use_bin_type=True)
                 compressed = zlib.compress(packed)
-                with open(path, "wb") as f:
+                # H3: Atomic write — write to temp file then rename
+                tmp_path = path + ".tmp"
+                with open(tmp_path, "wb") as f:
                     f.write(compressed)
+                os.replace(tmp_path, path)
             except ImportError:
                 import warnings
                 warnings.warn("msgpack not installed, falling back to JSON. Install: pip install msgpack")
-                with open(path, "w", encoding="utf-8") as f:
+                tmp_path = path + ".tmp"
+                with open(tmp_path, "w", encoding="utf-8") as f:
                     json.dump(data, f, ensure_ascii=False, indent=2, default=str)
+                os.replace(tmp_path, path)
         else:
-            with open(path, "w", encoding="utf-8") as f:
+            # H3: Atomic write — write to temp file then rename
+            tmp_path = path + ".tmp"
+            with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2, default=str)
+            os.replace(tmp_path, path)
             # Set secure file permissions (owner read/write only)
             try:
                 os.chmod(path, 0o600)

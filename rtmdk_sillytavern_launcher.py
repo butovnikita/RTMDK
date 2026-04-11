@@ -74,10 +74,9 @@ def start_rtmdk_server():
     try:
         rtmdk_process = subprocess.Popen(
             [sys.executable, str(config.rtmdk_server_script)],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,  # Capture errors
+            stdout=subprocess.DEVNULL,  # H9: Prevent pipe buffer deadlock
+            stderr=subprocess.DEVNULL,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
-            text=True
         )
 
         # Wait for startup
@@ -85,14 +84,7 @@ def start_rtmdk_server():
             print(f"  [OK] RTMDK Server started successfully")
             return True
         else:
-            print(f"  [FAIL] RTMDK Server failed to start. Output:")
-            # Print recent output for debugging
-            try:
-                output = rtmdk_process.communicate(timeout=2)[0]
-                for line in output.split('\n')[-5:]:
-                    if line.strip(): print(f"    {line}")
-            except:
-                pass
+            print(f"  [FAIL] RTMDK Server failed to start.")
             return False
 
     except Exception as e:
@@ -112,10 +104,9 @@ def start_proxy():
     try:
         proxy_process = subprocess.Popen(
             [sys.executable, str(config.rtmdk_proxy_script)],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,  # Capture errors
+            stdout=subprocess.DEVNULL,  # H9: Prevent pipe buffer deadlock
+            stderr=subprocess.DEVNULL,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
-            text=True
         )
 
         # Wait for startup
@@ -123,14 +114,7 @@ def start_proxy():
             print(f"  [OK] SillyTavern Proxy started successfully")
             return True
         else:
-            print(f"  [FAIL] SillyTavern Proxy failed to start. Output:")
-            # Print recent output for debugging
-            try:
-                output = proxy_process.communicate(timeout=2)[0]
-                for line in output.split('\n')[-5:]:
-                    if line.strip(): print(f"    {line}")
-            except:
-                pass
+            print(f"  [FAIL] SillyTavern Proxy failed to start.")
             return False
 
     except Exception as e:

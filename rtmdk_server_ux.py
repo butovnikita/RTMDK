@@ -114,32 +114,45 @@ def create_ux_router(memory, config: Dict[str, Any]) -> APIRouter:
         logger.info(f"UX modules initialized: {loaded}/{len(_m)}")
     
     @router.post("/feedback")
-    async def fb(d:dict={}):
+    async def fb(d: dict = None):
         _init()
+        d = d or {}
         if "query" not in d: raise HTTPException(400,"Missing query")
-        return _m["fb"].apply_feedback(d["query"],float(d.get("quality",0.5)),d.get("session_id","default"))
+        if not _m.get("fb"): raise HTTPException(503, "Feedback module not available")
+        q = d["query"]
+        quality = float(d.get("quality", 0.5))
+        return _m["fb"].apply_feedback(q, quality, d.get("session_id", "default"))
     
     @router.get("/feedback/stats")
     async def fb_stats(): _init(); return _m["fb"].get_stats()
     
     @router.post("/session/save")
-    async def ss_save(d:dict={}):
+    async def ss_save(d: dict = None):
         _init()
+        d = d or {}
+        if not _m.get("ss"): raise HTTPException(503, "Session module not available")
         return {"saved":True,"path":_m["ss"].save_session(d.get("session_id","default"),d.get("metadata",{}))}
-    
+
     @router.post("/session/load")
-    async def ss_load(d:dict={}):
+    async def ss_load(d: dict = None):
         _init()
+        d = d or {}
+        if not _m.get("ss"): raise HTTPException(503, "Session module not available")
         r=_m["ss"].load_session(d.get("session_id","default"))
         if r is None: raise HTTPException(404,"Session not found")
         return r
-    
+
     @router.get("/session/list")
-    async def ss_list(): _init(); return {"sessions":_m["ss"].list_sessions()}
-    
-    @router.post("/backup/create")
-    async def bk_create(d:dict={}):
+    async def ss_list():
         _init()
+        if not _m.get("ss"): raise HTTPException(503, "Session module not available")
+        return {"sessions":_m["ss"].list_sessions()}
+
+    @router.post("/backup/create")
+    async def bk_create(d: dict = None):
+        _init()
+        d = d or {}
+        if not _m.get("bk"): raise HTTPException(503, "Backup module not available")
         rot=config.get("RTMDK_BACKUP_ROTATION","0")
         return {"created":True,"path":_m["bk"].create_backup(d.get("name",""),auto_rotate=rot!="0",max_backups=int(rot) if rot!="0" else 5)}
     

@@ -42,6 +42,7 @@ import numpy as np
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
+from collections import OrderedDict
 from pydantic import BaseModel, Field
 import uvicorn
 
@@ -173,7 +174,8 @@ async def security_middleware(request: Request, call_next):
 
 # Global state
 memory: Optional[RTMDKMemory] = None
-embedder_cache: Dict[str, np.ndarray] = {}
+embedder_cache: OrderedDict[str, np.ndarray] = OrderedDict()
+EMBEDDER_CACHE_MAX_SIZE = 10000  # Max 10K entries to prevent memory exhaustion
 lm_studio_available: bool = False
 chat_model: Optional[str] = None
 auto_save_task = None
@@ -351,6 +353,9 @@ def get_embedding(text: str, model: str = None) -> np.ndarray:
                     embedding = np.pad(embedding, (0, expected_dim - len(embedding)), 'constant')
             
             embedder_cache[text] = embedding
+            # H1: LRU eviction to prevent memory exhaustion
+            if len(embedder_cache) > EMBEDDER_CACHE_MAX_SIZE:
+                embedder_cache.popitem(last=False)
             return embedding
         except requests.exceptions.Timeout:
             logger.warning(f"Embedding timeout on attempt {attempt+1}/{max_retries}")
@@ -955,7 +960,8 @@ async def startup():
     memory = init_memory()
 
     # Start auto-save background task
-    asyncio.create_task(_auto_save_loop())
+    global auto_save_task
+    auto_save_task = asyncio.create_task(_auto_save_loop())
 
     logger.info(f"Server ready on {SERVER_HOST}:{SERVER_PORT}")
     logger.info(f"Memory nodes: {len(memory.field.nodes)}")
@@ -973,6 +979,14 @@ async def _auto_save_loop():
 async def shutdown():
     """C4: Save memory and clean up on shutdown."""
     logger.info("RTMDK server shutting down...")
+    # H2: Cancel auto-save task to prevent write after deallocation
+    global auto_save_task
+    if auto_save_task and not auto_save_task.done():
+        auto_save_task.cancel()
+        try:
+            await auto_save_task
+        except asyncio.CancelledError:
+            pass
     if memory:
         try:
             os.makedirs(os.path.dirname(MEMORY_FILE), exist_ok=True)
