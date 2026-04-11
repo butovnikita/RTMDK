@@ -11,6 +11,7 @@ Usage:
     python rtmdk_st_proxy.py [--port 5000] [--rtmdk http://127.0.0.1:8080] [--lm-studio http://127.0.0.1:12345]
 """
 
+import copy
 import os
 import sys
 import json
@@ -60,7 +61,7 @@ DEFAULT_CONFIG = {
 class ProxyConfig:
     def __init__(self, config_path: str = "st_config.json"):
         self.config_path = config_path
-        self.config = DEFAULT_CONFIG.copy()
+        self.config = copy.deepcopy(DEFAULT_CONFIG)
         self._load_config()
     
     def _load_config(self):
@@ -377,20 +378,46 @@ async def proxy_chat_completions(request: Request):
     # --- Case 1: SillyTavern wants Streaming ---
     if stream:
         def stream_generator():
+            full_text = ""
             try:
-                with requests.post(lm_url, json=lm_request, stream=True, timeout=120) as resp:
+                with requests.post(lm_url, json=lm_request, stream=True, timeout=300) as resp:
                     if not resp.ok:
                         logger.error(f"LM Studio Stream Error: HTTP {resp.status_code}")
+                        error_chunk = {"error": f"LM Studio HTTP {resp.status_code}"}
+                        yield f"data: {json.dumps(error_chunk)}\n\n"
+                        yield "data: [DONE]\n\n"
                         return
 
                     for line in resp.iter_lines():
                         if not line:
                             continue
-                        line_str = line.decode('utf-8')
+                        line_str = line.decode('utf-8', errors='ignore')
                         yield f"{line_str}\n\n"
+
+                        # C6: Collect text for memory save
+                        if line_str.startswith('data: '):
+                            try:
+                                chunk = json.loads(line_str[6:])
+                                choices = chunk.get('choices', [])
+                                if choices:
+                                    delta = choices[0].get('delta', {})
+                                    content = delta.get('content', '')
+                                    if content:
+                                        full_text += content
+                                    if choices[0].get('finish_reason') == 'stop':
+                                        break
+                            except json.JSONDecodeError:
+                                pass
             except Exception as e:
                 logger.error(f"Streaming error: {e}")
-        
+            finally:
+                # C6: Save AI response to memory after streaming completes
+                if mem_config.get("save_ai_messages", True) and full_text:
+                    try:
+                        memory_mgr.save_message(session_id, "assistant", full_text)
+                    except Exception as e:
+                        logger.warning(f"Memory save after streaming failed: {e}")
+
         return StreamingResponse(stream_generator(), media_type="text/event-stream")
 
     # --- Case 2: SillyTavern wants JSON (Non-Streaming) ---
@@ -519,7 +546,7 @@ async def _handle_text_completion(body: Dict):
         "top_p": body.get("top_p", 1.0),
         "frequency_penalty": body.get("frequency_penalty", 0.0),
         "presence_penalty": body.get("presence_penalty", 0.0),
-        "stop": body.get("stop", []),
+        "stop": body.get("stop") or [],
     }
     
     lm_url = f"{config.lm_studio_url}/chat/completions"
@@ -527,10 +554,11 @@ async def _handle_text_completion(body: Dict):
     # --- Case 1: SillyTavern wants Streaming ---
     if stream_requested:
         logger.info(f"Streaming response requested for session {session_id}")
-        
+
         async def stream_generator():
+            full_text = ""
             try:
-                with requests.post(lm_url, json=lm_request, stream=True, timeout=180) as resp:
+                with requests.post(lm_url, json=lm_request, stream=True, timeout=300) as resp:
                     if not resp.ok:
                         logger.error(f"LM Studio Error: HTTP {resp.status_code} - {resp.text[:200]}")
                         error_chunk = {"error": f"LM Studio HTTP {resp.status_code}"}
@@ -542,13 +570,13 @@ async def _handle_text_completion(body: Dict):
                         if not line:
                             continue
                         line_str = line.decode('utf-8', errors='ignore')
-                        
+
                         if line_str.startswith('data: '):
                             data_str = line_str[6:]
                             if data_str.strip() == '[DONE]':
                                 yield "data: [DONE]\n\n"
                                 break
-                            
+
                             try:
                                 chunk = json.loads(data_str)
                                 choices = chunk.get("choices", [])
@@ -556,22 +584,35 @@ async def _handle_text_completion(body: Dict):
                                     delta = choices[0].get("delta", {})
                                     content = delta.get("content", "")
                                     finish_reason = choices[0].get("finish_reason")
-                                    
+
+                                    # C6: Collect text for memory save
+                                    if content:
+                                        full_text += content
+
                                     # SillyTavern expects: {"choices":[{"text":"...","index":0}]}
-                                    # OR: {"content":"...","index":0}
                                     st_chunk = {"choices": [{"text": content, "index": 0}]}
                                     if finish_reason:
                                         st_chunk["choices"][0]["finish_reason"] = finish_reason
-                                    
+
                                     yield f"data: {json.dumps(st_chunk)}\n\n"
+
+                                    if finish_reason == 'stop':
+                                        break
                             except json.JSONDecodeError as e:
                                 logger.warning(f"Failed to parse chunk: {data_str[:80]} - {e}")
                                 pass
-                                
+
             except Exception as e:
                 logger.error(f"Streaming error: {e}")
                 yield f"data: {{\"error\": \"{str(e)}\"}}\n\n"
                 yield "data: [DONE]\n\n"
+            finally:
+                # C6: Save AI response to memory after streaming completes
+                if mem_config.get("save_ai_messages", True) and full_text:
+                    try:
+                        memory_mgr.save_message(session_id, "assistant", full_text)
+                    except Exception as e:
+                        logger.warning(f"Memory save after streaming failed: {e}")
 
         return StreamingResponse(stream_generator(), media_type="text/event-stream")
 
@@ -668,6 +709,7 @@ def main():
     config.config["lm_studio_url"] = args.lm_studio
     config.config["proxy_port"] = args.port
     memory_mgr.rtmdk_url = args.rtmdk
+    memory_mgr.lm_studio_url = args.lm_studio  # M8: Update lm_studio_url from CLI
     
     uvicorn.run(app, host="0.0.0.0", port=args.port, log_level="info")
 

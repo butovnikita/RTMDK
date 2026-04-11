@@ -4124,12 +4124,17 @@ class RTMDKField:
                  skip_projection: bool = False) -> str:
         # Phase 14 Track 2: Security validation
         if self.security:
+            # Check ALL text fields for prompt injection, not just 'text'
             text = content.get("text", "")
-            validation = self.security.validate_node_content(text)
-            if not validation["is_safe"]:
-                self.stats["security_violations"] += 1
-                logger.warning(f"Security violation in add_node: {validation['violations']}")
-                return ""  # Reject node
+            input_text = content.get("input_text", "")
+            output_text = content.get("output_text", "")
+            for field_text in [text, input_text, output_text]:
+                if field_text:
+                    validation = self.security.validate_node_content(field_text)
+                    if not validation["is_safe"]:
+                        self.stats["security_violations"] += 1
+                        logger.warning(f"Security violation in add_node: {validation['violations']}")
+                        return ""  # Reject node
 
         nid = node_id or f"n_{len(self.nodes)}_{int(time.time() * 1000)}"
         if skip_projection:
@@ -4173,7 +4178,9 @@ class RTMDKField:
             node.role = role  # Set role attribute on node
 
         self.nodes[nid] = node
-        self.node_index.append(nid)
+        # H1: Prevent duplicate node_id in node_index
+        if nid not in self.node_index:
+            self.node_index.append(nid)
         self.stats["total_adds"] += 1
 
         # B1: Invalidate tension cache for neighbors (new node affects topology)
@@ -4207,7 +4214,12 @@ class RTMDKField:
 
     def _invalidate_tension_cache(self, node_id: Optional[str] = None):
         """B1: Invalidate tension cache. If node_id given, invalidate that node and neighbors.
-        Otherwise, invalidate entire cache."""
+        Otherwise, invalidate entire cache. Also cleans entries for deleted nodes."""
+        # H8: Clean up entries for deleted nodes on every call
+        dead_keys = [k for k in self._tension_cache if k not in self.nodes]
+        for k in dead_keys:
+            self._tension_cache.pop(k, None)
+
         if node_id is not None:
             # Remove specific node and mark neighbors for refresh
             self._tension_cache.pop(node_id, None)
@@ -4311,8 +4323,19 @@ class RTMDKField:
         if self.cfg.enable_rollback or self.cfg.self_sup_verify_after_consolidate:
             for nid in self.node_index:
                 n = self.nodes[nid]
-                pre_state[nid] = {"latent_pos": n.latent_pos.copy(), "phase": n.phase,
-                                  "amplitude": n.amplitude, "salience": n.salience}
+                # H3: Save full state for complete rollback — not just position/phase
+                pre_state[nid] = {
+                    "latent_pos": n.latent_pos.copy(),
+                    "phase": n.phase,
+                    "amplitude": n.amplitude,
+                    "salience": n.salience,
+                    "tension": n.tension,
+                    "soft_gate": n.soft_gate,
+                    "content": dict(n.content),  # shallow copy — synthesis_note gets added
+                    "lineage": list(n.lineage),
+                    "causal_strength": dict(n.causal_strength),
+                    "causal_parents": list(n.causal_parents),
+                }
 
         # Fix 2: Safe iteration — snapshot node_index to avoid mutation issues
         node_index_snapshot = list(self.node_index)
@@ -4702,6 +4725,11 @@ class RTMDKField:
         else:
             trajectory = self.ode_dynamics.evolve(initial_state, input_signal, topo_grad)
         self.stats["ode_steps"] += 1
+        # H2: Validate trajectory size before reshape to prevent silent corruption
+        expected_size = len(ordered_nodes) * self.cfg.latent_dim
+        if trajectory[-1].size != expected_size:
+            logger.warning(f"ODE trajectory size {trajectory[-1].size} != expected {expected_size}. Skipping update.")
+            return trajectory
         final_state = trajectory[-1].reshape(len(ordered_nodes), self.cfg.latent_dim)
         for i, nid in enumerate(self.node_index):
             if nid in self.nodes and i < len(final_state):
@@ -5064,12 +5092,26 @@ class RTMDKField:
         snapshot = self._rollback_history[-n_steps]
         for nid, state in snapshot["pre_state"].items():
             if nid in self.nodes:
-                self.nodes[nid].latent_pos = state["latent_pos"].copy()
-                self.nodes[nid].phase = state["phase"]
-                self.nodes[nid].amplitude = state["amplitude"]
-                self.nodes[nid].salience = state["salience"]
-                self.nodes[nid].pre_consolidation_pos = None
+                node = self.nodes[nid]
+                node.latent_pos = state["latent_pos"].copy()
+                node.phase = state["phase"]
+                node.amplitude = state["amplitude"]
+                node.salience = state["salience"]
+                # H3: Restore full state for consistent rollback
+                node.tension = state.get("tension", 0.0)
+                node.soft_gate = state.get("soft_gate", 1.0)
+                if "content" in state:
+                    node.content = dict(state["content"])
+                if "lineage" in state:
+                    node.lineage = list(state["lineage"])
+                if "causal_strength" in state:
+                    node.causal_strength = dict(state["causal_strength"])
+                if "causal_parents" in state:
+                    node.causal_parents = list(state["causal_parents"])
+                node.pre_consolidation_pos = None
         self._rollback_history = self._rollback_history[:-n_steps]
+        # H8: Clean tension cache after rollback (nodes changed)
+        self._tension_cache.clear()
         return True
 
     def do_intervention(self, node_id: str, new_embedding: NDArray):
