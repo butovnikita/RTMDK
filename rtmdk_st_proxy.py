@@ -609,6 +609,22 @@ async def status():
     }
 
 
+@app.get("/health")
+async def health():
+    """Standard health check endpoint."""
+    try:
+        rtmdk_health = memory_mgr.get_health()
+        lm_status = memory_mgr.check_lm_studio()
+        return {
+            "status": "ok",
+            "proxy": "running",
+            "rtmdk": rtmdk_health,
+            "lm_studio": lm_status,
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 @app.get("/memory/stats")
 async def memory_stats():
     """Get memory statistics."""

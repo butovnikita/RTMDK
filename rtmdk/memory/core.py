@@ -1994,24 +1994,54 @@ def apply_attention_bias(results: List[Tuple[str, float, MemoryNode]],
 
 def format_cognitive_context(results: List[Tuple[str, float, MemoryNode]],
                              bias_applied: bool = False) -> str:
-    """
-    Format memory results with structural attention signals.
-    Produces control-token-like format that LLM can use as attention bias.
+    """Format memory results with structural attention signals for LLM.
+    
+    Handles both structured nodes (v2: input_text, output_text, emotion, tags)
+    and legacy nodes (v1: text).
     """
     if not results:
         return "### COGNITIVE_CONTEXT\nNo relevant structures."
 
     lines = ["### COGNITIVE_CONTEXT"]
     for nid, score, node in results:
-        text = node.content.get("text", "unknown")[:80]
-        tier = getattr(node, 'tier', 'semantic')
+        content = node.content
+        
+        # Check for structured node (v2)
+        if content.get("version") == "2.0":
+            input_text = content.get("input_text", "")
+            output_text = content.get("output_text", "")
+            emotion = content.get("emotion", "neutral")
+            tags = content.get("tags", [])
+            session = content.get("session", "")
+            
+            # Format structured context
+            text_parts = []
+            if input_text:
+                text_parts.append(f"User: {input_text[:80]}")
+            if output_text:
+                text_parts.append(f"AI: {output_text[:80]}")
+            text = " | ".join(text_parts) if text_parts else content.get("text", "unknown")[:80]
+            
+            tier = content.get("tier", getattr(node, 'tier', 'semantic'))
+            tokens = f"[SCORE:{score:.3f}]"
+            tokens += f"[TIER:{tier[0].upper()}]"
+            if emotion != "neutral":
+                tokens += f"[EMO:{emotion[:4]}]"
+            if tags:
+                tokens += f"[TAGS:{','.join(tags[:3])}]"
+            if session:
+                tokens += f"[SESS:{session[:10]}]"
+        else:
+            # Legacy node (v1)
+            text = content.get("text", "unknown")[:80]
+            tier = content.get("tier", getattr(node, 'tier', 'semantic'))
+            tokens = f"[SCORE:{score:.3f}]"
+            tokens += f"[TIER:{tier[0].upper()}]"
+
         causal = len(node.causal_strength) if hasattr(node, 'causal_strength') else 0
         tension = node.tension
         lineage = len(node.lineage) if node.lineage else 0
-
-        # Control-token format
-        tokens = f"[SCORE:{score:.3f}]"
-        tokens += f"[TIER:{tier[0].upper()}]"
+        
         if causal > 0:
             tokens += f"[CAUSAL:{causal}]"
         if tension > 0.3:
@@ -3377,40 +3407,114 @@ def format_context(results: List[Tuple[str, float, MemoryNode]], fmt: ContextFor
     if fmt == ContextFormat.JSON:
         items = []
         for nid, resp, node in results:
-            item = {"resonance": round(resp, 4), "salience": round(node.salience, 4),
-                    "text": node.content.get("text", ""), "lineage": node.lineage,
-                    "modality": node.modality, "self_sup_score": round(node.self_sup_score, 4),
-                    "cross_modal_score": round(node.cross_modal_score, 4)}
-            meta = {k: v for k, v in node.content.items() if k != "text"}
-            if meta:
-                item["metadata"] = meta
+            content = node.content
+            
+            # Check for structured node (v2)
+            if content.get("version") == "2.0":
+                item = {
+                    "resonance": round(resp, 4),
+                    "salience": round(node.salience, 4),
+                    "input_text": content.get("input_text", ""),
+                    "output_text": content.get("output_text", ""),
+                    "role": content.get("role", ""),
+                    "session": content.get("session", ""),
+                    "emotion": content.get("emotion", ""),
+                    "tags": content.get("tags", []),
+                    "tier": content.get("tier", ""),
+                    "timestamp": content.get("timestamp", 0),
+                    "lineage": node.lineage,
+                    "modality": node.modality,
+                }
+            else:
+                # Legacy node (v1)
+                item = {
+                    "resonance": round(resp, 4),
+                    "salience": round(node.salience, 4),
+                    "text": content.get("text", ""),
+                    "lineage": node.lineage,
+                    "modality": node.modality,
+                    "self_sup_score": round(node.self_sup_score, 4),
+                    "cross_modal_score": round(node.cross_modal_score, 4),
+                }
+                meta = {k: v for k, v in content.items() if k != "text"}
+                if meta:
+                    item["metadata"] = meta
             items.append(item)
         return json.dumps(items, ensure_ascii=False, indent=2) if items else "[]"
+    
     elif fmt == ContextFormat.YAML:
         lines = []
         for nid, resp, node in results:
-            lines.extend([f"- resonance: {resp:.4f}", f"  salience: {node.salience:.4f}",
-                          f"  text: \"{node.content.get('text', '')}\"",
-                          f"  lineage: {node.lineage}", f"  modality: {node.modality}",
-                          f"  cross_modal_score: {node.cross_modal_score:.4f}"])
+            content = node.content
+            if content.get("version") == "2.0":
+                lines.extend([
+                    f"- resonance: {resp:.4f}",
+                    f"  salience: {node.salience:.4f}",
+                    f"  input: \"{content.get('input_text', '')}\"",
+                    f"  output: \"{content.get('output_text', '')}\"",
+                    f"  role: {content.get('role', '')}",
+                    f"  emotion: {content.get('emotion', '')}",
+                    f"  tier: {content.get('tier', '')}",
+                ])
+            else:
+                lines.extend([
+                    f"- resonance: {resp:.4f}",
+                    f"  salience: {node.salience:.4f}",
+                    f"  text: \"{content.get('text', '')}\"",
+                    f"  lineage: {node.lineage}",
+                    f"  modality: {node.modality}",
+                    f"  cross_modal_score: {node.cross_modal_score:.4f}",
+                ])
         return "\n".join(lines) if lines else "No relevant memory."
+    
     elif fmt == ContextFormat.ATTENTION:
-        # Control-tokens format for attention-aware LLMs (Qwen, Mistral, Llama 3)
         lines = ["### ATTENTION_CONTEXT"]
         for nid, resp, node in results:
+            content = node.content
             causal = len(node.causal_strength) if hasattr(node, 'causal_strength') else 0
             goal_rel = getattr(node, 'goal_relevance', 0.0)
             tokens = (f"[ATTN:{resp:.3f}][SAL:{node.salience:.3f}]"
-                      f"[TIER:{getattr(node, 'tier', 'semantic')[0].upper()}]")
+                      f"[TIER:{content.get('tier', getattr(node, 'tier', 'semantic'))[0].upper()}]")
             if causal > 0:
                 tokens += f"[CAUSAL:{causal}]"
             if goal_rel > 0.3:
                 tokens += f"[GOAL:{goal_rel:.2f}]"
-            text = node.content.get("text", "unknown")[:100]
+            
+            # Extract text from structured or legacy node
+            if content.get("version") == "2.0":
+                input_t = content.get("input_text", "")[:60]
+                output_t = content.get("output_text", "")[:60]
+                if input_t and output_t:
+                    text = f"U:{input_t} | AI:{output_t}"
+                elif input_t:
+                    text = f"U:{input_t}"
+                elif output_t:
+                    text = f"AI:{output_t}"
+                else:
+                    text = content.get("text", "unknown")[:100]
+                # Add emotion/tag if present
+                emotion = content.get("emotion", "")
+                tags = content.get("tags", [])
+                if emotion != "neutral":
+                    text += f" [{emotion}]"
+                if tags:
+                    text += f" #{','.join(tags[:2])}"
+            else:
+                text = node.content.get("text", "unknown")[:100]
+            
             lines.append(f"{tokens} {text}")
         return "\n".join(lines) if len(lines) > 1 else "No relevant memory."
     else:
-        parts = [f"[R:{r:.2f}|S:{n.salience:.2f}|CM:{n.cross_modal_score:.2f}] {n.content.get('text', '')}" for _, r, n in results]
+        parts = []
+        for _, r, n in results:
+            content = n.content
+            if content.get("version") == "2.0":
+                input_t = content.get("input_text", "")[:50]
+                output_t = content.get("output_text", "")[:50]
+                text = f"U:{input_t} | AI:{output_t}" if input_t and output_t else (input_t or output_t or "unknown")
+            else:
+                text = n.content.get('text', '')
+            parts.append(f"[R:{r:.2f}|S:{n.salience:.2f}|CM:{n.cross_modal_score:.2f}] {text}")
         return "\n".join(parts) if parts else "No relevant memory."
 
 
@@ -5692,50 +5796,108 @@ class RTMDKMemory(BaseModel):
         return build_system_prompt(context, self.config.context_format, self.config.use_structured_prompt)
 
     def save_context(self, inputs: Dict[str, str], outputs: Dict[str, str]) -> None:
-        text = outputs.get("output", inputs.get("input", ""))
+        """Save a conversation turn to memory with structured node format.
+        
+        Args:
+            inputs: {"input": "user text", "session_id": "...", ...}
+            outputs: {"output": "assistant text", ...}
+        
+        Node structure:
+            input_text: User's message
+            output_text: Assistant's response (empty if only input)
+            role: "user" or "assistant"  
+            session: Session/character ID
+            timestamp: Unix timestamp
+            emotion: Detected emotion (neutral by default)
+            tags: Auto-detected memory tags
+            tier: episodic/semantic/procedural
+            context: Additional metadata
+        """
+        input_text = inputs.get("input", "")
+        output_text = outputs.get("output", "")
+        
+        # If output is empty, still save the input
+        if not output_text.strip():
+            if not input_text.strip():
+                return
+            text_for_embedding = input_text
+        else:
+            text_for_embedding = output_text if len(output_text) > len(input_text) else input_text
+        
         session_id = inputs.get("session_id", "default")
-        if not text.strip():
-            return
-        embedding = self.embedder(text)
+        timestamp = time.time()
+        
+        # Detect emotion from text
+        emotion = "neutral"
+        if input_text:
+            lower_input = input_text.lower()
+            if any(w in lower_input for w in ["happy", "love", "great", "wonderful", "amazing", "рад", "люб", "отличн", "прекрасн"]):
+                emotion = "positive"
+            elif any(w in lower_input for w in ["sad", "hate", "bad", "terrible", "angry", "грустн", "ненавиж", "плох", "зл"]):
+                emotion = "negative"
+            elif any(w in lower_input for w in ["?", "what", "why", "how", "when", "где", "что", "как", "когда", "почему"]):
+                emotion = "questioning"
+        
+        # Auto-detect tags from text
+        all_text = f"{input_text} {output_text}"
+        tags = self._detect_tags(all_text)
+        
+        # Build structured node content
+        content = {
+            "input_text": input_text,
+            "output_text": output_text,
+            "role": "assistant" if output_text.strip() else "user",
+            "session": session_id,
+            "timestamp": timestamp,
+            "emotion": emotion,
+            "tags": tags,
+            "tier": "episodic",  # Will be refined by tier detection
+            "context": {
+                k: v for k, v in inputs.items() 
+                if k not in ["input", "query", "session_id", "embedding"]
+            },
+            "version": "2.0",  # Structured node version
+        }
+        
+        embedding = self.embedder(text_for_embedding)
         phase = self._get_phase(session_id, embedding)
-        modality = detect_modality(text) if self.config.cross_modal else "text"
-        # Phase 11 Track 1: Detect memory tier
-        tier = detect_tier(text, inputs)
-        content = {"text": text, "timestamp": time.time(), "session": session_id,
-                   **{k: v for k, v in inputs.items() if k not in ["input", "query", "session_id"]}}
+        modality = detect_modality(text_for_embedding) if self.config.cross_modal else "text"
+        
+        # Detect memory tier
+        tier = detect_tier(text_for_embedding, inputs)
+        content["tier"] = tier
+        
         self.field.add_node(embedding, content, phase, session_id=session_id, modality=modality)
+        
         # Set tier on the newly added node
         if self.field.node_index:
             nid = self.field.node_index[-1]
             self.field.nodes[nid].tier = tier
-
+        
         # Phase 18: Create/update engrams from co-activated nodes
         if self.engram_manager is not None:
-            # Find related nodes via semantic similarity
             related_nodes = []
             for existing_nid, existing_node in self.field.nodes.items():
                 existing_emb = self._get_node_embedding(existing_nid, existing_node)
                 if existing_emb is not None:
                     sim = float(np.dot(embedding, existing_emb) / (
                         (np.linalg.norm(embedding) + 1e-8) * (np.linalg.norm(existing_emb) + 1e-8)))
-                    if sim > 0.5:  # Threshold for co-activation
+                    if sim > 0.5:
                         related_nodes.append((existing_nid, sim))
-            # Include the new node
             related_nodes.append((self.field.node_index[-1] if self.field.node_index else "latest", 1.0))
-
+            
             if len(related_nodes) >= self.config.engram_min_nodes:
-                # Build node embeddings dict
                 node_embs = {}
                 for nid, _ in related_nodes:
                     emb = self._get_node_embedding(nid, self.field.nodes.get(nid))
                     if emb is not None:
                         node_embs[nid] = emb
-
+                
                 self.engram_manager.create_engram_from_nodes(
                     activated_nodes=related_nodes[:self.config.engram_max_nodes],
                     node_embeddings=node_embs,
-                    semantic_core=text[:100],
-                    context_tags={tier, session_id},
+                    semantic_core=text_for_embedding[:100],
+                    context_tags=set(tags + [tier, session_id]),
                     tier=tier,
                 )
 

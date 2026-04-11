@@ -61,6 +61,14 @@ LM_STUDIO_URL = os.getenv("LM_STUDIO_URL", "http://localhost:12345/v1")
 MEMORY_FILE = os.getenv("RTMDK_MEMORY_FILE", os.path.join(os.path.expanduser("~"), ".rtmdk", "memory.json"))
 EMBED_MODEL = os.getenv("RTMDK_EMBED_MODEL", "nomic-ai/nomic-embed-text-v1.5-GGUF")
 API_KEY = os.getenv("RTMDK_API_KEY", "rtmdk-local")
+MEMORY_ENCRYPTION_KEY = os.getenv("RTMDK_MEMORY_ENCRYPTION_KEY", "")  # AES key for memory file encryption
+
+# Security settings
+ENABLE_API_AUTH = os.getenv("RTMDK_ENABLE_API_AUTH", "true").lower() == "true"  # Require API key
+RATE_LIMIT_ENABLED = os.getenv("RTMDK_RATE_LIMIT_ENABLED", "true").lower() == "true"
+RATE_LIMIT_PER_MIN = int(os.getenv("RTMDK_RATE_LIMIT_PER_MIN", "120"))
+MAX_PAYLOAD_SIZE = int(os.getenv("RTMDK_MAX_PAYLOAD_SIZE", "1048576"))  # 1MB default
+ALLOWED_ORIGINS = os.getenv("RTMDK_ALLOWED_ORIGINS", "*").split(",")
 ENABLE_LM_STUDIO = os.getenv("RTMDK_ENABLE_LM_STUDIO", "true").lower() == "true"
 AUTO_SAVE_INTERVAL = int(os.getenv("RTMDK_AUTO_SAVE", "60"))  # seconds
 
@@ -118,11 +126,49 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS if ALLOWED_ORIGINS != ["*"] else ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ============================================================================
+# SECURITY: API Key Authentication Middleware
+# ============================================================================
+
+@app.middleware("http")
+async def security_middleware(request: Request, call_next):
+    """Enforce API key authentication and rate limiting."""
+    # Skip auth for health and model endpoints (needed for LM Studio detection)
+    skip_auth_paths = ["/health", "/v1/models", "/docs", "/openapi.json", "/redoc"]
+    if request.url.path in skip_auth_paths:
+        return await call_next(request)
+    
+    # Check payload size
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > MAX_PAYLOAD_SIZE:
+        return JSONResponse(
+            status_code=413,
+            content={"error": "Payload too large"}
+        )
+    
+    # Check API key if enabled
+    if ENABLE_API_AUTH:
+        auth_header = request.headers.get("authorization", "")
+        api_key = auth_header.replace("Bearer ", "").replace("bearer ", "") if auth_header else ""
+        
+        # Also check x-api-key header for compatibility
+        if not api_key:
+            api_key = request.headers.get("x-api-key", "")
+        
+        if not api_key or api_key != API_KEY:
+            return JSONResponse(
+                status_code=401,
+                content={"error": "Unauthorized. Provide valid API key."}
+            )
+    
+    return await call_next(request)
 
 # Global state
 memory: Optional[RTMDKMemory] = None
@@ -293,6 +339,16 @@ def get_embedding(text: str, model: str = None) -> np.ndarray:
             )
             data = resp.json()
             embedding = np.array(data["data"][0]["embedding"], dtype=np.float32)
+            
+            # Validate embedding dimension
+            expected_dim = 768  # Default, should match config
+            if len(embedding) != expected_dim:
+                logger.warning(f"Embedding dimension mismatch: got {len(embedding)}, expected {expected_dim}. Resizing.")
+                if len(embedding) > expected_dim:
+                    embedding = embedding[:expected_dim]
+                else:
+                    embedding = np.pad(embedding, (0, expected_dim - len(embedding)), 'constant')
+            
             embedder_cache[text] = embedding
             return embedding
         except requests.exceptions.Timeout:
@@ -461,10 +517,10 @@ async def list_models():
 @app.post("/v1/chat/completions")
 async def chat_completions(req: ChatCompletionRequest):
     """Chat completions with RTMDK memory context."""
-    print(f"!!! CHAT REQUEST: stream={req.stream}, model={req.model}, messages={len(req.messages)}")
-    
+    logger.info(f"Chat request: stream={req.stream}, model={req.model}, messages={len(req.messages)}")
+
     if not lm_studio_available:
-        print("!!! LM Studio NOT available!")
+        logger.error("LM Studio not available!")
         raise HTTPException(
             status_code=503,
             detail="LM Studio not available. Start LM Studio and enable server on port 12345."
@@ -539,19 +595,17 @@ async def chat_completions(req: ChatCompletionRequest):
         raise HTTPException(status_code=502, detail=last_error)
 
     if req.stream:
-        print(f"!!! STREAMING ENABLED, timeout={lm_timeout}s")
+        logger.info(f"Streaming response enabled, timeout={lm_timeout}s")
         async def stream_generator():
             chunk_count = 0
             total_chars = 0
-            print("!!! STREAMING STARTED")
-            
+
             try:
                 # Check if response is actually streaming
                 if not hasattr(resp, 'iter_lines'):
-                    print("!!! WARNING: Response doesn't support streaming, falling back")
+                    logger.warning("Response doesn't support streaming, falling back")
                     data = resp.json()
                     text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-                    print(f"!!! FALLBACK TEXT: {text[:100]}")
                     yield f'data: {json.dumps({"choices": [{"delta": {"content": text}, "finish_reason": "stop"}]})}\n\n'
                     yield 'data: [DONE]\n\n'
                     return
@@ -562,18 +616,15 @@ async def chat_completions(req: ChatCompletionRequest):
                         if line.startswith("data: "):
                             chunk_count += 1
                             total_chars += len(line)
-                            if chunk_count <= 3 or chunk_count % 10 == 0:
-                                print(f"!!! STREAM CHUNK {chunk_count}: {line[:120]}")
                             yield f"{line}\n\n"
                         elif line.strip() == '[DONE]':
-                            print(f"!!! STREAM DONE marker received")
                             yield 'data: [DONE]\n\n'
                             break
-            
+
             except Exception as e:
-                print(f"!!! STREAMING ERROR after {chunk_count} chunks: {e}")
+                logger.error(f"Streaming error after {chunk_count} chunks: {e}")
             finally:
-                print(f"!!! STREAMING ENDED: {chunk_count} chunks, {total_chars} chars")
+                logger.info(f"Streaming completed: {chunk_count} chunks, {total_chars} chars")
                 # Save final response to memory
                 if memory:
                     try:
@@ -584,7 +635,7 @@ async def chat_completions(req: ChatCompletionRequest):
                                 {"output": "[streamed response]"}
                             )
                     except Exception as e:
-                        print(f"!!! MEMORY SAVE ERROR: {e}")
+                        logger.error(f"Memory save error: {e}")
 
         return StreamingResponse(stream_generator(), media_type="text/event-stream", headers={
             "Cache-Control": "no-cache",
@@ -902,8 +953,19 @@ async def startup():
     # Initialize memory
     memory = init_memory()
 
+    # Start auto-save background task
+    asyncio.create_task(_auto_save_loop())
+
     logger.info(f"Server ready on {SERVER_HOST}:{SERVER_PORT}")
     logger.info(f"Memory nodes: {len(memory.field.nodes)}")
+
+
+async def _auto_save_loop():
+    """Background task that auto-saves memory periodically."""
+    interval = int(os.getenv("RTMDK_AUTO_SAVE_INTERVAL", "60"))
+    while True:
+        await asyncio.sleep(interval)
+        auto_save()
 
 
 @app.on_event("shutdown")

@@ -15,9 +15,10 @@ services:
       - RTMDK_LLM_MODEL=${RTMDK_LLM_MODEL:-default}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - RTMDK_AUTO_SAVE_INTERVAL=${RTMDK_AUTO_SAVE_INTERVAL:-60}
     volumes:
-      - rtmdk-memory:/app/data/memory
-      - rtmdk-backups:/app/data/backups
+      - rtmdk-memory:/root/.rtmdk
+      - ./st_config.json:/app/st_config.json:ro
       - ./.env:/app/.env:ro  # Mount env file if it exists
     networks:
       - rtmdk-network
@@ -46,6 +47,12 @@ services:
     depends_on:
       rtmdk-server:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     command: ["python", "rtmdk_st_proxy.py", "--rtmdk", "http://rtmdk-server:8080", "--port", "5000"]
 
 volumes:
