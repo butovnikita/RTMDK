@@ -4001,9 +4001,18 @@ class RTMDKField:
                 self.stats["cross_modal_recall"] = 0.9 * self.stats["cross_modal_recall"] + 0.1 * float(np.mean(cm_scores))
 
         if len(results) == 0 and self.cfg.bm25_fallback and self.bm25_index:
-            text = " ".join(self.nodes[nid].content.get("text", "") for nid in self.node_index[:100])
-            if text:
-                for doc_id, score in self.bm25_index.search(text, top_k):
+            # Handle both v1 (text) and v2 (input_text + output_text) nodes
+            texts = []
+            for nid in self.node_index[:100]:
+                content = self.nodes[nid].content
+                t = content.get("text", "")
+                if not t:
+                    t = f"{content.get('input_text', '')} {content.get('output_text', '')}".strip()
+                if t:
+                    texts.append(t)
+            query_text = " ".join(texts)
+            if query_text:
+                for doc_id, score in self.bm25_index.search(query_text, top_k):
                     if doc_id in self.nodes:
                         results.append((doc_id, score * 0.1, self.nodes[doc_id]))
                 self.stats["bm25_fallbacks"] += 1
@@ -4173,7 +4182,12 @@ class RTMDKField:
         if self.cfg.use_hnsw and self.hnsw_index:
             self.hnsw_index.insert(nid, latent)
         if self.cfg.bm25_fallback and self.bm25_index:
+            # Handle both v1 (text) and v2 (input_text + output_text) nodes
             text = content.get("text", "")
+            if not text:
+                input_t = content.get("input_text", "")
+                output_t = content.get("output_text", "")
+                text = f"{input_t} {output_t}".strip()
             if text:
                 self.bm25_index.add_document(nid, text)
 
@@ -5781,6 +5795,33 @@ class RTMDKMemory(BaseModel):
         # Fallback: return None (engram creation will skip this node)
         # Note: We can't reliably reconstruct from latent_pos without the inverse projection
         return None
+
+    def _detect_tags(self, text: str) -> List[str]:
+        """Auto-detect memory tags from text content."""
+        tags = []
+        lower = text.lower()
+        
+        # Greeting/name tags
+        if any(w in lower for w in ["hello", "hi ", "hey", "привет", "здравствуй", "hi,", "hey,"]):
+            tags.append("greeting")
+        if any(w in lower for w in ["my name is", "i'm ", "i am ", "меня зовут", "мое имя"]):
+            tags.append("name")
+        
+        # Topic tags
+        if any(w in lower for w in ["code", "program", "python", "java", "javascript", "функци", "код", "програм"]):
+            tags.append("coding")
+        if any(w in lower for w in ["coffee", "tea", "food", "drink", "кофе", "чай", "еда"]):
+            tags.append("food_drink")
+        if any(w in lower for w in ["love", "like", "prefer", "enjoy", "люб", "нрав", "предпочита"]):
+            tags.append("preference")
+        if any(w in lower for w in ["work", "job", "career", "работ", "карьер", "професс"]):
+            tags.append("work")
+        if any(w in lower for w in ["live", "city", "country", "home", "жив", "город", "стран", "дом"]):
+            tags.append("location")
+        if any(w in lower for w in ["family", "friend", "dog", "cat", "pet", "семь", "друг", "собак", "кот", "питом"]):
+            tags.append("relationships")
+        
+        return tags[:5]  # Limit to 5 tags
 
     def _generate_clarification(self, results: List, query: str) -> str:
         """Generate a clarification prompt from weak-resonance nodes."""
