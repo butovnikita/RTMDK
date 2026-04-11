@@ -466,7 +466,9 @@ def poincare_dist(u: NDArray, v: NDArray, ball_radius: float = 0.85) -> float:
         v_norm = np.linalg.norm(v)
     delta = u - v
     sq_delta = np.sum(delta ** 2)
-    denom = (1 - u_norm ** 2) * (1 - v_norm ** 2)
+    # Bug fix: Use ball_radius^2 in denominator for non-unit ball
+    r_sq = ball_radius ** 2
+    denom = ((r_sq - u_norm ** 2) * (r_sq - v_norm ** 2)) / max(r_sq, 1e-8)
     arg = 1 + 2 * sq_delta / max(denom, 1e-8)
     return float(np.arccosh(np.clip(arg, 1.0, None)))
 
@@ -3871,7 +3873,8 @@ class RTMDKField:
         node_saliences = np.array([self.nodes[nid].salience for nid in node_ids])
 
         dists = cdist(query_latents, node_positions)
-        spatial = np.exp(-dists / self.cfg.bandwidth)
+        # Gaussian kernel: exp(-d^2/(2*bw^2)) for consistency with single and Torch paths
+        spatial = np.exp(-dists ** 2 / (2 * self.cfg.bandwidth ** 2))
         phase_diff = query_phases[:, np.newaxis] - node_phases[np.newaxis, :]
         phase_align = 0.5 + 0.5 * np.cos(phase_diff)
         response = spatial * ((1 - self.cfg.phase_coupling) + self.cfg.phase_coupling * phase_align)
@@ -4365,7 +4368,7 @@ class RTMDKField:
                     node.phase = np.arctan2(0.5*(np.sin(node.phase)+np.sin(partner.phase)),
                                             0.5*(np.cos(node.phase)+np.cos(partner.phase))) % (2*np.pi)
                     node.amplitude = min(1.0, 0.8*(node.amplitude+partner.amplitude))
-                    node.salience = 0.7*(node.salience+partner.salience)
+                    node.salience = min(1.0, 0.7*(node.salience+partner.salience))
 
                 node.tension = 0.0
                 node.soft_gate = 1.0
@@ -4453,7 +4456,7 @@ class RTMDKField:
                     node.phase = np.arctan2(0.5*(np.sin(node.phase)+np.sin(partner.phase)),
                                             0.5*(np.cos(node.phase)+np.cos(partner.phase))) % (2*np.pi)
                     node.amplitude = min(1.0, 0.8*(node.amplitude+partner.amplitude))
-                    node.salience = 0.7*(node.salience+partner.salience)
+                    node.salience = min(1.0, 0.7*(node.salience+partner.salience))
 
                 node.tension = 0.0
                 node.soft_gate = 1.0
@@ -5237,7 +5240,9 @@ class RTMDKField:
             members = [recent[i] for i, l in enumerate(labels) if l == cluster_id]
             if len(members) >= self.cfg.crystallization_min_cluster:
                 new_pos = np.mean([m.latent_pos for m in members], axis=0).astype(np.float32)
-                new_phase = np.mean([m.phase for m in members])
+                # Circular mean for phases: arctan2(mean(sin), mean(cos))
+                phases = np.array([m.phase for m in members])
+                new_phase = float(np.arctan2(np.mean(np.sin(phases)), np.mean(np.cos(phases)))) % (2 * np.pi)
                 combined_text = " ".join([m.content.get("text", "")[:30] for m in members[:3]])
                 new_content = {
                     "text": f"Crystallized: {combined_text}...",

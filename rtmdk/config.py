@@ -78,12 +78,12 @@ class RTMDKConfig:
     Nomic embed-text-v1.5 = 768, all-MiniLM-L6-v2 = 384.
     ↓ Smaller = faster, ↑ Larger = more accurate."""
 
-    latent_dim: int = 256
+    latent_dim: int = 64
     """Internal representation size. Larger = more detail retained.
-    Default 256: good balance. 64: faster but lossy. 512: max accuracy.
+    Default 64: aligned with server defaults. 256: more detail but more RAM.
     ↑ Larger = better recall but more RAM and slower."""
 
-    decay_rate: float = 0.999
+    decay_rate: float = 0.997
     """How fast memories fade. 0.999 = very slow (half-life ~693 steps).
     0.995 = moderate forgetting (half-life ~138 steps).
     0.990 = aggressive forgetting (half-life ~69 steps).
@@ -99,9 +99,9 @@ class RTMDKConfig:
     3 = concise context, 5 = default, 10 = comprehensive.
     ↑ Larger = more context for LLM but higher token cost."""
 
-    tension_threshold: float = 0.25
+    tension_threshold: float = 0.15
     """Threshold for triggering consolidation.
-    0.15 = frequent consolidation, 0.25 = moderate, 0.40 = rare.
+    0.15 = moderate consolidation (server default), 0.25 = rare, 0.40 = very rare.
     ↓ Lower = more merging (risk of info loss), ↑ Higher = less merging."""
 
     consolidation_mode: ConsolidationMode = ConsolidationMode.DIALECTICAL
@@ -488,93 +488,6 @@ class RTMDKConfig:
     role_shards: Set[str] = field(default_factory=lambda: {"default"})
     cross_shard_threshold: float = 0.45
     auto_role_detection: bool = True
-
-    # Additional fields used by rtmdk_memory_v8.py
-    max_versions: int = 100
-    entropy_management: bool = False
-    entropy_threshold: float = 0.5
-    causal_discovery_enabled: bool = False
-    counterfactual_enabled: bool = False
-    counterfactual_max_depth: int = 3
-    continuous_dynamics: bool = False
-    meta_controller: bool = False
-    swarm_memory: bool = False
-    swarm_consensus_threshold: float = 0.5
-    swarm_max_agents: int = 10
-    proactive_clarification: bool = False
-    clarification_threshold_ratio: float = 2.0
-    cognitive_compression: bool = False
-    triton_backend: bool = False
-    bias_temperature: float = 1.0
-    causal_discovery_min_samples: int = 20
-    causal_p_threshold: float = 0.05
-    causal_adjustment_sets: bool = True
-    sde_noise_level: float = 0.01
-    ode_time_horizon: float = 1.0
-    ode_n_steps: int = 20
-    ode_chunk_size: int = 256
-    ode_solver: str = "RK45"
-    ode_atol: float = 1e-6
-    ode_rtol: float = 1e-5
-    top_shards: int = 3
-    ball_radius: float = 0.85
-    curvature: float = -1.0
-    dp_epsilon: float = 2.0
-    dp_delta: float = 1e-5
-    dp_max_norm: float = 1.0
-    differential_privacy: bool = False
-    self_supervision: bool = False
-    self_sup_threshold: float = 0.3
-    self_sup_verify_after_consolidate: bool = False
-    gpu_batch_size: int = 512
-    field_stability_window: int = 20
-    projection_lr: float = 0.001
-    pca_n_components: Optional[int] = None
-    bm25_k1: float = 1.5
-    bm25_b: float = 0.75
-    use_structured_prompt: bool = True
-    adaptive_window: int = 30
-    hyperbolic: bool = False
-    predictive_coding: bool = False
-    counterfactual_imagination: bool = False
-    goal_tracking: bool = False
-    max_goals: int = 20
-    goal_decay: float = 0.995
-    goal_completion_threshold: float = 0.8
-    rl_feedback: bool = False
-    rl_learning_rate: float = 0.01
-    rl_reward_window: int = 10
-    low_rank_compression: bool = False
-    compression_rank: int = 32
-    compression_freq: int = 500
-    meta_memory: bool = False
-    self_reflection_freq: int = 100
-    memory_age_factor: float = 0.001
-    recall_accuracy_threshold: float = 0.6
-    max_node_text_length: int = 10000
-    tension_spike_threshold: float = 0.5
-    causal_graph_integrity_check: bool = True
-    prompt_injection_patterns: List[str] = field(default_factory=lambda: [
-        "ignore previous", "system prompt", "you are now", "disregard",
-    ])
-    swarm_vote_weight: float = 0.3
-    symbolic_overlay: bool = False
-    symbolic_min_self_sup: float = 0.7
-    symbolic_max_tension: float = 0.15
-    symbolic_confidence_threshold: float = 0.65
-    safety_certifier: bool = False
-    production_mode: bool = False
-    eval_mode: str = "production"
-    shadow_mode: bool = False
-    shadow_fallback_threshold: float = 0.3
-    auto_rollback: bool = False
-    auto_rollback_threshold: float = 0.15
-    ragas_enabled: bool = False
-    drift_detection: bool = False
-    drift_window: int = 100
-    drift_threshold: float = 0.05
-    metrics_retention: int = 10000
-    eval_frequency: int = 100
 
     def __post_init__(self):
         try:
