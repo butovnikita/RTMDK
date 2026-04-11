@@ -1,6 +1,18 @@
-fastapi>=0.104.0
-uvicorn>=0.24.0
-numpy>=1.24.0
-scipy>=1.11.0
+# RTMDK Core Dependencies
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
 pydantic>=2.0.0
+numpy>=1.24.0
+scikit-learn>=1.3.0
 requests>=2.31.0
+
+# Embedder (built-in)
+sentence-transformers>=2.2.0
+
+# Memory persistence
+msgpack>=1.0.0
+
+# Optional: For advanced features
+# hnswlib>=0.7.0  # HNSW index
+# onnxruntime>=1.15.0  # Faster embeddings
+# prometheus-client>=0.17.0  # Metrics

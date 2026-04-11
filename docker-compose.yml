@@ -1,86 +1,57 @@
-version: "3.9"
+version: '3.8'
 
 services:
-  rtmdk-api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: rtmdk-memory
-    ports:
-      - "${RTMDK_PORT:-8080}:8080"
-    env_file:
-      - .env
-    environment:
-      # ── Server ──
-      - RTMDK_HOST=0.0.0.0
-      - RTMDK_PORT=${RTMDK_PORT:-8080}
-      - RTMDK_API_KEY=${RTMDK_API_KEY:-rtmdk-local}
-      - RTMDK_LOG_FORMAT=${RTMDK_LOG_FORMAT:-text}
-      # ── Memory ──
-      - RTMDK_MEMORY_FILE=/data/memory.json
-      - RTMDK_AUTO_SAVE=${RTMDK_AUTO_SAVE:-60}
-      # ── API Provider ──
-      - RTMDK_API_PROVIDER=${RTMDK_API_PROVIDER:-lm_studio}
-      - RTMDK_API_TIMEOUT=${RTMDK_API_TIMEOUT:-30}
-      # ── LM Studio ──
-      - LM_STUDIO_URL=${LM_STUDIO_URL:-http://host.docker.internal:12345/v1}
-      - RTMDK_EMBED_MODEL=${RTMDK_EMBED_MODEL:-nomic-ai/nomic-embed-text-v1.5-GGUF}
-      - RTMDK_ENABLE_LM_STUDIO=${RTMDK_ENABLE_LM_STUDIO:-true}
-      # ── OpenRouter ──
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
-      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-anthropic/claude-3.5-sonnet}
-      - OPENROUTER_BASE_URL=${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
-      # ── OpenAI ──
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
-      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
-      # ── Anthropic ──
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-3-5-sonnet-20241022}
-      # ── Custom ──
-      - CUSTOM_API_URL=${CUSTOM_API_URL:-}
-      - CUSTOM_API_KEY=${CUSTOM_API_KEY:-}
-      - CUSTOM_API_MODEL=${CUSTOM_API_MODEL:-}
-      # ── UX Features ──
-      - RTMDK_BACKUP_DIR=/data/backups
-      - RTMDK_SESSION_DIR=/data/sessions
-      - RTMDK_CACHE_DIR=/data/embedding_cache
-      - RTMDK_BACKUP_COMPRESSION=${RTMDK_BACKUP_COMPRESSION:-true}
-      - RTMDK_BACKUP_ROTATION=${RTMDK_BACKUP_ROTATION:-5}
-      - RTMDK_AUTO_SAVE_INTERVAL=${RTMDK_AUTO_SAVE_INTERVAL:-60}
-      - RTMDK_PRUNE_AGE_DAYS=${RTMDK_PRUNE_AGE_DAYS:-90}
-      - RTMDK_PRUNE_MIN_SALIENCE=${RTMDK_PRUNE_MIN_SALIENCE:-0.05}
-      - RTMDK_RATE_LIMIT_PER_MINUTE=${RTMDK_RATE_LIMIT_PER_MINUTE:-60}
-      - RTMDK_RATE_LIMIT_PER_HOUR=${RTMDK_RATE_LIMIT_PER_HOUR:-1000}
-      - RTMDK_CACHE_MAX_SIZE=${RTMDK_CACHE_MAX_SIZE:-100000}
-      - RTMDK_MAX_CONTEXT_TOKENS=${RTMDK_MAX_CONTEXT_TOKENS:-300}
-      - RTMDK_LLM_MODEL=${RTMDK_LLM_MODEL:-default}
-      - RTMDK_FEEDBACK_LR=${RTMDK_FEEDBACK_LR:-0.05}
-    volumes:
-      - rtmdk-data:/data
-      - rtmdk-backups:/data/backups
-      - rtmdk-sessions:/data/sessions
-      - rtmdk-cache:/data/embedding_cache
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+  # RTMDK Memory Server
+  rtmdk-server:
+    build: .
+    container_name: rtmdk-server
     restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - RTMDK_API_PROVIDER=${RTMDK_API_PROVIDER:-lm_studio}
+      - LM_STUDIO_URL=${LM_STUDIO_URL:-http://host.docker.internal:12345/v1}
+      - RTMDK_EMBED_MODEL=${RTMDK_EMBED_MODEL:-nomic-embed-text-v1.5}
+      - RTMDK_LLM_MODEL=${RTMDK_LLM_MODEL:-default}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+    volumes:
+      - rtmdk-memory:/app/data/memory
+      - rtmdk-backups:/app/data/backups
+      - ./.env:/app/.env:ro  # Mount env file if it exists
+    networks:
+      - rtmdk-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
-      timeout: 5s
+      timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 40s
+
+  # SillyTavern Proxy
+  rtmdk-proxy:
+    build: .
+    container_name: rtmdk-proxy
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - RTMDK_URL=http://rtmdk-server:8080
+      - LM_STUDIO_URL=${LM_STUDIO_URL:-http://host.docker.internal:12345/v1}
+      - PROXY_PORT=5000
+    volumes:
+      - ./st_config.json:/app/st_config.json:ro
     networks:
       - rtmdk-network
+    depends_on:
+      rtmdk-server:
+        condition: service_healthy
+    command: ["python", "rtmdk_st_proxy.py", "--rtmdk", "http://rtmdk-server:8080", "--port", "5000"]
 
 volumes:
-  rtmdk-data:
+  rtmdk-memory:
     driver: local
   rtmdk-backups:
-    driver: local
-  rtmdk-sessions:
-    driver: local
-  rtmdk-cache:
     driver: local
 
 networks:

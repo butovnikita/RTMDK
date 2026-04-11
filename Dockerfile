@@ -1,31 +1,39 @@
-# RTMDK — CPU-only production image (~200MB)
-FROM python:3.10-slim
+# RTMDK Production Docker Image
+FROM python:3.10-slim as base
 
+# Set working directory
 WORKDIR /app
 
-# Minimal system deps
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
+    gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Python deps
+# Copy requirements first for better caching
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Application
-COPY rtmdk_memory_v8.py .
-COPY rtmdk_server.py .
-COPY rtmdk_server_ux.py .
-COPY rtmdk_dashboard_ui.py .
-COPY rtmdk_sillytavern_compat.py .
-COPY rtmdk/ ./rtmdk/
+# Copy application code
+COPY *.py ./
+COPY docs/ ./docs/
 
-# Data dirs
-RUN mkdir -p /data /root/.rtmdk
+# Create data directories
+RUN mkdir -p /app/data/memory \
+    /app/data/backups \
+    /app/data/embeddings
 
-EXPOSE 8080
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    RTMDK_MEMORY_FILE=/app/data/memory/memory.json \
+    RTMDK_AUTO_SAVE=60 \
+    RTMDK_LM_STUDIO_TIMEOUT=120
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+# Expose ports
+EXPOSE 8080 5000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
+# Default command
 CMD ["python", "rtmdk_server.py"]

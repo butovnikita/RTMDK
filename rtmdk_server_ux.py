@@ -253,6 +253,56 @@ def create_ux_router(memory, config: Dict[str, Any]) -> APIRouter:
             config["RTMDK_EMBED_MODEL"] = model
             return {"status": "ok", "model": model}
         return {"error": "Missing model name"}
+    
+    @router.post("/config")
+    async def update_config(data: dict):
+        """Update server configuration at runtime."""
+        updates = {}
+        
+        # Supported runtime config keys
+        allowed_keys = [
+            "RTMDK_API_PROVIDER", "RTMDK_LLM_MODEL", "RTMDK_EMBED_MODEL",
+            "OPENAI_API_KEY", "OPENROUTER_API_KEY", "ANTHROPIC_API_KEY",
+            "CUSTOM_API_URL", "LM_STUDIO_URL", "RTMDK_PORT"
+        ]
+        
+        for key in allowed_keys:
+            if key in data:
+                config[key] = data[key]
+                updates[key] = data[key]
+        
+        if updates:
+            # Save to .env file for persistence
+            env_path = ".env"
+            try:
+                existing = {}
+                if os.path.exists(env_path):
+                    with open(env_path, 'r') as f:
+                        for line in f:
+                            if '=' in line and not line.startswith('#'):
+                                k, v = line.strip().split('=', 1)
+                                existing[k] = v
+                
+                existing.update(updates)
+                
+                with open(env_path, 'w') as f:
+                    for k, v in existing.items():
+                        f.write(f"{k}={v}\n")
+            except Exception as e:
+                return {"status": "partial", "updates": updates, "warning": f"Failed to persist config: {e}"}
+        
+        return {"status": "ok", "updates": list(updates.keys())}
+    
+    @router.get("/config")
+    async def get_config():
+        """Get current runtime configuration."""
+        return {
+            "provider": config.get("RTMDK_API_PROVIDER", "lm_studio"),
+            "llm_model": config.get("RTMDK_LLM_MODEL", "default"),
+            "embed_model": config.get("RTMDK_EMBED_MODEL", "nomic-embed-text-v1.5"),
+            "lm_studio_url": config.get("LM_STUDIO_URL", "http://localhost:12345/v1"),
+            "custom_url": config.get("CUSTOM_API_URL", ""),
+        }
 
     @router.post("/backup/upload")
     async def upload_backup(request: Request):

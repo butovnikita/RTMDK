@@ -485,77 +485,70 @@ async function uploadBackup() {
 
 async function updateStats() {
     try {
-        const [healthR, cacheR, diagR] = await Promise.all([
-            fetch(`${API_BASE}/health`),
-            fetch(`${API_BASE}/v1/cache/stats`).catch(() => null),
-            fetch(`${API_BASE}/api/diagnostics`).catch(() => null)
+        // Fetch from multiple endpoints for redundancy
+        const [healthR, memoryStatsR, cacheR] = await Promise.all([
+            fetch(`${API_BASE}/health`).catch(() => null),
+            fetch(`${API_BASE}/v1/memory/stats`).catch(() => null),
+            fetch(`${API_BASE}/v1/cache/stats`).catch(() => null)
         ]);
         
         let nodeCount = 0;
+        let totalQueries = 0;
+        let consolidations = 0;
         
-        if (healthR.ok) {
+        // Parse health endpoint
+        if (healthR && healthR.ok) {
             const h = await healthR.json();
             
-            // Try multiple locations for node count (server returns memory_nodes)
+            // Node count - try multiple locations
             nodeCount = h.memory_nodes || h.node_count || 0;
             if (!nodeCount && h.checks) {
                 nodeCount = h.checks.node_count?.value || 0;
             }
             
-            const statQueries = h.total_queries || 0;
-            const statConsol = h.consolidations || 0;
-            const statBM25 = 0;
-            const statEngram = h.engram_retrievals || 0;
+            totalQueries = h.total_queries || 0;
+            consolidations = h.consolidations || 0;
             
-            document.getElementById('stat-nodes').textContent = nodeCount;
-            document.getElementById('stat-queries').textContent = statQueries;
-            document.getElementById('stat-consol').textContent = statConsol;
-            document.getElementById('stat-bm25').textContent = statBM25;
-            document.getElementById('stat-engram').textContent = statEngram;
-            document.querySelector('#conn-status .status').className = 'status ok';
+            // Update connection status
+            const connStatus = document.querySelector('#conn-status .status');
+            if (connStatus) connStatus.className = 'status ok';
         }
         
+        // Parse memory stats endpoint
+        if (memoryStatsR && memoryStatsR.ok) {
+            const ms = await memoryStatsR.json();
+            
+            // Override with more accurate data if available
+            if (ms.total_nodes) nodeCount = ms.total_nodes;
+            if (ms.field_stats?.total_queries) totalQueries = ms.field_stats.total_queries;
+            if (ms.field_stats?.consolidations) consolidations = ms.field_stats.consolidations;
+        }
+        
+        // Update DOM elements
+        const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+        
+        setEl('stat-nodes', nodeCount);
+        setEl('stat-queries', totalQueries);
+        setEl('stat-consol', consolidations);
+        setEl('stat-bm25', '0');
+        setEl('stat-engram', '0');
+        setEl('stat-cache', '—');
+        
+        // Update cache stats if available
         if (cacheR && cacheR.ok) {
             const c = await cacheR.json();
-            document.getElementById('stat-cache').textContent = c.hit_rate ? `${(c.hit_rate*100).toFixed(0)}%` : '—';
+            if (c.hit_rate !== undefined) {
+                setEl('stat-cache', `${(c.hit_rate * 100).toFixed(0)}%`);
+            }
         }
         
-        if (diagR && diagR.ok) {
-            const d = await diagR.json();
-            const memSpan = document.getElementById('diag-memory');
-            const nodesSpan = document.getElementById('diag-nodes');
-            const lmSpan = document.getElementById('diag-lm');
-            
-            // Use diagnostic node count if health didn't have it
-            if (nodeCount === 0 && d.node_count) nodeCount = d.node_count;
-            nodesSpan.textContent = nodeCount;
-            
-            if (d.memory_initialized) {
-                memSpan.textContent = 'Ready';
-                memSpan.className = 'status ok';
-            } else {
-                memSpan.textContent = 'Not initialized';
-                memSpan.className = 'status err';
-            }
-            
-            // Check LM Studio via health endpoint
-            try {
-                const h2 = await fetch(`${API_BASE}/health`).then(r => r.json());
-                if (h2.lm_studio) {
-                    lmSpan.textContent = 'Connected';
-                    lmSpan.className = 'status ok';
-                } else {
-                    lmSpan.textContent = 'Not connected';
-                    lmSpan.className = 'status err';
-                }
-            } catch(e) {
-                lmSpan.textContent = 'Unknown';
-            }
-        }
     } catch(e) {
         console.error('Stats update failed:', e);
-        document.querySelector('#conn-status .status').className = 'status err';
-        document.getElementById('conn-status').innerHTML = '<span class="status err"></span>Disconnected';
+        const connStatus = document.querySelector('#conn-status .status');
+        if (connStatus) {
+            connStatus.className = 'status err';
+            connStatus.textContent = 'Error';
+        }
     }
 }
 
