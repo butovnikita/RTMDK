@@ -6,21 +6,35 @@ Usage:
     from rtmdk_server_ux import create_ux_router
     app.include_router(create_ux_router(memory, config))
 """
-import json, time
+import json, time, os, logging
 from typing import Dict, Any
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse, PlainTextResponse
 from rtmdk_memory_v8 import RTMDKMemory
 
+logger = logging.getLogger("rtmdk.ux")
+
+def _safe_import(module_path: str, **kwargs):
+    """Safely import a module, return None if it fails."""
+    try:
+        module = __import__(module_path, fromlist=[module_path.split(".")[-1]])
+        cls = getattr(module, module_path.split(".")[-1], None)
+        if cls:
+            return cls(**kwargs)
+    except Exception as e:
+        logger.warning(f"Failed to import {module_path}: {e}")
+    return None
+
 def create_ux_router(memory, config: Dict[str, Any]) -> APIRouter:
     """Create FastAPI router with all UX endpoints.
-    
+
     memory can be:
     - RTMDKMemory instance (direct)
     - Callable that returns current memory instance
     """
     router = APIRouter(prefix="/api", tags=["ux"])
     _m = {}
+    _initialized = False
 
     def _get_mem():
         """Resolve current memory instance."""
@@ -29,41 +43,63 @@ def create_ux_router(memory, config: Dict[str, Any]) -> APIRouter:
         return memory
 
     def _init():
-        if _m: return
-        from rtmdk.production.context_optimizer import ContextOptimizer
-        from rtmdk.production.feedback_loop import FeedbackLoop
-        from rtmdk.production.session_persistence import SessionPersistence
-        from rtmdk.production.smart_pruning import SmartPruner
-        from rtmdk.production.backup_restore import BackupManager
-        from rtmdk.production.import_pipeline import ImportPipeline
-        from rtmdk.production.health_monitor import HealthMonitor
-        from rtmdk.production.analytics import MemoryAnalytics
-        from rtmdk.production.events import EventSystem
-        from rtmdk.production.tagging import TaggingSystem
-        from rtmdk.production.rate_limiter import RateLimiter
-        from rtmdk.production.memory_refresh import MemoryRefresh
-        from rtmdk.production.export import MemoryExporter
-        from rtmdk.production.embedding_cache import EmbeddingCache
-        bd=config.get("RTMDK_BACKUP_DIR","/data/backups")
-        sd=config.get("RTMDK_SESSION_DIR","/data/sessions")
-        cd=config.get("RTMDK_CACHE_DIR","/data/embedding_cache")
+        """Initialize all UX modules once, with error handling for each."""
+        nonlocal _initialized
+        if _initialized:
+            return
+
         mem = _get_mem()
         if mem is None:
-            raise RuntimeError("Memory not initialized yet")
-        _m["co"]=ContextOptimizer(model=config.get("RTMDK_LLM_MODEL","default"),max_tokens=int(config.get("RTMDK_MAX_CONTEXT_TOKENS","300")))
-        _m["fb"]=FeedbackLoop(mem,learning_rate=float(config.get("RTMDK_FEEDBACK_LR","0.05")))
-        _m["ss"]=SessionPersistence(mem,save_dir=sd,auto_save_interval=int(config.get("RTMDK_AUTO_SAVE_INTERVAL","60")))
-        _m["sp"]=SmartPruner(mem,max_age_days=int(config.get("RTMDK_PRUNE_AGE_DAYS","90")),min_salience=float(config.get("RTMDK_PRUNE_MIN_SALIENCE","0.05")))
-        _m["bk"]=BackupManager(mem,backup_dir=bd,compression=config.get("RTMDK_BACKUP_COMPRESSION","true").lower()=="true")
-        _m["ip"]=ImportPipeline(mem)
-        _m["hm"]=HealthMonitor(mem)
-        _m["an"]=MemoryAnalytics(mem)
-        _m["ev"]=EventSystem()
-        _m["tg"]=TaggingSystem(mem)
-        _m["rl"]=RateLimiter(max_per_minute=int(config.get("RTMDK_RATE_LIMIT_PER_MINUTE","60")),max_per_hour=int(config.get("RTMDK_RATE_LIMIT_PER_HOUR","1000")))
-        _m["mr"]=MemoryRefresh(mem)
-        _m["ex"]=MemoryExporter(mem)
-        _m["ec"]=EmbeddingCache(cache_dir=cd,max_size=int(config.get("RTMDK_CACHE_MAX_SIZE","100000")))
+            logger.warning("Memory not initialized yet, UX modules deferred")
+            return
+
+        # Directories
+        bd = config.get("RTMDK_BACKUP_DIR", os.path.join(os.path.expanduser("~"), ".rtmdk", "backups"))
+        sd = config.get("RTMDK_SESSION_DIR", os.path.join(os.path.expanduser("~"), ".rtmdk", "sessions"))
+        cd = config.get("RTMDK_CACHE_DIR", os.path.join(os.path.expanduser("~"), ".rtmdk", "embedding_cache"))
+
+        # Create directories if they don't exist
+        for d in [bd, sd, cd]:
+            try:
+                os.makedirs(d, exist_ok=True)
+            except:
+                pass
+
+        # Initialize each module independently with error handling
+        _m["co"] = _safe_import("rtmdk.production.context_optimizer.ContextOptimizer",
+            model=config.get("RTMDK_LLM_MODEL", "default"),
+            max_tokens=int(config.get("RTMDK_MAX_CONTEXT_TOKENS", "300")))
+
+        _m["fb"] = _safe_import("rtmdk.production.feedback_loop.FeedbackLoop",
+            mem=mem, learning_rate=float(config.get("RTMDK_FEEDBACK_LR", "0.05")))
+
+        _m["ss"] = _safe_import("rtmdk.production.session_persistence.SessionPersistence",
+            mem=mem, save_dir=sd, auto_save_interval=int(config.get("RTMDK_AUTO_SAVE_INTERVAL", "60")))
+
+        _m["sp"] = _safe_import("rtmdk.production.smart_pruning.SmartPruner",
+            mem=mem, max_age_days=int(config.get("RTMDK_PRUNE_AGE_DAYS", "90")),
+            min_salience=float(config.get("RTMDK_PRUNE_MIN_SALIENCE", "0.05")))
+
+        _m["bk"] = _safe_import("rtmdk.production.backup_restore.BackupManager",
+            mem=mem, backup_dir=bd,
+            compression=config.get("RTMDK_BACKUP_COMPRESSION", "true").lower() == "true")
+
+        _m["ip"] = _safe_import("rtmdk.production.import_pipeline.ImportPipeline", mem=mem)
+        _m["hm"] = _safe_import("rtmdk.production.health_monitor.HealthMonitor", mem=mem)
+        _m["an"] = _safe_import("rtmdk.production.analytics.MemoryAnalytics", mem=mem)
+        _m["ev"] = _safe_import("rtmdk.production.events.EventSystem")
+        _m["tg"] = _safe_import("rtmdk.production.tagging.TaggingSystem", mem=mem)
+        _m["rl"] = _safe_import("rtmdk.production.rate_limiter.RateLimiter",
+            max_per_minute=int(config.get("RTMDK_RATE_LIMIT_PER_MINUTE", "60")),
+            max_per_hour=int(config.get("RTMDK_RATE_LIMIT_PER_HOUR", "1000")))
+        _m["mr"] = _safe_import("rtmdk.production.memory_refresh.MemoryRefresh", mem=mem)
+        _m["ex"] = _safe_import("rtmdk.production.export.MemoryExporter", mem=mem)
+        _m["ec"] = _safe_import("rtmdk.production.embedding_cache.EmbeddingCache",
+            cache_dir=cd, max_size=int(config.get("RTMDK_CACHE_MAX_SIZE", "100000")))
+
+        _initialized = True
+        loaded = sum(1 for v in _m.values() if v is not None)
+        logger.info(f"UX modules initialized: {loaded}/{len(_m)}")
     
     @router.post("/feedback")
     async def fb(d:dict={}):
@@ -126,7 +162,16 @@ def create_ux_router(memory, config: Dict[str, Any]) -> APIRouter:
         _init()
         mem = _get_mem()
         node_count = len(mem.field.nodes) if mem else 0
-        result = _m["hm"].check_health()
+
+        result = {"status": "ok", "nodes": node_count}
+
+        if _m.get("hm"):
+            try:
+                hm_result = _m["hm"].check_health()
+                result.update(hm_result)
+            except Exception as e:
+                result["health_monitor_error"] = str(e)
+
         # Ensure consistent node count format
         result["node_count"] = node_count
         result["memory_nodes"] = node_count
@@ -177,10 +222,19 @@ def create_ux_router(memory, config: Dict[str, Any]) -> APIRouter:
         return StreamingResponse(gen(),media_type="text/event-stream",headers={"Cache-Control":"no-cache"})
     
     @router.get("/cache/stats")
-    async def cache_stats(): _init(); return _m["ec"].get_stats()
+    async def cache_stats():
+        _init()
+        if not _m.get("ec"):
+            return {"hit_rate": 0, "total": 0, "hits": 0, "message": "EmbeddingCache not available"}
+        return _m["ec"].get_stats()
 
     @router.post("/cache/clear")
-    async def cache_clear(): _init(); _m["ec"].clear(); return {"cleared":True}
+    async def cache_clear():
+        _init()
+        if not _m.get("ec"):
+            return {"cleared": False, "message": "EmbeddingCache not available"}
+        _m["ec"].clear()
+        return {"cleared": True}
 
     @router.get("/models")
     async def list_models_ux():
