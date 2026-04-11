@@ -4241,8 +4241,8 @@ class RTMDKField:
             max_scan = 200  # Limit scan for performance
             if len(ids_to_check) > max_scan:
                 # Use reservoir-style sample with deterministic seed based on node_id
-                np.random.seed(int(hashlib.md5(node_id.encode()).hexdigest(), 16) % 2**32)
-                ids_to_check = list(np.random.choice(ids_to_check, size=max_scan, replace=False))
+                rng = np.random.RandomState(int(hashlib.md5(node_id.encode()).hexdigest(), 16) % 2**32)
+                ids_to_check = list(rng.choice(ids_to_check, size=max_scan, replace=False))
 
             if len(ids_to_check) < 2:
                 return 0.0
@@ -5390,6 +5390,13 @@ class RTMDKField:
             path: Output file path
             fmt: "json" (default) or "msgpack" (binary, requires msgpack)
         """
+        # Path sanitization
+        path = os.path.normpath(str(path))
+        if ".." in path.split(os.sep):
+            raise ValueError(f"Invalid path: path traversal not allowed: {path}")
+        if not path.endswith((".json", ".msgpack")):
+            raise ValueError(f"Invalid format: path must end with .json or .msgpack: {path}")
+
         cd = asdict(self.config) if hasattr(self, 'config') else asdict(self.cfg)
         cd["consolidation_mode"] = cd["consolidation_mode"].value if isinstance(cd.get("consolidation_mode"), Enum) else cd.get("consolidation_mode", "dialectical")
         cd["backend"] = cd["backend"].value if isinstance(cd.get("backend"), Enum) else cd.get("backend", "numpy")
@@ -5447,9 +5454,27 @@ class RTMDKField:
         else:
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2, default=str)
+            # Set secure file permissions (owner read/write only)
+            try:
+                os.chmod(path, 0o600)
+            except OSError:
+                pass  # Windows may not support chmod
 
     @classmethod
     def import_field(cls, path: str, embedder: Callable) -> "RTMDKMemory":
+        # Path sanitization
+        path = os.path.normpath(str(path))
+        if ".." in path.split(os.sep):
+            raise ValueError(f"Invalid path: path traversal not allowed: {path}")
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"File not found: {path}")
+        
+        # Check file size (max 100MB)
+        file_size = os.path.getsize(path)
+        max_size = 100 * 1024 * 1024  # 100MB
+        if file_size > max_size:
+            raise ValueError(f"File too large: {file_size / 1024 / 1024:.1f}MB (max 100MB)")
+        
         # Auto-detect format: msgpack files start with zlib magic bytes
         with open(path, "rb") as f:
             header = f.read(2)
