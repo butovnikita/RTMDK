@@ -26,7 +26,6 @@ from pydantic import BaseModel
 
 # RTMDK package imports
 from rtmdk.memory.core import RTMDKMemory, RTMDKConfig
-from rtmdk.config import RTMDKConfig as ConfigProfile
 
 
 # ============================================================================

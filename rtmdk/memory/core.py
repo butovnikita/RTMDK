@@ -418,6 +418,18 @@ class RTMDKConfig:
     cross_shard_threshold: float = 0.45
     auto_role_detection: bool = True
 
+    # Phase 19: Advanced Improvements
+    offline_dreaming: bool = True
+    dreaming_freq: int = 50
+    causal_traversal: bool = True
+    causal_max_hops: int = 3
+    ssm_dynamics: bool = False
+    ssm_state_dim: int = 64
+    trust_consensus: bool = False
+    trust_min_reputation: float = 0.3
+    neuro_symbolic_prover: bool = False
+    prover_backend: str = "z3"
+
     def __post_init__(self):
         logger.setLevel(getattr(logging, self.log_level.upper()))
         if not self.modality_phase_shifts:
