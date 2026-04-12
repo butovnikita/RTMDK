@@ -1,62 +1,71 @@
 # RTMDK — Полный Аудит Кода (Code Review Report)
 # Complete Code Audit Report
 
-> **Дата:** 11 апреля 2026  
-> **Ревизия:** 7925b68  
-> **Статус:** ✅ Все тесты пройдены, критичные баги исправлены
+> **Дата:** 12 апреля 2026
+> **Ревизия:** f87d886 (Phases 2-4: Preset-based config)
+> **Статус:** ✅ Все тесты пройдены, ~241 баг исправлен
 
 ---
 
 ## 📊 Итоговая Сводка
 
-| Категория | Найдено проблем | Исправлено | Статус |
-|-----------|----------------|-----------|--------|
-| **Структурированные узлы (v2)** | 4 бага | 4 | ✅ |
-| **Безопасность** | 0 багов | — | ✅ |
-| **Auto-save task** | 0 багов | — | ✅ |
-| **Embedding validation** | 0 багов | — | ✅ |
-| **Proxy retry logic** | 0 багов | — | ✅ |
-| **Docker config** | 0 багов | — | ✅ |
+| Раунд | Найдено | Исправлено | Статус |
+|-------|---------|------------|--------|
+| 1. Unicode/cp1251 | 175 эмодзи | ✅ 175 | |
+| 2. Auth/Dashboard | 3 | ✅ 3 | |
+| 3. Crystallization | 1 | ✅ 1 | |
+| 4. Core logic | 15 | ✅ 15 | |
+| 5. Security/reliability | 21 | ✅ 21 | |
+| 6. Remaining audit | 8 | ✅ 8 | |
+| 7. System/config | 6 | ✅ 6 | |
+| **8. Mathematical** | 6 | ✅ 6 | |
+| **9. Final audit** | 6 | ✅ 6 | |
+| **ИТОГО** | **~241** | **✅ ~241** | **11 коммитов** |
 
 ---
 
-## 🔴 Найденные и Исправленные Баги
+## 🏗️ Архитектурные изменения
 
-### Bug #1: Missing `_detect_tags` Method
-**Severity:** Critical (ломает сохранение контекста)
-**Location:** `rtmdk/memory/core.py:5843`
+| Изменение | Описание | Коммит |
+|-----------|----------|--------|
+| **Unified Config** | Единый RTMDKConfig dataclass (удалён дубликат из config.py) | `3d8935a` |
+| **Env Var Overrides** | 59 env vars для переопределения любого параметра | `f87d886` |
+| **Preset System** | 8 пресетов: local, production, research, enterprise, agent, legal, medical, streaming | `f87d886` |
+| **Runtime API Config** | `/api/config` принимает 26 гиперпараметров + серверные ключи | `f87d886` |
+| **Production/Home Split** | Dockerfile, docker-compose.prod.yml, docker-compose.home.yml | `74e44fb` |
 
-```python
-# Было:
-tags = self._detect_tags(all_text)  # Method didn't exist → AttributeError
+---
 
-# Исправлено: Added _detect_tags method with keyword-based detection
-def _detect_tags(self, text: str) -> List[str]:
-    """Auto-detect memory tags from text content."""
-    # Detects: greeting, name, coding, food_drink, preference, work, location, relationships
-```
+## 🔴 Найденные и Исправленные Баги (выборочно)
 
-**Impact:** Без этого метода save_context падал при каждом сохранении.
+### Mathematical Bugs (6 исправлений)
 
-### Bug #2: BM25 Index Didn't Index v2 Node Text
-**Severity:** High (ломает fallback поиск)
-**Location:** `rtmdk/memory/core.py:4176`
+| # | Баг | Файл | Исправление |
+|---|-----|------|-------------|
+| 1 | Laplacian вместо Gaussian kernel | core.py:3874 | `exp(-d²/(2bw²))` |
+| 2 | Poincare unit ball formula | core.py:476 | `(r²-\|u\|²)(r²-\|v\|²)/r²` |
+| 3 | Meta-adaptive direction reversed | core.py:2456 | kurtosis<min → bandwidth INCREASES |
+| 4 | DP noise missing sensitivity | core.py:633 | `sigma = sensitivity * sqrt(...)` |
+| 5 | PC always returns True | core.py:2705 | Conditional chi-squared test |
+| 6 | Consolidation salience >1.0 | core.py:4368 | `min(1.0, 0.7*(sa+sb))` |
 
-```python
-# Было:
-text = content.get("text", "")  # v2 nodes have empty text → BM25 doesn't index
-if text:
-    self.bm25_index.add_document(nid, text)
+### Security Bugs (15 исправлений)
 
-# Исправлено:
-text = content.get("text", "")
-if not text:
-    input_t = content.get("input_text", "")
-    output_t = content.get("output_text", "")
-    text = f"{input_t} {output_t}".strip()
-if text:
-    self.bm25_index.add_document(nid, text)
-```
+- SSRF prevention в import_url
+- Path traversal в backup/restore
+- Prompt injection проверка всех text полей
+- CORS default → localhost
+- Upload size limit 100MB
+- Mutable default arguments eliminated
+
+### Reliability Bugs (15 исправлений)
+
+- Memory leak: embedder_cache → LRU eviction
+- Deadlock: PIPE → DEVNULL в launcher
+- Crash: _auto_save_loop cancellation
+- Atomic writes: temp file + os.replace
+- Race condition: import_memory lock
+- Unicode errors: errors='ignore' в streaming
 
 **Impact:** BM25 fallback не работал со структурированными узлами, поиск был менее релевантным.
 

@@ -12,13 +12,18 @@
 ├──────────────────────────────────────────────────────────────────────┤
 │                                                                      │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────┐  │
-│  │  API Layer      │  │  Config Layer   │  │  Production Layer   │  │
-│  │  rtmdk_server   │  │  8 profiles     │  │  Dreamer, Cache     │  │
-│  │  OpenAI compat  │  │  local/prod/..  │  │  Trust, Prover      │  │
+│  │  API Layer      │  │  Config System  │  │  Production Layer   │  │
+│  │  rtmdk_server   │  │  Unified Config │  │  Dreamer, Cache     │  │
+│  │  OpenAI compat  │  │  8 presets      │  │  Trust, Prover      │  │
 │  └────────┬────────┘  └────────┬────────┘  └─────────┬───────────┘  │
 │           │                    │                      │              │
+│           │             ┌──────┴──────┐               │              │
+│           │             │ Env Vars    │               │              │
+│           │             │ 59 overrides│               │              │
+│           │             │ /api/config │               │              │
+│           │             └──────┬──────┘               │              │
 │  ┌────────┴────────────────────┴──────────────────────┴───────────┐  │
-│  │                     RTMDKMemory (Monolith)                      │  │
+│  │                     RTMDKMemory (Unified)                       │  │
 │  │  ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────────┐  │  │
 │  │  │ RTMDKField│ │ EngramMgr │ │ Causal    │ │ SSM Dynamics  │  │  │
 │  │  │ (nodes)   │ │ (Phase 18)│ │ Traversal │ │ (Phase 19)    │  │  │
@@ -36,7 +41,7 @@
 │                                                                      │
 │  ┌────────────────────────────────────────────────────────────────┐  │
 │  │                     Docker Deployment                           │  │
-│  │  CPU (~200MB image)  │  GPU (~4GB, CUDA 12.1)                  │  │
+│  │  Production (~200MB)  │  Home (~400MB)  │  GPU (~4GB, CUDA 12) │  │
 │  └────────────────────────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────────────┘
 ```
@@ -130,6 +135,52 @@ EngramPattern                    EngramIndex                    PatternCompleter
 | **ActiveInference** | Curiosity-driven exploration | ✅ Research mode |
 | **TPR** | Tensor Product Representations | ✅ Research mode |
 | **AdversarialArena** | Self-play robustness testing | ✅ Research mode |
+
+---
+
+## Конфигурационная система (Unified Config)
+
+RTMDK v8.0 использует **единый** `RTMDKConfig` dataclass из `rtmdk/memory/core.py`:
+
+```
+rtmdk/memory/core.py     ← ЕДИНСТВЕННЫЙ RTMDKConfig dataclass (~150 полей)
+        │
+        ├── re-export через rtmdk/config.py (пресеты)
+        ├── re-export через rtmdk/__init__.py (main package)
+        │
+        └── __post_init__: 59 env var overrides (RTMDK_LATENT_DIM, etc.)
+```
+
+**Приоритет конфигурации:**
+1. Явные аргументы в коде (`RTMDKConfig(latent_dim=128)`)
+2. Env vars (`RTMDK_LATENT_DIM=128`)
+3. Defaults пресета (`RTMDKConfig.local()`)
+4. Defaults dataclass (`latent_dim=64`)
+
+### 8 Пресетов
+
+| Пресет | RAM | Latency | Nodes | Назначение |
+|--------|:---:|:---:|:---:|---|
+| `local()` | ~16MB | ~5ms | 10K | Персональный ассистент |
+| `production()` | ~50MB | ~6ms | 100K | Мультипользовательский сервер |
+| `research()` | ~200MB | ~50ms | ∞ | Максимальная точность |
+| `enterprise()` | ~250MB/shard | ~15ms | 500K+ | Распределённая система |
+| `agent()` | ~30MB | ~8ms | 50K | Автономный агент |
+| `legal()` | ~100MB | ~20ms | 200K | Юриспруденция (Z3) |
+| `medical()` | ~100MB | ~20ms | 200K | Медицина (Z3 + trust) |
+| `streaming()` | ~30MB | ~3ms | 50K | High-throughput real-time |
+
+### Runtime Configuration
+
+```bash
+# Через env vars
+RTMDK_PRESET=production RTMDK_LATENT_DIM=128 python rtmdk_server.py
+
+# Через API
+curl -X POST http://localhost:8080/api/config \
+  -d '{"RTMDK_PRESET": "production", "RTMDK_LATENT_DIM": "128"}'
+# Ответ: {"status":"ok", "needs_restart": true, ...}
+```
 
 ---
 

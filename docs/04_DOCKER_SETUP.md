@@ -1,25 +1,51 @@
-# RTMDK Docker + Silly Tavern Setup Guide v8.0
+# RTMDK Docker + SillyTavern Setup Guide v8.0
 
-> Полная инструкция по запуску RTMDK через Docker с 27 UX-функциями и Silly Tavern
+> Полная инструкция по запуску RTMDK через Docker с unified config и SillyTavern
 
 ---
 
 ## Часть 1: Быстрый старт (3 команды)
 
+### Production (без SillyTavern)
+
 ```bash
-cp .env.example .env
-docker-compose up -d
+docker-compose -f docker-compose.prod.yml up -d
 curl http://localhost:8080/health
+```
+
+### Home + SillyTavern
+
+```bash
+docker-compose -f docker-compose.home.yml up -d
+curl http://localhost:8080/health        # Сервер
+curl http://localhost:5000/health        # SillyTavern Proxy
 ```
 
 **Ожидаемый ответ:**
 ```json
-{"status": "ok", "version": "8.0.0", "api_provider": "lm_studio", "memory_nodes": 0}
+{"status": "ok", "version": "8.0.0", "lm_studio": true, "memory_nodes": 0}
 ```
 
 ---
 
-## Часть 2: Настройка .env
+## Часть 2: Выбор конфигурации
+
+| Файл | Назначение | Порты | SillyTavern |
+|------|-----------|-------|-------------|
+| `docker-compose.prod.yml` | Production API | 8080 | ❌ |
+| `docker-compose.home.yml` | Home + SillyTavern | 8080 + 5000 | ✅ |
+
+### Dockerfile'ы
+
+| Файл | Описание | Размер |
+|------|---------|--------|
+| `Dockerfile` | Production (min dependencies) | ~200MB |
+| `Dockerfile.home` | Home (all features + ST proxy) | ~400MB |
+| `Dockerfile.gpu` | GPU (CUDA 12.1) | ~4GB |
+
+---
+
+## Часть 3: Настройка .env
 
 ### Выбор API провайдера
 
@@ -33,133 +59,182 @@ LM_STUDIO_URL=http://host.docker.internal:12345/v1
 ```bash
 RTMDK_API_PROVIDER=openrouter
 OPENROUTER_API_KEY=sk-or-v1-ваш_ключ
-OPENROUTER_MODEL=anthropic/claude-3.5-sonnet
 ```
 
 #### Вариант C: OpenAI
 ```bash
 RTMDK_API_PROVIDER=openai
 OPENAI_API_KEY=sk-proj-ваш_ключ
-OPENAI_MODEL=gpt-4o
+```
+
+### Выбор пресета
+
+```bash
+RTMDK_PRESET=local          # По умолчанию
+RTMDK_PRESET=production     # Для сервера
+RTMDK_PRESET=research       # Для экспериментов
+```
+
+### Переопределение параметров
+
+```bash
+RTMDK_LATENT_DIM=128
+RTMDK_TOP_K=10
+RTMDK_DECAY_RATE=0.9995
 ```
 
 ---
 
-## Часть 3: UX Features в Docker
+## Часть 4: Интеграция с LM Studio
 
-### Все 27 UX-функций доступны через API
-
-| Категория | Эндпоинты | Что делает |
-|-----------|-----------|---|
-| **Feedback** | `POST /v1/feedback` | Thumbs up/down для улучшения памяти |
-| **Sessions** | `POST /v1/session/save` | Сохранение/загрузка сессий пользователей |
-| **Backups** | `POST /v1/backup/create` | Автобэкапы с ротацией |
-| **Import** | `POST /v1/import/json` | Импорт JSON/CSV/URL |
-| **Analytics** | `GET /v1/analytics` | Статистика и тренды памяти |
-| **Health** | `GET /v1/health`, `GET /v1/metrics` | Мониторинг + Prometheus |
-| **Export** | `GET /v1/export?format=md` | Экспорт в Markdown/Text/JSON |
-| **Tags** | `POST /v1/tags/{node_id}` | Кастомные теги на узлах |
-| **Rate Limit** | `GET /v1/rate-limit` | Статус лимитов |
-| **Events** | `GET /v1/events` | SSE поток событий |
-| **Cache** | `GET /v1/cache/stats` | Статистика кэша эмбеддингов |
-
-### Docker volumes для persistency
+Для доступа к LM Studio на хосте из Docker:
 
 ```yaml
-volumes:
-  rtmdk-data:/data              # Основная память
-  rtmdk-backups:/data/backups   # Бэкапы (переживают rebuild)
-  rtmdk-sessions:/data/sessions # Сессии пользователей
-  rtmdk-cache:/data/embedding_cache  # Кэш эмбеддингов
+# docker-compose.override.yml
+services:
+  rtmdk:
+    environment:
+      - LM_STUDIO_URL=http://host.docker.internal:12345/v1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 ```
 
-### UX Environment Variables
+Перезапусти:
+```bash
+docker-compose -f docker-compose.prod.yml down
+docker-compose -f docker-compose.prod.yml up -d
+```
 
-| Переменная | По умолчанию | Описание |
-|-----------|:---:|---|
-| `RTMDK_BACKUP_ROTATION` | 5 | Кол-во бэкапов для ротации |
-| `RTMDK_AUTO_SAVE_INTERVAL` | 60 | Автосохранение (сек) |
-| `RTMDK_PRUNE_AGE_DAYS` | 90 | Возраст для pruning (дни) |
-| `RTMDK_PRUNE_MIN_SALIENCE` | 0.05 | Мин. salience для pruning |
-| `RTMDK_RATE_LIMIT_PER_MINUTE` | 60 | Лимит запросов/мин |
-| `RTMDK_CACHE_MAX_SIZE` | 100000 | Макс. размер кэша |
-| `RTMDK_MAX_CONTEXT_TOKENS` | 300 | Макс. токенов контекста |
-| `RTMDK_FEEDBACK_LR` | 0.05 | Learning rate feedback |
+Проверь:
+```bash
+curl http://localhost:8080/health
+# → "lm_studio": true
+```
 
 ---
 
-## Часть 4: Интеграция с Silly Tavern
+## Часть 5: SillyTavern подключение
 
-### Способ 1: OpenAI API (рекомендуется)
+### Через Proxy (рекомендуется)
 
-1. Silly Tavern → Settings → API Connection
-2. API Type: **OpenAI**
-3. OpenAI Base URL: `http://localhost:8080/v1`
-4. API Key: `rtmdk-local`
-5. Model: `rtmdk`
+```
+SillyTavern → OpenAI API → http://localhost:5000/v1 → API Key: любой
+```
 
-### Способ 2: Vector Storage extension
+Proxy автоматически:
+- Сохраняет сообщения пользователя и AI в память
+- Извлекает релевантные воспоминания
+- Инжектирует контекст в промпт
+- Изолирует память по персонажам
 
-1. Extensions → Download → **Vector Storage**
-2. API Endpoint: `http://localhost:8080/v1`
-3. API Key: `rtmdk-local`
-4. ✓ Inject memories into context
+### Через Monolith
+
+```
+SillyTavern → OpenAI API → http://localhost:8080/v1 → API Key: rtmdk-local
+```
 
 ---
 
-## Часть 5: Запуск с GPU
-
-Для GPU-версии раскомментируйте секцию `rtmdk-api-gpu` в `docker-compose.yml` и убедитесь что установлен NVIDIA Container Toolkit.
-
----
-
-## Часть 6: Web Dashboard
-
-После запуска сервера откройте:
-```
-http://localhost:8080/dashboard
-```
-
-**Dashboard позволяет:**
-- Выбирать пресет на лету (8 пресетов)
-- Включать/выключать UX-функции переключателями
-- Просматривать live-статистику (nodes, queries, cache hit rate)
-- Быстрые действия: backup, pruning, export, clear
-
-## Часть 7: Полезные команды
+## Часть 6: Управление
 
 ```bash
 # Запуск
-docker-compose up -d
-
-# Логи
-docker-compose logs -f
-
-# Проверить здоровье
-curl http://localhost:8080/health
-
-# Получить метрики (Prometheus format)
-curl http://localhost:8080/v1/metrics
-
-# Создать бэкап
-curl -X POST http://localhost:8080/v1/backup/create -H "Content-Type: application/json" -d '{"name":"my_backup"}'
-
-# Получить аналитику
-curl http://localhost:8080/v1/analytics
-
-# Экспорт в Markdown
-curl http://localhost:8080/v1/export?format=markdown
-
-# Отправить feedback
-curl -X POST http://localhost:8080/v1/feedback -H "Content-Type: application/json" -d '{"query":"What do I drink?","quality":0.9}'
+docker-compose -f docker-compose.prod.yml up -d
 
 # Остановка
-docker-compose down
+docker-compose -f docker-compose.prod.yml down
 
 # Остановка с удалением данных
-docker-compose down -v
+docker-compose -f docker-compose.prod.yml down -v
+
+# Пересборка
+docker-compose -f docker-compose.prod.yml up -d --build
+
+# Логи
+docker-compose -f docker-compose.prod.yml logs -f
+
+# Войти в контейнер
+docker exec -it rtmdk-server sh
+
+# Проверить здоровье
+docker-compose -f docker-compose.prod.yml ps
+curl http://localhost:8080/health
 ```
 
 ---
 
-*Последнее обновление: Апрель 2026, RTMDK v8.0*
+## Часть 7: API Examples
+
+### Сохранить память
+
+```bash
+curl -X POST http://localhost:8080/v1/memory/save \
+  -H "Content-Type: application/json" \
+  -d '{"input":"Меня зовут Никита","output":"Запомнил"}'
+```
+
+### Запросить память
+
+```bash
+curl -X POST http://localhost:8080/v1/memory/query \
+  -H "Content-Type: application/json" \
+  -d '{"query":"как меня зовут?"}'
+```
+
+### Изменить конфигурацию
+
+```bash
+# Сменить пресет (требует перезапуска)
+curl -X POST http://localhost:8080/api/config \
+  -H "Content-Type: application/json" \
+  -d '{"RTMDK_PRESET": "production"}'
+
+# Сменить модель эмбеддера (применяется сразу)
+curl -X POST http://localhost:8080/api/config \
+  -H "Content-Type: application/json" \
+  -d '{"RTMDK_EMBED_MODEL": "text-embedding-3-small"}'
+```
+
+---
+
+## Часть 8: Отладка
+
+### Логи
+
+```bash
+docker-compose -f docker-compose.prod.yml logs -f
+```
+
+### Smoke test
+
+```bash
+python smoke_test.py
+```
+
+### Python REPL
+
+```python
+from rtmdk import RTMDKMemory, RTMDKConfig
+
+# С пресетом
+config = RTMDKConfig.local()
+memory = RTMDKMemory(config=config, embedder=my_embedder)
+
+# С env var overrides
+import os
+os.environ['RTMDK_LATENT_DIM'] = '128'
+config = RTMDKConfig.local()  # latent_dim=128
+```
+
+### Частые проблемы
+
+| Проблема | Решение |
+|----------|---------|
+| Port 8080 занят | `"8081:8080"` в docker-compose |
+| LM Studio не подключается | Проверь `host.docker.internal` в override |
+| Память не сохраняется | Проверь volume `rtmdk-data:/data` |
+| Docker не запускается | `docker-compose down -v && docker-compose up -d --build` |
+
+---
+
+*Инструкция актуальна для RTMDK v8.0 с unified config architecture.*

@@ -89,3 +89,15 @@ python rtmdk_sillytavern_launcher.py --rtmdk-port 9090 --proxy-port 6000
 # Stop services
 Ctrl+C in the launcher window
 ```
+
+## Конфигурация через пресеты
+
+```bash
+# Выбрать пресет
+RTMDK_PRESET=local python rtmdk_sillytavern_launcher.py
+
+# С кастомными параметрами
+RTMDK_PRESET=local RTMDK_LATENT_DIM=128 python rtmdk_sillytavern_launcher.py
+```
+
+Доступные пресеты: `local`, `production`, `research`, `enterprise`, `agent`, `legal`, `medical`, `streaming`.

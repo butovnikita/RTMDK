@@ -1,24 +1,89 @@
-# RTMDK — Инструкция по локальному использованию через Docker Compose
+# RTMDK — Локальный запуск
+
+> Запуск RTMDK на своём ПК — 3 варианта: Docker, Python, SillyTavern
+
+---
 
 ## Быстрый старт за 5 минут
 
-### 1. Запуск
+### Вариант A: Python (рекомендуется для разработки)
 
 ```bash
 cd C:\Users\Никита\Desktop\llm_lab
-docker-compose up -d
+pip install -r requirements-home.txt
+python rtmdk_server.py
 ```
 
 Сервер запущен на `http://localhost:8080`
 
-### 2. Проверка
+### Вариант B: Docker Production
 
 ```bash
+docker-compose -f docker-compose.prod.yml up -d
 curl http://localhost:8080/health
-# → {"status": "ok", "version": "8.0.0", "lm_studio": false, "memory_nodes": 0}
 ```
 
-### 3. Использование через Python
+### Вариант C: Docker Home + SillyTavern
+
+```bash
+docker-compose -f docker-compose.home.yml up -d
+# Сервер: http://localhost:8080
+# SillyTavern Proxy: http://localhost:5000
+```
+
+---
+
+## Предварительные требования
+
+| Компонент | Зачем | Обязательно? |
+|-----------|-------|-------------|
+| Python 3.10+ | Запуск сервера | ✅ Да |
+| LM Studio | Реальные LLM + эмбеддинги | ❌ Опционально |
+| Docker Desktop | Контейнеризация | ❌ Опционально |
+
+---
+
+## Конфигурация через пресеты
+
+```bash
+# Локальный ассистент (по умолчанию)
+python rtmdk_server.py
+
+# Production сервер
+RTMDK_PRESET=production python rtmdk_server.py
+
+# Research режим
+RTMDK_PRESET=research python rtmdk_server.py
+
+# С кастомными параметрами
+RTMDK_PRESET=local RTMDK_LATENT_DIM=128 RTMDK_TOP_K=10 python rtmdk_server.py
+```
+
+---
+
+## Интеграция с LM Studio
+
+1. **Запусти LM Studio:**
+   - Загрузи модель (например, Qwen2.5-7B)
+   - Включи сервер: Server → Start на порту `12345`
+   - Загрузи модель эмбеддингов: `nomic-embed-text-v1.5`
+
+2. **Запусти RTMDK:**
+   ```bash
+   python rtmdk_server.py
+   ```
+
+3. **Проверь интеграцию:**
+   ```bash
+   curl http://localhost:8080/health
+   # → "lm_studio": true — значит подключено!
+   ```
+
+---
+
+## Использование API
+
+### OpenAI-compatible клиент
 
 ```python
 from openai import OpenAI
@@ -31,221 +96,9 @@ client = OpenAI(
 response = client.chat.completions.create(
     model="rtmdk",
     messages=[{"role": "user", "content": "Привет, это мой тестовый запрос"}],
-    session_id="local-user"
 )
 print(response.choices[0].message.content)
 ```
-
----
-
-## Полная инструкция по локальному использованию
-
-### Предварительные требования
-
-| Компонент | Зачем | Обязательно? |
-|-----------|-------|-------------|
-| Docker Desktop | Запуск RTMDK сервера | ✅ Да |
-| LM Studio | Реальные LLM + эмбеддинги | ❌ Опционально |
-| Python 3.10+ | Клиентские скрипты | ❌ Опционально |
-
-### Вариант A: Только RTMDK сервер (без LLM)
-
-```bash
-# Запуск
-docker-compose up -d
-
-# Проверить статус
-docker-compose ps
-
-# Посмотреть логи
-docker-compose logs -f rtmdk-memory
-```
-
-**Что работает:**
-- ✅ Сохранение/запрос памяти через API
-- ✅ Каузальные запросы
-- ✅ Контрфактуальное воображение
-- ✅ Статистика и здоровье поля
-- ❌ Чат с LLM (нужен LM Studio)
-
-**Что НЕ работает:**
-- ❌ `/v1/chat/completions` — вернёт 503 (нет LLM)
-- ❌ Эмбеддинги через LM Studio — fallback на случайные векторы
-
-### Вариант B: RTMDK + LM Studio (полный функционал)
-
-1. **Запусти LM Studio:**
-   - Открой LM Studio
-   - Загрузи модель (например, Qwen2.5-7B)
-   - Включи сервер: Server → Start на порту `12345`
-   - Загрузи модель эмбеддингов: `nomic-embed-text-v1.5`
-
-2. **Обнови docker-compose для доступа к хосту:**
-
-Создай файл `docker-compose.override.yml`:
-```yaml
-services:
-  rtmdk-api:
-    environment:
-      - RTMDK_ENABLE_LM_STUDIO=true
-      - LM_STUDIO_URL=http://host.docker.internal:12345/v1
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-```
-
-3. **Перезапусти:**
-```bash
-docker-compose down
-docker-compose up -d
-```
-
-4. **Проверь интеграцию:**
-```bash
-curl http://localhost:8080/health
-# → "lm_studio": true — значит подключено!
-```
-
-### Вариант C: Локальный Python (без Docker)
-
-Если не хочешь использовать Docker:
-
-```bash
-cd C:\Users\Никита\Desktop\llm_lab
-
-# Установи зависимости
-pip install fastapi uvicorn numpy scipy pydantic requests
-
-# Запусти сервер
-python rtmdk_server.py
-
-# Сервер на http://localhost:8080
-```
-
----
-
-## Использование CLI-чата
-
-```bash
-# С LM Studio
-python lmstudio_rtmdk_chat.py
-
-# Без LM Studio (только память)
-# Запусти сначала сервер:
-python rtmdk_server.py
-```
-
-### Команды чата
-
-```
-/stats          → полная статистика
-/tiers          → распределение по уровням памяти
-/health         → здоровье поля
-/causal         → каузальная сводка
-/contradict     → противоречия
-/whatif {...}   → контрфактуальный запрос
-/imagine {...}  → воображение сценариев
-/hyperbolic     → гиперболическая геометрия
-/predictive     → предсказательное кодирование
-/privacy        → дифференциальная приватность
-/shards         → MoE-шардирование
-/crystallize    → кристаллизация
-/compression    → когнитивное сжатие
-/format json    → формат контекста
-/session user1  → переключить сессию
-/export         → экспорт памяти
-/clear          → очистить память
-/quit           → выйти
-```
-
----
-
-## Использование Streamlit Dashboard
-
-```bash
-pip install streamlit matplotlib pandas
-streamlit run streamlit_app.py
-# → http://localhost:8501
-```
-
-**Вкладки:**
-- 💬 Chat — чат с памятью
-- 🗺️ Field — визуализация поля (2D проекция)
-- 🎯 Goals — управление целями
-- 🔒 Security — монитор безопасности
-- 📦 Nodes — таблица всех узлов
-
----
-
-## Тестирование
-
-```bash
-# Быстрая проверка
-python smoke_test.py
-
-# Eval pipeline
-python eval_pipeline.py --n_samples 50
-
-# Swarm симуляция
-python swarm_memory.py --n_agents 5 --n_rounds 10
-```
-
----
-
-## Управление Docker-контейнером
-
-```bash
-# Запуск
-docker-compose up -d
-
-# Остановка
-docker-compose down
-
-# Остановка с удалением данных
-docker-compose down -v
-
-# Пересборка
-docker-compose up -d --build
-
-# Логи
-docker-compose logs -f rtmdk-memory
-
-# Войти в контейнер
-docker exec -it rtmdk-memory sh
-
-# Проверить здоровье
-docker-compose ps
-curl http://localhost:8080/health
-```
-
----
-
-## Файлы памяти
-
-| Файл | Описание |
-|------|----------|
-| `~/.rtmdk/memory.json` | Автосохранение (каждые 60 сек) |
-| `rtmdk_lmstudio_state.json` | Состояние CLI-сессии |
-| `eval_report.json` | Результаты eval pipeline |
-| `swarm_report.json` | Отчёт роевой памяти |
-
----
-
-## Конфигурация через переменные окружения
-
-```yaml
-# docker-compose.yml
-environment:
-  - RTMDK_HOST=0.0.0.0              # Хост сервера
-  - RTMDK_PORT=8080                  # Порт
-  - RTMDK_MEMORY_FILE=/data/memory.json  # Файл памяти
-  - RTMDK_ENABLE_LM_STUDIO=false     # Включить LM Studio
-  - RTMDK_AUTO_SAVE=60               # Интервал автосохранения (сек)
-  - RTMDK_API_KEY=rtmdk-local        # API ключ
-```
-
----
-
-## Примеры использования API
 
 ### Сохранить память
 
@@ -263,78 +116,142 @@ curl -X POST http://localhost:8080/v1/memory/query \
   -d '{"query":"как меня зовут?","session_id":"default"}'
 ```
 
-### Контрфактуальный запрос
-
-```bash
-curl -X POST http://localhost:8080/v1/memory/imagine \
-  -H "Content-Type: application/json" \
-  -d '{"query":"Что если я перейду на чай?","intervention":{"n0":0.5}}'
-```
-
-### Статистика
+### Статистика и здоровье
 
 ```bash
 curl http://localhost:8080/v1/memory/stats
 curl http://localhost:8080/v1/memory/health
+curl http://localhost:8080/dashboard  # Веб-UI
 ```
 
 ---
 
-## Отладка и улучшение
+## SillyTavern интеграция
 
-### Как отлаживать
+### Вариант 1: Monolith (проще)
 
-1. **Логи контейнера:**
-   ```bash
-   docker-compose logs -f rtmdk-memory
-   ```
+```bash
+python rtmdk_server.py
+# SillyTavern → API Type: OpenAI → Base URL: http://localhost:8080/v1
+```
 
-2. **Проверка здоровья:**
-   ```bash
-   curl http://localhost:8080/v1/memory/health
-   ```
+### Вариант 2: Proxy (рекомендуется)
 
-3. **Smoke test:**
-   ```bash
-   python smoke_test.py
-   ```
+```bash
+python rtmdk_sillytavern_launcher.py
+# Запускает сервер (8080) + proxy (5000)
+# SillyTavern → API Type: OpenAI → Base URL: http://localhost:5000/v1
+```
 
-4. **Python REPL:**
-   ```python
-   from rtmdk import RTMDKMemory, RTMDKConfig
-   # Импортируй и тестируй напрямую
-   ```
+---
 
-### Как улучшать
+## Docker
 
-1. **Добавить новые фичи:**
-   - Модифицируй `rtmdk_memory_v8.py` или модули в `rtmdk/`
-   - Пересобери: `docker-compose up -d --build`
+### Production (без SillyTavern)
 
-2. **Изменить конфигурацию:**
-   - Правь `docker-compose.yml` или создай `.env`
-   - Перезапусти: `docker-compose restart`
+```bash
+docker-compose -f docker-compose.prod.yml up -d
+docker-compose -f docker-compose.prod.yml logs -f
+docker-compose -f docker-compose.prod.yml down
+```
 
-3. **Добавить тесты:**
-   - Новый файл `test_my_feature.py`
-   - Запусти: `python -m pytest test_my_feature.py -v`
+### Home + SillyTavern
 
-4. **Профилирование:**
-   ```python
-   import cProfile
-   cProfile.run('memory.save_context(...)', 'profile.stats')
-   # → python -m pstats profile.stats
-   ```
+```bash
+docker-compose -f docker-compose.home.yml up -d
+# Два контейнера: rtmdk-home-server (8080) + rtmdk-home-proxy (5000)
+```
+
+### С LM Studio из хоста
+
+```yaml
+# docker-compose.override.yml
+services:
+  rtmdk:
+    environment:
+      - LM_STUDIO_URL=http://host.docker.internal:12345/v1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+```
+
+---
+
+## Управление контейнером
+
+```bash
+# Запуск
+docker-compose -f docker-compose.prod.yml up -d
+
+# Остановка
+docker-compose -f docker-compose.prod.yml down
+
+# Остановка с удалением данных
+docker-compose -f docker-compose.prod.yml down -v
+
+# Пересборка
+docker-compose -f docker-compose.prod.yml up -d --build
+
+# Логи
+docker-compose -f docker-compose.prod.yml logs -f rtmdk
+
+# Войти в контейнер
+docker exec -it rtmdk-server sh
+```
+
+---
+
+## Переменные окружения
+
+```yaml
+environment:
+  - RTMDK_HOST=0.0.0.0
+  - RTMDK_PORT=8080
+  - RTMDK_MEMORY_FILE=/data/memory.json
+  - RTMDK_PRESET=local          # Пресет: local/production/research/...
+  - RTMDK_LATENT_DIM=64         # Переопределение параметра
+  - RTMDK_DECAY_RATE=0.997
+  - RTMDK_ENABLE_LM_STUDIO=true
+  - LM_STUDIO_URL=http://host.docker.internal:12345/v1
+  - RTMDK_AUTO_SAVE=60
+  - RTMDK_API_KEY=rtmdk-local
+```
+
+---
+
+## Файлы памяти
+
+| Файл | Описание |
+|------|----------|
+| `~/.rtmdk/memory.json` | Автосохранение (каждые 60 сек) |
+| `~/.rtmdk/backups/` | Бэкапы памяти |
+| `.env` | Персистентная конфигурация |
+
+---
+
+## Отладка
+
+```bash
+# Проверить здоровье
+curl http://localhost:8080/health
+
+# Smoke test
+python smoke_test.py
+
+# Python REPL
+from rtmdk import RTMDKMemory, RTMDKConfig
+config = RTMDKConfig.local()
+memory = RTMDKMemory(config=config, embedder=my_embedder)
+```
 
 ### Частые проблемы
 
 | Проблема | Решение |
 |----------|---------|
-| Port 8080 занят | Смени порт в `docker-compose.yml`: `"8081:8080"` |
-| LM Studio не подключается | Проверь `host.docker.internal` в override |
+| Port 8080 занят | `RTMDK_PORT=8081 python rtmdk_server.py` |
+| LM Studio не подключается | Проверь что сервер запущен на 12345 |
 | Память не сохраняется | Проверь права на `~/.rtmdk/` |
 | Docker не запускается | `docker-compose down -v && docker-compose up -d --build` |
 
 ---
 
-*Инструкция актуальна для коммита `98c49d0` — Phase 15.*
+*Инструкция актуальна для RTMDK v8.0 с unified config architecture.*

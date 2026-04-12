@@ -17,7 +17,7 @@
 | **Dockerfile** | `Dockerfile` | `Dockerfile.home` |
 | **Compose** | `docker-compose.prod.yml` | `docker-compose.home.yml` |
 | **Зависимости** | Минимальные | Полные |
-| **Запуск** | `start_production.bat` / `start_production.py` | `start_sillytavern.bat` / `rtmdk_server.py` |
+| **Запуск** | `start_production.bat` / `start_production.py` | `start_sillytavern.bat` / `rtmdk_sillytavern_launcher.py` |
 
 ---
 
@@ -26,43 +26,88 @@
 ### 🏭 Production (без SillyTavern)
 
 ```bash
-# 1. Установить минимальные зависимости
 pip install -r requirements-prod.txt
-
-# 2. Запустить сервер
 python start_production.py
-
-# Или через Windows batch-файл:
-start_production.bat
-
-# Docker
-docker-compose -f docker-compose.prod.yml up -d
+# или: start_production.bat
 ```
 
 ### 🏠 Home / SillyTavern
 
 ```bash
-# 1. Установить полные зависимости
 pip install -r requirements-home.txt
-
-# 2. Запустить сервер + SillyTavern proxy
 python rtmdk_sillytavern_launcher.py
-
-# Или через Windows batch-файл:
-start_sillytavern.bat
-
-# Docker
-docker-compose -f docker-compose.home.yml up -d
+# или: start_sillytavern.bat
 ```
 
 ### 🔧 Monolith (один процесс, ST endpoints встроены)
 
 ```bash
-# Альтернативный вариант — всё в одном процессе
 python rtmdk_server.py
 ```
 
-> Monolith-версия включает SillyTavern-совместимые endpoints (`/api/v1/generate` и др.) прямо в основной сервер на порту 8080. Proxy на порту 5000 не запускается.
+---
+
+## ⚙️ Конфигурация через пресеты
+
+RTMDK использует **единственный источник конфигурации** с 8 готовыми пресетами:
+
+```python
+from rtmdk import RTMDKConfig
+
+config = RTMDKConfig.local()       # Персональный ассистент (~16MB)
+config = RTMDKConfig.production()  # Продакшен сервер (~50MB)
+config = RTMDKConfig.research()    # Максимальная точность (~200MB)
+config = RTMDKConfig.enterprise()  # 100K+ узлов, distributed
+config = RTMDKConfig.agent()       # Автономный агент
+config = RTMDKConfig.legal()       # Юриспруденция (Z3 prover)
+config = RTMDKConfig.medical()     # Медицина (Z3 + trust)
+config = RTMDKConfig.streaming()   # High-throughput (~3ms)
+```
+
+### Переопределение через переменные окружения
+
+Любой параметр можно переменить через `RTMDK_*` env var:
+
+```bash
+# Выбрать пресет
+RTMDK_PRESET=production python rtmdk_server.py
+
+# Переопределить отдельные параметры
+RTMDK_LATENT_DIM=128 RTMDK_TOP_K=10 python rtmdk_server.py
+
+# Комбинация
+RTMDK_PRESET=research RTMDK_DECAY_RATE=0.9995 python rtmdk_server.py
+```
+
+**Поддерживаемые env vars:** `RTMDK_PRESET`, `RTMDK_LATENT_DIM`, `RTMDK_DECAY_RATE`,
+`RTMDK_TENSION_THRESHOLD`, `RTMDK_TOP_K`, `RTMDK_BANDWIDTH`, `RTMDK_PHASE_COUPLING`,
+`RTMDK_USE_HNSW`, `RTMDK_HNSW_M`, `RTMDK_LEARN_PROJECTION`, `RTMDK_CROSS_MODAL`,
+`RTMDK_CAUSAL_TOPOLOGICAL`, `RTMDK_META_ADAPTIVE`, `RTMDK_SELF_HEALING`,
+`RTMDK_ENABLE_ENGRAMS`, `RTMDK_OFFLINE_DREAMING`, `RTMDK_CAUSAL_TRAVERSAL`,
+`RTMDK_SSM_DYNAMICS`, `RTMDK_SPARSE_ROUTING`, `RTMDK_NUM_SHARDS`, `RTMDK_GOAL_TRACKING`,
+`RTMDK_RL_FEEDBACK`, `RTMDK_SECURITY_ENABLED`, `RTMDK_SWARM_MEMORY`,
+`RTMDK_SYMBOLIC_OVERLAY`, `RTMDK_SAFETY_CERTIFIER`, `RTMDK_ROLE_SHARDING`,
+`RTMDK_CONTEXT_FORMAT`, `RTMDK_LOG_LEVEL` и другие.
+
+### Изменение конфигурации через API
+
+```bash
+# Изменить пресет (требует перезапуска)
+curl -X POST http://localhost:8080/api/config \
+  -H "Content-Type: application/json" \
+  -d '{"RTMDK_PRESET": "production"}'
+# Ответ: {"status":"ok", "needs_restart": true, "updates": ["RTMDK_PRESET"]}
+
+# Изменить гиперпараметр (сохраняется в .env, требует перезапуска)
+curl -X POST http://localhost:8080/api/config \
+  -H "Content-Type: application/json" \
+  -d '{"RTMDK_LATENT_DIM": "128", "RTMDK_TOP_K": "10"}'
+
+# Изменить модель эмбеддера (применяется сразу)
+curl -X POST http://localhost:8080/api/config \
+  -H "Content-Type: application/json" \
+  -d '{"RTMDK_EMBED_MODEL": "text-embedding-3-small"}'
+```
 
 ---
 
@@ -99,21 +144,6 @@ python rtmdk_server.py
 | **Recall@5** | **98.2%** | +13-28% |
 | **Latency P95** | 132ms | В 3-15x быстрее |
 | **RAM (1K узлов)** | 16 MB | В 3-12x экономнее |
-
-## 🔧 8 Профилей
-
-```python
-from rtmdk.config import RTMDKConfig
-
-config = RTMDKConfig.local()       # Персональный ассистент (~16MB)
-config = RTMDKConfig.production()  # Продакшен сервер (~50MB)
-config = RTMDKConfig.research()    # Максимальная точность (~200MB)
-config = RTMDKConfig.enterprise()  # 100K+ узлов, distributed
-config = RTMDKConfig.agent()       # Автономный агент
-config = RTMDKConfig.legal()       # Юриспруденция (Z3 prover)
-config = RTMDKConfig.medical()     # Медицина (Z3 + trust)
-config = RTMDKConfig.streaming()   # High-throughput (~3ms)
-```
 
 ## 🏗️ Архитектура
 

@@ -2,7 +2,7 @@
 
 ## Сравнение версий
 
-| Функция | Dev (`rtmdk_server.py`) | Production (`python -m rtmdk`) |
+| Функция | Home (`rtmdk_server.py`) | Production (`python -m rtmdk`) |
 |---------|:---:|:---:|
 | OpenAI API (/v1/chat/completions) | ✅ | ✅ |
 | Embeddings (/v1/embeddings) | ✅ | ✅ |
@@ -18,7 +18,7 @@
 
 ## Какую версию выбрать?
 
-### Dev Version (`rtmdk_server.py`)
+### Home Version (`rtmdk_server.py`)
 **Используйте когда:**
 - Разрабатываете и тестируете
 - Нужен SillyTavern integration
@@ -27,6 +27,12 @@
 
 ```bash
 python rtmdk_server.py
+
+# С пресетом
+RTMDK_PRESET=local python rtmdk_server.py
+
+# С параметрами
+RTMDK_PRESET=local RTMDK_LATENT_DIM=128 python rtmdk_server.py
 ```
 
 ### Production Version (`python -m rtmdk`)

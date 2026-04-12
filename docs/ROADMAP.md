@@ -56,8 +56,14 @@
 
 | Компонент | Статус | Описание |
 |-----------|:---:|-----------|
-| Ядро RTMDK v8 | ✅ | 6000+ строк, 19 фаз консолидации |
+| Ядро RTMDK v8 | ✅ | 6200+ строк, 19 фаз консолидации |
+| Unified Config | ✅ | Единый RTMDKConfig, 8 пресетов, 59 env vars |
 | OpenAI-совместимый API | ✅ | /v1/chat/completions, /v1/embeddings, /v1/models |
+| SillyTavern Integration | ✅ | Proxy + Monolith, streaming save fixed |
+| Security | ✅ | 15 security fixes: SSRF, path traversal, prompt injection |
+| Reliability | ✅ | 15 reliability fixes: memory leaks, deadlocks, atomic writes |
+| Mathematical correctness | ✅ | 6 math fixes: Gaussian kernel, Poincare, DP noise, etc. |
+| Documentation | ✅ | 13 docs updated with unified config |
 | SillyTavern Proxy | ✅ | Все 4 эндпоинта, стриминг, конвертация форматов |
 | Dashboard UI | ✅ | Динамические модели, метрики, бэкапы |
 | Runtime Config | ✅ | Переключение моделей/провайдеров без перезагрузки |

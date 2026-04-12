@@ -17,23 +17,44 @@
 
 ---
 
-## Конфигурация — 8 профилей
+## Конфигурация — единый источник
 
-| Профиль | RAM | Latency | Nodes | Назначение |
-|---------|:---:|:---:|:---:|---|
-| `RTMDKConfig.local()` | ~16MB | ~5ms | 10K | Персональный ассистент |
-| `RTMDKConfig.production()` | ~50MB | ~6ms | 100K | Мультипользовательский сервер |
-| `RTMDKConfig.research()` | ~200MB | ~50ms | ∞ | Максимальная точность |
-| `RTMDKConfig.enterprise()` | ~250MB/shard | ~15ms | 500K+ | Распределённая система |
-| `RTMDKConfig.agent()` | ~30MB | ~8ms | 50K | Автономный агент |
-| `RTMDKConfig.legal()` | ~100MB | ~20ms | 200K | Юриспруденция (Z3) |
-| `RTMDKConfig.medical()` | ~100MB | ~20ms | 200K | Медицина (Z3 + trust) |
-| `RTMDKConfig.streaming()` | ~30MB | ~3ms | 50K | High-throughput real-time |
+RTMDK использует **единственный** `RTMDKConfig` dataclass (`rtmdk/memory/core.py`) с 8 пресетами:
 
 ```python
-from rtmdk.config import RTMDKConfig
+from rtmdk import RTMDKConfig
 
-config = RTMDKConfig.production()  # или local(), research(), etc.
+config = RTMDKConfig.local()       # ~16MB, 10K nodes
+config = RTMDKConfig.production()  # ~50MB, 100K nodes
+config = RTMDKConfig.research()    # ~200MB, unlimited
+config = RTMDKConfig.enterprise()  # distributed, 500K+
+config = RTMDKConfig.agent()       # autonomous agent
+config = RTMDKConfig.legal()       # Z3 prover
+config = RTMDKConfig.medical()     # Z3 + trust
+config = RTMDKConfig.streaming()   # ~3ms latency
+```
+
+### Env Var Overrides (59 переменных)
+
+Любой параметр переопределяется через `RTMDK_*` env var:
+
+```bash
+RTMDK_PRESET=production RTMDK_LATENT_DIM=128 python rtmdk_server.py
+```
+
+Полный список: `RTMDK_LATENT_DIM`, `RTMDK_DECAY_RATE`, `RTMDK_TENSION_THRESHOLD`,
+`RTMDK_TOP_K`, `RTMDK_BANDWIDTH`, `RTMDK_PHASE_COUPLING`, `RTMDK_USE_HNSW`,
+`RTMDK_HNSW_M`, `RTMDK_LEARN_PROJECTION`, `RTMDK_CROSS_MODAL`, `RTMDK_CAUSAL_TOPOLOGICAL`,
+`RTMDK_META_ADAPTIVE`, `RTMDK_SELF_HEALING`, `RTMDK_ENABLE_ENGRAMS`,
+`RTMDK_OFFLINE_DREAMING`, `RTMDK_CAUSAL_TRAVERSAL`, `RTMDK_SSM_DYNAMICS`, и другие.
+
+### Runtime Configuration
+
+```bash
+# Через API (сохраняется в .env)
+curl -X POST http://localhost:8080/api/config \
+  -d '{"RTMDK_PRESET": "production", "RTMDK_LATENT_DIM": "128"}'
+# Ответ: {"status":"ok", "needs_restart": true, "restart_required_keys": [...]}
 ```
 
 ---
@@ -80,25 +101,38 @@ config = RTMDKConfig.production()  # или local(), research(), etc.
 
 ```
 rtmdk/
-├── config.py          # Центральная конфигурация (8 профилей)
+├── memory/core.py     # ЕДИНСТВЕННЫЙ RTMDKConfig + RTMDKMemory (~6200 строк)
+├── config.py          # Пресеты (local/production/research/...) — импортирует из memory/core
 ├── nodes.py           # Data-классы узлов
 ├── engrams.py         # Phase 18: Энграммы
-├── utils/             # Утилиты (modality, attention, formatting)
+├── utils/             # Утилиты (modality, attention, formatting, hyperbolic)
 ├── engines/           # Движки
 │   ├── causal_traversal.py    # Причинный обход
 │   ├── ssm_dynamics.py        # State Space Models (Mamba)
 │   ├── trust_consensus.py     # DAG доверия
 │   └── neuro_symbolic_prover.py # Z3/Prolog
-├── support/           # 24 класса поддержки
-└── production/        # Production модули
+├── support/           # 28 классов поддержки
+└── production/        # Production модули (33 файла)
     ├── offline_dreamer.py      # Фоновые циклы
     ├── query_cache.py          # LRU кэш запросов
-    ├── bm25_fallback.py        # BM25 fallback
-    ├── active_inference.py     # Curiosity loop (research)
-    ├── adversarial_arena.py    # Self-play тесты (research)
-    └── tpr.py                  # Tensor Product Rep (research)
+    └── ...
+```
+
+### Импорт
+
+```python
+# Правильно — единый источник
+from rtmdk import RTMDKConfig, RTMDKMemory
+from rtmdk import ConsolidationMode, Backend, ContextFormat
+
+# Тоже работает
+from rtmdk.memory.core import RTMDKConfig, RTMDKMemory
+from rtmdk.config import RTMDKConfig  # тот же класс (re-export)
+
+# Неправильно — больше нет отдельного dataclass в config.py
+# from rtmdk.config import RTMDKConfig as ConfigProfiles  # удалено
 ```
 
 ---
 
-*Последнее обновление: Апрель 2026, RTMDK v8.0, 25 коммитов, 75+ файлов, 25,000+ строк кода*
+*Последнее обновление: Апрель 2026, RTMDK v8.0, unified config architecture*

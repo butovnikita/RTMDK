@@ -4,13 +4,56 @@
 
 All endpoints tested and verified:
 - `/health` → Returns server health
-- `/v1/models` → Returns available models  
+- `/v1/models` → Returns available models
 - `/v1/chat/completions` → OpenAI chat format (WORKS)
 - `/v1/embeddings` → Embedding endpoint (WORKS)
-- `/api/v1/generate` → SillyTavern text completion format (WORKS)
+- `/api/v1/generate` → SillyTavern text completion format)
 - `/api/backends/text-completions/generate` → ST backend format (WORKS)
 - `/api/backends/text-completions/status` → ST status check (WORKS)
 - `/dashboard` → Web UI (WORKS)
+
+**Streaming fix (v8.0.0):** AI responses are now automatically saved to memory even when streaming is enabled.
+
+## Подключение
+
+### Вариант 1: Monolith (проще)
+
+```
+SillyTavern → http://127.0.0.1:8080/v1 → API Key: rtmdk-local
+```
+
+1. SillyTavern → API Connections → **API Type**: `OpenAI`
+2. Base URL: `http://127.0.0.1:8080/v1`
+3. API Key: `rtmdk-local`
+4. Connect
+
+### Вариант 2: Proxy (рекомендуется)
+
+```
+SillyTavern → http://127.0.0.1:5000/v1 → RTMDK Server (8080) → LM Studio (12345)
+```
+
+```bash
+python rtmdk_sillytavern_launcher.py
+# Запускает сервер (8080) + proxy (5000)
+```
+
+1. SillyTavern → API Connections → **API Type**: `OpenAI`
+2. Base URL: `http://127.0.0.1:5000/v1`
+3. API Key: любой (proxy не проверяет)
+4. Connect
+
+**Преимущества proxy:**
+- Автоматическое сохранение сообщений в память
+- Извлечение релевантных воспоминаний
+- Инжекция контекста в промпт
+- Изоляция памяти по персонажам
+
+### Вариант 3: Text Completion API Type
+
+1. SillyTavern → API Connections → **API Type**: `Text Completion` или `KoboldAI`
+2. Base URL: `http://127.0.0.1:8080` (monolith) или `http://127.0.0.1:5000` (proxy)
+3. Connect
 
 ## ⚠️ FIX: Port Mismatch Error
 
@@ -24,30 +67,8 @@ This means SillyTavern is configured for port **8000**, but RTMDK server runs on
 ### How to Fix
 
 1. In SillyTavern → API Connections
-2. Change the port from `8000` to `8080`
-3. Make sure Base URL is: `http://127.0.0.1:8080`
-
-## SillyTavern Configuration Options
-
-### Option 1: Text Completion API Type (RECOMMENDED for RTMDK)
-
-1. Open SillyTavern → Extensions → API Connections
-2. Select **API Type**: `Text Completion` or `KoboldAI`
-3. Configure:
-   - **Base URL**: `http://127.0.0.1:8080`
-   - **API Key**: `rtmdk-local` (or leave empty)
-4. Click **Connect** - should show "Connected"
-
-### Option 2: OpenAI API Type
-
-1. Select **API Type**: `OpenAI`
-2. Configure:
-   - **Base URL**: `http://127.0.0.1:8080/v1`
-   - **API Key**: `rtmdk-local` (or leave empty)
-   - **Model**: `rtmdk` or select from list
-3. Click **Connect** - should show "Connected"
-
-## Testing Connection
+2. Change the port from `8000` to `8080` (monolith) or `5000` (proxy)
+3. Make sure Base URL is: `http://127.0.0.1:8080` or `http://127.0.0.1:5000`
 
 ### Manual Tests
 ```bash

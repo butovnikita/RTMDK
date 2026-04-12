@@ -1,30 +1,31 @@
 # RTMDK Fine-Tuning Guide
 
 > Полное руководство по настройке RTMDK для максимальной эффективности.
-> Версия: 2.0 (обновлено с Phase 18-19 и 8 профилями)
+> Версия: 3.0 (unified config, env vars, 8 профилей)
 
 ---
 
 ## Оглавление
 
 1. [Быстрый старт](#1-быстрый-старт)
-2. [8 готовых профилей](#2-8-готовых-профилей) — **НОВОЕ**
-3. [Core переменные](#3-core-переменные)
-4. [Retrieval переменные](#4-retrieval-переменные)
-5. [Performance переменные](#5-performance-переменные)
-6. [Production переменные](#6-production-переменные)
-7. [Phase 18: Энграммы](#7-phase-18-энграммы) — **НОВОЕ**
-8. [Phase 19: Advanced](#8-phase-19-advanced) — **НОВОЕ**
-9. [Scaling переменные](#9-scaling-переменные)
-10. [8 Профилей](#10-8-профилей) — **НОВОЕ**
-11. [Troubleshooting](#11-troubleshooting)
+2. [Env Var Overrides](#2-env-var-overrides) — **НОВОЕ**
+3. [Runtime Config через API](#3-runtime-config-через-api) — **НОВОЕ**
+4. [Core переменные](#4-core-переменные)
+5. [Retrieval переменные](#5-retrieval-переменные)
+6. [Performance переменные](#6-performance-переменные)
+7. [Production переменные](#7-production-переменные)
+8. [Phase 18: Энграммы](#8-phase-18-энграммы)
+9. [Phase 19: Advanced](#9-phase-19-advanced)
+10. [Scaling переменные](#10-scaling-переменные)
+11. [8 Профилей](#11-8-профилей)
+12. [Troubleshooting](#12-troubleshooting)
 
 ---
 
 ## 1. Быстрый старт
 
 ```python
-from rtmdk.config import RTMDKConfig
+from rtmdk import RTMDKConfig
 
 # Выбери пресет
 config = RTMDKConfig.local()       # Персональный ассистент
@@ -34,15 +35,72 @@ config = RTMDKConfig.enterprise()  # 100K+ узлов
 
 # Или настрой вручную
 config = RTMDKConfig(
-    latent_dim=256,
+    latent_dim=64,
     top_k=5,
-    decay_rate=0.999,
+    decay_rate=0.997,
 )
 ```
 
 ---
 
-## 2. Core переменные
+## 2. Env Var Overrides
+
+Любой из 59 параметров можно переопределить через `RTMDK_*` env var.
+Приоритет: **явные аргументы > env vars > defaults пресета**.
+
+```bash
+# Выбрать пресет
+RTMDK_PRESET=production python rtmdk_server.py
+
+# Переопределить параметры пресета
+RTMDK_PRESET=local RTMDK_LATENT_DIM=128 RTMDK_TOP_K=10 python rtmdk_server.py
+
+# Полный контроль
+RTMDK_PRESET=research \
+  RTMDK_DECAY_RATE=0.9995 \
+  RTMDK_CAUSAL_TOPOLOGICAL=true \
+  python rtmdk_server.py
+```
+
+**Все поддерживаемые env vars:**
+
+| Категория | Переменные |
+|-----------|-----------|
+| **Core** | `RTMDK_EMBEDDING_DIM`, `RTMDK_LATENT_DIM`, `RTMDK_DECAY_RATE`, `RTMDK_TENSION_THRESHOLD`, `RTMDK_MIN_RESPONSE`, `RTMDK_TOP_K`, `RTMDK_MAX_NODES`, `RTMDK_CONSOLIDATION_MODE` |
+| **Retrieval** | `RTMDK_PHASE_COUPLING`, `RTMDK_BANDWIDTH`, `RTMDK_USE_HNSW`, `RTMDK_HNSW_M`, `RTMDK_BM25_FALLBACK`, `RTMDK_LEARN_PROJECTION`, `RTMDK_PROJECTION_LR`, `RTMDK_PROJECTION_UPDATE_FREQ` |
+| **Performance** | `RTMDK_ENABLE_ASYNC`, `RTMDK_SOFT_GATES`, `RTMDK_ATTENTION_BIAS`, `RTMDK_ADAPTIVE_THRESHOLD` |
+| **Production** | `RTMDK_CROSS_MODAL`, `RTMDK_CAUSAL_TOPOLOGICAL`, `RTMDK_META_ADAPTIVE`, `RTMDK_SELF_HEALING`, `RTMDK_VERSION_CONTROL` |
+| **Engrams** | `RTMDK_ENABLE_ENGRAMS`, `RTMDK_ENGRAM_MIN_NODES`, `RTMDK_ENGRAM_MAX_NODES` |
+| **Phase 19** | `RTMDK_OFFLINE_DREAMING`, `RTMDK_CAUSAL_TRAVERSAL`, `RTMDK_CAUSAL_MAX_HOPS`, `RTMDK_SSM_DYNAMICS`, `RTMDK_SSM_STATE_DIM`, `RTMDK_TRUST_CONSENSUS`, `RTMDK_NEURO_SYMBOLIC_PROVER` |
+| **Phase 11** | `RTMDK_HYPERBOLIC`, `RTMDK_PREDICTIVE_CODING`, `RTMDK_COUNTERFACTUAL_IMAGINATION`, `RTMDK_DIFFERENTIAL_PRIVACY`, `RTMDK_DP_EPSILON` |
+| **Phase 12-17** | `RTMDK_SPARSE_ROUTING`, `RTMDK_NUM_SHARDS`, `RTMDK_GOAL_TRACKING`, `RTMDK_RL_FEEDBACK`, `RTMDK_LOW_RANK_COMPRESSION`, `RTMDK_META_MEMORY`, `RTMDK_SECURITY_ENABLED`, `RTMDK_SWARM_MEMORY`, `RTMDK_SYMBOLIC_OVERLAY`, `RTMDK_SAFETY_CERTIFIER`, `RTMDK_ROLE_SHARDING` |
+| **Misc** | `RTMDK_CONTEXT_FORMAT`, `RTMDK_LOG_LEVEL` |
+
+---
+
+## 3. Runtime Config через API
+
+```bash
+# Изменить пресет (сохраняется в .env, требует перезапуска)
+curl -X POST http://localhost:8080/api/config \
+  -H "Content-Type: application/json" \
+  -d '{"RTMDK_PRESET": "production"}'
+# Ответ: {"status":"ok", "needs_restart": true, "restart_required_keys": ["RTMDK_PRESET"]}
+
+# Изменить гиперпараметры
+curl -X POST http://localhost:8080/api/config \
+  -H "Content-Type: application/json" \
+  -d '{"RTMDK_LATENT_DIM": "128", "RTMDK_TOP_K": "10"}'
+
+# Изменить серверные настройки (применяются сразу)
+curl -X POST http://localhost:8080/api/config \
+  -H "Content-Type: application/json" \
+  -d '{"RTMDK_EMBED_MODEL": "text-embedding-3-small"}'
+```
+
+---
+
+## 4. Core переменные
 
 ### embedding_dim
 **Что:** Размерность входных эмбеддингов
