@@ -431,6 +431,81 @@ class RTMDKConfig:
     prover_backend: str = "z3"
 
     def __post_init__(self):
+        # Phase 2: Env var overrides for critical config fields
+        # Priority: explicit args > env vars > dataclass defaults
+        _env_overrides = [
+            # Core
+            ("RTMDK_EMBEDDING_DIM", "embedding_dim", int),
+            ("RTMDK_LATENT_DIM", "latent_dim", int),
+            ("RTMDK_DECAY_RATE", "decay_rate", float),
+            ("RTMDK_TENSION_THRESHOLD", "tension_threshold", float),
+            ("RTMDK_MIN_RESPONSE", "min_response", float),
+            ("RTMDK_TOP_K", "top_k", int),
+            ("RTMDK_MAX_NODES", "max_nodes", lambda x: int(x) if x and x.lower() != "none" else None),
+            ("RTMDK_CONSOLIDATION_MODE", "consolidation_mode", lambda x: ConsolidationMode(x)),
+            # Retrieval
+            ("RTMDK_PHASE_COUPLING", "phase_coupling", float),
+            ("RTMDK_BANDWIDTH", "bandwidth", float),
+            ("RTMDK_USE_HNSW", "use_hnsw", lambda x: x.lower() == "true"),
+            ("RTMDK_HNSW_M", "hnsw_m", int),
+            ("RTMDK_BM25_FALLBACK", "bm25_fallback", lambda x: x.lower() == "true"),
+            ("RTMDK_LEARN_PROJECTION", "learn_projection", lambda x: x.lower() == "true"),
+            ("RTMDK_PROJECTION_LR", "projection_lr", float),
+            ("RTMDK_PROJECTION_UPDATE_FREQ", "projection_update_freq", int),
+            # Performance
+            ("RTMDK_ENABLE_ASYNC", "enable_async", lambda x: x.lower() == "true"),
+            ("RTMDK_SOFT_GATES", "soft_gates", lambda x: x.lower() == "true"),
+            ("RTMDK_ATTENTION_BIAS", "attention_bias", lambda x: x.lower() == "true"),
+            ("RTMDK_ADAPTIVE_THRESHOLD", "adaptive_threshold", lambda x: x.lower() == "true"),
+            # Production
+            ("RTMDK_CROSS_MODAL", "cross_modal", lambda x: x.lower() == "true"),
+            ("RTMDK_CAUSAL_TOPOLOGICAL", "causal_topological", lambda x: x.lower() == "true"),
+            ("RTMDK_META_ADAPTIVE", "meta_adaptive", lambda x: x.lower() == "true"),
+            ("RTMDK_SELF_HEALING", "self_healing", lambda x: x.lower() == "true"),
+            ("RTMDK_VERSION_CONTROL", "version_control", lambda x: x.lower() == "true"),
+            # Phase 18: Engrams
+            ("RTMDK_ENABLE_ENGRAMS", "enable_engrams", lambda x: x.lower() == "true"),
+            ("RTMDK_ENGRAM_MIN_NODES", "engram_min_nodes", int),
+            ("RTMDK_ENGRAM_MAX_NODES", "engram_max_nodes", int),
+            # Phase 19
+            ("RTMDK_OFFLINE_DREAMING", "offline_dreaming", lambda x: x.lower() == "true"),
+            ("RTMDK_CAUSAL_TRAVERSAL", "causal_traversal", lambda x: x.lower() == "true"),
+            ("RTMDK_CAUSAL_MAX_HOPS", "causal_max_hops", int),
+            ("RTMDK_SSM_DYNAMICS", "ssm_dynamics", lambda x: x.lower() == "true"),
+            ("RTMDK_SSM_STATE_DIM", "ssm_state_dim", int),
+            ("RTMDK_TRUST_CONSENSUS", "trust_consensus", lambda x: x.lower() == "true"),
+            ("RTMDK_NEURO_SYMBOLIC_PROVER", "neuro_symbolic_prover", lambda x: x.lower() == "true"),
+            # Phase 11
+            ("RTMDK_HYPERBOLIC", "hyperbolic", lambda x: x.lower() == "true"),
+            ("RTMDK_PREDICTIVE_CODING", "predictive_coding", lambda x: x.lower() == "true"),
+            ("RTMDK_COUNTERFACTUAL_IMAGINATION", "counterfactual_imagination", lambda x: x.lower() == "true"),
+            ("RTMDK_DIFFERENTIAL_PRIVACY", "differential_privacy", lambda x: x.lower() == "true"),
+            ("RTMDK_DP_EPSILON", "dp_epsilon", float),
+            # Phase 12-17
+            ("RTMDK_SPARSE_ROUTING", "sparse_routing", lambda x: x.lower() == "true"),
+            ("RTMDK_NUM_SHARDS", "num_shards", int),
+            ("RTMDK_GOAL_TRACKING", "goal_tracking", lambda x: x.lower() == "true"),
+            ("RTMDK_RL_FEEDBACK", "rl_feedback", lambda x: x.lower() == "true"),
+            ("RTMDK_LOW_RANK_COMPRESSION", "low_rank_compression", lambda x: x.lower() == "true"),
+            ("RTMDK_META_MEMORY", "meta_memory", lambda x: x.lower() == "true"),
+            ("RTMDK_SECURITY_ENABLED", "security_enabled", lambda x: x.lower() == "true"),
+            ("RTMDK_SWARM_MEMORY", "swarm_memory", lambda x: x.lower() == "true"),
+            ("RTMDK_SYMBOLIC_OVERLAY", "symbolic_overlay", lambda x: x.lower() == "true"),
+            ("RTMDK_SAFETY_CERTIFIER", "safety_certifier", lambda x: x.lower() == "true"),
+            ("RTMDK_ROLE_SHARDING", "role_sharding", lambda x: x.lower() == "true"),
+            ("RTMDK_CONTEXT_FORMAT", "context_format", lambda x: ContextFormat(x)),
+            ("RTMDK_LOG_LEVEL", "log_level", str),
+        ]
+        for env_key, attr, type_fn in _env_overrides:
+            val = os.getenv(env_key)
+            if val is not None:
+                try:
+                    object.__setattr__(self, attr, type_fn(val))
+                except (ValueError, TypeError) as e:
+                    logging.getLogger("rtmdk").warning(
+                        f"Invalid env var {env_key}={val}: {e}"
+                    )
+
         logger.setLevel(getattr(logging, self.log_level.upper()))
         if not self.modality_phase_shifts:
             self.modality_phase_shifts = {

@@ -190,31 +190,23 @@ def get_embedding(text: str, model: str = None) -> np.ndarray:
 
 
 def init_memory() -> RTMDKMemory:
-    """Initialize or load RTMDK memory."""
-    config = RTMDKConfig(
-        embedding_dim=768,
-        latent_dim=64,
-        tension_threshold=0.15,
-        decay_rate=0.997,
-        top_k=5,
-        enable_async=False,
-        learn_projection=True,
-        projection_lr=0.005,
-        soft_gates=True,
-        self_supervision=True,
-        context_format="json",
-        causal_topological=True,
-        do_calculus_validation=True,
-        counterfactual_enabled=True,
-        meta_adaptive=True,
-        self_healing=True,
-        memory_tiers={"episodic", "semantic", "procedural"},
-        hyperbolic=False,
-        predictive_coding=True,
-        counterfactual_imagination=True,
-        differential_privacy=False,
-        cross_modal=True,
-    )
+    """Initialize or load RTMDK memory.
+    
+    Configuration is loaded from preset (RTMDK_PRESET env var, default "production")
+    with individual field overrides via RTMDK_* env vars.
+    """
+    preset_name = os.getenv("RTMDK_PRESET", "production")
+    preset_fn = getattr(RTMDKConfig, preset_name, None)
+    if preset_fn is None:
+        logger.warning(f"Unknown preset '{preset_name}', falling back to 'production'")
+        preset_fn = RTMDKConfig.production
+
+    # Preset creates the base config, env vars override individual fields
+    config = preset_fn()
+
+    logger.info(f"Memory config preset: {preset_name}")
+    logger.info(f"  latent_dim={config.latent_dim}, decay={config.decay_rate}")
+    logger.info(f"  tension={config.tension_threshold}, top_k={config.top_k}")
 
     if os.path.exists(MEMORY_FILE):
         try:

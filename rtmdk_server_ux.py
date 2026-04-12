@@ -394,25 +394,48 @@ def create_ux_router(memory, config: Dict[str, Any]) -> APIRouter:
     
     @router.post("/config")
     async def update_config(data: dict):
-        """Update server configuration at runtime."""
-        updates = {}
+        """Update server configuration at runtime.
         
-        # Supported runtime config keys
+        Server keys: Applied immediately (API provider, models, keys, URLs).
+        Hyperparameter keys (RTMDK_*): Saved to .env, require restart.
+        """
+        updates = {}
+        needs_restart = []
+
+        # Server keys — applied immediately
         allowed_keys = [
             "RTMDK_API_PROVIDER", "RTMDK_LLM_MODEL", "RTMDK_EMBED_MODEL",
             "OPENAI_API_KEY", "OPENROUTER_API_KEY", "ANTHROPIC_API_KEY",
             "CUSTOM_API_URL", "LM_STUDIO_URL", "RTMDK_PORT"
         ]
-        
-        for key in allowed_keys:
+
+        # Hyperparameter keys — saved to .env, need restart
+        hyperparam_keys = [
+            "RTMDK_PRESET", "RTMDK_LATENT_DIM", "RTMDK_DECAY_RATE",
+            "RTMDK_TENSION_THRESHOLD", "RTMDK_TOP_K", "RTMDK_BANDWIDTH",
+            "RTMDK_PHASE_COUPLING", "RTMDK_USE_HNSW", "RTMDK_HNSW_M",
+            "RTMDK_LEARN_PROJECTION", "RTMDK_CROSS_MODAL", "RTMDK_CAUSAL_TOPOLOGICAL",
+            "RTMDK_META_ADAPTIVE", "RTMDK_SELF_HEALING", "RTMDK_ENABLE_ENGRAMS",
+            "RTMDK_OFFLINE_DREAMING", "RTMDK_CAUSAL_TRAVERSAL", "RTMDK_SSM_DYNAMICS",
+            "RTMDK_SPARSE_ROUTING", "RTMDK_NUM_SHARDS", "RTMDK_GOAL_TRACKING",
+            "RTMDK_RL_FEEDBACK", "RTMDK_SECURITY_ENABLED", "RTMDK_SWARM_MEMORY",
+            "RTMDK_SYMBOLIC_OVERLAY", "RTMDK_SAFETY_CERTIFIER", "RTMDK_ROLE_SHARDING",
+        ]
+
+        all_keys = allowed_keys + hyperparam_keys
+
+        for key in all_keys:
             if key in data:
                 config[key] = data[key]
                 updates[key] = data[key]
+                if key in hyperparam_keys:
+                    needs_restart.append(key)
             elif key.lower() in data:
-                # Support lowercase keys too
                 config[key] = data[key.lower()]
                 updates[key] = data[key.lower()]
-        
+                if key in hyperparam_keys:
+                    needs_restart.append(key)
+
         if updates:
             # Save to .env file for persistence
             env_path = ".env"
@@ -424,16 +447,20 @@ def create_ux_router(memory, config: Dict[str, Any]) -> APIRouter:
                             if '=' in line and not line.startswith('#'):
                                 k, v = line.strip().split('=', 1)
                                 existing[k] = v
-                
+
                 existing.update(updates)
-                
+
                 with open(env_path, 'w') as f:
                     for k, v in existing.items():
                         f.write(f"{k}={v}\n")
             except Exception as e:
                 return {"status": "partial", "updates": updates, "warning": f"Failed to persist config: {e}"}
-        
-        return {"status": "ok", "updates": list(updates.keys())}
+
+        result = {"status": "ok", "updates": list(updates.keys())}
+        if needs_restart:
+            result["needs_restart"] = True
+            result["restart_required_keys"] = needs_restart
+        return result
     
     @router.get("/config")
     async def get_config():
