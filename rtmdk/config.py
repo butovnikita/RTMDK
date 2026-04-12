@@ -78,12 +78,12 @@ class RTMDKConfig:
     Nomic embed-text-v1.5 = 768, all-MiniLM-L6-v2 = 384.
     ↓ Smaller = faster, ↑ Larger = more accurate."""
 
-    latent_dim: int = 64
+    latent_dim: int = 256
     """Internal representation size. Larger = more detail retained.
-    Default 64: aligned with server defaults. 256: more detail but more RAM.
+    Default 256: good balance. 64: faster but lossy. 512: max accuracy.
     ↑ Larger = better recall but more RAM and slower."""
 
-    decay_rate: float = 0.997
+    decay_rate: float = 0.999
     """How fast memories fade. 0.999 = very slow (half-life ~693 steps).
     0.995 = moderate forgetting (half-life ~138 steps).
     0.990 = aggressive forgetting (half-life ~69 steps).
@@ -99,9 +99,9 @@ class RTMDKConfig:
     3 = concise context, 5 = default, 10 = comprehensive.
     ↑ Larger = more context for LLM but higher token cost."""
 
-    tension_threshold: float = 0.15
+    tension_threshold: float = 0.25
     """Threshold for triggering consolidation.
-    0.15 = moderate consolidation (server default), 0.25 = rare, 0.40 = very rare.
+    0.15 = frequent consolidation, 0.25 = moderate, 0.40 = rare.
     ↓ Lower = more merging (risk of info loss), ↑ Higher = less merging."""
 
     consolidation_mode: ConsolidationMode = ConsolidationMode.DIALECTICAL
