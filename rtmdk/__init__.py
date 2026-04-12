@@ -17,6 +17,20 @@ from rtmdk.memory.core import (
     FieldHealth, EvalMode,
 )
 
+# Bind preset methods to RTMDKConfig class
+from rtmdk.config import (
+    _local, _production, _research, _enterprise,
+    _agent, _legal, _medical, _streaming,
+)
+RTMDKConfig.local = staticmethod(_local)
+RTMDKConfig.production = staticmethod(_production)
+RTMDKConfig.research = staticmethod(_research)
+RTMDKConfig.enterprise = staticmethod(_enterprise)
+RTMDKConfig.agent = staticmethod(_agent)
+RTMDKConfig.legal = staticmethod(_legal)
+RTMDKConfig.medical = staticmethod(_medical)
+RTMDKConfig.streaming = staticmethod(_streaming)
+
 
 def list_presets():
     """List all available configuration presets."""
