@@ -471,7 +471,23 @@ def build_system_prompt(user_messages: List[ChatMessage], session_id: str) -> st
         except Exception as e:
             logger.warning(f"Memory query failed: {e}")
 
-    system_prompt = "You are a helpful assistant with long-term memory powered by RTMDK (Resonance-Topological Memory)."
+    # Check for custom system prompt (env var or file)
+    prompt_file = os.getenv("RTMDK_SYSTEM_PROMPT_FILE")
+    custom_prompt = os.getenv("RTMDK_SYSTEM_PROMPT")
+
+    if prompt_file and os.path.exists(prompt_file):
+        try:
+            with open(prompt_file, 'r', encoding='utf-8') as f:
+                base_prompt = f.read().strip()
+        except Exception as e:
+            logger.warning(f"Failed to read prompt file: {e}")
+            base_prompt = "You are a helpful assistant with long-term memory powered by RTMDK (Resonance-Topological Memory)."
+    elif custom_prompt:
+        base_prompt = custom_prompt
+    else:
+        base_prompt = "You are a helpful assistant with long-term memory powered by RTMDK (Resonance-Topological Memory)."
+
+    system_prompt = base_prompt
 
     if ctx["rtmdk_context"] and ctx["rtmdk_context"] not in ("No relevant memory.", "[]"):
         system_prompt += (
