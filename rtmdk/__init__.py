@@ -20,7 +20,7 @@ from rtmdk.memory.core import (
 # Bind preset methods to RTMDKConfig class
 from rtmdk.config import (
     _local, _production, _research, _enterprise,
-    _agent, _legal, _medical, _streaming,
+    _agent, _legal, _medical, _streaming, _sillytavern,
 )
 RTMDKConfig.local = staticmethod(_local)
 RTMDKConfig.production = staticmethod(_production)
@@ -30,12 +30,13 @@ RTMDKConfig.agent = staticmethod(_agent)
 RTMDKConfig.legal = staticmethod(_legal)
 RTMDKConfig.medical = staticmethod(_medical)
 RTMDKConfig.streaming = staticmethod(_streaming)
+RTMDKConfig.sillytavern = staticmethod(_sillytavern)
 
 
 def list_presets():
     """List all available configuration presets."""
     return ["local", "production", "research", "enterprise",
-            "agent", "legal", "medical", "streaming"]
+            "agent", "legal", "medical", "streaming", "sillytavern"]
 
 
 def create_rtmdk(preset: str = "local", embedder=None) -> RTMDKMemory:
@@ -43,7 +44,7 @@ def create_rtmdk(preset: str = "local", embedder=None) -> RTMDKMemory:
 
     Args:
         preset: One of 'local', 'production', 'research', 'enterprise',
-                'agent', 'legal', 'medical', 'streaming'
+                'agent', 'legal', 'medical', 'streaming', 'sillytavern'
         embedder: Embedding function (required)
 
     Returns:
@@ -58,6 +59,7 @@ def create_rtmdk(preset: str = "local", embedder=None) -> RTMDKMemory:
         "legal": RTMDKConfig.legal,
         "medical": RTMDKConfig.medical,
         "streaming": RTMDKConfig.streaming,
+        "sillytavern": RTMDKConfig.sillytavern,
     }
 
     if preset not in preset_methods:

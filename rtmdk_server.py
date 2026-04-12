@@ -471,23 +471,28 @@ def build_system_prompt(user_messages: List[ChatMessage], session_id: str) -> st
         except Exception as e:
             logger.warning(f"Memory query failed: {e}")
 
-    # Check for custom system prompt (env var or file)
+    # Check for custom system prompt (env var file)
     prompt_file = os.getenv("RTMDK_SYSTEM_PROMPT_FILE")
-    custom_prompt = os.getenv("RTMDK_SYSTEM_PROMPT")
 
+    # Priority: env var file > env var text > config.system_prompt > None
     if prompt_file and os.path.exists(prompt_file):
         try:
             with open(prompt_file, 'r', encoding='utf-8') as f:
                 base_prompt = f.read().strip()
         except Exception as e:
             logger.warning(f"Failed to read prompt file: {e}")
-            base_prompt = "You are a helpful assistant with long-term memory powered by RTMDK (Resonance-Topological Memory)."
-    elif custom_prompt:
-        base_prompt = custom_prompt
+            base_prompt = memory.config.system_prompt if memory else None
     else:
-        base_prompt = "You are a helpful assistant with long-term memory powered by RTMDK (Resonance-Topological Memory)."
+        # Check if env var overrides config
+        env_prompt = os.getenv("RTMDK_SYSTEM_PROMPT")
+        if env_prompt is not None:
+            base_prompt = env_prompt if env_prompt else None
+        elif memory:
+            base_prompt = memory.config.system_prompt
+        else:
+            base_prompt = None
 
-    system_prompt = base_prompt
+    system_prompt = base_prompt or ""
 
     if ctx["rtmdk_context"] and ctx["rtmdk_context"] not in ("No relevant memory.", "[]"):
         system_prompt += (
@@ -547,8 +552,10 @@ async def chat_completions(req: ChatCompletionRequest):
     # Build system prompt with memory context
     system_prompt = build_system_prompt(req.messages, req.session_id)
 
-    # Build messages for LM Studio
-    messages = [{"role": "system", "content": system_prompt}]
+    # Build messages for LM Studio (only add system message if prompt exists)
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
     for msg in req.messages:
         messages.append({"role": msg.role, "content": msg.content})
 

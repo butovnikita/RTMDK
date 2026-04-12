@@ -165,6 +165,23 @@ def _streaming() -> RTMDKConfig:
     )
 
 
+def _sillytavern() -> RTMDKConfig:
+    """SillyTavern — no system prompt, ST manages prompts via character cards."""
+    cfg = RTMDKConfig(
+        latent_dim=64, top_k=5, min_response=0.005,
+        decay_rate=0.997, use_hnsw=True, bm25_fallback=True,
+        learn_projection=True, attention_bias=True,
+        enable_async=False, max_nodes=10000,
+        enable_engrams=True, engram_min_nodes=2, engram_max_nodes=15,
+        offline_dreaming=False,
+        causal_traversal=True, causal_max_hops=2,
+        ssm_dynamics=False,
+        trust_consensus=False, neuro_symbolic_prover=False,
+        system_prompt=None,  # ← Key difference: no system prompt
+    )
+    return cfg
+
+
 # Bind presets as class methods for backward compatibility
 RTMDKConfig.local = staticmethod(_local)
 RTMDKConfig.production = staticmethod(_production)
@@ -174,3 +191,4 @@ RTMDKConfig.agent = staticmethod(_agent)
 RTMDKConfig.legal = staticmethod(_legal)
 RTMDKConfig.medical = staticmethod(_medical)
 RTMDKConfig.streaming = staticmethod(_streaming)
+RTMDKConfig.sillytavern = staticmethod(_sillytavern)

@@ -68,13 +68,18 @@ def create_sillytavern_router(memory, config: Dict[str, Any], lm_studio_availabl
                 logger.warning(f"Memory save failed: {e}")
 
         messages = []
+        # ST compat: only add system context if memory has context AND config allows it
         if mem:
             ctx = mem.load_memory_variables({"input": prompt, "session_id": session_id})
             context = ctx.get("rtmdk_context", "")
+            # For ST: inject memory context as user message prefix, not system message
+            # This avoids conflicting with ST's own system prompt (character cards, etc.)
             if context:
-                messages.append({"role": "system", "content": f"Use this context: {context}"})
-        
-        messages.append({"role": "user", "content": prompt})
+                messages.append({"role": "user", "content": f"[Memory context]\n{context}\n\n{prompt}"})
+            else:
+                messages.append({"role": "user", "content": prompt})
+        else:
+            messages.append({"role": "user", "content": prompt})
         
         lm_timeout = int(os.getenv("RTMDK_LM_STUDIO_TIMEOUT", "120"))
         

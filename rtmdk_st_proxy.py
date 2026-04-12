@@ -282,25 +282,18 @@ def inject_memories_into_prompt(messages: List[Dict], memories: List[str]) -> Li
         f"Use these memories to inform your response and maintain continuity."
     )
     
-    # Inject into system message or as first user message
+    # Inject into last user message as prefix (avoids conflicting with ST system prompts)
     new_messages = messages.copy()
-    
-    # Find or create system message
-    system_idx = None
-    for i, msg in enumerate(new_messages):
-        if msg.get("role") == "system":
-            system_idx = i
+
+    # Find last user message and prepend memory context
+    for i in range(len(new_messages) - 1, -1, -1):
+        if new_messages[i].get("role") == "user":
+            new_messages[i]["content"] = (
+                f"[Memory context]\n{memory_text}\n\n---\n\n"
+                f"{new_messages[i]['content']}"
+            )
             break
-    
-    if system_idx is not None:
-        new_messages[system_idx]["content"] += memory_block
-    else:
-        # Prepend as system-like message
-        new_messages.insert(0, {
-            "role": "system",
-            "content": memory_block
-        })
-    
+
     return new_messages
 
 

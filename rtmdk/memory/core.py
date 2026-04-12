@@ -418,6 +418,9 @@ class RTMDKConfig:
     cross_shard_threshold: float = 0.45
     auto_role_detection: bool = True
 
+    # System prompt (None = no system prompt, used for SillyTavern)
+    system_prompt: Optional[str] = "You are a helpful assistant with long-term memory powered by RTMDK (Resonance-Topological Memory)."
+
     # Phase 19: Advanced Improvements
     offline_dreaming: bool = True
     dreaming_freq: int = 50
@@ -495,12 +498,19 @@ class RTMDKConfig:
             ("RTMDK_ROLE_SHARDING", "role_sharding", lambda x: x.lower() == "true"),
             ("RTMDK_CONTEXT_FORMAT", "context_format", lambda x: ContextFormat(x)),
             ("RTMDK_LOG_LEVEL", "log_level", str),
+            ("RTMDK_SYSTEM_PROMPT", "system_prompt", str),
         ]
         for env_key, attr, type_fn in _env_overrides:
             val = os.getenv(env_key)
             if val is not None:
                 try:
-                    object.__setattr__(self, attr, type_fn(val))
+                    parsed = type_fn(val)
+                    # Handle empty string as None for Optional[str] fields
+                    if attr == "system_prompt" and parsed == "":
+                        parsed = None
+                    elif attr == "system_prompt" and parsed.lower() == "none":
+                        parsed = None
+                    object.__setattr__(self, attr, parsed)
                 except (ValueError, TypeError) as e:
                     logging.getLogger("rtmdk").warning(
                         f"Invalid env var {env_key}={val}: {e}"
