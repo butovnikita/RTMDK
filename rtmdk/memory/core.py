@@ -5810,101 +5810,13 @@ class RTMDKField:
                 pass  # If we can't check, proceed with export
 
         logger.info(f"export_field: exporting {n_nodes} nodes to {path}")
-
-        # Path sanitization
-        path = os.path.normpath(str(path))
-        if ".." in path.split(os.sep):
-            raise ValueError(f"Invalid path: path traversal not allowed: {path}")
-        if not path.endswith((".json", ".msgpack")):
-            raise ValueError(f"Invalid format: path must end with .json or .msgpack: {path}")
-
-        cd = asdict(self.config) if hasattr(self, 'config') else asdict(self.cfg)
-        cd["consolidation_mode"] = _enum_value(cd.get("consolidation_mode"), "dialectical")
-        cd["backend"] = _enum_value(cd.get("backend"), "numpy")
-        cd["context_format"] = _enum_value(cd.get("context_format"), "plain")
-        cd["eval_mode"] = _enum_value(cd.get("eval_mode"), "production")
-        if "memory_tiers" in cd and isinstance(cd["memory_tiers"], set):
-            cd["memory_tiers"] = list(cd["memory_tiers"])
-        data = {"config": cd, "nodes": [n.to_dict() for n in self.nodes.values()], "stats": self.stats}
-        if self.projection_learner:
-            data["projection_state"] = self.projection_learner.get_state()
-        else:
-            data["projection"] = self._raw_projection.tolist()
-        if self.learnable_kernel:
-            data["learnable_kernel"] = self.learnable_kernel.get_state()
-        if self.meta_kernel:
-            data["meta_kernel"] = self.meta_kernel.get_state()
-        if self.healer:
-            data["healer"] = self.healer.get_state()
-        if self.causal_engine:
-            data["causal_engine"] = self.causal_engine.get_state()
-        if self.ode_dynamics:
-            data["ode_dynamics"] = self.ode_dynamics.get_state()
-        if self.meta_controller:
-            data["meta_controller"] = self.meta_controller.get_state()
-        if self.federated:
-            data["federated"] = self.federated.export_state()
-        if self.meta_memory_eval:
-            data["meta_memory_eval"] = self.meta_memory_eval.get_state()
-        if self.security:
-            data["security"] = self.security.get_state()
-        if self.swarm:
-            data["swarm"] = self.swarm.get_state()
-        if self.version_control:
-            data["version_control"] = self.version_control.export_state()
-        if self.entropy_ctrl:
-            data["entropy_ctrl"] = self.entropy_ctrl.get_state_dict()
-        if self.symbolic_overlay:
-            data["symbolic_overlay"] = self.symbolic_overlay.get_state()
-        if self.safety_certifier:
-            data["safety_certifier"] = self.safety_certifier.get_state()
-
-        if fmt == "msgpack":
-            try:
-                import msgpack
-                import zlib
-                packed = msgpack.packb(data, use_bin_type=True)
-                compressed = zlib.compress(packed)
-                # H3: Atomic write — write to temp file then rename
-                tmp_path = path + ".tmp"
-                with open(tmp_path, "wb") as f:
-                    f.write(compressed)
-                os.replace(tmp_path, path)
-            except ImportError:
-                import warnings
-                warnings.warn("msgpack not installed, falling back to JSON. Install: pip install msgpack")
-                tmp_path = path + ".tmp"
-                with open(tmp_path, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2, default=str)
-                os.replace(tmp_path, path)
-        else:
-            # H3: Atomic write — write to temp file then rename
-            tmp_path = path + ".tmp"
-            with open(tmp_path, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2, default=str)
-            os.replace(tmp_path, path)
-            # Set secure file permissions (owner read/write only)
-            try:
-                os.chmod(path, 0o600)
-            except OSError:
-                pass  # Windows may not support chmod
+        from rtmdk.memory.serialization import FieldSerializer
+        FieldSerializer.field_to_file(self, path, fmt)
 
     @classmethod
     def import_field(cls, path: str, embedder: Callable) -> "RTMDKMemory":
-        logger.info(f"import_field: loading from {path}")
-
-        # Path sanitization
-        path = os.path.normpath(str(path))
-        if ".." in path.split(os.sep):
-            raise ValueError(f"Invalid path: path traversal not allowed: {path}")
-        if not os.path.exists(path):
-            raise FileNotFoundError(f"File not found: {path}")
-
-        # Check file size (max 100MB)
-        file_size = os.path.getsize(path)
-        max_size = 100 * 1024 * 1024  # 100MB
-        if file_size > max_size:
-            raise ValueError(f"File too large: {file_size / 1024 / 1024:.1f}MB (max 100MB)")
+        from rtmdk.memory.serialization import FieldSerializer
+        return FieldSerializer.field_from_file(path, embedder)
 
         # Health check: verify file has valid JSON structure
         if file_size < 10:
