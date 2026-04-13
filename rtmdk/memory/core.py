@@ -4519,7 +4519,8 @@ class RTMDKField:
                 self._cached_modal_weights = np.append(self._cached_modal_weights, 1.0)
                 self._cached_gates = np.append(self._cached_gates, 1.0)
                 self._cached_causal_boost = np.append(self._cached_causal_boost, 1.0)
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Incremental cache append failed: {e}, falling back to full rebuild")
                 # Fallback: mark dirty for full rebuild
                 self._cache_dirty = True
         else:

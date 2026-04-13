@@ -893,6 +893,9 @@ async def query_memory(req: QueryMemoryRequest):
     ctx = memory.load_memory_variables({"input": req.query, "session_id": req.session_id})
     latency_ms = (time.time() - t0) * 1000
     _metrics_query_latencies.append(latency_ms)
+    # Auto-trim to prevent unbounded growth (not just on /metrics calls)
+    if len(_metrics_query_latencies) > 2000:
+        _metrics_query_latencies[:] = _metrics_query_latencies[-1000:]
     return {"context": ctx["rtmdk_context"]}
 
 
