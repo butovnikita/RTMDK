@@ -2851,7 +2851,7 @@ class CausalInferenceEngine:
             if expected < 5:
                 return True
             chi2 = (n_ab - expected) ** 2 / expected
-            return chi2 < 3.84  # p=0.05, df=1
+            return chi2 < CHI_SQUARED_CRITICAL_DF1  # p=0.05, df=1
 
         # Bug #16 FIX: Implement conditional independence test
         # Use partial correlation approximation for discrete data
@@ -2878,7 +2878,7 @@ class CausalInferenceEngine:
         # Average chi-squared over conditioning variables
         avg_chi2 = chi2_cond / total
         # With conditioning, use higher threshold (df increases)
-        return avg_chi2 < 5.99  # p=0.05, df=2
+        return avg_chi2 < CHI_SQUARED_CRITICAL_DF2  # p=0.05, df=2
 
     def _compute_ancestors(self):
         for node in self.parents:

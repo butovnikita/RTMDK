@@ -35,7 +35,7 @@ def _local() -> RTMDKConfig:
     """Personal assistant — single user, minimal resources."""
     from rtmdk.memory.core import ContextFormat
     return RTMDKConfig(
-        latent_dim=256, top_k=5, min_response=0.005,
+        latent_dim=256, top_k=5,
         decay_rate=0.999, use_hnsw=True, bm25_fallback=True,
         learn_projection=False, attention_bias=True,
         enable_async=False, max_nodes=10000,
@@ -51,7 +51,7 @@ def _local() -> RTMDKConfig:
 def _production() -> RTMDKConfig:
     """Multi-user production server — all optimizations."""
     return RTMDKConfig(
-        latent_dim=256, top_k=5, min_response=0.005,
+        latent_dim=256, top_k=5,
         decay_rate=0.999, use_hnsw=True, bm25_fallback=True,
         learn_projection=False, attention_bias=True,
         enable_async=True, max_nodes=100000,
@@ -86,7 +86,7 @@ def _research() -> RTMDKConfig:
 def _enterprise() -> RTMDKConfig:
     """Distributed deployment — 100K+ nodes."""
     return RTMDKConfig(
-        latent_dim=256, top_k=5, min_response=0.005,
+        latent_dim=256, top_k=5,
         decay_rate=0.999, use_hnsw=True, bm25_fallback=True,
         learn_projection=False, attention_bias=True,
         enable_async=True, max_nodes=500000,
@@ -105,7 +105,7 @@ def _enterprise() -> RTMDKConfig:
 def _agent() -> RTMDKConfig:
     """Autonomous agent with active inference."""
     return RTMDKConfig(
-        latent_dim=256, top_k=5, min_response=0.005,
+        latent_dim=256, top_k=5,
         decay_rate=0.998, use_hnsw=True, bm25_fallback=True,
         learn_projection=False, attention_bias=True,
         enable_async=True, max_nodes=50000,
@@ -154,7 +154,7 @@ def _medical() -> RTMDKConfig:
 def _streaming() -> RTMDKConfig:
     """High-throughput real-time — minimize latency."""
     return RTMDKConfig(
-        latent_dim=256, top_k=5, min_response=0.005,
+        latent_dim=256, top_k=5,
         decay_rate=0.999, use_hnsw=True, bm25_fallback=True,
         learn_projection=False, attention_bias=False,
         enable_async=True, max_nodes=50000,
@@ -170,7 +170,7 @@ def _streaming() -> RTMDKConfig:
 def _sillytavern() -> RTMDKConfig:
     """SillyTavern — no system prompt, ST manages prompts via character cards."""
     cfg = RTMDKConfig(
-        latent_dim=64, top_k=5, min_response=0.005,
+        latent_dim=64, top_k=5,
         decay_rate=0.997, use_hnsw=True, bm25_fallback=True,
         learn_projection=True, attention_bias=True,
         enable_async=False, max_nodes=10000,

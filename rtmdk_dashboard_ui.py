@@ -949,8 +949,10 @@ def create_dashboard_router(memory: Callable, config: Dict[str, Any]) -> APIRout
         except Exception as e:
             return {"error": f"Restore failed: {str(e)}"}
         finally:
-            try: os.unlink(temp_path)
-            except: pass
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass  # Temp file may already be cleaned up
 
     @router.get("/api/diagnostics")
     async def api_diagnostics():
