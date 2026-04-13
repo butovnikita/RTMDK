@@ -57,7 +57,19 @@ def create_sillytavern_router(memory, config: Dict[str, Any], lm_studio_availabl
             return {"results": [{"text": "[Error: LLM backend not available. Start LM Studio and ensure it's running on the configured port.]"}]}
 
         # Build system prompt with memory context
+        # Extract session_id from SillyTavern context
+        # ST doesn't send session_id, so we derive it from character/user name
         session_id = data.get("session_id", "default")
+        if session_id == "default":
+            # Try to derive from character name or user name
+            char_name = data.get("char_name", data.get("name2", ""))
+            user_name = data.get("user_name", data.get("name1", ""))
+            if char_name:
+                session_id = f"st_char_{char_name}"
+            elif user_name:
+                session_id = f"st_user_{user_name}"
+            # else keep "default"
+
         if mem and prompt:
             try:
                 mem.save_context(

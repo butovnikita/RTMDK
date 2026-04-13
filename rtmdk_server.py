@@ -43,7 +43,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from collections import OrderedDict
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 import uvicorn
 
 # RTMDK imports
@@ -159,17 +159,26 @@ async def security_middleware(request: Request, call_next):
     if ENABLE_API_AUTH:
         auth_header = request.headers.get("authorization", "")
         api_key = auth_header.replace("Bearer ", "").replace("bearer ", "") if auth_header else ""
-        
+
         # Also check x-api-key header for compatibility
         if not api_key:
             api_key = request.headers.get("x-api-key", "")
-        
+
         if not api_key or api_key != API_KEY:
             return JSONResponse(
                 status_code=401,
                 content={"error": "Unauthorized. Provide valid API key."}
             )
-    
+
+    # Check rate limit
+    if RATE_LIMIT_ENABLED and _rate_limiter:
+        client_id = request.client.host if request.client else "unknown"
+        if not _rate_limiter.allow_request(client_id):
+            return JSONResponse(
+                status_code=429,
+                content={"error": "Rate limit exceeded. Try again later."}
+            )
+
     return await call_next(request)
 
 # Global state
@@ -180,6 +189,14 @@ _import_lock = asyncio.Lock()  # Prevent race condition on memory import
 lm_studio_available: bool = False
 chat_model: Optional[str] = None
 auto_save_task = None
+
+# Rate limiter (from production module)
+_rate_limiter = None
+try:
+    from rtmdk.production.rate_limiter import RateLimiter
+    _rate_limiter = RateLimiter(max_per_minute=RATE_LIMIT_PER_MIN)
+except ImportError:
+    logger.warning("Rate limiter not available, rate limiting disabled")
 
 # C3: Prometheus metrics counters
 _metrics_queries_total = 0
@@ -209,6 +226,17 @@ class ChatCompletionRequest(BaseModel):
 class EmbeddingRequest(BaseModel):
     model: str = "rtmdk-embed"
     input: str | List[str]
+
+    @field_validator("input")
+    @classmethod
+    def validate_input(cls, v):
+        if isinstance(v, list):
+            if len(v) > 100:
+                raise ValueError("Maximum 100 inputs per request")
+            for i, item in enumerate(v):
+                if len(item) > 10000:
+                    raise ValueError(f"Input {i} exceeds max length (10000)")
+        return v
 
 class ImagineRequest(BaseModel):
     query: str
@@ -387,6 +415,12 @@ def init_memory() -> RTMDKMemory:
 
     # Preset creates the base config, env vars override individual fields
     config = preset_fn()
+
+    # Override top_k from env if set
+    env_top_k = os.getenv("RTMDK_TOP_K")
+    if env_top_k:
+        config.top_k = int(env_top_k)
+        logger.info(f"  top_k overridden from env: {config.top_k}")
 
     logger.info(f"Memory config preset: {preset_name}")
     logger.info(f"  latent_dim={config.latent_dim}, decay={config.decay_rate}")
@@ -622,6 +656,7 @@ async def chat_completions(req: ChatCompletionRequest):
         async def stream_generator():
             chunk_count = 0
             total_chars = 0
+            collected_text = []  # Collect all text chunks for memory save
 
             try:
                 # Check if response is actually streaming
@@ -640,6 +675,20 @@ async def chat_completions(req: ChatCompletionRequest):
                             chunk_count += 1
                             total_chars += len(line)
                             yield f"{line}\n\n"
+                            
+                            # Extract text content for memory save
+                            try:
+                                data_part = line[6:]  # Remove "data: " prefix
+                                if data_part.strip() and data_part.strip() != '[DONE]':
+                                    chunk_data = json.loads(data_part)
+                                    choices = chunk_data.get("choices", [])
+                                    if choices:
+                                        delta = choices[0].get("delta", {})
+                                        content = delta.get("content", "")
+                                        if content:
+                                            collected_text.append(content)
+                            except (json.JSONDecodeError, KeyError, IndexError):
+                                pass  # Skip malformed chunks
                         elif line.strip() == '[DONE]':
                             yield 'data: [DONE]\n\n'
                             break
@@ -649,13 +698,13 @@ async def chat_completions(req: ChatCompletionRequest):
             finally:
                 logger.info(f"Streaming completed: {chunk_count} chunks, {total_chars} chars")
                 # Save final response to memory
-                if memory:
+                if memory and collected_text:
                     try:
                         last_user = next((m.content for m in reversed(req.messages) if m.role == "user"), "")
                         if last_user:
                             memory.save_context(
                                 {"input": last_user, "session_id": req.session_id},
-                                {"output": "[streamed response]"}
+                                {"output": "".join(collected_text)}
                             )
                     except Exception as e:
                         logger.error(f"Memory save error: {e}")

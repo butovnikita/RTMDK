@@ -28,7 +28,12 @@ COPY embedder_lmstudio.py .
 # Create data directories
 RUN mkdir -p /app/data/memory \
     /app/data/backups \
-    /app/data/embeddings
+    /app/data/embeddings \
+    /app/.rtmdk
+
+# Create non-root user for security
+RUN groupadd -r rtmdk && useradd -r -g rtmdk -d /app -s /bin/bash rtmdk \
+    && chown -R rtmdk:rtmdk /app
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
@@ -43,6 +48,9 @@ EXPOSE 8080
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
+
+# Switch to non-root user
+USER rtmdk
 
 # Default command — production server
 CMD ["python", "start_production.py"]

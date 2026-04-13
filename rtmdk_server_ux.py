@@ -393,12 +393,27 @@ def create_ux_router(memory, config: Dict[str, Any]) -> APIRouter:
         return {"error": "Missing model name"}
     
     @router.post("/config")
-    async def update_config(data: dict):
+    async def update_config(data: dict, request: Request = None):
         """Update server configuration at runtime.
-        
+
         Server keys: Applied immediately (API provider, models, keys, URLs).
         Hyperparameter keys (RTMDK_*): Saved to .env, require restart.
+        
+        SECURITY: Sensitive keys (API keys) require authentication.
         """
+        # Check auth for sensitive operations (API key changes)
+        sensitive_keys = ["OPENAI_API_KEY", "OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "RTMDK_API_KEY"]
+        if any(k in data for k in sensitive_keys):
+            # Require API auth — check from main server config
+            from rtmdk_server import ENABLE_API_AUTH, API_KEY
+            if ENABLE_API_AUTH:
+                auth_header = request.headers.get("authorization", "") if request else ""
+                api_key = auth_header.replace("Bearer ", "").replace("bearer ", "") if auth_header else ""
+                if not api_key:
+                    api_key = request.headers.get("x-api-key", "") if request else ""
+                if not api_key or api_key != API_KEY:
+                    raise HTTPException(status_code=401, detail="Unauthorized. API key required for sensitive config changes.")
+
         updates = {}
         needs_restart = []
 

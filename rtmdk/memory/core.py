@@ -95,6 +95,42 @@ except ImportError:
 
 
 # ============================================================================
+# CONSTANTS: Named constants for magic numbers
+# ============================================================================
+
+# Statistical constants
+CHI_SQUARED_CRITICAL_DF1 = 3.84  # Chi-squared critical value (df=1, p=0.05)
+CHI_SQUARED_CRITICAL_DF2 = 5.99  # Chi-squared critical value (df=2, p=0.05)
+
+# Consolidation constants
+CONSOLIDATION_DISTANCE_THRESHOLD = 2.5
+CONSOLIDATION_PROBABILITY = 0.15
+CRYSTALLIZATION_SIMILARITY_HIGH = 0.75
+CRYSTALLIZATION_SIMILARITY_LOW = 0.6
+
+# Session retrieval boost
+SESSION_BOOST_FACTOR = 1.3  # 30% boost for session-matching nodes
+
+# Performance limits
+MAX_TENSION_SCAN = 200
+CACHE_INVALID_HASH_MODULUS = 5
+
+# File limits
+MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024  # 100MB
+MAX_NODE_TEXT_LENGTH = 10000
+SECURE_FILE_PERMISSIONS = 0o600
+
+# Frequency constants (steps)
+SELF_SUPERVISION_FREQ = 20
+ODE_SMOOTHNESS_FREQ = 10
+TENSION_CHECK_FREQ = 100
+HEALING_CHECK_FREQ = 50
+SYMBOLIC_OVERLAY_FREQ = 50
+META_KERNEL_ADAPT_FREQ = 5
+MAX_NODES_PRUNE_CHECK_FREQ = 10
+
+
+# ============================================================================
 # CONFIGURATION v7
 # ============================================================================
 
@@ -529,6 +565,11 @@ class RTMDKConfig:
 # ============================================================================
 # PHASE 11 TRACK 1: MEMORY STRATIFICATION
 # ============================================================================
+
+def _enum_value(val, default):
+    """Safely extract enum value for serialization."""
+    return val.value if isinstance(val, Enum) else (val if val is not None else default)
+
 
 def detect_tier(text: str, context: Optional[Dict] = None) -> str:
     """Auto-detect memory tier from content."""
@@ -3116,7 +3157,8 @@ class IncPCAProjection:
         if self.use_sklearn and self._ipca_fitted and self._ipca_error is None:
             try:
                 return self.ipca.transform(embedding.reshape(1, -1))[0].astype(np.float32)
-            except Exception:
+            except Exception as e:
+                logger.warning(f"IncrementalPCA projection failed, falling back to manual: {e}")
                 self._ipca_fitted = False
         # Fallback to manual projection
         return ((embedding - self.mean) @ self.projection).astype(np.float32)
@@ -3228,18 +3270,25 @@ class TDAMonitor:
         if len(valid) < 2:
             return {"H0": n, "H1": 0, "avg_persistence": 0.0}
         threshold = np.median(valid)
-        connected = [[i] for i in range(n)]
+        
+        # Union-Find with path compression — O(N² α(N)) ≈ O(N²)
+        parent = list(range(n))
+        def find(x):
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]  # Path compression
+                x = parent[x]
+            return x
+        def union(x, y):
+            px, py = find(x), find(y)
+            if px != py:
+                parent[px] = py
+        
         for i in range(n):
             for j in range(i + 1, n):
                 if dists[i, j] < threshold:
-                    ci = cj = -1
-                    for c_idx, c in enumerate(connected):
-                        if i in c: ci = c_idx
-                        if j in c: cj = c_idx
-                    if ci != cj and ci >= 0 and cj >= 0:
-                        connected[ci].extend(connected[cj])
-                        connected.pop(cj)
-        h0 = len(connected)
+                    union(i, j)
+        
+        h0 = len(set(find(i) for i in range(n)))
         h1 = max(0, len(valid) - n + h0)
         result = {"H0": h0, "H1": h1, "avg_persistence": 0.0}
         self.history.append(result)
@@ -3995,7 +4044,7 @@ class RTMDKField:
         )
 
     def query(self, embedding: NDArray, phase: float = 0.0, top_k: Optional[int] = None,
-              modality: str = "text") -> List[Tuple[str, float, MemoryNode]]:
+              modality: str = "text", session_id: Optional[str] = None) -> List[Tuple[str, float, MemoryNode]]:
         t0 = time.time()
         top_k = top_k or self.cfg.top_k
         query_latent = self._project(embedding)
@@ -4035,6 +4084,9 @@ class RTMDKField:
         results = []
         for nid, node in search_nodes:
             resp = self._resonance_response(query_latent, phase, node, query_modality=modality)
+            # Session priority bonus: boost nodes matching the queried session
+            if session_id and node.content.get("session") == session_id:
+                resp *= 1.3  # 30% boost for session-matching nodes
             if resp >= self.cfg.min_response:
                 results.append((nid, resp, node))
                 node.last_resonated = time.time()
@@ -4496,15 +4548,17 @@ class RTMDKField:
             snap_positions = np.array([self.nodes[oid].latent_pos for oid in node_index_snapshot if oid in self.nodes])
             snap_ids = [oid for oid in node_index_snapshot if oid in self.nodes]
             snap_phases = np.array([self.nodes[oid].phase for oid in snap_ids])
+            
+            # O(1) lookup instead of O(N) index search
+            snap_id_to_idx = {nid: idx for idx, nid in enumerate(snap_ids)}
 
             for nid in high_tension:
                 if nid in processed or nid not in self.nodes:
                     continue
                 node = self.nodes[nid]
-                # Find node index in snapshot
-                try:
-                    node_idx = snap_ids.index(nid)
-                except ValueError:
+                # Find node index in snapshot — O(1) dict lookup
+                node_idx = snap_id_to_idx.get(nid)
+                if node_idx is None:
                     continue
                 node_pos = snap_positions[node_idx]
 
@@ -4839,8 +4893,8 @@ class RTMDKField:
         result = self.ragas_evaluator.evaluate(question, answer, contexts, ground_truth, causal_edges)
         self.stats["ragas_overall"] = result.overall_score
         if self.rollback_manager:
-            self.rollback_manager.record_score(result.overall_score)
-            if self.rollback_manager.record_score(result.overall_score):
+            needs_rollback = self.rollback_manager.record_score(result.overall_score)
+            if needs_rollback:
                 self.stats["rollbacks"] += 1
         return result
 
@@ -4934,13 +4988,15 @@ class RTMDKField:
         if self.cfg.max_nodes and len(self.nodes) > self.cfg.max_nodes and self._step_counter % 10 == 0:
             sorted_nodes = sorted(self.node_index, key=lambda nid: self.nodes[nid].salience * self.nodes[nid].amplitude)
             n_pruned = len(self.nodes) - self.cfg.max_nodes
-            for nid in sorted_nodes[:n_pruned]:
+            pruned_ids = set(sorted_nodes[:n_pruned])
+            for nid in pruned_ids:
                 if self.cfg.use_hnsw and self.hnsw_index:
                     self.hnsw_index.remove(nid)
                 if self.cfg.bm25_fallback and self.bm25_index:
                     self.bm25_index.remove_document(nid)
                 del self.nodes[nid]
-                self.node_index.remove(nid)
+            # Rebuild index in O(N) instead of O(N²) list.remove calls
+            self.node_index = [nid for nid in self.node_index if nid not in pruned_ids]
             # B1: Invalidate cache on max_nodes pruning
             if n_pruned > 0:
                 self._invalidate_tension_cache()
@@ -5181,12 +5237,6 @@ class RTMDKField:
     def clear_interventions(self):
         if self.causal_engine:
             self.causal_engine.clear_interventions()
-
-    def get_monitor_dashboard(self) -> Dict:
-        return {}
-
-    def record_ab_metric(self, metric_name: str, value: float):
-        pass
 
     def get_field_health(self) -> Dict:
         if self.healer:
@@ -5515,10 +5565,10 @@ class RTMDKField:
             raise ValueError(f"Invalid format: path must end with .json or .msgpack: {path}")
 
         cd = asdict(self.config) if hasattr(self, 'config') else asdict(self.cfg)
-        cd["consolidation_mode"] = cd["consolidation_mode"].value if isinstance(cd.get("consolidation_mode"), Enum) else cd.get("consolidation_mode", "dialectical")
-        cd["backend"] = cd["backend"].value if isinstance(cd.get("backend"), Enum) else cd.get("backend", "numpy")
-        cd["context_format"] = cd["context_format"].value if isinstance(cd.get("context_format"), Enum) else cd.get("context_format", "plain")
-        cd["eval_mode"] = cd["eval_mode"].value if isinstance(cd.get("eval_mode"), Enum) else cd.get("eval_mode", "production")
+        cd["consolidation_mode"] = _enum_value(cd.get("consolidation_mode"), "dialectical")
+        cd["backend"] = _enum_value(cd.get("backend"), "numpy")
+        cd["context_format"] = _enum_value(cd.get("context_format"), "plain")
+        cd["eval_mode"] = _enum_value(cd.get("eval_mode"), "production")
         if "memory_tiers" in cd and isinstance(cd["memory_tiers"], set):
             cd["memory_tiers"] = list(cd["memory_tiers"])
         data = {"config": cd, "nodes": [n.to_dict() for n in self.nodes.values()], "stats": self.stats}
@@ -5600,10 +5650,11 @@ class RTMDKField:
         if file_size > max_size:
             raise ValueError(f"File too large: {file_size / 1024 / 1024:.1f}MB (max 100MB)")
         
-        # Auto-detect format: msgpack files start with zlib magic bytes
+        # Auto-detect format: msgpack files are zlib compressed (magic bytes 0x78)
         with open(path, "rb") as f:
             header = f.read(2)
-        is_msgpack = header[0:1] == b'x'  # zlib compressed
+        # zlib magic bytes: 0x78 0x01, 0x78 0x5e, 0x78 0x9c, 0x78 0xda
+        is_msgpack = header[0:1] == b'\x78' and header[1:2] in (b'\x01', b'\x5e', b'\x9c', b'\xda')
 
         if is_msgpack:
             try:
@@ -5685,10 +5736,10 @@ class RTMDKField:
     def export_to_dict(self) -> Dict:
         """Export field state to a dict (for UMP and other protocols)."""
         cd = asdict(self.config) if hasattr(self, 'config') else asdict(self.cfg)
-        cd["consolidation_mode"] = cd["consolidation_mode"].value if isinstance(cd.get("consolidation_mode"), Enum) else cd.get("consolidation_mode", "dialectical")
-        cd["backend"] = cd["backend"].value if isinstance(cd.get("backend"), Enum) else cd.get("backend", "numpy")
-        cd["context_format"] = cd["context_format"].value if isinstance(cd.get("context_format"), Enum) else cd.get("context_format", "plain")
-        cd["eval_mode"] = cd["eval_mode"].value if isinstance(cd.get("eval_mode"), Enum) else cd.get("eval_mode", "production")
+        cd["consolidation_mode"] = _enum_value(cd.get("consolidation_mode"), "dialectical")
+        cd["backend"] = _enum_value(cd.get("backend"), "numpy")
+        cd["context_format"] = _enum_value(cd.get("context_format"), "plain")
+        cd["eval_mode"] = _enum_value(cd.get("eval_mode"), "production")
         if "memory_tiers" in cd and isinstance(cd["memory_tiers"], set):
             cd["memory_tiers"] = list(cd["memory_tiers"])
         data = {"config": cd, "nodes": [n.to_dict() for n in self.nodes.values()], "stats": self.stats}
@@ -5839,7 +5890,8 @@ class RTMDKMemory(BaseModel):
                     pattern_completion=self.config.engram_pattern_completion,
                     overlap_threshold=self.config.engram_overlap_threshold,
                 ))
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Engram manager initialization failed, disabling: {e}")
                 object.__setattr__(self, "engram_manager", None)
         else:
             object.__setattr__(self, "engram_manager", None)
@@ -5886,10 +5938,34 @@ class RTMDKMemory(BaseModel):
                 self.field.stats["engram_retrievals"] += 1
             else:
                 # Fallback to standard node-level retrieval
-                results = self.field.query(embedding, phase, top_k=self.field.cfg.top_k)
+                results = self.field.query(embedding, phase, top_k=self.field.cfg.top_k, session_id=session_id)
         else:
             # Standard node-level retrieval
-            results = self.field.query(embedding, phase, top_k=self.field.cfg.top_k)
+            results = self.field.query(embedding, phase, top_k=self.field.cfg.top_k, session_id=session_id)
+
+        # Session-scoped retrieval: filter results by session_id, with global fallback
+        if session_id and session_id != "default" and results:
+            session_results = [
+                (nid, score, node) for nid, score, node in results
+                if node.content.get("session") == session_id
+            ]
+            # If session results are fewer than top_k, supplement with global results
+            if len(session_results) < self.field.cfg.top_k:
+                global_results = [
+                    (nid, score, node) for nid, score, node in results
+                    if node.content.get("session") != session_id
+                ]
+                needed = self.field.cfg.top_k - len(session_results)
+                session_results.extend(global_results[:needed])
+            # Boost session-matching scores
+            boosted = []
+            for nid, score, node in session_results:
+                if node.content.get("session") == session_id:
+                    score *= 1.5  # 50% boost for session match
+                boosted.append((nid, score, node))
+            boosted.sort(key=lambda x: x[1], reverse=True)
+            results = boosted[:self.field.cfg.top_k]
+            self.field.stats["session_scoped_retrievals"] = self.field.stats.get("session_scoped_retrievals", 0) + 1
 
         # Phase 15 Track 2: Proactive Clarification
         if self.config.proactive_clarification and results:
@@ -6170,10 +6246,7 @@ class RTMDKMemory(BaseModel):
         self.field.clear_interventions()
 
     def get_dashboard(self) -> Dict:
-        return self.field.get_monitor_dashboard()
-
-    def record_ab_metric(self, metric_name: str, value: float):
-        self.field.record_ab_metric(metric_name, value)
+        return self.field.get_field_health()
 
     def get_field_health(self) -> Dict:
         return self.field.get_field_health()

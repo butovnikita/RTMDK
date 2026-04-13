@@ -72,9 +72,14 @@ def start_rtmdk_server():
     print(f"  Starting RTMDK Server on port {config.rtmdk_port}...")
 
     try:
+        # SillyTavern preset: no system prompt, memory injected as user prefix
+        env = os.environ.copy()
+        env["RTMDK_PRESET"] = "sillytavern"
+
         rtmdk_process = subprocess.Popen(
             [sys.executable, str(config.rtmdk_server_script)],
-            stdout=subprocess.DEVNULL,  # H9: Prevent pipe buffer deadlock
+            env=env,
+            stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
         )
@@ -199,10 +204,12 @@ def print_status():
 def print_connection_info():
     """Print SillyTavern connection settings."""
     print("\n[INFO] SillyTavern Connection Settings:")
-    print(f"  API Type:    OpenAI")
-    print(f"  Base URL:    http://127.0.0.1:{config.proxy_port}/v1")
-    print(f"  API Key:     (any value, not checked)")
-    print(f"  Model:       (any model name)")
+    print(f"  API Type:      OpenAI")
+    print(f"  Base URL:      http://127.0.0.1:{config.proxy_port}/v1")
+    print(f"  API Key:       (any value, not checked)")
+    print(f"  Model:         (any model name)")
+    print(f"  System Prompt: None (managed by SillyTavern character cards)")
+    print(f"  Memory:        Injected as user message prefix")
 
 # ============================================================================
 # MAIN
@@ -235,6 +242,7 @@ def main():
     
     # Start services
     print("\n[PKG] Starting services...")
+    print("  Preset: sillytavern (no system prompt, ST manages character cards)")
 
     # Check LM Studio first
     try:

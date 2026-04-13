@@ -31,7 +31,9 @@ services:
 
   # SillyTavern Proxy
   rtmdk-proxy:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.home
     container_name: rtmdk-proxy
     restart: unless-stopped
     ports:
