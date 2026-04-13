@@ -429,13 +429,30 @@ def init_memory() -> RTMDKMemory:
 
     # Try to load existing memory
     if os.path.exists(MEMORY_FILE):
+        # Quick health check before attempting import
+        try:
+            file_size = os.path.getsize(MEMORY_FILE)
+            import json as _json
+            _test = _json.load(open(MEMORY_FILE, encoding='utf-8'))
+            _nodes = _test.get('nodes', [])
+            logger.info(f"Memory file health check: {file_size/1024:.0f}KB, {len(_nodes)} nodes, keys={list(_test.keys())}")
+        except Exception as he:
+            logger.warning(f"Memory file health check failed: {he}")
+
         try:
             mem = RTMDKMemory.import_field(MEMORY_FILE, get_embedding)
             logger.info(f"Loaded memory from {MEMORY_FILE}: {len(mem.field.nodes)} nodes")
+            # Apply context_format override from env/preset if different from file
+            env_fmt = os.getenv("RTMDK_CONTEXT_FORMAT")
+            if env_fmt:
+                from rtmdk.memory.core import ContextFormat
+                mem.config.context_format = ContextFormat(env_fmt)
+                mem.field.stats["context_format"] = env_fmt
+                logger.info(f"  context_format overridden from env: {env_fmt}")
             return mem
-        except Exception as e:
-            logger.warning(f"Failed to load memory from {MEMORY_FILE}: {e}")
-            # Backup corrupted file and start fresh
+        except (json.JSONDecodeError, ValueError, FileNotFoundError) as e:
+            # File corruption — safe to backup and recreate
+            logger.warning(f"Memory file corrupted: {e}")
             import shutil
             backup_path = MEMORY_FILE + f".corrupted.{int(time.time())}"
             try:
@@ -445,6 +462,11 @@ def init_memory() -> RTMDKMemory:
                 logger.warning(f"Deleted corrupted memory file. Starting with fresh memory.")
             except Exception as backup_err:
                 logger.error(f"Failed to backup corrupted memory: {backup_err}")
+        except Exception as e:
+            # Import error (e.g., embedder failure) — DO NOT delete the file
+            logger.error(f"Failed to import memory from {MEMORY_FILE}: {e}")
+            logger.warning(f"Memory file preserved. Fix the error and restart.")
+            logger.warning(f"Starting with fresh memory — your data is safe in {MEMORY_FILE}")
 
     mem = RTMDKMemory(config=config, embedder=get_embedding)
     

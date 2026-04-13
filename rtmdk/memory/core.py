@@ -5557,6 +5557,20 @@ class RTMDKField:
             path: Output file path
             fmt: "json" (default) or "msgpack" (binary, requires msgpack)
         """
+        # Safety check: prevent overwriting non-empty file with empty memory
+        n_nodes = len(self.nodes)
+        if n_nodes == 0 and os.path.exists(path):
+            try:
+                existing_size = os.path.getsize(path)
+                if existing_size > 1000:  # File has content (>1KB)
+                    logger.warning(f"export_field blocked: refusing to overwrite {path} ({existing_size/1024:.0f}KB) with empty memory (0 nodes). "
+                                   f"This prevents accidental data loss.")
+                    return  # Silently skip export to protect existing data
+            except OSError:
+                pass  # If we can't check, proceed with export
+
+        logger.info(f"export_field: exporting {n_nodes} nodes to {path}")
+
         # Path sanitization
         path = os.path.normpath(str(path))
         if ".." in path.split(os.sep):
@@ -5637,19 +5651,25 @@ class RTMDKField:
 
     @classmethod
     def import_field(cls, path: str, embedder: Callable) -> "RTMDKMemory":
+        logger.info(f"import_field: loading from {path}")
+
         # Path sanitization
         path = os.path.normpath(str(path))
         if ".." in path.split(os.sep):
             raise ValueError(f"Invalid path: path traversal not allowed: {path}")
         if not os.path.exists(path):
             raise FileNotFoundError(f"File not found: {path}")
-        
+
         # Check file size (max 100MB)
         file_size = os.path.getsize(path)
         max_size = 100 * 1024 * 1024  # 100MB
         if file_size > max_size:
             raise ValueError(f"File too large: {file_size / 1024 / 1024:.1f}MB (max 100MB)")
-        
+
+        # Health check: verify file has valid JSON structure
+        if file_size < 10:
+            raise ValueError(f"File too small ({file_size} bytes): possibly corrupted")
+
         # Auto-detect format: msgpack files are zlib compressed (magic bytes 0x78)
         with open(path, "rb") as f:
             header = f.read(2)
@@ -5657,6 +5677,7 @@ class RTMDKField:
         is_msgpack = header[0:1] == b'\x78' and header[1:2] in (b'\x01', b'\x5e', b'\x9c', b'\xda')
 
         if is_msgpack:
+            logger.info("import_field: detected msgpack+zlib format")
             try:
                 import msgpack
                 import zlib
@@ -5667,9 +5688,21 @@ class RTMDKField:
             except ImportError:
                 raise ImportError("msgpack required for binary import. Install: pip install msgpack")
         else:
+            logger.info("import_field: loading JSON format")
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
+
+        # Health check: verify required keys
+        if "config" not in data:
+            raise ValueError(f"Invalid memory file: missing 'config' key")
+        if "nodes" not in data:
+            raise ValueError(f"Invalid memory file: missing 'nodes' key")
+
+        n_file_nodes = len(data["nodes"])
+        logger.info(f"import_field: file contains {n_file_nodes} nodes, {file_size/1024:.0f}KB")
+
         cd = data["config"]
+        logger.info(f"import_field: loading config (context_format={cd.get('context_format','?')})")
         if isinstance(cd.get("consolidation_mode"), str):
             cd["consolidation_mode"] = ConsolidationMode(cd["consolidation_mode"])
         if isinstance(cd.get("backend"), str):
@@ -5726,11 +5759,83 @@ class RTMDKField:
         if config.swarm_memory and "swarm" in data:
             memory.field.swarm.load_state(data["swarm"])
 
+        logger.info(f"import_field: loading {len(data['nodes'])} nodes")
         for nd in data["nodes"]:
             node = MemoryNode.from_dict(nd)
             memory.field.nodes[node.id] = node
             memory.field.node_index.append(node.id)
-        memory.field.stats = data.get("stats", memory.field.stats)
+        logger.info(f"import_field: successfully loaded {len(memory.field.nodes)} nodes")
+
+        # Reload stats from file, then reconcile with actual node count
+        saved_stats = data.get("stats", {})
+        memory.field.stats = saved_stats
+
+        # Reconcile: reset accumulation counters to match actual nodes
+        n_nodes = len(memory.field.nodes)
+        logger.info(f"import_field: reconciling stats for {n_nodes} nodes")
+        memory.field.stats["total_adds"] = n_nodes
+        memory.field.stats["active_nodes"] = n_nodes
+
+        # Reset historical accumulation counters (they reflect past life, not current state)
+        reset_keys = [
+            "projection_updates", "self_sup_checks", "total_queries",
+            "consolidations", "consolidation_validations", "blocked_consolidations",
+            "healing_events", "healing_history", "field_stability",
+            "tension_cache_hits", "tension_cache_misses", "tension_cache_hit_rate",
+            "engram_retrievals", "engrams_created", "engrams_merged",
+            "cross_modal_queries", "cross_modal_recall",
+            "meta_optimizations", "meta_best_params",
+            "federated_syncs", "federated_order_parameter",
+            "crystallizations", "crystallized_clusters",
+            "evaluations", "shadow_comparisons", "rollbacks",
+            "ode_steps", "response_smoothness",
+            "free_energy", "prediction_error", "surprise_level",
+            "scenarios_generated", "avg_scenario_confidence",
+            "privacy_budget_spent", "noise_std", "updates_clipped",
+            "shard_hits", "shard_misses", "avg_shard_query_time_ms",
+            "context_tokens_saved", "cognitive_compressions",
+            "async_queue_depth", "async_backpressure_events",
+            "active_goals", "completed_goals",
+            "avg_rl_reward", "reward_trend",
+            "attention_bias_applied", "compression_ratio", "compression_updates",
+            "events_processed", "event_queue_depth",
+            "recall_accuracy", "meta_reflections",
+            "security_violations", "tension_spikes_blocked",
+            "swarm_agents", "swarm_consensus_events",
+            "current_version", "n_versions",
+            "clarifications_generated",
+            "entropy", "entropy_state",
+            "triton_backend_used", "gpu_acceleration",
+            "n_symbolic_rules", "n_symbolic_inferences", "n_symbolic_conflicts",
+            "lyapunov_V", "lyapunov_dV_dt", "safety_regulation_factor", "safety_mode",
+            "n_shards", "shard_distribution", "cross_shard_exchanges",
+            "role_router_enabled",
+            "field_integrity_issues",
+            "plans_created", "hypotheses_verified", "tool_calls", "tool_misuse_rate",
+            "ragas_overall",
+            "tier_coherence",
+        ]
+        for key in reset_keys:
+            if key in memory.field.stats:
+                val = memory.field.stats[key]
+                if isinstance(val, (int, float)):
+                    memory.field.stats[key] = 0
+                elif isinstance(val, dict):
+                    memory.field.stats[key] = {}
+                elif isinstance(val, list):
+                    memory.field.stats[key] = []
+
+        # Recalculate tier_distribution from actual nodes
+        tier_dist = {}
+        for node in memory.field.nodes.values():
+            tier = node.content.get("tier", node.tier if hasattr(node, 'tier') else "semantic")
+            tier_dist[tier] = tier_dist.get(tier, 0) + 1
+        memory.field.stats["tier_distribution"] = tier_dist
+
+        # Reset avg_response to a reasonable default since we have no query history
+        memory.field.stats["avg_response"] = 0.0
+
+        logger.info(f"import_field: complete — {n_nodes} nodes, tier_distribution={tier_dist}")
         return memory
 
     def export_to_dict(self) -> Dict:

@@ -33,11 +33,13 @@ from rtmdk.memory.core import (
 
 def _local() -> RTMDKConfig:
     """Personal assistant — single user, minimal resources."""
+    from rtmdk.memory.core import ContextFormat
     return RTMDKConfig(
         latent_dim=256, top_k=5, min_response=0.005,
         decay_rate=0.999, use_hnsw=True, bm25_fallback=True,
         learn_projection=False, attention_bias=True,
         enable_async=False, max_nodes=10000,
+        context_format=ContextFormat.ATTENTION,
         enable_engrams=True, engram_min_nodes=2, engram_max_nodes=15,
         offline_dreaming=False,
         causal_traversal=True, causal_max_hops=2,
