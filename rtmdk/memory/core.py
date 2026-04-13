@@ -191,6 +191,7 @@ class RTMDKConfig:
     bm25_fallback: bool = True  # OPTIMIZED: text search as safety net
     bm25_k1: float = 1.5
     bm25_b: float = 0.75
+    hybrid_alpha: float = 1.0  # 1.0 = pure RTMDK, 0.0 = pure BM25, 0.7 = 70/30 blend
 
     # Phase 2
     soft_gates: bool = False
@@ -4261,7 +4262,7 @@ class RTMDKField:
         query_latent = self._project(embedding)
 
         # Fix 1: HNSW auto-intercept for large N (>500 nodes)
-        if self.cfg.use_hnsw and self.hnsw_index and len(self.hnsw_index.positions) > max(500, top_k * 2):
+        if self.cfg.use_hnsw and self.hnsw_index and len(self.hnsw_index.positions) > max(100, top_k * 2):
             candidate_ids = self.hnsw_index.search(query_latent, top_k * 3)
             search_nodes = [(nid, self.nodes[nid]) for nid in candidate_ids if nid in self.nodes]
         elif self.cfg.sparse_routing and self.shard_centers is not None and len(self.nodes) > self.cfg.num_shards * 2:
@@ -4507,7 +4508,22 @@ class RTMDKField:
         self.stats["total_adds"] += 1
 
         # P0: Invalidate cached arrays (will be rebuilt on next query)
-        self._cache_dirty = True
+        # For single node additions, use incremental append if cache exists
+        if self._cached_positions is not None:
+            # Incremental append to avoid full rebuild
+            try:
+                self._cached_positions = np.vstack([self._cached_positions, latent.reshape(1, -1)])
+                self._cached_phases = np.append(self._cached_phases, phase if phase is not None else self._get_phase(session_id, embedding))
+                self._cached_amplitudes = np.append(self._cached_amplitudes, amplitude)
+                self._cached_saliences = np.append(self._cached_saliences, salience)
+                self._cached_modal_weights = np.append(self._cached_modal_weights, 1.0)
+                self._cached_gates = np.append(self._cached_gates, 1.0)
+                self._cached_causal_boost = np.append(self._cached_causal_boost, 1.0)
+            except Exception:
+                # Fallback: mark dirty for full rebuild
+                self._cache_dirty = True
+        else:
+            self._cache_dirty = True
 
         # B1: Invalidate tension cache for neighbors (new node affects topology)
         self._invalidate_tension_cache(nid)
@@ -6408,6 +6424,38 @@ class RTMDKMemory(BaseModel):
             boosted.sort(key=lambda x: x[1], reverse=True)
             results = boosted[:self.field.cfg.top_k]
             self.field.stats["session_scoped_retrievals"] = self.field.stats.get("session_scoped_retrievals", 0) + 1
+
+        # Phase 1: Hybrid retrieval — blend RTMDK resonance with BM25 text scores
+        if self.field.cfg.hybrid_alpha < 1.0 and self.field.bm25_index is not None and results:
+            # Get BM25 scores for the query
+            bm25_results = self.field.bm25_index.search(query, self.field.cfg.top_k * 2)
+            if bm25_results:
+                # Create BM25 score lookup
+                bm25_scores = {nid: score for nid, score in bm25_results}
+                # Normalize BM25 scores to [0, 1]
+                max_bm25 = max(bm25_scores.values()) if bm25_scores else 1.0
+                if max_bm25 > 0:
+                    bm25_scores = {nid: s / max_bm25 for nid, s in bm25_scores.items()}
+
+                # Blend scores: final = α × resonance + (1-α) × bm25
+                alpha = self.field.cfg.hybrid_alpha
+                blended = []
+                for nid, score, node in results:
+                    bm25_score = bm25_scores.get(nid, 0.0)
+                    blended_score = alpha * score + (1 - alpha) * bm25_score
+                    blended.append((nid, blended_score, node))
+
+                # Also add high-BM25 nodes that weren't in RTMDK results
+                for nid, bm25_score in bm25_scores.items():
+                    if nid not in [n[0] for n in blended] and bm25_score > self.field.cfg.min_response:
+                        node = self.field.nodes.get(nid)
+                        if node:
+                            blended_score = alpha * 0.0 + (1 - alpha) * bm25_score
+                            blended.append((nid, blended_score, node))
+
+                blended.sort(key=lambda x: x[1], reverse=True)
+                results = blended[:self.field.cfg.top_k]
+                self.field.stats["hybrid_retrievals"] = self.field.stats.get("hybrid_retrievals", 0) + 1
 
         # Context formatting (same as load_memory_variables)
         if self.config.proactive_clarification and results:
