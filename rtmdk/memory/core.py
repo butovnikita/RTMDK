@@ -6118,6 +6118,111 @@ class RTMDKMemory(BaseModel):
 
         return {"rtmdk_context": context}
 
+    def load_memory_variables_with_embedding(
+        self, inputs: Dict[str, str], embedding: NDArray
+    ) -> Dict[str, str]:
+        """Query memory with pre-computed embedding (no HTTP call).
+
+        This is the optimized version that accepts an embedding from
+        an external embedder, avoiding the HTTP call to LM Studio.
+        Use this for batch processing and fair benchmark comparisons.
+
+        Args:
+            inputs: {"input": "query text", "session_id": "...", ...}
+            embedding: Pre-computed embedding vector (768d for nomic-embed)
+
+        Returns:
+            {"rtmdk_context": formatted context string}
+        """
+        query = inputs.get("input", inputs.get("query", ""))
+        session_id = inputs.get("session_id", "default")
+        if not query:
+            return {"rtmdk_context": ""}
+
+        # Use provided embedding instead of calling self.embedder()
+        phase = self._get_phase(session_id, embedding)
+
+        # Phase 18: Engram-based retrieval (if enabled)
+        if self.engram_manager is not None and self.engram_manager.index.size > 0:
+            node_embs = {}
+            for nid, node in self.field.nodes.items():
+                emb = self._get_node_embedding(nid, node)
+                if emb is not None:
+                    node_embs[nid] = emb
+
+            engram_results = self.engram_manager.retrieve_engrams(
+                embedding, node_embs, top_k=self.field.cfg.top_k
+            )
+
+            if engram_results:
+                results = self.engram_manager.expand_engrams(
+                    engram_results, self.field, top_k=self.field.cfg.top_k
+                )
+                self.field.stats["engram_retrievals"] += 1
+            else:
+                results = self.field.query(embedding, phase, top_k=self.field.cfg.top_k, session_id=session_id)
+        else:
+            results = self.field.query(embedding, phase, top_k=self.field.cfg.top_k, session_id=session_id)
+
+        # Session-scoped retrieval
+        if session_id and session_id != "default" and results:
+            session_results = [
+                (nid, score, node) for nid, score, node in results
+                if node.content.get("session") == session_id
+            ]
+            if len(session_results) < self.field.cfg.top_k:
+                global_results = [
+                    (nid, score, node) for nid, score, node in results
+                    if node.content.get("session") != session_id
+                ]
+                needed = self.field.cfg.top_k - len(session_results)
+                session_results.extend(global_results[:needed])
+            boosted = []
+            for nid, score, node in session_results:
+                if node.content.get("session") == session_id:
+                    score *= 1.5
+                boosted.append((nid, score, node))
+            boosted.sort(key=lambda x: x[1], reverse=True)
+            results = boosted[:self.field.cfg.top_k]
+            self.field.stats["session_scoped_retrievals"] = self.field.stats.get("session_scoped_retrievals", 0) + 1
+
+        # Context formatting (same as load_memory_variables)
+        if self.config.proactive_clarification and results:
+            max_score = results[0][1] if results else 0.0
+            threshold = self.field.cfg.min_response * self.config.clarification_threshold_ratio
+            if 0 < max_score < threshold:
+                clarification = self._generate_clarification(results, query)
+                self.field.stats["clarifications_generated"] += 1
+                return {"rtmdk_context": clarification}
+
+        if self.config.attention_tokens and results:
+            context = format_context(results, ContextFormat.ATTENTION)
+        elif self.config.attention_bias and results:
+            context = format_cognitive_context(results, bias_applied=True)
+            self.field.stats["attention_bias_applied"] += 1
+        elif self.config.cognitive_compression and results:
+            context = self.field._cognitive_compress(results)
+            self.field.stats["cognitive_compressions"] += 1
+        else:
+            context = format_context(results, self.config.context_format)
+
+        if self.config.symbolic_overlay and self.field.symbolic_overlay and results:
+            facts = []
+            for nid, score, node in results[:3]:
+                text = node.content.get("text", "")
+                concepts = self.field.symbolic_overlay._extract_concepts(text)
+                facts.extend(concepts)
+            if facts:
+                symbolic_ctx = self.field.symbolic_overlay.get_symbolic_context(facts, max_depth=2)
+                if symbolic_ctx:
+                    context += "\n\n" + symbolic_ctx
+                    self.field.stats["n_symbolic_inferences"] += 1
+                    n_conflicts = sum(1 for r in self.field.symbolic_overlay.rules.values()
+                                     if r.is_contextual_exception)
+                    self.field.stats["n_symbolic_conflicts"] = n_conflicts
+
+        return {"rtmdk_context": context}
+
     def _get_node_embedding(self, nid: str, node) -> Optional[np.ndarray]:
         """Retrieve stored embedding for a node, or approximate from latent position."""
         # Check if node has modal_embedding (cross-modal)
