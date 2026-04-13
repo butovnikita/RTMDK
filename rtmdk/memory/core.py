@@ -3643,6 +3643,8 @@ class RTMDKField:
         self._cached_amplitudes: Optional[NDArray] = None      # (N,)
         self._cached_saliences: Optional[NDArray] = None       # (N,)
         self._cached_modal_weights: Optional[NDArray] = None   # (N,)
+        self._cached_gates: Optional[NDArray] = None           # (N,) soft_gate values
+        self._cached_causal_boost: Optional[NDArray] = None    # (N,) causal boost factor
         self._cache_dirty: bool = False
 
         if config.learn_projection:
@@ -4060,6 +4062,8 @@ class RTMDKField:
             self._cached_amplitudes = np.empty(0, dtype=np.float32)
             self._cached_saliences = np.empty(0, dtype=np.float32)
             self._cached_modal_weights = np.empty(0, dtype=np.float32)
+            self._cached_gates = np.empty(0, dtype=np.float32)
+            self._cached_causal_boost = np.empty(0, dtype=np.float32)
             self._cache_dirty = False
             return
 
@@ -4069,6 +4073,8 @@ class RTMDKField:
         amplitudes = np.zeros(n, dtype=np.float32)
         saliences = np.zeros(n, dtype=np.float32)
         modal_weights = np.zeros(n, dtype=np.float32)
+        gates = np.ones(n, dtype=np.float32)  # Default gate = 1.0
+        causal_boost = np.zeros(n, dtype=np.float32)  # Default causal boost = 0
 
         for i, nid in enumerate(self.node_index):
             node = self.nodes[nid]
@@ -4077,12 +4083,20 @@ class RTMDKField:
             amplitudes[i] = node.amplitude
             saliences[i] = node.salience
             modal_weights[i] = node.modal_weight
+            if self.cfg.soft_gates and hasattr(node, 'soft_gate'):
+                gates[i] = node.soft_gate
+            # Pre-compute causal boost factor: 1.0 + 0.1 * sum(causal_strength)
+            if self.causal_engine and hasattr(node, 'causal_parents') and node.causal_parents:
+                cb = sum(node.causal_strength.get(p, 0) for p in node.causal_parents)
+                causal_boost[i] = 1.0 + 0.1 * cb
 
         self._cached_positions = positions
         self._cached_phases = phases
         self._cached_amplitudes = amplitudes
         self._cached_saliences = saliences
         self._cached_modal_weights = modal_weights
+        self._cached_gates = gates
+        self._cached_causal_boost = causal_boost
         self._cache_dirty = False
 
     def _query_vectorized(self, query_latent: NDArray, query_phase: float,
@@ -4126,6 +4140,8 @@ class RTMDKField:
                 amplitudes = self._cached_amplitudes[session_mask]
                 saliences = self._cached_saliences[session_mask]
                 modal_weights = self._cached_modal_weights[session_mask]
+                gates = self._cached_gates[session_mask]
+                causal_boost = self._cached_causal_boost[session_mask]
                 session_indices = np.where(session_mask)[0]
             else:
                 # Session has many nodes — use full arrays with boost
@@ -4134,6 +4150,8 @@ class RTMDKField:
                 amplitudes = self._cached_amplitudes
                 saliences = self._cached_saliences
                 modal_weights = self._cached_modal_weights
+                gates = self._cached_gates
+                causal_boost = self._cached_causal_boost
                 session_indices = None
         else:
             positions = self._cached_positions
@@ -4141,6 +4159,8 @@ class RTMDKField:
             amplitudes = self._cached_amplitudes
             saliences = self._cached_saliences
             modal_weights = self._cached_modal_weights
+            gates = self._cached_gates
+            causal_boost = self._cached_causal_boost
             session_indices = None
 
         # Vectorized distance computation
@@ -4156,6 +4176,14 @@ class RTMDKField:
 
         # Vectorized resonance response
         resp = spatial * ((1 - pc) + pc * phase_align) * amplitudes * saliences * modal_weights
+
+        # Apply soft gates (matches single query: resp *= gate)
+        if self.cfg.soft_gates:
+            resp = resp * gates
+
+        # Apply causal boosting (matches single query: resp *= (1 + 0.1 * sum(causal_strength)))
+        if self.causal_engine:
+            resp = resp * causal_boost
 
         # Session boost (vectorized) — apply to full-array case
         if session_id and session_id != "default" and session_mask is not None and session_indices is None:
