@@ -247,3 +247,11 @@
 - Engines — работают через optional imports в core.py
 
 **Файл для сохранения:** Этот отчёт — `docs/FULL_AUDIT.md`
+
+---
+### 🟢 Fixes Applied (v8.1 - April 15)
+
+- **Performance**: Fixed O(n²) loop in `simulate_trajectory` (core.py).
+- **Security**: Removed API key pattern from `llm_eval.py` docstring.
+- **Stability**: Fixed bare excepts in integration tests.
+- **Domain Memory**: Implemented Phase 20 (hierarchy, lifecycle).
