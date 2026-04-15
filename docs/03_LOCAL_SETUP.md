@@ -254,4 +254,4 @@ memory = RTMDKMemory(config=config, embedder=my_embedder)
 
 ---
 
-*Инструкция актуальна для RTMDK v8.0 с unified config architecture.*
+*Инструкция актуальна для RTMDK v8.1 с unified config architecture.*

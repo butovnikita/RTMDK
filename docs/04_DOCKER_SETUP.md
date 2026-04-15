@@ -1,4 +1,4 @@
-# RTMDK Docker + SillyTavern Setup Guide v8.0
+# RTMDK Docker + SillyTavern Setup Guide v8.1
 
 > Полная инструкция по запуску RTMDK через Docker с unified config и SillyTavern
 
@@ -237,4 +237,4 @@ config = RTMDKConfig.local()  # latent_dim=128
 
 ---
 
-*Инструкция актуальна для RTMDK v8.0 с unified config architecture.*
+*Инструкция актуальна для RTMDK v8.1 с unified config architecture.*

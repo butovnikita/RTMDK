@@ -1,10 +1,11 @@
-# RTMDK Refactoring Plan
+# RTMDK Refactoring Plan (v8.1)
+
+## Recent Milestones (Completed ✅)
+- **Phase 20: Domain Memory** implemented (`domain_classifier.py`, `nodes.py` fields, `core.py` guards)
+- **O(n²) Performance Fix** in trajectory simulation (moved index lookup out of loop)
+- **Security Cleanup** (removed API key pattern from docstring, fixed bare excepts)
 
 ## Current Status
-- Real integration tests: **PASSED** (80% recall with LM Studio)
-- All core functionality: **WORKING**
-- Server endpoints: **ALL ACCESSIBLE**
-- Memory persistence: **VERIFIED**
 
 ## Identified Issues
 

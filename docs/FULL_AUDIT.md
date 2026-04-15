@@ -1,4 +1,4 @@
-# RTMDK v8.0 — Полный Аудит Ядра и Модулей
+# RTMDK v8.1 — Полный Аудит Ядра и Модулей
 # Complete Core & Modules Audit Report
 
 > **Дата:** 11 апреля 2026  

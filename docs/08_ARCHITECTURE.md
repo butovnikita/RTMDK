@@ -1,4 +1,4 @@
-# Архитектура RTMDK v8.0
+# Архитектура RTMDK v8.1
 
 > Полный обзор всех фаз, модулей и компонентов системы
 
@@ -8,7 +8,7 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│                        RTMDK v8.0 Architecture                       │
+│                        RTMDK v8.1 Architecture                       │
 ├──────────────────────────────────────────────────────────────────────┤
 │                                                                      │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────┐  │
@@ -136,11 +136,22 @@ EngramPattern                    EngramIndex                    PatternCompleter
 | **TPR** | Tensor Product Representations | ✅ Research mode |
 | **AdversarialArena** | Self-play robustness testing | ✅ Research mode |
 
+### Phase 20: Domain Memory & Concept Lifecycle
+
+| Компонент | Описание | Файл |
+|-----------|----------|------|
+| **Domain Classifier** | Pattern-based классификация доменов (~0.1ms) | `utils/domain_classifier.py` |
+| **Domain Fields** | `domain`, `subdomain`, `topic` поля в узле | `nodes.py` |
+| **Concept Lifecycle** | `state`, `confidence`, `revision_count`, `conflict_with` | `nodes.py` |
+| **Evidence Spans** | Traceability для legal/medical | `nodes.py` |
+| **Cross-domain Guard** | Запрет консолидации узлов из разных доменов | `core.py` |
+
+---
 ---
 
 ## Конфигурационная система (Unified Config)
 
-RTMDK v8.0 использует **единый** `RTMDKConfig` dataclass из `rtmdk/memory/core.py`:
+RTMDK v8.1 использует **единый** `RTMDKConfig` dataclass из `rtmdk/memory/core.py`:
 
 ```
 rtmdk/memory/core.py     ← ЕДИНСТВЕННЫЙ RTMDKConfig dataclass (~150 полей)
@@ -342,4 +353,4 @@ services:
 
 ---
 
-*Документ создан: Апрель 2026, RTMDK v8.0*
+*Документ создан: Апрель 2026, RTMDK v8.1*

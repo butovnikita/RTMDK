@@ -135,4 +135,4 @@ from rtmdk.config import RTMDKConfig  # тот же класс (re-export)
 
 ---
 
-*Последнее обновление: Апрель 2026, RTMDK v8.0, unified config architecture*
+*Последнее обновление: Апрель 2026, RTMDK v8.1, unified config architecture*

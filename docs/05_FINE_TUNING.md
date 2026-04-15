@@ -411,4 +411,4 @@ ssm_dynamics=True, attention_bias=False
 
 ---
 
-*Последнее обновление: Апрель 2026, RTMDK v8.0*
+*Последнее обновление: Апрель 2026, RTMDK v8.1*

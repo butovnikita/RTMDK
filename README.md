@@ -1,4 +1,4 @@
-# RTMDK — Resonance-Topological Memory v8.0
+# RTMDK — Resonance-Topological Memory v8.1
 
 > Долгосрочная память для LLM на основе резонансной топологии и диалектической консолидации
 
@@ -148,14 +148,15 @@ curl -X POST http://localhost:8080/api/config \
 ## 🏗️ Архитектура
 
 ```
-RTMDK v8.0 (25,000+ строк, 75+ файлов, 105+ API)
+RTMDK v8.1 (25,000+ строк, 75+ файлов, 105+ API)
 ├── Core: Резонанс, консолидация, HNSW, BM25 (Phase 1-14)
 ├── Production: Version Control, Attention Tokens (Phase 15)
 ├── Safety: Symbolic Overlay, UMP, Safety Certifier (Phase 16)
 ├── Scale: Role Sharding, Swarm Memory (Phase 17)
 ├── Engrams: Pattern completion, engram decay (Phase 18)
-└── Advanced: Offline Dreaming, Causal Traversal, SSM/Mamba,
+├── Advanced: Offline Dreaming, Causal Traversal, SSM/Mamba,
     Trust Consensus, Neuro-Symbolic Prover (Phase 19)
+└── Domain: Domain Hierarchy, Concept Lifecycle, Evidence Spans (Phase 20)
 ```
 
 ## 📦 Поддерживаемые API
@@ -170,4 +171,4 @@ RTMDK v8.0 (25,000+ строк, 75+ файлов, 105+ API)
 
 ---
 
-*RTMDK v8.0 — Превосходит GraphRAG, Self-RAG и Advanced RAG по точности*
+*RTMDK v8.1 — Превосходит GraphRAG, Self-RAG и Advanced RAG по точности*
