@@ -49,3 +49,4 @@ app.log
 
 # Docker
 .env
+myenv/
