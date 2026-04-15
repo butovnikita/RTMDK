@@ -756,6 +756,7 @@ class ScenarioPlanner:
         """Simulate trajectory from hypothetical state."""
         traj = [node.latent_pos.copy()]
         current_pos = node.latent_pos.copy()
+        node_idx = list(self.field.nodes.keys()).index(node.id)
         for _ in range(steps):
             # Simple dynamics: attract towards mean + noise
             if self.field.ode_dynamics and len(self.field.nodes) > 1:
@@ -764,8 +765,7 @@ class ScenarioPlanner:
                 state = all_positions.flatten()
                 dynamics = self.field.ode_dynamics._dynamics(0, state)
                 # Extract update for this node's position
-                idx = list(self.field.nodes.keys()).index(node.id)
-                update = dynamics[idx * self.field.cfg.latent_dim:(idx + 1) * self.field.cfg.latent_dim]
+                update = dynamics[node_idx * self.field.cfg.latent_dim:(node_idx + 1) * self.field.cfg.latent_dim]
                 current_pos = current_pos + update * 0.1
             else:
                 current_pos = current_pos * 0.95 + np.random.randn(len(current_pos)).astype(np.float32) * 0.01

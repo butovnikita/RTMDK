@@ -350,7 +350,7 @@ def run_all_tests():
         # Cleanup
         try:
             shutil.rmtree(temp_dir)
-        except:
+        except Exception:
             pass
     
     return all_passed

@@ -23,7 +23,7 @@ class LLMEvaluator:
     Usage:
         evaluator = LLMEvaluator(
             memory=memory,
-            api_key="sk-or-...",
+            api_key="<your-api-key-here>",
             provider="openrouter",
             model="anthropic/claude-3.5-sonnet"
         )

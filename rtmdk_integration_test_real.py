@@ -267,7 +267,7 @@ def test_backup_restore(memory):
         import shutil
         try:
             shutil.rmtree(temp_dir)
-        except:
+        except Exception:
             pass
 
 
