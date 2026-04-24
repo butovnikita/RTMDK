@@ -1,49 +1,64 @@
 # RTMDK — Resonance-Topological Memory v8.1
 
 > Долгосрочная память для LLM на основе резонансной топологии и диалектической консолидации
-
----
-
-## 📦 Две версии проекта
-
-Проект разделён на **две конфигурации** для разных сценариев использования:
-
-| | 🏭 Production | 🏠 Home / SillyTavern |
-|---|---|---|
-| **Назначение** | API-сервер для продакшена, микросервисы | Домашнее использование с SillyTavern |
-| **Порты** | `8080` (один) | `8080` + `5000` (proxy) |
-| **SillyTavern** | ❌ Не включён | ✅ Полная поддержка |
-| **Dashboard** | ✅ Веб-UI | ✅ Веб-UI |
-| **Dockerfile** | `Dockerfile` | `Dockerfile.home` |
-| **Compose** | `docker-compose.prod.yml` | `docker-compose.home.yml` |
-| **Зависимости** | Минимальные | Полные |
-| **Запуск** | `start_production.bat` / `start_production.py` | `start_sillytavern.bat` / `rtmdk_sillytavern_launcher.py` |
+> Version 8.1 (Phase 20) — 25,000+ строк кода, 75+ файлов, 105+ API endpoints
 
 ---
 
 ## 🚀 Быстрый старт
 
-### 🏭 Production (без SillyTavern)
-
-```bash
-pip install -r requirements-prod.txt
-python start_production.py
-# или: start_production.bat
-```
-
-### 🏠 Home / SillyTavern
+### Вариант A: Python (рекомендуется для разработки)
 
 ```bash
 pip install -r requirements-home.txt
-python rtmdk_sillytavern_launcher.py
-# или: start_sillytavern.bat
+python rtmdk_server.py
+# → http://localhost:8080
 ```
 
-### 🔧 Monolith (один процесс, ST endpoints встроены)
+### Вариант B: Docker Production
 
 ```bash
-python rtmdk_server.py
+docker-compose -f docker-compose.prod.yml up -d
+curl http://localhost:8080/health
 ```
+
+### Вариант C: Docker Home + SillyTavern
+
+```bash
+docker-compose -f docker-compose.home.yml up -d
+# Сервер: http://localhost:8080
+# SillyTavern Proxy: http://localhost:5000
+```
+
+### Вариант D: SillyTavern Launcher
+
+```bash
+python rtmdk_sillytavern_launcher.py
+# Запускает сервер (8080) + proxy (5000) автоматически
+```
+
+---
+
+## 📚 Документация
+
+| Что нужно | Документ |
+|-----------|----------|
+| **Главный индекс** | [docs/MASTER_INDEX.md](docs/MASTER_INDEX.md) |
+| **API справка** | [docs/01_API_REFERENCE.md](docs/01_API_REFERENCE.md) |
+| **Запуск на своём ПК** | [docs/03_LOCAL_SETUP.md](docs/03_LOCAL_SETUP.md) |
+| **Docker + Silly Tavern** | [docs/04_DOCKER_SETUP.md](docs/04_DOCKER_SETUP.md) |
+| **Настройка параметров** | [docs/05_FINE_TUNING.md](docs/05_FINE_TUNING.md) |
+| **Production 100K+ узлов** | [docs/02_PRODUCTION_GUIDE.md](docs/02_PRODUCTION_GUIDE.md) |
+| **Научная статья (патент)** | [docs/06_SCIENTIFIC_ARTICLE.md](docs/06_SCIENTIFIC_ARTICLE.md) |
+| **Архитектура системы** | [docs/08_ARCHITECTURE.md](docs/08_ARCHITECTURE.md) |
+| **Domain Memory (Phase 20)** | [docs/20_DOMAIN_MEMORY.md](docs/20_DOMAIN_MEMORY.md) |
+| **Быстрый старт + SillyTavern** | [docs/QUICKSTART.md](docs/QUICKSTART.md) |
+| **SillyTavern Connection** | [SILLYTAVERN_CONNECTION_GUIDE.md](SILLYTAVERN_CONNECTION_GUIDE.md) |
+| **Калибровка параметров** | [Values.md](Values.md) |
+| **Проверка кода (аудит)** | [docs/CODE_REVIEW.md](docs/CODE_REVIEW.md) |
+| **Полный аудит модулей** | [docs/FULL_AUDIT.md](docs/FULL_AUDIT.md) |
+| **Commercial roadmap** | [docs/ROADMAP.md](docs/ROADMAP.md) |
+| **Deployment варианты** | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
 
 ---
 
@@ -66,8 +81,6 @@ config = RTMDKConfig.streaming()   # High-throughput (~3ms)
 
 ### Переопределение через переменные окружения
 
-Любой параметр можно переменить через `RTMDK_*` env var:
-
 ```bash
 # Выбрать пресет
 RTMDK_PRESET=production python rtmdk_server.py
@@ -77,36 +90,6 @@ RTMDK_LATENT_DIM=128 RTMDK_TOP_K=10 python rtmdk_server.py
 
 # Комбинация
 RTMDK_PRESET=research RTMDK_DECAY_RATE=0.9995 python rtmdk_server.py
-```
-
-**Поддерживаемые env vars:** `RTMDK_PRESET`, `RTMDK_LATENT_DIM`, `RTMDK_DECAY_RATE`,
-`RTMDK_TENSION_THRESHOLD`, `RTMDK_TOP_K`, `RTMDK_BANDWIDTH`, `RTMDK_PHASE_COUPLING`,
-`RTMDK_USE_HNSW`, `RTMDK_HNSW_M`, `RTMDK_LEARN_PROJECTION`, `RTMDK_CROSS_MODAL`,
-`RTMDK_CAUSAL_TOPOLOGICAL`, `RTMDK_META_ADAPTIVE`, `RTMDK_SELF_HEALING`,
-`RTMDK_ENABLE_ENGRAMS`, `RTMDK_OFFLINE_DREAMING`, `RTMDK_CAUSAL_TRAVERSAL`,
-`RTMDK_SSM_DYNAMICS`, `RTMDK_SPARSE_ROUTING`, `RTMDK_NUM_SHARDS`, `RTMDK_GOAL_TRACKING`,
-`RTMDK_RL_FEEDBACK`, `RTMDK_SECURITY_ENABLED`, `RTMDK_SWARM_MEMORY`,
-`RTMDK_SYMBOLIC_OVERLAY`, `RTMDK_SAFETY_CERTIFIER`, `RTMDK_ROLE_SHARDING`,
-`RTMDK_CONTEXT_FORMAT`, `RTMDK_LOG_LEVEL` и другие.
-
-### Изменение конфигурации через API
-
-```bash
-# Изменить пресет (требует перезапуска)
-curl -X POST http://localhost:8080/api/config \
-  -H "Content-Type: application/json" \
-  -d '{"RTMDK_PRESET": "production"}'
-# Ответ: {"status":"ok", "needs_restart": true, "updates": ["RTMDK_PRESET"]}
-
-# Изменить гиперпараметр (сохраняется в .env, требует перезапуска)
-curl -X POST http://localhost:8080/api/config \
-  -H "Content-Type: application/json" \
-  -d '{"RTMDK_LATENT_DIM": "128", "RTMDK_TOP_K": "10"}'
-
-# Изменить модель эмбеддера (применяется сразу)
-curl -X POST http://localhost:8080/api/config \
-  -H "Content-Type: application/json" \
-  -d '{"RTMDK_EMBED_MODEL": "text-embedding-3-small"}'
 ```
 
 ---
@@ -122,19 +105,6 @@ curl -X POST http://localhost:8080/api/config \
 Подробнее: [SILLYTAVERN_CONNECTION_GUIDE.md](SILLYTAVERN_CONNECTION_GUIDE.md)
 
 ---
-
-## 📚 Документация
-
-| Что нужно | Документ |
-|-----------|----------|
-| **Главный индекс** | [docs/README.md](docs/README.md) |
-| **API справка** | [docs/01_API_REFERENCE.md](docs/01_API_REFERENCE.md) |
-| **Production 100K+** | [docs/02_PRODUCTION_GUIDE.md](docs/02_PRODUCTION_GUIDE.md) |
-| **Локальный запуск** | [docs/03_LOCAL_SETUP.md](docs/03_LOCAL_SETUP.md) |
-| **Docker + Silly Tavern** | [docs/04_DOCKER_SETUP.md](docs/04_DOCKER_SETUP.md) |
-| **Тонкая настройка** | [docs/05_FINE_TUNING.md](docs/05_FINE_TUNING.md) |
-| **Научная статья** | [docs/06_SCIENTIFIC_ARTICLE.md](docs/06_SCIENTIFIC_ARTICLE.md) |
-| **Архитектура** | [docs/08_ARCHITECTURE.md](docs/08_ARCHITECTURE.md) |
 
 ## 📊 Результаты
 
@@ -159,7 +129,9 @@ RTMDK v8.1 (25,000+ строк, 75+ файлов, 105+ API)
 └── Domain: Domain Hierarchy, Concept Lifecycle, Evidence Spans (Phase 20)
 ```
 
-## 📦 Поддерживаемые API
+---
+
+## 📦 Поддерживаемые API провайдеры
 
 | Провайдер | Переменная |
 |-----------|-----------|
@@ -171,4 +143,54 @@ RTMDK v8.1 (25,000+ строк, 75+ файлов, 105+ API)
 
 ---
 
+## 📁 Структура проекта
+
+```
+.
+├── rtmdk/                      # Python-пакет
+│   ├── __init__.py             # Re-export всех символов
+│   ├── config.py               # RTMDKConfig + 8 пресетов
+│   ├── nodes.py                # Data-классы (MemoryNode, etc.)
+│   ├── engrams.py              # Phase 18: Engram system
+│   ├── memory/
+│   │   ├── core.py             # ЕДИНСТВЕННЫЙ RTMDKConfig + RTMDKMemory (~6773 строк)
+│   │   └── serialization.py    # Import/Export
+│   ├── server/
+│   │   └── app.py              # FastAPI production server
+│   ├── engines/                # Computation engines (9 modules)
+│   ├── support/                # 28 support classes
+│   └── production/             # 33 production modules
+├── docs/                       # Документация (15 файлов)
+├── tests/                      # Тесты
+├── archive/                    # Исторические файлы
+├── rtmdk_server.py             # Monolith сервер (с ST endpoints)
+├── rtmdk_server_ux.py          # UX endpoints router
+├── rtmdk_dashboard_ui.py       # Dashboard UI endpoints
+├── rtmdk_sillytavern_launcher.py  # SillyTavern launcher
+├── rtmdk_st_proxy.py           # SillyTavern proxy
+├── embedder_lmstudio.py        # LM Studio embedder
+├── generate_qa_1000.py         # QA dataset generator
+├── smoke_test.py               # Smoke tests
+├── Dockerfile / Dockerfile.home / Dockerfile.gpu
+├── docker-compose.yml / docker-compose.prod.yml / docker-compose.home.yml
+└── requirements*.txt
+```
+
+---
+
+## 🎯 Фазы реализации
+
+| Phase | Что реализовано | Статус |
+|-------|----------------|:---:|
+| 1-14 | Ядро RTMDK: резонанс, консолидация, HNSW, BM25, PCA | ✅ |
+| 15 | Version Control, Proactive Clarification, Attention Tokens | ✅ |
+| 16 | Symbolic Overlay, Safety Certifier, UMP | ✅ |
+| 17 | Role Sharding, Swarm Memory | ✅ |
+| **18** | **Энграммы** — паттерны коактивации, pattern completion | ✅ |
+| **19** | Offline Dreaming, Causal Traversal, SSM/Mamba, Trust Consensus, Neuro-Symbolic Prover | ✅ |
+| **20** | **Domain Memory** — Domain Hierarchy, Concept Lifecycle, Evidence Spans, Bi-temporal Facts | ✅ |
+
+---
+
 *RTMDK v8.1 — Превосходит GraphRAG, Self-RAG и Advanced RAG по точности*
+*Документация: [docs/MASTER_INDEX.md](docs/MASTER_INDEX.md)*
