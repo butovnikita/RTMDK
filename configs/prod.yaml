@@ -1,0 +1,33 @@
+# RTMDK Production Config (v8.0) — multi-user server
+# RAM: ~50MB, Latency: ~6ms, Nodes: up to 100K
+embedding_dim: 768
+latent_dim: 256
+decay_rate: 0.999
+max_nodes: 100000
+top_k: 5
+min_response: 0.005
+enable_async: true
+learn_projection: false
+bm25_fallback: true
+use_hnsw: true
+hnsw_m: 32
+hnsw_ef_construction: 400
+attention_bias: true
+version_control: true
+
+# Phase 18: Engrams
+enable_engrams: true
+engram_min_nodes: 2
+engram_max_nodes: 20
+engram_pattern_completion: true
+
+# Phase 19: Advanced
+offline_dreaming: true
+dreaming_freq: 50
+causal_traversal: true
+causal_max_hops: 3
+ssm_dynamics: true
+ssm_state_dim: 64
+trust_consensus: true
+trust_min_reputation: 0.3
+neuro_symbolic_prover: false

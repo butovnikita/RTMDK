@@ -1,0 +1,27 @@
+# RTMDK Local Config (v8.0) — personal assistant
+# RAM: ~16MB, Latency: ~5ms, Nodes: up to 10K
+embedding_dim: 768
+latent_dim: 256
+decay_rate: 0.999
+max_nodes: 10000
+top_k: 5
+min_response: 0.005
+enable_async: false
+learn_projection: true
+bm25_fallback: true
+use_hnsw: true
+attention_bias: true
+
+# Phase 18: Engrams
+enable_engrams: true
+engram_min_nodes: 2
+engram_max_nodes: 15
+engram_pattern_completion: true
+
+# Phase 19: Advanced
+offline_dreaming: false
+causal_traversal: true
+causal_max_hops: 2
+ssm_dynamics: false
+trust_consensus: false
+neuro_symbolic_prover: false

@@ -1,0 +1,35 @@
+# RTMDK Server Configuration
+# Zero-config: all values have sensible defaults
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+  api_key: "rtmdk-local"
+
+lm_studio:
+  enabled: true
+  url: "http://localhost:12345/v1"
+  embed_model: "nomic-ai/nomic-embed-text-v1.5-GGUF"
+
+memory:
+  file: "~/.rtmdk/memory.json"
+  auto_save_interval: 60  # seconds
+
+rtmdk:
+  embedding_dim: 768
+  latent_dim: 64
+  top_k: 5
+  tension_threshold: 0.15
+  decay_rate: 0.997
+  context_format: "json"
+  
+  # Phase features
+  causal_topological: true
+  do_calculus_validation: true
+  meta_adaptive: true
+  self_healing: true
+  predictive_coding: true
+  counterfactual_imagination: true
+  cross_modal: true
+  hyperbolic: false
+  differential_privacy: false

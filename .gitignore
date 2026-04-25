@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+myenv/
+venv/
+env/
+.venv/
+
+# Pytest
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# RTMDK state files (local memory, not for version control)
+*.json
+!rtmdk_config.yaml
+!eval_report.json
+!swarm_report.json
+!swarm_report_agent_0.json
+!swarm_report_agent_1.json
+!swarm_report_agent_2.json
+!test_bench_export.json
+
+# RTMDK memory files
+rtmdk_lmstudio_state.json
+rtmdk_dashboard_state.json
+rtmdk_demo_state.json
+~/.rtmdk/
+
+# Logs
+*.log
+app.log
+
+# Docker
+.env
+myenv/
+myenv/
+myenv/
+myenv/
+myenv/
+myenv/
