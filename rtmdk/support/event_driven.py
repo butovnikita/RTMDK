@@ -111,3 +111,15 @@ class EventDrivenScheduler:
             "queue_depth": len(self._event_queue),
             "event_counts": dict(self._event_counts),
         }
+
+    def get_state(self) -> Dict:
+        """Get state for serialization (Fix 4: needed for export_to_dict)."""
+        return {
+            "event_queue": list(self._event_queue),
+            "event_counts": dict(self._event_counts),
+        }
+
+    def load_state(self, state: Dict):
+        """Load state from serialization (Fix 4: needed for import_from_dict)."""
+        self._event_queue = deque(state.get("event_queue", []), maxlen=1000)
+        self._event_counts = defaultdict(int, state.get("event_counts", {}))

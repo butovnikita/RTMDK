@@ -173,3 +173,15 @@ class TritonBackend:
         if self._use_gpu and TRITON_AVAILABLE:
             return "triton"
         return "numpy"
+
+    def get_state(self) -> Dict:
+        """Get state for serialization (Fix 4: needed for export_to_dict)."""
+        return {
+            "min_nodes_for_gpu": self.min_nodes_for_gpu,
+            "fallback_reason": self._fallback_reason,
+        }
+
+    def load_state(self, state: Dict):
+        """Load state from serialization (Fix 4: needed for import_from_dict)."""
+        self.min_nodes_for_gpu = state.get("min_nodes_for_gpu", self.min_nodes_for_gpu)
+        self._fallback_reason = state.get("fallback_reason", "")
