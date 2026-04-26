@@ -1,7 +1,9 @@
 """Security validator for RTMDK."""
 from __future__ import annotations
 
+import re
 import time
+import unicodedata
 from collections import deque
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
@@ -9,6 +11,20 @@ import numpy as np
 
 if TYPE_CHECKING:
     pass
+
+# Zero-width characters to strip from text (Fix 7: Unicode bypass prevention)
+_ZERO_WIDTH_CHARS = re.compile(
+    r"[​‌‍﻿￼᠎⁠   ]"
+)
+
+# Confusable unicode homoglyphs (partial list — maps lookalikes to ASCII)
+_HOMOGLYPHS = {
+    'а': 'a', 'е': 'e', 'о': 'o', 'р': 'p', 'с': 'c', 'х': 'x',
+    'і': 'i', 'ј': 'j', 'ѕ': 's', 'ԁ': 'd', 'ɡ': 'g', 'һ': 'h',
+    'ӏ': 'l', 'п': 'n', 'υ': 'u', 'ү': 'y', 'қ': 'k', 'ӣ': 'i',
+    'Α': 'A', 'Β': 'B', 'Ε': 'E', 'Κ': 'K', 'Μ': 'M', 'Ν': 'H',
+    'Ο': 'O', 'Ρ': 'P', 'Τ': 'Y', 'Χ': 'X', 'Ι': 'I', 'Ξ': 'Z',
+}
 
 
 class SecurityValidator:
@@ -19,22 +35,41 @@ class SecurityValidator:
                  injection_patterns: Optional[List[str]] = None):
         self.max_text_length = max_text_length
         self.tension_spike_threshold = tension_spike_threshold
+        # Fix 7: Compile patterns as regex for more robust matching
         self.injection_patterns = injection_patterns or [
-            "ignore previous", "system prompt", "you are now", "disregard",
-            "ignore all", "new instruction", "override"
+            r"ignore\s*previous", r"system\s*prompt", r"you\s*are\s*now",
+            r"disregard", r"ignore\s*all", r"new\s*instruction", r"override",
+            r"forget\s*(?:all\s*)?previous", r"disregard\s*all",
+            r"act\s*(?:as\s*)?(?:if|though)\s*you\s*(?:are|were)",
+            r"pretend\s*(?:you\s*)?(?:are|were)", r"roleplay\s*as",
+            r"sudo\s", r"admin\s*(?:mode)?",
         ]
+        self._compiled_patterns = [re.compile(p, re.IGNORECASE) for p in self.injection_patterns]
         self._violation_log: List[Dict] = []
         self._tension_history: deque = deque(maxlen=100)
+
+    def _sanitize_text(self, text: str) -> str:
+        """Normalize and strip dangerous unicode characters (Fix 7)."""
+        # Strip zero-width characters
+        text = _ZERO_WIDTH_CHARS.sub("", text)
+        # Unicode NFC normalization — combines combining characters
+        text = unicodedata.normalize("NFC", text)
+        # Replace confusable homoglyphs with ASCII equivalents
+        result = []
+        for ch in text.lower():
+            result.append(_HOMOGLYPHS.get(ch, ch))
+        return "".join(result)
 
     def validate_node_content(self, text: str) -> Dict[str, Any]:
         """Validate node text for injection patterns and length."""
         violations = []
         if len(text) > self.max_text_length:
             violations.append({"type": "text_too_long", "length": len(text), "max": self.max_text_length})
-        text_lower = text.lower()
-        for pattern in self.injection_patterns:
-            if pattern in text_lower:
-                violations.append({"type": "prompt_injection", "pattern": pattern})
+        # Fix 7: Sanitize text before pattern matching
+        sanitized = self._sanitize_text(text)
+        for pattern_re in self._compiled_patterns:
+            if pattern_re.search(sanitized):
+                violations.append({"type": "prompt_injection", "pattern": pattern_re.pattern})
         is_safe = len(violations) == 0
         if violations:
             self._violation_log.append({

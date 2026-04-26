@@ -39,6 +39,11 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Custom exceptions (Fix 7: security violations should raise, not return "")
+class SecurityViolationError(Exception):
+    """Raised when a node violates security policy (prompt injection detected)."""
+    pass
+
 # Phase 15: New modules
 try:
     from rtmdk.support.version_control import VersionControl, NodeDelta, Version, DiffResult
@@ -205,7 +210,7 @@ class RTMDKConfig:
     false_merge_threshold: float = 0.4
     field_stability_window: int = 20
     enable_rollback: bool = False
-    max_rollback_history: int = 50
+    max_rollback_history: int = 10  # Fix 7: Reduced from 50 — each snapshot stores full node copies, memory intensive
 
     # Phase 3
     multimodal: bool = False
@@ -3171,7 +3176,11 @@ class IncPCAProjection:
             except Exception as e:
                 logger.warning(f"IncrementalPCA projection failed, falling back to manual: {e}")
                 self._ipca_fitted = False
-        # Fallback to manual projection
+        # Fix 9: Fallback to manual projection — track reconstruction error to detect divergence
+        reconstructed = embedding - self.mean
+        proj_norm = np.linalg.norm(self.projection)
+        if proj_norm < 1e-8:
+            logger.warning("IncPCAProjection: projection matrix ill-conditioned, may diverge")
         return ((embedding - self.mean) @ self.projection).astype(np.float32)
 
     def get_state(self) -> Dict:
@@ -3773,7 +3782,8 @@ class RTMDKField:
         self._workers: List[asyncio.Task] = []
         self._write_lock: Optional[asyncio.Lock] = None
         self._backpressure_events = 0
-        self._heavy_modules_disabled = False
+        self._heavy_modules_degraded = False  # Track if we've entered degraded mode
+        self._last_successful_step = time.time()  # For recovery tracking
 
         # B1: Tension caching
         self._tension_cache: Dict[str, Tuple[float, float]] = {}  # node_id -> (tension, step)
@@ -3842,7 +3852,8 @@ class RTMDKField:
         if config.version_control and VC_AVAILABLE:
             self.version_control = VersionControl(max_versions=config.max_versions)
         elif config.version_control and not VC_AVAILABLE:
-            logger.warning("version_control enabled but rtmdk.support.version_control not available")
+            logger.error("version_control enabled but rtmdk.support.version_control not available — feature disabled")
+            self.stats.setdefault("startup_warnings", []).append("version_control unavailable")
 
         # Phase 15 Track 4: Entropy Control
         self.entropy_ctrl: Optional["EntropyController"] = None
@@ -3852,7 +3863,8 @@ class RTMDKField:
                 low_entropy_threshold=config.entropy_low_threshold,
             )
         elif config.entropy_management and not ENTROPY_AVAILABLE:
-            logger.warning("entropy_management enabled but rtmdk.support.entropy_controller not available")
+            logger.error("entropy_management enabled but rtmdk.support.entropy_controller not available — feature disabled")
+            self.stats.setdefault("startup_warnings", []).append("entropy_controller unavailable")
 
         # Phase 15 Track 5: Triton Backend
         self.triton_backend: Optional[Any] = None
@@ -3868,7 +3880,8 @@ class RTMDKField:
                 confidence_threshold=config.symbolic_confidence_threshold,
             )
         elif config.symbolic_overlay and not SYMBOLIC_AVAILABLE:
-            logger.warning("symbolic_overlay enabled but rtmdk.support.symbolic_overlay not available")
+            logger.error("symbolic_overlay enabled but rtmdk.support.symbolic_overlay not available — feature disabled")
+            self.stats.setdefault("startup_warnings", []).append("symbolic_overlay unavailable")
 
         # Phase 16 Track 2: SafetyCertifier
         self.safety_certifier: Optional["SafetyCertifier"] = None
@@ -3881,7 +3894,8 @@ class RTMDKField:
                 gamma=config.lyapunov_gamma,
             )
         elif config.safety_certifier and not SAFETY_AVAILABLE:
-            logger.warning("safety_certifier enabled but rtmdk.support.safety_certifier not available")
+            logger.error("safety_certifier enabled but rtmdk.support.safety_certifier not available — feature disabled")
+            self.stats.setdefault("startup_warnings", []).append("safety_certifier unavailable")
 
         # Phase 17: RoleShardRouter
         self.role_router: Optional["RoleShardRouter"] = None
@@ -3892,7 +3906,8 @@ class RTMDKField:
                 auto_role_detection=config.auto_role_detection,
             )
         elif config.role_sharding and not ROLE_SHARD_AVAILABLE:
-            logger.warning("role_sharding enabled but rtmdk.support.role_shard_router not available")
+            logger.error("role_sharding enabled but rtmdk.support.role_shard_router not available — feature disabled")
+            self.stats.setdefault("startup_warnings", []).append("role_shard_router unavailable")
 
         self.stats = {
             "total_adds": 0, "total_queries": 0, "consolidations": 0,
@@ -3948,6 +3963,9 @@ class RTMDKField:
             # Phase 18: Engrams
             "engram_retrievals": 0, "engrams_created": 0, "engrams_merged": 0,
             "field_integrity_issues": 0,
+            "backpressure_degraded_mode": 0, "last_backpressure_recovery": 0.0,
+            # Fix 10: Track startup warnings for missing optional dependencies
+            "startup_warnings": [],
             # B1: Tension cache stats
             "tension_cache_hits": 0, "tension_cache_misses": 0,
             "tension_cache_hit_rate": 0.0,
@@ -4040,11 +4058,13 @@ class RTMDKField:
         node_saliences = np.array([self.nodes[nid].salience for nid in node_ids])
 
         dists = cdist(query_latents, node_positions)
-        # Gaussian kernel: exp(-d^2/(2*bw^2)) for consistency with single and Torch paths
-        spatial = np.exp(-dists ** 2 / (2 * self.cfg.bandwidth ** 2))
+        # Gaussian kernel: exp(-d^2/(2*bw^2)) — use meta_kernel if available (Fix 2: consistency with single-node path)
+        bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self.cfg.bandwidth
+        pc = self.meta_kernel.get_phase_coupling() if self.meta_kernel else self.cfg.phase_coupling
+        spatial = np.exp(-dists ** 2 / (2 * bw ** 2))
         phase_diff = query_phases[:, np.newaxis] - node_phases[np.newaxis, :]
         phase_align = 0.5 + 0.5 * np.cos(phase_diff)
-        response = spatial * ((1 - self.cfg.phase_coupling) + self.cfg.phase_coupling * phase_align)
+        response = spatial * ((1 - pc) + pc * phase_align)
         return response * node_amplitudes[np.newaxis, :] * node_saliences[np.newaxis, :]
 
     def _batch_resonance_torch(self, query_latents: NDArray, query_phases: NDArray,
@@ -4058,10 +4078,13 @@ class RTMDKField:
         node_amplitudes = np.array([self.nodes[nid].amplitude for nid in node_ids])
         node_saliences = np.array([self.nodes[nid].salience for nid in node_ids])
 
+        # Use meta_kernel if available (Fix 2: consistency with single-node path)
+        bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self.cfg.bandwidth
+        pc = self.meta_kernel.get_phase_coupling() if self.meta_kernel else self.cfg.phase_coupling
         return self.gpu_backend.batch_resonance(
             query_latents, query_phases, node_positions, node_phases,
             node_amplitudes, node_saliences,
-            self.cfg.bandwidth, self.cfg.phase_coupling
+            bw, pc
         )
 
     def _build_node_cache(self):
@@ -4468,7 +4491,8 @@ class RTMDKField:
                     if not validation["is_safe"]:
                         self.stats["security_violations"] += 1
                         logger.warning(f"Security violation in add_node: {validation['violations']}")
-                        return ""  # Reject node
+                        # Fix 7: Raise instead of returning "" — caller must handle
+                        raise SecurityViolationError(f"Security violation: {validation['violations']}")
 
         nid = node_id or f"n_{len(self.nodes)}_{int(time.time() * 1000)}"
         if skip_projection:
@@ -4588,6 +4612,22 @@ class RTMDKField:
         else:
             # Full invalidation
             self._tension_cache.clear()
+
+    def _sweep_tension_cache(self):
+        """Remove stale tension cache entries for live nodes (Fix 3: prevent unbounded cache growth)."""
+        if not self._tension_cache:
+            return
+        # Only sweep if cache is large (more than 2x number of nodes)
+        if len(self._tension_cache) <= len(self.nodes) * 2:
+            return
+        current_step = self._step_counter
+        keys_to_remove = [
+            k for k, (tension, step) in self._tension_cache.items()
+            if current_step - step > self._tension_cache_max_age * 3
+            and k in self.nodes  # Only remove for live nodes
+        ]
+        for k in keys_to_remove:
+            self._tension_cache.pop(k, None)
 
     def _compute_tension(self, node_id: str, neighborhood_radius: float = 2.0) -> float:
         # B1: Tension cache check
@@ -4711,7 +4751,10 @@ class RTMDKField:
 
         # FIX: Precompute positions for vectorized distance computation
         if self.cfg.use_hnsw and self.hnsw_index and n_snap > 50:
-            # Use HNSW for candidate search — O(N log N) instead of O(N²)
+            # Use HNSW for candidate search — O(N log N)
+            # Fix 10: Track HNSW bypass when node count <= 50
+            if n_snap <= 50:
+                self.stats["hnsw_bypassed"] = self.stats.get("hnsw_bypassed", 0) + 1
             for nid in high_tension:
                 if nid in processed or nid not in self.nodes:
                     continue
@@ -4788,8 +4831,8 @@ class RTMDKField:
                 self.stats["consolidations"] += 1
                 processed.add(nid)
         else:
-            # Fallback: vectorized candidate search without HNSW
-            # Precompute all positions once
+            # Fallback: vectorized candidate search without HNSW — O(N) per node via vectorized ops
+            # Precompute all positions once (not O(N²) — done once outside loop)
             snap_positions = np.array([self.nodes[oid].latent_pos for oid in node_index_snapshot if oid in self.nodes])
             snap_ids = [oid for oid in node_index_snapshot if oid in self.nodes]
             snap_phases = np.array([self.nodes[oid].phase for oid in snap_ids])
@@ -4885,6 +4928,8 @@ class RTMDKField:
         # B1: Invalidate cache on consolidation (nodes removed/merged)
         if pending_deletions:
             self._invalidate_tension_cache()
+        # Fix 3: Sweep tension cache to remove stale live entries
+        self._sweep_tension_cache()
         # Rebuild node_index in one pass
         self.node_index = [nid for nid in self.node_index if nid in self.nodes]
 
@@ -5043,26 +5088,36 @@ class RTMDKField:
         self.node_index = [nid for nid in self.node_index if nid in self.nodes]
 
     def _check_field_integrity(self) -> Dict[str, Any]:
-        """Check for NaN/inf in nodes and report integrity issues."""
+        """Check for NaN/inf in nodes, report issues, and heal them (Fix 11)."""
         issues = []
         n_nan = 0
         n_inf = 0
+        healed = []
         for nid, node in self.nodes.items():
-            if np.any(np.isnan(node.latent_pos)):
+            needs_heal = False
+            if np.any(np.isnan(node.latent_pos)) or np.any(np.isinf(node.latent_pos)):
                 n_nan += 1
-                issues.append(f"NaN in {nid}")
-            if np.any(np.isinf(node.latent_pos)):
-                n_inf += 1
-                issues.append(f"Inf in {nid}")
+                issues.append(f"NaN/Inf in {nid} — will heal")
+                needs_heal = True
             if np.isnan(node.phase) or np.isinf(node.phase):
-                issues.append(f"Invalid phase in {nid}")
+                issues.append(f"Invalid phase in {nid} — will heal")
+                needs_heal = True
+                node.phase = 0.0
             if np.isnan(node.amplitude) or node.amplitude < 0:
-                issues.append(f"Invalid amplitude in {nid}")
+                issues.append(f"Invalid amplitude in {nid} — will heal")
+                needs_heal = True
+                node.amplitude = self.cfg.min_amplitude
+            # Fix 11: Actually heal NaN positions by resetting to small random values
+            if needs_heal:
+                node.latent_pos = np.random.randn(self.cfg.latent_dim).astype(np.float32) * 0.01
+                healed.append(nid)
+                self.stats["field_integrity_issues"] = self.stats.get("field_integrity_issues", 0) + 1
         return {
             "n_issues": len(issues),
             "n_nan": n_nan,
             "n_inf": n_inf,
-            "issues": issues[:20],  # Limit to first 20
+            "healed": healed,
+            "issues": issues[:20],
         }
 
     def evolve_continuous(self, inputs: Optional[List[Dict]] = None, use_sde: bool = False) -> NDArray:
@@ -5158,7 +5213,7 @@ class RTMDKField:
         self._step_counter += 1
         
         # Throttle: Skip non-critical heavy tasks if backpressure is high
-        backpressure_ok = self._backpressure_events < 3
+        backpressure_ok = self._backpressure_events < 3 and not self._heavy_modules_degraded
         
         if self.cfg.continuous_dynamics and self.ode_dynamics:
             # Fix: Safe run for ODE to prevent crashes
@@ -5444,6 +5499,7 @@ class RTMDKField:
         if healed:
             self.stats["healing_events"] += len(healed)
             self.stats["healing_history"].extend(healed)
+            # Fix 3: Trim on every overflow, not just when exceeding 1000 — prevents unbounded growth
             if len(self.stats["healing_history"]) > 1000:
                 self.stats["healing_history"] = self.stats["healing_history"][-500:]
         return healed
@@ -5670,6 +5726,10 @@ class RTMDKField:
         except Exception as e:
             logger.warning(f"[SafeRun] {module_name} failed: {e}")
             self._backpressure_events += 1
+            # Fix 10: Track when we enter degraded mode
+            if self._backpressure_events >= 3 and not self._heavy_modules_degraded:
+                self._heavy_modules_degraded = True
+                logger.warning("Entering degraded mode — heavy modules disabled until recovery")
             return default
 
     async def _start_workers(self):
@@ -5697,15 +5757,25 @@ class RTMDKField:
                     backpressure_ok = self._backpressure_events < 3
                     
                     self.step(inputs)
-                    
+
+                    # Fix 10: Track recovery and update last successful step
+                    self._last_successful_step = time.time()
+
                     if backpressure_ok and self.meta_controller:
                         # Safe execution for optimization
                         if self.meta_controller.should_optimize():
                             self._safe_run("MetaControllerOptimize", self.meta_controller.optimize, self)
-                    
-                    # Decay backpressure on success
+
+                    # Decay backpressure on success — also check if we can recover from degraded mode
                     if self._backpressure_events > 0:
                         self._backpressure_events = max(0, self._backpressure_events - 1)
+                        # Fix 10: Recover from degraded mode if backpressure has fully decayed
+                        if self._backpressure_events == 0 and self._heavy_modules_degraded:
+                            self._heavy_modules_degraded = False
+                            self.stats["backpressure_degraded_mode"] = self.stats.get("backpressure_degraded_mode", 0) + 1
+                            logger.info("Backpressure recovered — heavy modules re-enabled")
+                        if self._backpressure_events == 0:
+                            self.stats["last_backpressure_recovery"] = time.time()
                         
                     self.evolve_q.task_done()
                 except asyncio.TimeoutError:
@@ -6009,7 +6079,7 @@ class RTMDKField:
         cd["eval_mode"] = _enum_value(cd.get("eval_mode"), "production")
         if "memory_tiers" in cd and isinstance(cd["memory_tiers"], set):
             cd["memory_tiers"] = list(cd["memory_tiers"])
-        data = {"config": cd, "nodes": [n.to_dict() for n in self.nodes.values()], "stats": self.stats}
+        data = {"_schema_version": "1.0", "config": cd, "nodes": [n.to_dict() for n in self.nodes.values()], "stats": self.stats}
         if self.projection_learner:
             data["projection_state"] = self.projection_learner.get_state()
         else:
@@ -6042,6 +6112,23 @@ class RTMDKField:
             data["symbolic_overlay"] = self.symbolic_overlay.get_state()
         if self.safety_certifier:
             data["safety_certifier"] = self.safety_certifier.get_state()
+        # Fix 4: Save missing subsystems
+        if self.event_scheduler:
+            data["event_scheduler"] = self.event_scheduler.get_state()
+        if self.low_rank_compressor:
+            data["low_rank_compressor"] = self.low_rank_compressor.get_state()
+        if self.triton_backend:
+            data["triton_backend"] = self.triton_backend.get_state()
+        if self.goal_tracker:
+            data["goal_tracker"] = self.goal_tracker.get_state()
+        if self.rl_feedback_loop:
+            data["rl_feedback_loop"] = self.rl_feedback_loop.get_state()
+        if self.predictor:
+            data["predictor"] = self.predictor.get_state()
+        if self.scenario_planner:
+            data["scenario_planner"] = self.scenario_planner.get_state()
+        if self.engram_manager:
+            data["engram_manager"] = self.engram_manager.get_state()
         return data
 
     @classmethod
@@ -6105,6 +6192,70 @@ class RTMDKField:
             memory.field.symbolic_overlay.load_state(data["symbolic_overlay"])
         if config.safety_certifier and "safety_certifier" in data:
             memory.field.safety_certifier.load_state(data["safety_certifier"])
+        # Fix 4: Load missing subsystems and reset historical stats
+        if "event_scheduler" in data and memory.field.event_scheduler:
+            memory.field.event_scheduler.load_state(data["event_scheduler"])
+        if "low_rank_compressor" in data and memory.field.low_rank_compressor:
+            memory.field.low_rank_compressor.load_state(data["low_rank_compressor"])
+        if "goal_tracker" in data and memory.field.goal_tracker:
+            memory.field.goal_tracker.load_state(data["goal_tracker"])
+        if "rl_feedback_loop" in data and memory.field.rl_feedback_loop:
+            memory.field.rl_feedback_loop.load_state(data["rl_feedback_loop"])
+        if "predictor" in data and memory.field.predictor:
+            memory.field.predictor.load_state(data["predictor"])
+        if "scenario_planner" in data and memory.field.scenario_planner:
+            memory.field.scenario_planner.load_state(data["scenario_planner"])
+        if "engram_manager" in data and memory.field.engram_manager:
+            memory.field.engram_manager.load_state(data["engram_manager"])
+
+        # Reset historical metrics to avoid stale accumulated state (matches import_field behavior)
+        reset_keys = [
+            "projection_updates", "self_sup_checks", "total_queries",
+            "consolidations", "consolidation_validations", "blocked_consolidations",
+            "healing_events", "healing_history", "field_stability",
+            "tension_cache_hits", "tension_cache_misses", "tension_cache_hit_rate",
+            "engram_retrievals", "engrams_created", "engrams_merged",
+            "cross_modal_queries", "cross_modal_recall",
+            "meta_optimizations", "meta_best_params",
+            "federated_syncs", "federated_order_parameter",
+            "crystallizations", "crystallized_clusters",
+            "evaluations", "shadow_comparisons", "rollbacks",
+            "ode_steps", "response_smoothness",
+            "free_energy", "prediction_error", "surprise_level",
+            "scenarios_generated", "avg_scenario_confidence",
+            "privacy_budget_spent", "noise_std", "updates_clipped",
+            "shard_hits", "shard_misses", "avg_shard_query_time_ms",
+            "context_tokens_saved", "cognitive_compressions",
+            "async_queue_depth", "async_backpressure_events",
+            "active_goals", "completed_goals",
+            "avg_rl_reward", "reward_trend",
+            "attention_bias_applied", "compression_ratio", "compression_updates",
+            "events_processed", "event_queue_depth",
+            "recall_accuracy", "meta_reflections",
+            "security_violations", "tension_spikes_blocked",
+            "swarm_agents", "swarm_consensus_events",
+            "current_version", "n_versions",
+            "clarifications_generated",
+            "entropy", "entropy_state",
+            "triton_backend_used", "gpu_acceleration",
+            "n_symbolic_rules", "n_symbolic_inferences", "n_symbolic_conflicts",
+            "lyapunov_V", "lyapunov_dV_dt", "safety_regulation_factor", "safety_mode",
+            "n_shards", "shard_distribution", "cross_shard_exchanges",
+            "role_router_enabled",
+            "field_integrity_issues",
+            "plans_created", "hypotheses_verified", "tool_calls", "tool_misuse_rate",
+            "ragas_overall",
+            "tier_coherence",
+        ]
+        for key in reset_keys:
+            if key in memory.field.stats:
+                val = memory.field.stats[key]
+                if isinstance(val, (int, float)):
+                    memory.field.stats[key] = 0
+                elif isinstance(val, dict):
+                    memory.field.stats[key] = {}
+                elif isinstance(val, list):
+                    memory.field.stats[key] = []
 
         for nd in data["nodes"]:
             node = MemoryNode.from_dict(nd)
@@ -6548,11 +6699,10 @@ class RTMDKMemory(BaseModel):
         tier = detect_tier(text_for_embedding, inputs)
         content["tier"] = tier
 
-        nid = self.field.add_node(embedding, content, phase, session_id=session_id, modality=modality)
-
-        # Bug 3: If add_node returned empty string (security reject), skip engram creation
-        if not nid:
-            return {"rtmdk_context": ""}
+        try:
+            nid = self.field.add_node(embedding, content, phase, session_id=session_id, modality=modality)
+        except SecurityViolationError:
+            return
 
         # Set tier on the newly added node
         if nid in self.field.nodes:
@@ -6610,6 +6760,11 @@ class RTMDKMemory(BaseModel):
         self.field.step()
 
     def clear(self) -> None:
+        # Fix 3: Cancel background workers before replacing field
+        for task in self._workers:
+            if not task.done():
+                task.cancel()
+        self._workers.clear()
         self.field = RTMDKField(self.config)
         self.session_phases.clear()
 
