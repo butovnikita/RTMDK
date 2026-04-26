@@ -2010,7 +2010,7 @@ class GoalTracker:
     def get_state(self) -> Dict:
         return {
             "goals": {k: v.to_dict() for k, v in self.goals.items()},
-            "history": self._history[-100:],
+            "history": list(self._history)[-100:],  # deque doesn't support slice, convert to list
         }
 
     def load_state(self, state: Dict):
@@ -2328,6 +2328,18 @@ class EventDrivenScheduler:
             "queue_depth": len(self._event_queue),
             "event_counts": dict(self._event_counts),
         }
+
+    def get_state(self) -> Dict:
+        """Get state for serialization (Fix 4: needed for export_to_dict)."""
+        return {
+            "event_queue": list(self._event_queue),
+            "event_counts": dict(self._event_counts),
+        }
+
+    def load_state(self, state: Dict):
+        """Load state from serialization (Fix 4: needed for import_from_dict)."""
+        self._event_queue = deque(state.get("event_queue", []), maxlen=1000)
+        self._event_counts = defaultdict(int, state.get("event_counts", {}))
 
 
 # ============================================================================
@@ -3822,6 +3834,9 @@ class RTMDKField:
             self.event_scheduler = EventDrivenScheduler()
         if config.low_rank_compression:
             self.low_rank_compressor = LowRankCompressor(config.compression_rank)
+
+        # Phase 18: Engram Manager (Fix 4: ensure attribute always exists even when disabled)
+        self.engram_manager: Optional[Any] = None
 
         # Phase 14 Track 1: Meta-Memory
         self.meta_memory_eval: Optional[MetaMemoryEvaluator] = None
