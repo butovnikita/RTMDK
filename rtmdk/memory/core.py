@@ -31,7 +31,8 @@ from typing import List, Dict, Optional, Tuple, Union, Callable, Any, Set, Froze
 from enum import Enum
 import numpy as np
 from numpy.typing import NDArray
-from scipy.spatial.distance import cdist
+from scipy.spatial.distance import cdist, pdist, squareform
+from scipy.spatial import cKDTree
 from scipy.integrate import odeint, solve_ivp
 from scipy import stats as scipy_stats
 from pydantic import BaseModel, Field, ConfigDict, model_validator
@@ -215,6 +216,7 @@ class RTMDKConfig:
     min_response: float = 0.005  # OPTIMIZED: 20x lower → more results pass filter
     enable_async: bool = True
     log_level: str = "INFO"
+    seed: Optional[int] = None
 
     # Phase 1
     context_format: ContextFormat = ContextFormat.PLAIN
@@ -1267,9 +1269,7 @@ class MetaController:
         if n_nodes < 2:
             return 0.5
         positions = np.array([n.latent_pos for n in field.nodes.values()])
-        dists = cdist(positions, positions)
-        np.fill_diagonal(dists, np.inf)
-        valid_dists = dists[dists < np.inf]
+        valid_dists = pdist(positions)
         if len(valid_dists) > 0:
             mean_dist = np.mean(valid_dists)
             std_dist = np.std(valid_dists)
@@ -1617,16 +1617,14 @@ class NeuralODEDynamics:
             return None
         node_ids = list(nodes.keys())
         positions = np.array([nodes[nid].latent_pos for nid in node_ids])
-        n = len(positions)
-        dists = cdist(positions, positions)
-        np.fill_diagonal(dists, np.inf)
+        tree = cKDTree(positions)
+        pairs = tree.query_pairs(2.0)
         gradient = np.zeros_like(positions)
-        for i in range(n):
-            for j in range(i + 1, n):
-                if dists[i, j] < 2.0:
-                    direction = (positions[i] - positions[j]) / (dists[i, j] + 1e-8)
-                    gradient[i] += direction * 0.01
-                    gradient[j] -= direction * 0.01
+        for i, j in pairs:
+            dist = np.linalg.norm(positions[i] - positions[j])
+            direction = (positions[i] - positions[j]) / (dist + 1e-8)
+            gradient[i] += direction * 0.01
+            gradient[j] -= direction * 0.01
         return gradient.flatten()
 
     def compute_response_smoothness(self) -> float:
@@ -2733,9 +2731,8 @@ class TopologyHealer:
         if len(nodes) < 3:
             return []
         positions = np.array([n.latent_pos for n in nodes.values()])
-        dists = cdist(positions, positions)
-        np.fill_diagonal(dists, np.inf)
-        min_dists = np.min(dists, axis=1)
+        tree = cKDTree(positions)
+        min_dists = tree.query(positions, k=2)[0][:, 1]
         threshold = np.median(min_dists) * (1.0 + self.dead_zone_threshold * 5)
         return [nid for i, nid in enumerate(nodes) if min_dists[i] > threshold]
 
@@ -2743,17 +2740,15 @@ class TopologyHealer:
         if len(nodes) < 3:
             return False
         positions = np.array([n.latent_pos for n in nodes.values()])
-        dists = cdist(positions, positions)
-        np.fill_diagonal(dists, np.inf)
-        return np.mean(dists[dists < np.inf]) < self.hyperconvergence_threshold
+        return np.mean(pdist(positions)) < self.hyperconvergence_threshold
 
     def detect_fragmentation(self, nodes: Dict[str, MemoryNode], radius: float = 2.0) -> float:
         if len(nodes) < 2:
             return 0.0
         positions = np.array([n.latent_pos for n in nodes.values()])
-        dists = cdist(positions, positions)
-        np.fill_diagonal(dists, np.inf)
-        isolated = np.sum(np.all(dists > radius, axis=1))
+        tree = cKDTree(positions)
+        neighbors = tree.query_ball_point(positions, radius)
+        isolated = sum(1 for nbrs in neighbors if len(nbrs) <= 1)
         return float(isolated / len(nodes))
 
     def compute_field_health(self, nodes: Dict[str, MemoryNode]) -> Tuple[FieldHealth, Dict]:
@@ -2767,9 +2762,7 @@ class TopologyHealer:
         diagnostics["fragmentation"] = frag
         if len(nodes) >= 3:
             positions = np.array([n.latent_pos for n in nodes.values()])
-            dists = cdist(positions, positions)
-            np.fill_diagonal(dists, np.inf)
-            valid = dists[dists < np.inf]
+            valid = pdist(positions)
             diagnostics["avg_pairwise_dist"] = float(np.mean(valid))
             diagnostics["std_pairwise_dist"] = float(np.std(valid))
             diagnostics["density_cv"] = float(np.std(valid) / max(np.mean(valid), 1e-8))
@@ -3349,18 +3342,16 @@ class TDAMonitor:
             return {"H0": 0, "H1": 0, "avg_persistence": 0.0}
         positions = np.array([n.latent_pos for n in nodes.values()])
         n = len(positions)
-        dists = cdist(positions, positions)
-        np.fill_diagonal(dists, np.inf)
-        valid = dists[dists < np.inf]
+        valid = pdist(positions)
         if len(valid) < 2:
             return {"H0": n, "H1": 0, "avg_persistence": 0.0}
         threshold = np.median(valid)
         
-        # Union-Find with path compression — O(N² α(N)) ≈ O(N²)
+        # Union-Find with path compression — O(N log N) with cKDTree
         parent = list(range(n))
         def find(x):
             while parent[x] != x:
-                parent[x] = parent[parent[x]]  # Path compression
+                parent[x] = parent[parent[x]]
                 x = parent[x]
             return x
         def union(x, y):
@@ -3368,10 +3359,9 @@ class TDAMonitor:
             if px != py:
                 parent[px] = py
         
-        for i in range(n):
-            for j in range(i + 1, n):
-                if dists[i, j] < threshold:
-                    union(i, j)
+        tree = cKDTree(positions)
+        for i, j in tree.query_pairs(threshold):
+            union(i, j)
         
         h0 = len(set(find(i) for i in range(n)))
         h1 = max(0, len(valid) - n + h0)
@@ -3726,6 +3716,7 @@ def build_system_prompt(context: str, fmt: ContextFormat, use_structured: bool) 
 class RTMDKField:
     def __init__(self, config: RTMDKConfig, projection_matrix: Optional[NDArray] = None):
         self.cfg = config
+        self._rng = np.random.default_rng(config.seed)
         self.nodes: Dict[str, MemoryNode] = {}
         self.node_index: List[str] = []
 
@@ -3748,7 +3739,7 @@ class RTMDKField:
         else:
             self.projection_learner = None
             self._raw_projection = (projection_matrix.astype(np.float32) if projection_matrix is not None
-                                    else np.random.randn(config.embedding_dim, config.latent_dim).astype(np.float32) * 0.1)
+                                    else self._rng.standard_normal((config.embedding_dim, config.latent_dim)).astype(np.float32) * 0.1)
 
         self.adaptive_threshold = AdaptiveThreshold(config.adaptive_window, config.tension_threshold) if config.adaptive_threshold else None
         self.bm25_index = BM25Index(config.bm25_k1, config.bm25_b) if config.bm25_fallback else None
@@ -3843,7 +3834,7 @@ class RTMDKField:
         self.shard_router: Optional[NDArray] = None
         self._node_shard_map: Dict[str, int] = {}
         if config.sparse_routing:
-            self.shard_centers = np.random.randn(config.num_shards, config.latent_dim).astype(np.float32)
+            self.shard_centers = self._rng.standard_normal((config.num_shards, config.latent_dim)).astype(np.float32)
             self.shard_router = np.zeros(config.num_shards, dtype=np.float32)
 
         # Phase 12 Track 3: Crystallization
@@ -4477,9 +4468,7 @@ class RTMDKField:
             self.meta_kernel.record_response(results[0][1] if results else 0.0)
             if len(results) >= 2:
                 positions = np.array([n.latent_pos for _, _, n in results])
-                dists = cdist(positions, positions)
-                np.fill_diagonal(dists, np.inf)
-                valid = dists[dists < np.inf]
+                valid = pdist(positions)
                 density = 1.0 / (1.0 + np.mean(valid)) if len(valid) > 0 else 0.0
                 self.meta_kernel.record_semantic_density(float(density))
             if len(results) >= 2:
@@ -5110,7 +5099,7 @@ class RTMDKField:
                 continue
             node = self.nodes[nid]
             # FIX: Probe around the node's actual position, not np.zeros
-            probe = node.latent_pos + np.random.normal(0, 0.05, node.latent_pos.shape)
+            probe = node.latent_pos + self._rng.normal(0, 0.05, node.latent_pos.shape)
             results = self.query(probe, phase=node.phase, top_k=1)
             if results and results[0][0] == nid:
                 node.self_sup_score = max(0.5, results[0][1])
@@ -5127,7 +5116,7 @@ class RTMDKField:
                 continue
             node = self.nodes[nid]
             # FIX: Probe around the node's actual position
-            probe = node.latent_pos + np.random.normal(0, 0.05, node.latent_pos.shape)
+            probe = node.latent_pos + self._rng.normal(0, 0.05, node.latent_pos.shape)
             results = self.query(probe, phase=node.phase, top_k=1)
             if results and results[0][0] == nid:
                 node.self_sup_score = max(0.5, results[0][1])
@@ -5214,7 +5203,7 @@ class RTMDKField:
                 node.amplitude = self.cfg.min_amplitude
             # Fix 11: Actually heal NaN positions by resetting to small random values
             if needs_heal:
-                node.latent_pos = np.random.randn(self.cfg.latent_dim).astype(np.float32) * 0.01
+                node.latent_pos = self._rng.standard_normal(self.cfg.latent_dim).astype(np.float32) * 0.01
                 healed.append(nid)
                 self.stats["field_integrity_issues"] = self.stats.get("field_integrity_issues", 0) + 1
         return {
@@ -5596,9 +5585,9 @@ class RTMDKField:
         if diagnostics.get("fragmentation", 0) > self.cfg.fragmentation_threshold:
             if len(self.nodes) >= 2:
                 positions = np.array([n.latent_pos for n in self.nodes.values()])
-                dists = cdist(positions, positions)
-                np.fill_diagonal(dists, np.inf)
-                isolated = [self.node_index[i] for i in range(len(self.node_index)) if np.all(dists[i] > 2.0)]
+                tree = cKDTree(positions)
+                neighbors = tree.query_ball_point(positions, 2.0)
+                isolated = [self.node_index[i] for i in range(len(self.node_index)) if len(neighbors[i]) <= 1]
                 if isolated:
                     healed.extend(self.healer.heal_fragmentation(self.nodes, isolated))
         if healed:
