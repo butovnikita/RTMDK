@@ -5,7 +5,7 @@ Tests how RTMDK forgets over time at different decay_rate values.
 Also measures BM25 contribution vs resonance-based recall.
 
 Usage:
-    python test_forgetting_curve.py
+    python tests/test_forgetting_curve.py
 """
 
 import os

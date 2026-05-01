@@ -150,7 +150,7 @@ rtmdk/                              # Python-пакет (72+ публичных 
 | `streamlit_app.py` | Интерактивный дашборд |
 | `eval_pipeline.py` | Benchmarks: ContinualQA, LongBench, MemoryBench |
 | `swarm_memory.py` | Мультиагентная роевая память |
-| `smoke_test.py` | Быстрая проверка критических путей |
+| `tests/smoke_test.py` | Быстрая проверка критических путей |
 | `embedder_factory.py` | Unified embedding интерфейс |
 
 ---
@@ -862,7 +862,7 @@ python lmstudio_rtmdk_chat.py
 
 ```bash
 # Smoke test (быстрая проверка)
-python smoke_test.py
+python tests/smoke_test.py
 
 # Eval pipeline
 python eval_pipeline.py --n_samples 50

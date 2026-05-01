@@ -235,7 +235,7 @@ environment:
 curl http://localhost:8080/health
 
 # Smoke test
-python smoke_test.py
+python tests/smoke_test.py
 
 # Python REPL
 from rtmdk import RTMDKMemory, RTMDKConfig

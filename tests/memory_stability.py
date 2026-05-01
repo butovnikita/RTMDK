@@ -11,11 +11,11 @@ Tests the CORE properties of a long-term memory system:
 7. Scalability stability (recall doesn't drop with N growth)
 
 Run standalone:
-    python test_memory_stability.py
+    python tests/test_memory_stability.py
 
 Run with pytest (if installed):
     pip install pytest
-    pytest test_memory_stability.py -v
+    pytest tests/test_memory_stability.py -v
 """
 
 import os

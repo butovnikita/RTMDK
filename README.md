@@ -169,8 +169,8 @@ RTMDK v8.1 (25,000+ строк, 75+ файлов, 105+ API)
 ├── rtmdk_sillytavern_launcher.py  # SillyTavern launcher
 ├── rtmdk_st_proxy.py           # SillyTavern proxy
 ├── embedder_lmstudio.py        # LM Studio embedder
-├── generate_qa_1000.py         # QA dataset generator
-├── smoke_test.py               # Smoke tests
+├── archive/scripts/generate_qa_1000.py  # QA dataset generator
+├── tests/smoke_test.py          # Smoke tests
 ├── Dockerfile / Dockerfile.home / Dockerfile.gpu
 ├── docker-compose.yml / docker-compose.prod.yml / docker-compose.home.yml
 └── requirements*.txt
