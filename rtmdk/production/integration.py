@@ -497,8 +497,8 @@ def create_production_memory(
 if __name__ == "__main__":
     # Example embedder (replace with real one)
     def dummy_embedder(text: str) -> np.ndarray:
-        np.random.seed(hash(text) % 2**32)
-        return np.random.randn(768).astype(np.float32) * 0.1
+        rng = np.random.default_rng(hash(text) % 2**32)
+        return rng.standard_normal(768).astype(np.float32) * 0.1
     
     # Create production memory
     memory = create_production_memory(

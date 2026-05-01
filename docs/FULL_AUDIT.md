@@ -118,7 +118,7 @@
 |---|---------|--------|---------|
 | 1 | O(N²) в `consolidate()` без HNSW | 4404-4470 | При 5000 узлов: 25M ops/call |
 | 2 | `cdist(N,N)` в 7+ местах | 1140, 1491, 2591, 2601, 2609, 2625, 3175 | 100MB матрица при N=5000 |
-| 3 | `np.random.seed()` глобально | 4244 | Race condition в многопоточности |
+| 3 | `np.random.seed()` глобально | — | ✅ Fixed — заменено на `default_rng()` |
 | 4 | Дублирование consolidate ветвей | HNSW vs fallback | 60 строк × 2 = баги при изменениях |
 | 5 | `query()` строит полный список кортежей | 3948 | 5000 кортежей на каждый запрос |
 
@@ -191,7 +191,7 @@
    - Обновить `production/__init__.py` exports
 
 5. **Fix Performance Hotspots**
-   - Заменить `np.random.seed()` на `np.random.RandomState()`
+   - ✅ Заменено `np.random.seed()` на `np.random.default_rng()` во всех файлах
    - Добавить лимит на healing history
    - Оптимизировать consolidate fallback
 

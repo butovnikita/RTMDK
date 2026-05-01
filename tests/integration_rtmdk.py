@@ -33,8 +33,8 @@ class MockEmbedder:
     
     def __call__(self, text: str) -> np.ndarray:
         # Create deterministic embedding based on text hash
-        np.random.seed(hash(text) % (2**32))
-        emb = np.random.randn(self.dim).astype(np.float32)
+        rng = np.random.default_rng(hash(text) % (2**32))
+        emb = rng.standard_normal(self.dim).astype(np.float32)
         # Normalize
         norm = np.linalg.norm(emb)
         if norm > 0:

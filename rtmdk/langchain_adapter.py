@@ -88,8 +88,8 @@ class RTMDKMemory(BaseChatMessageHistory):
         if self._embedder:
             embedding = self._embedder(str(content))
         else:
-            np.random.seed(hash(str(content)) % 2**32)
-            embedding = np.random.randn(768).astype(np.float32) * 0.1
+            rng = np.random.default_rng(hash(str(content)) % 2**32)
+            embedding = rng.standard_normal(768).astype(np.float32) * 0.1
 
         role = "user" if isinstance(message, HumanMessage) else "assistant"
         self._core.save_context(

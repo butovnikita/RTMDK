@@ -81,12 +81,12 @@ class LMStudioEmbedder:
 
 def _hash_embedder(text: str, dim: int = 768) -> np.ndarray:
     """Deterministic keyword-based fallback."""
-    np.random.seed(42)
-    base = np.random.randn(dim).astype(np.float32) * 0.01
+    rng = np.random.default_rng(42)
+    base = rng.standard_normal(dim).astype(np.float32) * 0.01
     tokens = text.lower().split()
     for tok in tokens[:20]:
-        np.random.seed(hash(tok + "fallback_seed") % 2**32)
-        direction = np.random.randn(dim).astype(np.float32)
+        tok_rng = np.random.default_rng(hash(tok + "fallback_seed") % 2**32)
+        direction = tok_rng.standard_normal(dim).astype(np.float32)
         direction = direction / (np.linalg.norm(direction) + 1e-8)
         base += direction * 0.5
     return base

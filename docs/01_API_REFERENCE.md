@@ -177,7 +177,7 @@ from rtmdk import RTMDKConfig, RTMDKMemory
 import numpy as np
 
 def embedder(text: str) -> np.ndarray:
-    np.random.seed(hash(text) % 2**32)
+    rng = np.random.default_rng(hash(text) % 2**32)
     return np.random.randn(768).astype(np.float32) * 0.1
 
 config = RTMDKConfig(

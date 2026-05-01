@@ -29,8 +29,8 @@ from rtmdk.utils.domain_classifier import detect_domain, get_domain_stats
 def make_embedder(dim=768):
     """Create a deterministic fake embedder."""
     def embedder(text):
-        np.random.seed(hash(text) % 2**32)
-        return np.random.randn(dim).astype(np.float32) * 0.1
+        rng = np.random.default_rng(hash(text) % 2**32)
+        return rng.standard_normal(dim).astype(np.float32) * 0.1
     return embedder
 
 

@@ -665,7 +665,7 @@ def poincare_dist(u: NDArray, v: NDArray, ball_radius: float = 0.85) -> float:
     r_sq = ball_radius ** 2
     denom = ((r_sq - u_norm ** 2) * (r_sq - v_norm ** 2)) / max(r_sq, 1e-8)
     arg = 1 + 2 * sq_delta / max(denom, 1e-8)
-    return float(np.arccosh(np.clip(arg, 1.0, None)))
+    return float(ball_radius * np.arccosh(np.clip(arg, 1.0, None)))
 
 
 def exp_map_poincare(tangent: NDArray, base: NDArray, ball_radius: float = 0.85) -> NDArray:
@@ -3364,7 +3364,8 @@ class TDAMonitor:
             union(i, j)
         
         h0 = len(set(find(i) for i in range(n)))
-        h1 = max(0, len(valid) - n + h0)
+        n_edges_threshold = len(tree.query_pairs(threshold))
+        h1 = max(0, n_edges_threshold - n + h0)
         result = {"H0": h0, "H1": h1, "avg_persistence": 0.0}
         self.history.append(result)
         return result
@@ -4890,11 +4891,20 @@ class RTMDKField:
                                             0.5*(np.cos(node.phase)+np.cos(partner.phase))) % (2*np.pi)
                     node.amplitude = min(1.0, 0.8*(node.amplitude+partner.amplitude))
                     node.salience = min(1.0, 0.7*(node.salience+partner.salience))
+                else:
+                    # MERGE and PRUNE modes: same spatial merge, keep amplitude/salience from survivor
+                    node.latent_pos = 0.5 * (node.latent_pos + partner.latent_pos)
+                    node.phase = np.arctan2(0.5*(np.sin(node.phase)+np.sin(partner.phase)),
+                                            0.5*(np.cos(node.phase)+np.cos(partner.phase))) % (2*np.pi)
 
                 node.tension = 0.0
                 node.soft_gate = 1.0
                 node.lineage = [f"{node.id}+{pid}"] + node.lineage + partner.lineage
+                # Preserve partner content for traceability
                 node.content["synthesis_note"] = f"Consolidated with {pid} at t={time.time():.0f}"
+                if "merged_content" not in node.content:
+                    node.content["merged_content"] = []
+                node.content["merged_content"].append(partner.content.get("text", "") or partner.content.get("input_text", ""))
 
                 if self.causal_engine:
                     for parent, strength in partner.causal_strength.items():
@@ -5189,9 +5199,13 @@ class RTMDKField:
         healed = []
         for nid, node in self.nodes.items():
             needs_heal = False
-            if np.any(np.isnan(node.latent_pos)) or np.any(np.isinf(node.latent_pos)):
+            if np.any(np.isnan(node.latent_pos)):
                 n_nan += 1
-                issues.append(f"NaN/Inf in {nid} — will heal")
+                issues.append(f"NaN in {nid} — will heal")
+                needs_heal = True
+            if np.any(np.isinf(node.latent_pos)):
+                n_inf += 1
+                issues.append(f"Inf in {nid} — will heal")
                 needs_heal = True
             if np.isnan(node.phase) or np.isinf(node.phase):
                 issues.append(f"Invalid phase in {nid} — will heal")
@@ -5331,7 +5345,7 @@ class RTMDKField:
                     target = self._project(emb)
                     node.latent_pos += self.cfg.attraction_lr * (target - node.latent_pos)
                     pd = (phase - node.phase + np.pi) % (2*np.pi) - np.pi
-                    node.phase += self.cfg.phase_sync_lr * pd
+                    node.phase = (node.phase + self.cfg.phase_sync_lr * pd) % (2 * np.pi)
                     node.amplitude = min(1.0, node.amplitude + 0.05)
                     node.salience = min(1.0, node.salience + 0.03)
                 else:

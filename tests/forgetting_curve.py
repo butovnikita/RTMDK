@@ -29,12 +29,12 @@ except Exception as e:
     USING_REAL_EMBEDDER = False
     def make_hash_embedder(dim=768):
         def embed(text):
-            np.random.seed(42)
-            base = np.random.randn(dim).astype(np.float32) * 0.01
+            rng = np.random.default_rng(42)
+            base = rng.standard_normal(dim).astype(np.float32) * 0.01
             tokens = text.lower().split()
             for tok in tokens[:20]:
-                np.random.seed(hash(tok + "fc_seed") % 2**32)
-                d = np.random.randn(dim).astype(np.float32)
+                tok_rng = np.random.default_rng(hash(tok + "fc_seed") % 2**32)
+                d = tok_rng.standard_normal(dim).astype(np.float32)
                 d = d / (np.linalg.norm(d) + 1e-8)
                 base += d * 0.5
             return base

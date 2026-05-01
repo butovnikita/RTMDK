@@ -395,8 +395,8 @@ def get_embedding(text: str, model: str = None) -> np.ndarray:
             logger.warning(f"Embedding error: {e}, using fallback")
             break
 
-    np.random.seed(hash(text) % 2**32)
-    emb = np.random.randn(768).astype(np.float32) * 0.1
+    rng = np.random.default_rng(hash(text) % 2**32)
+    emb = rng.standard_normal(768).astype(np.float32) * 0.1
     embedder_cache[text] = emb
     return emb
 
