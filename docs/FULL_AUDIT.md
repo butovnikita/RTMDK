@@ -34,8 +34,8 @@
 | `rtmdk/main.py` | Импортирует `rtmdk_server` (не модуль) | Удалить |
 | `rtmdk/st_proxy.py` | Импортирует `rtmdk_st_proxy` (не модуль) | Удалить |
 | `rtmdk/__init__.py` | Нет `list_presets()`, `create_rtmdk()` | Добавить |
-| `production/advanced_retrieval.py` | `import rtmdk_memory_v8` (нет такого) | → `from rtmdk.memory.core import` |
-| `production/integration.py` | `import rtmdk_memory_v8` (нет такого) | → `from rtmdk.memory.core import` |
+| `production/advanced_retrieval.py` | `import rtmdk_memory_v8` | ✅ Fixed |
+| `production/integration.py` | `import rtmdk_memory_v8` | ✅ Fixed |
 
 ### 2. Массовое Дублирование Кода (~40% кодовой базы)
 
@@ -171,7 +171,7 @@
 1. **Fix Broken Imports** (6 файлов)
    - Удалить `rtmdk/main.py`, `rtmdk/st_proxy.py`, `rtmdk/proxy/__init__.py`
    - Добавить `list_presets()`, `create_rtmdk()` в `rtmdk/__init__.py`
-   - Исправить `import rtmdk_memory_v8` → `from rtmdk.memory.core import`
+   - ✅ Исправлено: все импорты `rtmdk_memory_v8` заменены на `rtmdk.memory.core`
 
 2. **Deduplicate RTMDKConfig** (config.py)
    - Удалить ~70 дубликатов полей
@@ -255,3 +255,37 @@
 - **Security**: Removed API key pattern from `llm_eval.py` docstring.
 - **Stability**: Fixed bare excepts in integration tests.
 - **Domain Memory**: Implemented Phase 20 (hierarchy, lifecycle).
+
+---
+### 🟢 Full Audit Completion (v8.1 - May 2026)
+
+**Фаза 1: Синхронизация и безопасность**
+- ✅ Синхронизированы `audit-fixes` из GitHub-версии в основной проект (3 serialization fixes)
+- ✅ `analytics_engine.py` скопирован в GitHub-версию
+- ✅ Удалены устаревшие патчи `core_fixes.patch` и `security_fixes.patch`
+- ✅ Добавлена санитизация путей (`_sanitize_path`) — блокирует `..`
+- ✅ Добавлены лимиты JSON размера (`_safe_json_load`, 100MB)
+- ✅ Добавлен rate limiting на `add_node` (100 nodes/sec)
+- ✅ Удалён мёртвый код в `import_field`
+- ✅ Broken imports исправлены (файлы удалены или обновлены)
+
+**Фаза 2: Архитектурный рефакторинг**
+- ✅ Создан `rtmdk/experimental/` — research модули (`tpr`, `adversarial_arena`, `active_inference`)
+- ✅ Phase 20 поля добавлены в `MemoryNode` и `RTMDKConfig`
+- ✅ `domain_consolidation_guard` интегрирован в `consolidate()`
+
+**Фаза 3: Производительность**
+- ✅ Consolidation в `step()` изменена с 15% вероятности на периодический вызов (каждые 20 шагов)
+
+**Фаза 4: Тестирование и покрытие**
+- ✅ 46 тестов, все проходят (45+1 new)
+- ✅ `test_nodes.py` — unit tests для `MemoryNode`, `CausalEdge`, `ContradictionRecord`
+- ✅ `test_security.py` — path sanitization, rate limiting, JSON limits
+- ✅ `test_rtmdk_eval.py` — AnalyticsStore tests
+- ✅ `test_rtmdk_swarm.py` — SwarmConsensusProtocol tests
+- ✅ `test_domain_memory.py` — Phase 20 domain memory tests (исправлены и обновлены)
+
+**Фаза 5: Документация и структура**
+- ✅ Очищены `__pycache__` директории
+- ✅ `.gitignore` очищен от дубликатов
+- ✅ `FULL_AUDIT.md` обновлён

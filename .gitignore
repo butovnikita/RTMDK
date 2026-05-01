@@ -49,9 +49,9 @@ app.log
 
 # Docker
 .env
-myenv/
-myenv/
-myenv/
-myenv/
-myenv/
-myenv/
+
+# Archive (legacy benchmarks/debug — not part of source)
+archive/
+
+# GitHub mirror copy (maintained separately)
+rtmdk_github/

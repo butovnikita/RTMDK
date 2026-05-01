@@ -54,10 +54,10 @@
 
 | Компонент | Описание | Файл |
 |-----------|----------|------|
-| **MemoryNode** | Узел памяти: фаза, амплитуда, салентность, латентная позиция | `nodes.py` |
-| **RTMDKField** | Поле памяти: резонанс, консолидация, decay | `rtmdk_memory_v8.py` |
-| **Resonance** | K_spatial × K_phase × A × S — мера релевантности | `rtmdk_memory_v8.py` |
-| **Consolidation** | Диалектическое слияние узлов с высоким напряжением | `rtmdk_memory_v8.py` |
+| **MemoryNode** | Узел памяти: фаза, амплитуда, салентность, латентная позиция | `memory/core.py` (inline), `nodes.py` (standalone) |
+| **RTMDKField** | Поле памяти: резонанс, консолидация, decay | `memory/core.py` |
+| **Resonance** | K_spatial × K_phase × A × S — мера релевантности | `memory/core.py` |
+| **Consolidation** | Диалектическое слияние узлов с высоким напряжением | `memory/core.py` |
 | **HNSW** | Приближённый поиск O(log N) | `support/hnsw.py` |
 | **BM25** | Текстовый поиск fallback | `support/bm25.py` |
 | **IncPCA** | Инкрементальная проекция | `support/projection.py` |
@@ -338,6 +338,62 @@ services:
 
 ---
 
+## Модульная структура (post-audit)
+
+```
+rtmdk/
+├── __init__.py          # Публичный API
+├── cli.py               # CLI интерфейс
+├── config.py            # 8 пресетов RTMDKConfig
+│
+├── memory/              # Core kernel
+│   ├── core.py          # RTMDKField, RTMDKMemory (~7000 lines)
+│   ├── serialization.py # Экспорт/импорт полей (msgpack/zlib/JSON)
+│   ├── snapshot.py      # Дельта-версионирование
+│   └── __init__.py
+│
+├── nodes.py             # Standalone dataclasses (MemoryNode, CausalEdge)
+│
+├── engines/             # Специализированные движки
+│   ├── dreamer.py       # OfflineDreamer (фоновая оптимизация)
+│   ├── causal.py        # CausalTraversalEngine
+│   ├── consensus.py     # SwarmConsensusProtocol
+│   ├── ssm.py           # SSMDynamics (Mamba)
+│   ├── symbolic.py      # SymbolicOverlay + NeuroSymbolicProver
+│   └── trust.py         # TrustConsensus
+│
+├── production/          # Production layer
+│   ├── analytics_engine.py   # SQLite analytics
+│   ├── cache_manager.py      # LRU кэш
+│   ├── trust_scorer.py       # Репутационные веса
+│   └── prover_factory.py     # Z3 / Prolog интеграция
+│
+├── support/             # Индексы и утилиты
+│   ├── hnsw.py          # HNSW индекс O(log N)
+│   ├── bm25.py          # Текстовый fallback
+│   └── projection.py    # IncPCA
+│
+├── utils/               # Хелперы
+│   └── domain_classifier.py  # Pattern-based domain detection
+│
+└── experimental/        # Исследовательские модули (опциональные)
+    ├── tpr.py           # Tensor Product Representations
+    ├── adversarial_arena.py  # Self-play robustness
+    └── active_inference.py   # Curiosity-driven exploration
+```
+
+## Тестовое покрытие
+
+| Модуль | Тесты | Статус |
+|--------|:-----:|:------:|
+| Security | `test_security.py` (9 тестов) | ✅ Pass |
+| MemoryNode | `test_nodes.py` (5 тестов) | ✅ Pass |
+| Phase 20 Domain | `test_domain_memory.py` (13 тестов) | ✅ Pass |
+| Analytics | `test_rtmdk_eval.py` (9 тестов) | ✅ Pass |
+| Swarm Consensus | `test_rtmdk_swarm.py` (10 тестов) | ✅ Pass |
+
+**Итого: 46 тестов, все проходят.**
+
 ## Статистика проекта
 
 | Метрика | Значение |
@@ -348,9 +404,11 @@ services:
 | **Модулей** | 28 |
 | **Публичных API** | 105+ |
 | **Профилей** | 8 |
-| **Phases** | 19 |
+| **Phases** | 20 |
 | **Документации** | 8 файлов |
+| **Тестов** | 46 |
 
 ---
 
 *Документ создан: Апрель 2026, RTMDK v8.1*
+*Обновлён: Май 2026 (post-audit)*

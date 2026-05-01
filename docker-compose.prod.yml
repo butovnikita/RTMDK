@@ -1,0 +1,50 @@
+# RTMDK Production Docker Compose
+# Clean deployment — No SillyTavern modules.
+version: "3.8"
+
+services:
+  rtmdk:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rtmdk-server
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - RTMDK_HOST=0.0.0.0
+      - RTMDK_PORT=8080
+      - RTMDK_LOG_LEVEL=INFO
+      - RTMDK_MEMORY_FILE=/data/memory.json
+      - LM_STUDIO_URL=${LM_STUDIO_URL:-http://host.docker.internal:12345/v1}
+      - RTMDK_EMBED_MODEL=${RTMDK_EMBED_MODEL:-nomic-embed-text-v1.5}
+      - RTMDK_API_KEY=${RTMDK_API_KEY:-rtmdk-local}
+      - RTMDK_ENABLE_API_AUTH=${RTMDK_ENABLE_API_AUTH:-true}
+      - RTMDK_ENABLE_LM_STUDIO=${RTMDK_ENABLE_LM_STUDIO:-true}
+      - RTMDK_AUTO_SAVE_INTERVAL=${RTMDK_AUTO_SAVE_INTERVAL:-60}
+    volumes:
+      - rtmdk-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 8G
+        reservations:
+          cpus: "1.0"
+          memory: 2G
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+    stop_grace_period: 30s
+
+volumes:
+  rtmdk-data:
+    driver: local

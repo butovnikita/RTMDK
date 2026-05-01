@@ -81,8 +81,8 @@ RTMDK (Resonance-Topological Memory) — система памяти для LLM,
 # Модульный стиль (рекомендуется для новых проектов)
 from rtmdk import RTMDKMemory, RTMDKConfig, MemoryNode
 
-# Монолитный стиль (обратная совместимость)
-from rtmdk_memory_v8 import RTMDKMemory, RTMDKConfig, MemoryNode
+# Ядро напрямую
+from rtmdk.memory.core import RTMDKMemory, RTMDKConfig, MemoryNode
 ```
 
 ---
@@ -144,7 +144,7 @@ rtmdk/                              # Python-пакет (72+ публичных 
 
 | Файл | Описание |
 |------|----------|
-| `rtmdk_memory_v8.py` | Монолитное ядро: RTMDKField + RTMDKMemory (~5600 строк) |
+| `rtmdk/memory/core.py` | Ядро системы: RTMDKField + RTMDKMemory (~7000 строк) |
 | `rtmdk_server.py` | OpenAI-compatible HTTP-сервер |
 | `lmstudio_rtmdk_chat.py` | CLI-чат через LM Studio |
 | `streamlit_app.py` | Интерактивный дашборд |
@@ -910,7 +910,7 @@ v8 = V8Memory.import_field("state.json", embedder)
 - Все поля `MemoryNode` сохраняются/загружаются корректно
 - Новые поля получают значения по умолчанию при загрузке старого state
 - `RTMDKConfig` — новые параметры получают дефолтные значения
-- Монолит `rtmdk_memory_v8.py` и пакет `rtmdk/` полностью синхронизированы
+- Пакет `rtmdk/` — единственный актуальный источник кода
 
 ---
 
