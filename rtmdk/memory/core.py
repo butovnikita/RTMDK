@@ -38,6 +38,11 @@ from scipy import stats as scipy_stats
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 import logging
 
+# Extracted engine classes (kept in sync with rtmdk/support/ modules)
+from rtmdk.support.kuramoto import KuramotoSync, FederatedRTMDK
+from rtmdk.support.hnsw import HNSWIndex
+from rtmdk.support.bm25 import BM25Index
+
 logger = logging.getLogger(__name__)
 
 # Custom exceptions (Fix 7: security violations should raise, not return "")
@@ -1323,190 +1328,6 @@ class MetaController:
         self._total_optimizations = state.get("total_optimizations", 0)
         self._step_counter = state.get("step_counter", 0)
         self._last_optimization_time = state.get("last_optimization_time", 0.0)
-
-
-# ============================================================================
-# TRACK 10.3: KURAMOTO SYNCHRONIZATION & FEDERATED SYNC
-# ============================================================================
-
-class KuramotoSync:
-    def __init__(self, coupling_strength: float = 0.5, dt: float = 0.01):
-        self.coupling_strength = coupling_strength
-        self.dt = dt
-        self.phases: Dict[str, float] = {}
-        self.natural_freqs: Dict[str, float] = {}
-        self._order_history: deque = deque(maxlen=100)
-
-    def add_oscillator(self, node_id: str, phase: float, natural_freq: float = 1.0):
-        self.phases[node_id] = phase
-        self.natural_freqs[node_id] = natural_freq
-
-    def remove_oscillator(self, node_id: str):
-        self.phases.pop(node_id, None)
-        self.natural_freqs.pop(node_id, None)
-
-    def step(self, n_steps: int = 1) -> Dict[str, float]:
-        for _ in range(n_steps):
-            new_phases = {}
-            n = len(self.phases)
-            if n < 2:
-                continue
-            K_over_N = self.coupling_strength / n
-            for nid, phi in self.phases.items():
-                omega = self.natural_freqs.get(nid, 1.0)
-                coupling = 0.0
-                for other_id, other_phi in self.phases.items():
-                    if other_id != nid:
-                        coupling += math.sin(other_phi - phi)
-                new_phases[nid] = (phi + self.dt * (omega + K_over_N * coupling)) % (2 * math.pi)
-            self.phases.update(new_phases)
-        self._order_history.append(self.compute_order_parameter())
-        return self.phases
-
-    def compute_order_parameter(self) -> float:
-        if not self.phases:
-            return 0.0
-        n = len(self.phases)
-        sum_exp = sum(complex(math.cos(p), math.sin(p)) for p in self.phases.values())
-        return abs(sum_exp) / n
-
-    def sync_to_target(self, target_phases: Dict[str, float], n_steps: int = 10) -> Dict[str, float]:
-        for nid, target_phi in target_phases.items():
-            if nid in self.phases:
-                diff = target_phi - self.phases[nid]
-                diff = (diff + math.pi) % (2 * math.pi) - math.pi
-                self.phases[nid] = (self.phases[nid] + self.coupling_strength * diff) % (2 * math.pi)
-        for _ in range(n_steps):
-            self.step()
-        return self.phases
-
-    def get_state(self) -> Dict:
-        return {
-            "phases": dict(self.phases), "natural_freqs": dict(self.natural_freqs),
-            "order_parameter": self.compute_order_parameter(),
-            "coupling_strength": self.coupling_strength,
-        }
-
-    def load_state(self, state: Dict):
-        self.phases = state.get("phases", {})
-        self.natural_freqs = state.get("natural_freqs", {})
-        self.coupling_strength = state.get("coupling_strength", self.coupling_strength)
-
-
-class FederatedRTMDK:
-    def __init__(self, node_id: str = "local", sync_lr: float = 0.01,
-                 sync_freq: int = 100, min_resonance: float = 0.2,
-                 coupling_strength: float = 0.5):
-        self.node_id = node_id
-        self.sync_lr = sync_lr
-        self.sync_freq = sync_freq
-        self.min_resonance = min_resonance
-        self.kuramoto = KuramotoSync(coupling_strength=coupling_strength)
-        self.peers: Dict[str, FederatedNode] = {}
-        self._sync_history: deque = deque(maxlen=100)
-        self._total_syncs = 0
-        self._step_counter = 0
-
-    def register_peer(self, peer: FederatedNode):
-        self.peers[peer.node_id] = peer
-        self.kuramoto.add_oscillator(peer.node_id, peer.phase, peer.natural_freq)
-
-    def unregister_peer(self, peer_id: str):
-        self.peers.pop(peer_id, None)
-        self.kuramoto.remove_oscillator(peer_id)
-
-    def sync_with_peers(self, local_phases: Dict[str, float],
-                        local_params: Dict[str, float]) -> Dict[str, Any]:
-        self._step_counter += 1
-        if self._step_counter % self.sync_freq != 0:
-            return {"synced": False, "reason": "not_sync_step"}
-        if not self.peers:
-            return {"synced": False, "reason": "no_peers"}
-        sync_results = []
-        for peer_id, peer in self.peers.items():
-            if not peer.is_active:
-                continue
-            resonance = self._compute_param_resonance(local_params, peer.params)
-            if resonance < self.min_resonance:
-                continue
-            self.kuramoto.sync_to_target(local_phases, n_steps=5)
-            blended_params = self._blend_params(local_params, peer.params, self.sync_lr)
-            peer.params = blended_params
-            peer.sync_count += 1
-            peer.last_sync_time = time.time()
-            sync_results.append({
-                "peer_id": peer_id, "resonance": resonance,
-                "params_updated": list(blended_params.keys()),
-            })
-        self._total_syncs += 1
-        self._sync_history.append({
-            "time": time.time(), "peers_synced": len(sync_results),
-            "order_parameter": self.kuramoto.compute_order_parameter(),
-        })
-        return {
-            "synced": True, "results": sync_results,
-            "order_parameter": self.kuramoto.compute_order_parameter(),
-            "total_syncs": self._total_syncs,
-        }
-
-    def _compute_param_resonance(self, params_a: Dict[str, float],
-                                  params_b: Dict[str, float]) -> float:
-        common_keys = set(params_a.keys()) & set(params_b.keys())
-        if not common_keys:
-            return 0.0
-        diffs = []
-        for key in common_keys:
-            a, b = params_a[key], params_b[key]
-            denom = max(abs(a) + abs(b), 1e-8)
-            diffs.append(1.0 - abs(a - b) / denom)
-        return float(np.mean(diffs))
-
-    def _blend_params(self, params_a: Dict[str, float],
-                      params_b: Dict[str, float], lr: float) -> Dict[str, float]:
-        blended = {}
-        all_keys = set(params_a.keys()) | set(params_b.keys())
-        for key in all_keys:
-            a = params_a.get(key, 0.0)
-            b = params_b.get(key, 0.0)
-            blended[key] = (1 - lr) * a + lr * b
-        return blended
-
-    def get_aggregated_params(self) -> Dict[str, float]:
-        all_params: Dict[str, List[float]] = defaultdict(list)
-        for peer in self.peers.values():
-            if peer.is_active:
-                for k, v in peer.params.items():
-                    all_params[k].append(v)
-        return {k: float(np.mean(v)) for k, v in all_params.items() if v}
-
-    def get_sync_status(self) -> Dict:
-        return {
-            "node_id": self.node_id, "n_peers": len(self.peers),
-            "active_peers": sum(1 for p in self.peers.values() if p.is_active),
-            "order_parameter": self.kuramoto.compute_order_parameter(),
-            "total_syncs": self._total_syncs,
-            "sync_history": self._sync_history[-10:],
-            "kuramoto_state": self.kuramoto.get_state(),
-        }
-
-    def export_state(self) -> Dict:
-        return {
-            "node_id": self.node_id,
-            "peers": {pid: p.to_dict() for pid, p in self.peers.items()},
-            "kuramoto": self.kuramoto.get_state(),
-            "sync_history": self._sync_history, "total_syncs": self._total_syncs,
-        }
-
-    def import_state(self, state: Dict):
-        self.node_id = state.get("node_id", self.node_id)
-        self._total_syncs = state.get("total_syncs", 0)
-        self._sync_history = state.get("sync_history", [])
-        for pid, pdata in state.get("peers", {}).items():
-            peer = FederatedNode.from_dict(pdata)
-            self.peers[pid] = peer
-            self.kuramoto.add_oscillator(pid, peer.phase, peer.natural_freq)
-        if "kuramoto" in state:
-            self.kuramoto.load_state(state["kuramoto"])
 
 
 # ============================================================================
@@ -3268,55 +3089,6 @@ class IncPCAProjection:
         self.use_sklearn = False
 
 
-class BM25Index:
-    def __init__(self, k1: float = 1.5, b: float = 0.75):
-        self.k1 = k1
-        self.b = b
-        self.documents: Dict[str, str] = {}
-        self.doc_freq: Dict[str, int] = {}
-        self.doc_lengths: Dict[str, int] = {}
-        self.avg_doc_length: float = 0.0
-
-    @staticmethod
-    def _tokenize(text: str) -> List[str]:
-        return re.findall(r"\b\w+\b", text.lower())
-
-    def add_document(self, doc_id: str, text: str):
-        self.documents[doc_id] = text
-        tokens = self._tokenize(text)
-        self.doc_lengths[doc_id] = len(tokens)
-        for token in set(tokens):
-            self.doc_freq[token] = self.doc_freq.get(token, 0) + 1
-        self.avg_doc_length = np.mean(list(self.doc_lengths.values())) if self.doc_lengths else 0.0
-
-    def remove_document(self, doc_id: str):
-        if doc_id in self.documents:
-            text = self.documents.pop(doc_id)
-            for token in set(self._tokenize(text)):
-                self.doc_freq[token] = max(0, self.doc_freq.get(token, 1) - 1)
-                if self.doc_freq[token] == 0:
-                    del self.doc_freq[token]
-            self.doc_lengths.pop(doc_id, None)
-            if self.doc_lengths:
-                self.avg_doc_length = np.mean(list(self.doc_lengths.values()))
-
-    def search(self, query: str, top_k: int = 5) -> List[Tuple[str, float]]:
-        if not self.documents:
-            return []
-        n = len(self.documents)
-        scores = {doc_id: 0.0 for doc_id in self.documents}
-        for token in self._tokenize(query):
-            df = self.doc_freq.get(token, 0)
-            if df == 0:
-                continue
-            idf = math.log((n - df + 0.5) / (df + 0.5) + 1.0)
-            for doc_id, text in self.documents.items():
-                tf = text.lower().count(token)
-                doc_len = self.doc_lengths.get(doc_id, 1)
-                scores[doc_id] += idf * tf * (self.k1 + 1) / (tf + self.k1 * (1 - self.b + self.b * doc_len / max(self.avg_doc_length, 1)))
-        return [(d, s) for d, s in sorted(scores.items(), key=lambda x: x[1], reverse=True)[:top_k] if s > 0]
-
-
 class AdaptiveThreshold:
     def __init__(self, window_size: int = 30, base_threshold: float = 0.25, sensitivity: float = 0.5):
         self.window: deque = deque(maxlen=window_size)
@@ -3377,51 +3149,6 @@ class TDAMonitor:
         if len(recent) >= 3 and recent[-1] > recent[0] * 1.5:
             return "growing_contradictions"
         return "stable"
-
-
-class HNSWIndex:
-    def __init__(self, m: int = 16, ef_construction: int = 200):
-        self.m = m
-        self.ef_construction = ef_construction
-        self.graph: Dict[str, List[str]] = {}
-        self.positions: Dict[str, NDArray] = {}
-
-    def insert(self, node_id: str, pos: NDArray):
-        self.positions[node_id] = pos
-        self.graph[node_id] = []
-        if len(self.positions) <= 1:
-            return
-        candidates = [c for c in list(self.positions.keys()) if c != node_id][:self.ef_construction]
-        if candidates:
-            cand_pos = np.array([self.positions[c] for c in candidates])
-            dists = np.linalg.norm(cand_pos - pos, axis=1)
-            nearest = [candidates[i] for i in np.argsort(dists)[:self.m]]
-            self.graph[node_id] = nearest
-            for nb in nearest:
-                if nb in self.graph:
-                    self.graph[nb].append(node_id)
-                    if len(self.graph[nb]) > self.m * 2:
-                        self.graph[nb] = self.graph[nb][-self.m:]
-
-    def remove(self, node_id: str):
-        self.graph.pop(node_id, None)
-        self.positions.pop(node_id, None)
-        for nid in self.graph:
-            self.graph[nid] = [n for n in self.graph[nid] if n != node_id]
-
-    def search(self, query_pos: NDArray, top_k: int = 10) -> List[str]:
-        if not self.positions:
-            return []
-        start = list(self.positions.keys())[0]
-        candidates = {start}
-        visited = set()
-        for _ in range(min(self.ef_construction, len(self.positions))):
-            best = min((c for c in candidates - visited), key=lambda c: np.linalg.norm(self.positions[c] - query_pos), default=None)
-            if best is None:
-                break
-            visited.add(best)
-            candidates.update(self.graph.get(best, []))
-        return sorted(candidates, key=lambda nid: np.linalg.norm(self.positions[nid] - query_pos))[:top_k]
 
 
 class TorchBackend:
