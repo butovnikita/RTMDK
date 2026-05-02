@@ -43,6 +43,11 @@ import logging
 # Extracted engine classes (kept in sync with rtmdk/support/ modules)
 from rtmdk.support.kuramoto import KuramotoSync, FederatedRTMDK
 from rtmdk.support.hnsw import NaiveGraphIndex, HNSWIndex
+try:
+    from rtmdk.support.hnsw_lib import HNSWLibIndex
+    _HNSWLIB_AVAILABLE = True
+except ImportError:
+    _HNSWLIB_AVAILABLE = False
 from rtmdk.support.bm25 import BM25Index
 
 logger = logging.getLogger(__name__)
@@ -1626,7 +1631,14 @@ class RTMDKField:
         self.gpu_backend = TorchBackend() if config.backend == Backend.TORCH else None
         if self.gpu_backend and not self.gpu_backend.available:
             self.gpu_backend = None
-        self.hnsw_index = NaiveGraphIndex(config.hnsw_m, config.hnsw_ef_construction) if config.use_hnsw else None
+        if config.use_hnsw:
+            if _HNSWLIB_AVAILABLE:
+                self.hnsw_index = HNSWLibIndex(dim=config.latent_dim, m=config.hnsw_m,
+                                               ef_construction=config.hnsw_ef_construction)
+            else:
+                self.hnsw_index = NaiveGraphIndex(config.hnsw_m, config.hnsw_ef_construction)
+        else:
+            self.hnsw_index = None
 
         # Pre-select batch resonance backend to avoid branching in hot path
         if self.gpu_backend and self.gpu_backend.available:

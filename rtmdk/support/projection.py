@@ -32,6 +32,7 @@ class IncPCAProjection:
             self._ipca_error = None  # Store any sklearn errors for fallback
         except ImportError:
             self.use_sklearn = False
+            self._ipca_fitted = False
             self._ipca_error = "sklearn not installed"
 
     def update(self, embedding: NDArray) -> NDArray:
