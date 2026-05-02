@@ -1604,6 +1604,9 @@ class RTMDKField:
         from rtmdk.memory.wal import WAL
         self.wal = WAL(wal_path, enabled=wal_path is not None)
 
+        # Phase 3d: Dirty flag for auto-save — only save if state changed
+        self._dirty = False
+
         # P0: Cached numpy arrays for vectorized query — avoids O(N) Python loop on every query
         self._cached_positions: Optional[NDArray] = None       # (N, latent_dim)
         self._cached_phases: Optional[NDArray] = None          # (N,)
@@ -2659,6 +2662,7 @@ class RTMDKField:
             self.event_scheduler.enqueue("node_added", {"node_id": nid, "modality": modality})
 
         self.wal.append_add_node(nid, content, modality)
+        self._dirty = True
         return nid
 
     def _invalidate_tension_cache(self, node_id: Optional[str] = None):
@@ -3094,6 +3098,7 @@ class RTMDKField:
             self._cache_dirty = True
 
         self.wal.append_consolidate(updated)
+        self._dirty = True
         return updated
 
     def _verify_consistency(self, updated_nodes: List[str], pre_state: Optional[Dict] = None):
@@ -4028,13 +4033,19 @@ class RTMDKField:
         return reward
 
     @_locked
-    def export_field(self, path: str, fmt: str = "json"):
+    def export_field(self, path: str, fmt: Optional[str] = None):
         """Export field state to file.
 
         Args:
             path: Output file path
-            fmt: "json" (default) or "msgpack" (binary, requires msgpack)
+            fmt: "msgpack" (default if available) or "json" (fallback)
         """
+        if fmt is None:
+            try:
+                import msgpack
+                fmt = "msgpack"
+            except ImportError:
+                fmt = "json"
         path = _sanitize_path(path)
         # Safety check: prevent overwriting non-empty file with empty memory
         n_nodes = len(self.nodes)
@@ -4051,6 +4062,7 @@ class RTMDKField:
         logger.info(f"export_field: exporting {n_nodes} nodes to {path}")
         from rtmdk.memory.serialization import FieldSerializer
         FieldSerializer.field_to_file(self, path, fmt)
+        self._dirty = False
         self.wal.truncate()
 
     def get_state(self) -> Dict[str, Any]:
@@ -4937,8 +4949,8 @@ class RTMDKMemory(BaseModel):
         embedding = self.embedder(base_query)
         return self.field.imagine_counterfactual(embedding, intervention)
 
-    def export_field(self, path: str):
-        self.field.export_field(path)
+    def export_field(self, path: str, fmt: Optional[str] = None):
+        self.field.export_field(path, fmt=fmt)
 
     @classmethod
     def import_field(cls, path: str, embedder: Callable,

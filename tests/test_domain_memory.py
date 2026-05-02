@@ -131,7 +131,7 @@ class TestBackwardCompatibility:
         # Export
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             temp_path = f.name
-        memory.export_field(temp_path)
+        memory.export_field(temp_path, fmt="json")
 
         # Manually remove Phase 20 fields to simulate old file
         with open(temp_path, 'r') as f:
