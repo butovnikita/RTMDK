@@ -1,6 +1,6 @@
 # RTMDK — Полная документация
 
-> Версия 8.0 | Модульная архитектура | 45+ модулей | 27 UX-функций | 100+ файлов
+> Версия 8.1 | Модульная архитектура | 45+ модулей | 27 UX-функций | 100+ файлов | Mathematical Enhancement Track (P0–P2) завершён
 
 ---
 
@@ -504,6 +504,26 @@ print(ctx["rtmdk_context"])
 | `sot_merge_freq` | 100 | Шагов между merge-попытками |
 | `sot_min_cooccurrence` | 5 | Минимальная cooccurrence для merge |
 | `sot_use_for_query` | False | Использовать SOT эмбеддинги для query (без external API) |
+
+#### Фаза 22: Mathematical Enhancements (P0–P2)
+
+| Параметр | Default | Описание |
+|----------|---------|----------|
+| `hyperbolic` | False | Геометрия Пуанкаре (P0.1) |
+| `ball_radius` | 0.85 | Радиус шара Пуанкаре (P0.1) |
+| `adaptive_bandwidth` | False | Локальная адаптивная ширина ядра k-NN KDE (P1.2) |
+| `adaptive_bandwidth_k` | 5 | k для k-NN оценки плотности (P1.2) |
+| `conformal_prediction` | False | Inductive Conformal Prediction для retrieval confidence (P1.1) |
+| `conformal_alpha` | 0.10 | Уровень значимости ICP (1 − coverage) (P1.1) |
+| `conformal_min_calib` | 50 | Мин. размер калибровочной выборки (P1.1) |
+| `spectral_consolidation` | False | Spectral Graph Laplacian для кластеризации перед merge (P2.1) |
+| `spectral_max_clusters` | 10 | Макс. число кластеров (авто-выбор через eigengap) (P2.1) |
+| `spectral_sigma` | 1.0 | Ширина ядра affinity-матрицы (P2.1) |
+| `enable_kalman_filter` | False | EKF неопределённости позиций узлов (P2.2) |
+| `kalman_diagonal_approx` | True | Диагональное приближение ковариации (экономия памяти) (P2.2) |
+| `kalman_process_noise` | 0.01 | Шум процесса Q (P2.2) |
+| `kalman_measurement_noise` | 0.1 | Шум измерения R (P2.2) |
+| `kalman_init_variance` | 1.0 | Начальная дисперсия ковариации (P2.2) |
 
 ---
 

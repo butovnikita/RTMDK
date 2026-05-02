@@ -101,3 +101,26 @@ RTMDK_PRESET=local RTMDK_LATENT_DIM=128 python rtmdk_sillytavern_launcher.py
 ```
 
 Доступные пресеты: `local`, `production`, `research`, `enterprise`, `agent`, `legal`, `medical`, `streaming`.
+
+## Mathematical Enhancement Track (P0–P2)
+
+Включается через переменные окружения:
+
+```bash
+# P0.1 — Риманова геометрия (Пуанкаре)
+RTMDK_HYPERBOLIC=true RTMDK_BALL_RADIUS=0.85
+
+# P1.2 — Локальная адаптивная ширина ядра
+RTMDK_ADAPTIVE_BANDWIDTH=true RTMDK_ADAPTIVE_BANDWIDTH_K=5
+
+# P1.1 — Конформальное предсказание
+RTMDK_CONFORMAL_PREDICTION=true RTMDK_CONFORMAL_ALPHA=0.10
+
+# P2.1 — Спектральная кластеризация
+RTMDK_SPECTRAL_CONSOLIDATION=true RTMDK_SPECTRAL_MAX_CLUSTERS=10
+
+# P2.2 — Фильтр Калмана
+RTMDK_ENABLE_KALMAN_FILTER=true RTMDK_KALMAN_DIAGONAL_APPROX=true
+```
+
+Все фичи отключены по умолчанию (`False`). Включайте по одной для оценки влияния на ваш сценарий.

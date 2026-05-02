@@ -47,7 +47,7 @@
 ## P1 — High Value (production quality)
 
 ### P1.1 Conformal Prediction for Retrieval Confidence
-**Owner:** TBD | **Estimate:** 3 days | **Status:** 🔴 Not started
+**Owner:** TBD | **Estimate:** 3 days | **Status:** ✅ Completed (2026-05-01)
 
 **Problem:** `query()` returns scores, but there is no statistical guarantee that the top result is relevant. In production this means LLM may receive garbage context with high "confidence."
 
@@ -76,7 +76,7 @@
 ---
 
 ### P1.2 Local Adaptive Bandwidth (k-NN KDE)
-**Owner:** TBD | **Estimate:** 1 day | **Status:** 🔴 Not started
+**Owner:** TBD | **Estimate:** 1 day | **Status:** ✅ Completed (2026-05-01)
 
 **Problem:** Global `bandwidth` blurs dense clusters and misses sparse concepts. Meta-adaptive kernel adjusts globally, not locally.
 
@@ -95,17 +95,23 @@ where $\text{kdist}_i$ = distance to $k$-th nearest neighbor ($k=5$).
 - k-NN computation is $O(N \log N)$ per cache rebuild; acceptable if cached.
 - Very sensitive to $k$ choice; default $k=5$ should work for 64D.
 
+**Implementation:**
+- `_build_node_cache()` precomputes k-NN distances via `cKDTree` when `adaptive_bandwidth=True`.
+- `_compute_resonance_chunk()` handles scalar and per-node `bw` arrays via `np.isscalar`/`np.maximum`.
+- `_cached_bw` correctly sliced during session filtering.
+- 10 unit tests covering median normalization, dense-vs-sparse bandwidth, cache invalidation, and query correctness.
+
 **Acceptance Criteria:**
-- [ ] `_build_node_cache()` precomputes `kdist` array
-- [ ] `_compute_resonance_chunk()` uses per-node `bw` vector
-- [ ] No regression on `test_chunked_query_matches_non_chunked`
+- [x] `_build_node_cache()` precomputes `kdist` array
+- [x] `_compute_resonance_chunk()` uses per-node `bw` vector
+- [x] No regression on `test_chunked_query_matches_non_chunked`
 
 ---
 
 ## P2 — Medium Value (observability & stability)
 
 ### P2.1 Spectral Graph Laplacian for Consolidation
-**Owner:** TBD | **Estimate:** 2 days | **Status:** 🔴 Not started
+**Owner:** TBD | **Estimate:** 2 days | **Status:** ✅ Completed (2026-05-01)
 
 **Problem:** Greedy pairwise merge in `consolidate()` is $O(N^2)$ and falls into local optima. Does not discover global cluster structure.
 
@@ -126,15 +132,21 @@ where $\text{kdist}_i$ = distance to $k$-th nearest neighbor ($k=5$).
 - `scipy.sparse.linalg.eigsh` may fail on poorly conditioned $L$.
 - Changes merge behavior significantly; needs careful validation.
 
+**Implementation:**
+- `spectral_cluster_nodes()` in `rtmdk/memory/spectral.py` builds affinity, normalized Laplacian, bottom-k eigenvectors, and k-means++ clustering.
+- Eigengap heuristic selects `k*` capped at `spectral_max_clusters`.
+- `_spectral_merge_clusters()` in `RTMDKField` performs greedy pairwise merge within each discovered cluster.
+- 13 unit tests: affinity symmetry, Laplacian eigenvalue bounds, eigengap, k-means, timeout fallback, integration.
+
 **Acceptance Criteria:**
-- [ ] Fallback to greedy merge if eigendecomposition fails or timeout >500ms
-- [ ] `test_domain_memory` backward compatibility preserved
-- [ ] Eigengap auto-$k$ capped at `max_consolidation_clusters` config
+- [x] Fallback to greedy merge if eigendecomposition fails or timeout >500ms
+- [x] `test_domain_memory` backward compatibility preserved
+- [x] Eigengap auto-$k$ capped at `max_consolidation_clusters` config
 
 ---
 
 ### P2.2 Kalman Filtering on Manifold (Riemannian EKF)
-**Owner:** TBD | **Estimate:** 4 days | **Status:** 🔴 Not started
+**Owner:** TBD | **Estimate:** 4 days | **Status:** ✅ Completed (2026-05-01)
 
 **Problem:** `ode_dynamics` and `consolidate()` apply ad-hoc noise. No principled uncertainty tracking for node positions.
 
@@ -155,10 +167,16 @@ where $\text{kdist}_i$ = distance to $k$-th nearest neighbor ($k=5$).
 - High complexity; easy to introduce numerical instabilities.
 - Covariance matrix per node increases memory by $O(d^2)$ per node (64×64 = 16KB per node × 10K nodes = 160MB).
 
+**Implementation:**
+- `KalmanFilter` in `rtmdk/memory/kalman.py` with diagonal and full-matrix modes, hyperbolic support via `log_map`/`exp_map`.
+- `MemoryNode.covariance` serialized in `to_dict`/`from_dict`.
+- Initialized on `add_node`; prediction + update + merge in `_do_merge()`; retrieval weighting in `query()`.
+- 15 unit tests: init shapes, prediction growth, update shrinkage, position shift, merge information gain, query weighting, hyperbolic stay-in-ball.
+
 **Acceptance Criteria:**
-- [ ] Optional feature: `enable_kalman_filter: bool = False`
-- [ ] Uncertainty used to weight retrieval: `score *= 1 / (1 + \text{tr}(\Sigma))`
-- [ ] Memory overhead capped: store diagonal only if `kalman_diagonal_approx: bool = True`
+- [x] Optional feature: `enable_kalman_filter: bool = False`
+- [x] Uncertainty used to weight retrieval: `score *= 1 / (1 + \text{tr}(\Sigma))`
+- [x] Memory overhead capped: store diagonal only if `kalman_diagonal_approx: bool = True`
 
 ---
 
@@ -220,8 +238,26 @@ where $\text{kdist}_i$ = distance to $k$-th nearest neighbor ($k=5$).
 | P3.1 | Wasserstein | 🟢 Low | Medium | Low | 2d | P3 |
 | P3.2 | Persistent Homology | 🟢 Low | High | High | 5d | P3 |
 
-**Recommended roadmap:**
-1. **Week 1:** P0.1 (Riemannian SGD) — фундаментальный фикс
-2. **Week 2:** P1.2 (Local bandwidth) — быстрый win + P1.1 (Conformal) — production confidence
-3. **Week 3–4:** P2.1 (Spectral) — если consolidate всё ещё проблематичен
+## Итоги трека P0–P2 (Май 2026)
+
+Все 5 фич реализованы, протестированы (203 теста), интегрированы в `RTMDKField`:
+
+| ID | Feature | Тесты | Статус | Файлы |
+|----|---------|------|--------|-------|
+| P0.1 | Riemannian SGD | 12 | ✅ | `geometry.py`, `core.py` |
+| P1.1 | Conformal Prediction | 10 | ✅ | `memory/conformal.py`, `core.py` |
+| P1.2 | Local Bandwidth | 10 | ✅ | `core.py` |
+| P2.1 | Spectral Laplacian | 13 | ✅ | `memory/spectral.py`, `core.py` |
+| P2.2 | Kalman Filter | 15 | ✅ | `memory/kalman.py`, `core.py`, `nodes.py` |
+
+**Ключевые интеграционные точки в `core.py`:**
+- `_build_node_cache()` → `adaptive_bandwidth` вычисляет `_cached_bw`
+- `query()` → `_apply_conformal_filter()` + Kalman `uncertainty_weight()`
+- `consolidate()` → `spectral_cluster_nodes()` перед greedy merge + `poincare_midpoint()` при `hyperbolic=True`
+- `_do_merge()` → `kf.merge_covariance()` при `enable_kalman_filter=True`
+- `add_node()` → инициализация `node.covariance` при `enable_kalman_filter=True`
+
+**Recommended roadmap (для P3):**
+1. **Week 1:** P3.1 (Wasserstein) — observability layer
+2. **Week 2–3:** P3.2 (Persistent Homology) — research feature
 4. **Month 2+:** P2.2 / P3.x — research tier, по необходимости
