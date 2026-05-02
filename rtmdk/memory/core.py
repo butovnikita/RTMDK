@@ -4013,25 +4013,6 @@ class RTMDKField:
         path = _sanitize_path(path)
         from rtmdk.memory.serialization import FieldSerializer
         return FieldSerializer.field_from_file(path, embedder)
-        # Convert memory_tiers list back to set
-        if "memory_tiers" in cd and isinstance(cd["memory_tiers"], list):
-            cd["memory_tiers"] = set(cd["memory_tiers"])
-        # Handle v5/v6 backward compatibility
-        if "causal_modeling" in cd and "causal_topological" not in cd:
-            cd["causal_topological"] = cd.pop("causal_modeling")
-        elif "causal_modeling" in cd:
-            cd.pop("causal_modeling")
-        valid_fields = set(f.name for f in RTMDKConfig.__dataclass_fields__.values())
-        cd = {k: v for k, v in cd.items() if k in valid_fields}
-        config = RTMDKConfig(**cd)
-        memory = RTMDKMemory(config=config, embedder=embedder)
-
-        # Phase 21: SOT state restore
-        if config.sot_enabled:
-            if "sot_tokenizer" in data and memory.field.sot_tokenizer:
-                memory.field.sot_tokenizer.load_state(data["sot_tokenizer"])
-            if "sot_field_ema" in data and memory.field._sot_field_ema is not None:
-                memory.field._sot_field_ema = np.array(data["sot_field_ema"], dtype=np.float32)
 
         if config.learn_projection and "projection_state" in data:
             memory.field.projection_learner.load_state(data["projection_state"])
