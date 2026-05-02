@@ -193,6 +193,10 @@ from rtmdk.memory.config import (
     ConsolidationMode, Backend, ContextFormat, FieldHealth, EvalMode,
     RTMDKConfig,
 )
+from rtmdk.memory.geometry import (
+    poincare_dist, exp_map_poincare, log_map_poincare, mobius_add,
+    poincare_midpoint,
+)
 # Extracted engine classes (P0 refactor � imported from canonical modules)
 from rtmdk.engines.predictive import PredictiveCodingModel
 from rtmdk.engines.privacy import DifferentialPrivacy
@@ -234,80 +238,6 @@ def detect_tier(text: str, context: Optional[Dict] = None) -> str:
     if any(p in text_lower for p in ["yesterday", "last week", "last month", "ago", "вчера", "на прошлой", "неделю назад"]):
         return "episodic"
     return "semantic"
-
-
-# ============================================================================
-# PHASE 11 TRACK 2: HYPERBOLIC GEOMETRY (Poincare ball)
-# ============================================================================
-
-def poincare_dist(u: NDArray, v: NDArray, ball_radius: float = 0.85) -> float:
-    """Hyperbolic distance in Poincare ball model."""
-    u_norm = np.linalg.norm(u)
-    v_norm = np.linalg.norm(v)
-    if u_norm >= ball_radius or v_norm >= ball_radius:
-        # Project inside ball
-        u = u * (ball_radius - 1e-6) / max(u_norm, 1e-8)
-        v = v * (ball_radius - 1e-6) / max(v_norm, 1e-8)
-        u_norm = np.linalg.norm(u)
-        v_norm = np.linalg.norm(v)
-    delta = u - v
-    sq_delta = np.sum(delta ** 2)
-    # Bug fix: Use ball_radius^2 in denominator for non-unit ball
-    r_sq = ball_radius ** 2
-    denom = ((r_sq - u_norm ** 2) * (r_sq - v_norm ** 2)) / max(r_sq, 1e-8)
-    arg = 1 + 2 * sq_delta / max(denom, 1e-8)
-    return float(ball_radius * np.arccosh(np.clip(arg, 1.0, None)))
-
-
-def exp_map_poincare(tangent: NDArray, base: NDArray, ball_radius: float = 0.85) -> NDArray:
-    """Exponential map from tangent space to Poincare ball."""
-    base_norm = np.linalg.norm(base)
-    if base_norm >= ball_radius:
-        base = base * (ball_radius - 1e-6) / max(base_norm, 1e-8)
-        base_norm = np.linalg.norm(base)
-    tangent_norm = np.linalg.norm(tangent)
-    if tangent_norm < 1e-8:
-        return base.copy()
-    # Mobius addition approach
-    denom = 1.0 + base_norm ** 2
-    factor = np.tanh(tangent_norm * 0.5) / max(base_norm, 1e-8)
-    result = base + tangent * factor
-    # Project back into ball
-    r = np.linalg.norm(result)
-    if r >= ball_radius:
-        result = result * (ball_radius - 1e-6) / max(r, 1e-8)
-    return result.astype(np.float32)
-
-
-def log_map_poincare(point: NDArray, base: NDArray, ball_radius: float = 0.85) -> NDArray:
-    """Logarithmic map from Poincare ball to tangent space."""
-    base_norm = np.linalg.norm(base)
-    if base_norm >= ball_radius:
-        base = base * (ball_radius - 1e-6) / max(base_norm, 1e-8)
-        base_norm = np.linalg.norm(base)
-    diff = point - base
-    diff_norm = np.linalg.norm(diff)
-    if diff_norm < 1e-8:
-        return np.zeros_like(point)
-    factor = 2.0 / (1.0 - base_norm ** 2)
-    tangent = diff * factor
-    return tangent.astype(np.float32)
-
-
-def mobius_add(x: NDArray, y: NDArray, ball_radius: float = 0.85) -> NDArray:
-    """Mobius addition in Poincare ball."""
-    x2 = np.sum(x ** 2)
-    y2 = np.sum(y ** 2)
-    xy = np.dot(x, y)
-    num = (1 + 2 * xy + y2) * x + (1 - x2) * y
-    den = 1 + 2 * xy + x2 * y2
-    result = num / max(den, 1e-8)
-    r = np.linalg.norm(result)
-    if r >= ball_radius:
-        result = result * (ball_radius - 1e-6) / max(r, 1e-8)
-    return result.astype(np.float32)
-
-
 
 
 # ============================================================================
@@ -2451,6 +2381,12 @@ class RTMDKField:
             self.stats["projection_updates"] += 1
         else:
             latent = self._project(embedding)
+        # Phase 11 Track 2: Ensure all nodes live inside Poincaré ball
+        if self.cfg.hyperbolic:
+            norm = np.linalg.norm(latent)
+            if norm >= self.cfg.ball_radius:
+                latent = latent * (self.cfg.ball_radius - 1e-6) / max(norm, 1e-8)
+
         if phase is None:
             phase = self._get_phase(session_id, embedding, modality)
 
@@ -2752,19 +2688,36 @@ class RTMDKField:
 
                 if self.diff_consolidation and mode == ConsolidationMode.DIALECTICAL:
                     synth = self.diff_consolidation.compute_synthesis(node, partner, gate)
-                    node.latent_pos = synth["latent_pos"]
+                    if self.cfg.hyperbolic:
+                        node.latent_pos = exp_map_poincare(
+                            log_map_poincare(synth["latent_pos"], node.latent_pos, self.cfg.ball_radius),
+                            node.latent_pos,
+                            self.cfg.ball_radius,
+                        )
+                    else:
+                        node.latent_pos = synth["latent_pos"]
                     node.phase = synth["phase"]
                     node.amplitude = synth["amplitude"]
                     node.salience = synth["salience"]
                 elif mode == ConsolidationMode.DIALECTICAL:
-                    node.latent_pos = 0.5 * (node.latent_pos + partner.latent_pos)
+                    if self.cfg.hyperbolic:
+                        node.latent_pos = poincare_midpoint(
+                            node.latent_pos, partner.latent_pos, self.cfg.ball_radius
+                        )
+                    else:
+                        node.latent_pos = 0.5 * (node.latent_pos + partner.latent_pos)
                     node.phase = np.arctan2(0.5*(np.sin(node.phase)+np.sin(partner.phase)),
                                             0.5*(np.cos(node.phase)+np.cos(partner.phase))) % (2*np.pi)
                     node.amplitude = min(1.0, 0.8*(node.amplitude+partner.amplitude))
                     node.salience = min(1.0, 0.7*(node.salience+partner.salience))
                 else:
                     # MERGE and PRUNE modes: same spatial merge, keep amplitude/salience from survivor
-                    node.latent_pos = 0.5 * (node.latent_pos + partner.latent_pos)
+                    if self.cfg.hyperbolic:
+                        node.latent_pos = poincare_midpoint(
+                            node.latent_pos, partner.latent_pos, self.cfg.ball_radius
+                        )
+                    else:
+                        node.latent_pos = 0.5 * (node.latent_pos + partner.latent_pos)
                     node.phase = np.arctan2(0.5*(np.sin(node.phase)+np.sin(partner.phase)),
                                             0.5*(np.cos(node.phase)+np.cos(partner.phase))) % (2*np.pi)
 
@@ -2861,12 +2814,24 @@ class RTMDKField:
 
                 if self.diff_consolidation and mode == ConsolidationMode.DIALECTICAL:
                     synth = self.diff_consolidation.compute_synthesis(node, partner, gate)
-                    node.latent_pos = synth["latent_pos"]
+                    if self.cfg.hyperbolic:
+                        node.latent_pos = exp_map_poincare(
+                            log_map_poincare(synth["latent_pos"], node.latent_pos, self.cfg.ball_radius),
+                            node.latent_pos,
+                            self.cfg.ball_radius,
+                        )
+                    else:
+                        node.latent_pos = synth["latent_pos"]
                     node.phase = synth["phase"]
                     node.amplitude = synth["amplitude"]
                     node.salience = synth["salience"]
                 elif mode == ConsolidationMode.DIALECTICAL:
-                    node.latent_pos = 0.5 * (node.latent_pos + partner.latent_pos)
+                    if self.cfg.hyperbolic:
+                        node.latent_pos = poincare_midpoint(
+                            node.latent_pos, partner.latent_pos, self.cfg.ball_radius
+                        )
+                    else:
+                        node.latent_pos = 0.5 * (node.latent_pos + partner.latent_pos)
                     node.phase = np.arctan2(0.5*(np.sin(node.phase)+np.sin(partner.phase)),
                                             0.5*(np.cos(node.phase)+np.cos(partner.phase))) % (2*np.pi)
                     node.amplitude = min(1.0, 0.8*(node.amplitude+partner.amplitude))
@@ -3230,7 +3195,19 @@ class RTMDKField:
                 if results and results[0][1] > 0.3:
                     nid, _, node = results[0]
                     target = emb if emb_dim == self.cfg.latent_dim else self._project(emb)
-                    node.latent_pos += self.cfg.attraction_lr * (target - node.latent_pos)
+                    if self.cfg.hyperbolic:
+                        # Riemannian SGD: gradient is scaled by conformal factor 1/λ²
+                        grad_e = target - node.latent_pos
+                        norm_sq = np.sum(node.latent_pos ** 2)
+                        conformal = (1.0 - norm_sq / (self.cfg.ball_radius ** 2)) ** 2 / 4.0
+                        grad_r = conformal * grad_e
+                        node.latent_pos = exp_map_poincare(
+                            -self.cfg.attraction_lr * grad_r,
+                            node.latent_pos,
+                            self.cfg.ball_radius,
+                        )
+                    else:
+                        node.latent_pos += self.cfg.attraction_lr * (target - node.latent_pos)
                     pd = (phase - node.phase + np.pi) % (2*np.pi) - np.pi
                     node.phase = (node.phase + self.cfg.phase_sync_lr * pd) % (2 * np.pi)
                     node.amplitude = min(1.0, node.amplitude + 0.05)

@@ -1,6 +1,7 @@
-"""rtmdk/utils/hyperbolic.py — Poincaré ball model operations.
+"""rtmdk/memory/geometry.py — Poincaré ball model operations.
 
 All formulas are correct for arbitrary ball radius R (not just R=1).
+Extracted from rtmdk/memory/core.py (Phase 5 architecture refactor).
 """
 from __future__ import annotations
 import numpy as np
@@ -15,6 +16,7 @@ def _clip_norm(v: NDArray, max_norm: float) -> NDArray:
 
 
 def poincare_dist(u: NDArray, v: NDArray, ball_radius: float = 0.85) -> float:
+    """Hyperbolic distance in Poincare ball model."""
     u = _clip_norm(u, ball_radius)
     v = _clip_norm(v, ball_radius)
     u_norm = np.linalg.norm(u)
@@ -25,6 +27,38 @@ def poincare_dist(u: NDArray, v: NDArray, ball_radius: float = 0.85) -> float:
     denom = ((r_sq - u_norm ** 2) * (r_sq - v_norm ** 2)) / max(r_sq, 1e-8)
     arg = 1 + 2 * sq_delta / max(denom, 1e-8)
     return float(ball_radius * np.arccosh(np.clip(arg, 1.0, None)))
+
+
+def exp_map_poincare(tangent: NDArray, base: NDArray, ball_radius: float = 0.85) -> NDArray:
+    """Exponential map on Poincaré ball of radius R."""
+    base = _clip_norm(base, ball_radius)
+    tangent_norm = np.linalg.norm(tangent)
+    if tangent_norm < 1e-8:
+        return base.copy().astype(np.float32)
+    base_norm_sq = np.sum(base ** 2)
+    lambda_base = 2.0 / (1.0 - base_norm_sq / (ball_radius ** 2))
+    scaled_norm = lambda_base * tangent_norm / (2.0 * ball_radius)
+    c = ball_radius * np.tanh(scaled_norm) / max(tangent_norm, 1e-8)
+    direction = c * tangent
+    result = mobius_add(base, direction, ball_radius)
+    return result.astype(np.float32)
+
+
+def log_map_poincare(point: NDArray, base: NDArray, ball_radius: float = 0.85) -> NDArray:
+    """Logarithmic map on Poincaré ball of radius R."""
+    base = _clip_norm(base, ball_radius)
+    point = _clip_norm(point, ball_radius)
+    diff = mobius_add(-base, point, ball_radius)
+    diff_norm = np.linalg.norm(diff)
+    if diff_norm < 1e-8:
+        return np.zeros_like(point)
+    base_norm_sq = np.sum(base ** 2)
+    lambda_base = 2.0 / (1.0 - base_norm_sq / (ball_radius ** 2))
+    ratio = diff_norm / ball_radius
+    ratio = min(ratio, 1.0 - 1e-8)
+    factor = (2.0 * ball_radius * np.arctanh(ratio)) / (lambda_base * diff_norm)
+    tangent = diff * factor
+    return tangent.astype(np.float32)
 
 
 def mobius_add(x: NDArray, y: NDArray, ball_radius: float = 0.85) -> NDArray:
@@ -39,43 +73,21 @@ def mobius_add(x: NDArray, y: NDArray, ball_radius: float = 0.85) -> NDArray:
     return _clip_norm(result, ball_radius).astype(np.float32)
 
 
-def exp_map_poincare(tangent: NDArray, base: NDArray, ball_radius: float = 0.85) -> NDArray:
-    """Exponential map on Poincaré ball of radius R."""
-    base = _clip_norm(base, ball_radius)
-    tangent_norm = np.linalg.norm(tangent)
-    if tangent_norm < 1e-8:
-        return base.copy().astype(np.float32)
-
-    # Conformal factor λ_base = 2 / (1 - ||base||² / R²)
-    base_norm_sq = np.sum(base ** 2)
-    lambda_base = 2.0 / (1.0 - base_norm_sq / (ball_radius ** 2))
-
-    # Scalar in Möbius sense: c = R * tanh(λ·||v|| / (2R)) / ||v||
-    scaled_norm = lambda_base * tangent_norm / (2.0 * ball_radius)
-    c = ball_radius * np.tanh(scaled_norm) / max(tangent_norm, 1e-8)
-
-    # Direction vector in tangent space, then Möbius add
-    direction = c * tangent
-    result = mobius_add(base, direction, ball_radius)
-    return result.astype(np.float32)
+def mobius_scalar_mul(r: float, x: NDArray, ball_radius: float = 0.85) -> NDArray:
+    """Scalar multiplication r ⊗ x in Poincaré ball of radius R."""
+    norm = np.linalg.norm(x)
+    if norm < 1e-8:
+        return x.copy().astype(np.float32)
+    # For ball radius R: r ⊗ x = tanh(r * arctanh(||x||/R)) * R * x / ||x||
+    scaled = r * np.arctanh(min(norm / ball_radius, 1.0 - 1e-8))
+    result = np.tanh(scaled) * ball_radius * x / norm
+    return _clip_norm(result, ball_radius).astype(np.float32)
 
 
-def log_map_poincare(point: NDArray, base: NDArray, ball_radius: float = 0.85) -> NDArray:
-    """Logarithmic map on Poincaré ball of radius R."""
-    base = _clip_norm(base, ball_radius)
-    point = _clip_norm(point, ball_radius)
-    diff = mobius_add(-base, point, ball_radius)
-    diff_norm = np.linalg.norm(diff)
-    if diff_norm < 1e-8:
-        return np.zeros_like(point)
+def poincare_midpoint(a: NDArray, b: NDArray, ball_radius: float = 0.85) -> NDArray:
+    """Hyperbolic midpoint of two points in Poincaré ball.
 
-    # Conformal factor λ_base
-    base_norm_sq = np.sum(base ** 2)
-    lambda_base = 2.0 / (1.0 - base_norm_sq / (ball_radius ** 2))
-
-    # factor = 2R · arctanh(||diff||/R) / (λ_base · ||diff||)
-    ratio = diff_norm / ball_radius
-    ratio = min(ratio, 1.0 - 1e-8)  # keep inside domain
-    factor = (2.0 * ball_radius * np.arctanh(ratio)) / (lambda_base * diff_norm)
-    tangent = diff * factor
-    return tangent.astype(np.float32)
+    Computes m = exp_a(0.5 * log_a(b)).
+    """
+    tangent = log_map_poincare(b, a, ball_radius)
+    return exp_map_poincare(0.5 * tangent, a, ball_radius)
