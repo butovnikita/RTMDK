@@ -2897,6 +2897,8 @@ class RTMDKField:
                 processed.add(nid)
 
         # Fix 2: Apply all deletions after iteration — rebuild node_index once (O(N) instead of O(M×N))
+        if pending_deletions:
+            self.wal.append_delete(pending_deletions)
         for pid in pending_deletions:
             if pid in self.nodes:
                 del self.nodes[pid]
@@ -3963,120 +3965,6 @@ class RTMDKField:
         path = _sanitize_path(path)
         from rtmdk.memory.serialization import FieldSerializer
         return FieldSerializer.field_from_file(path, embedder, wal_path=wal_path)
-
-        if config.learn_projection and "projection_state" in data:
-            memory.field.projection_learner.load_state(data["projection_state"])
-        elif "projection" in data:
-            memory.field._raw_projection = np.array(data["projection"], dtype=np.float32)
-        if config.differentiable and "learnable_kernel" in data:
-            memory.field.learnable_kernel.load_state(data["learnable_kernel"])
-        if config.tda_monitoring and "tda_history" in data:
-            memory.field.tda_monitor.history = data["tda_history"]
-        if config.meta_adaptive and "meta_kernel" in data:
-            memory.field.meta_kernel.load_state(data["meta_kernel"])
-        if config.self_healing and "healer" in data:
-            memory.field.healer.load_state(data["healer"])
-        if config.causal_topological and "causal_engine" in data:
-            memory.field.causal_engine.load_state(data["causal_engine"])
-        if config.continuous_dynamics and "ode_dynamics" in data:
-            ode_state = data["ode_dynamics"]
-            memory.field.ode_dynamics.alpha = ode_state.get("alpha", 0.1)
-            memory.field.ode_dynamics.beta = ode_state.get("beta", 0.05)
-            memory.field.ode_dynamics.gamma = ode_state.get("gamma", 0.02)
-            if "W" in ode_state:
-                memory.field.ode_dynamics.W = np.array(ode_state["W"], dtype=np.float32)
-            memory.field.ode_dynamics.noise_level = ode_state.get("noise_level", 0.01)
-        # Track 10 imports
-        if config.meta_controller and "meta_controller" in data:
-            memory.field.meta_controller.load_state(data["meta_controller"])
-        if config.federated and "federated" in data:
-            memory.field.federated.import_state(data["federated"])
-        # Phase 14 imports
-        if config.meta_memory and "meta_memory_eval" in data:
-            memory.field.meta_memory_eval.load_state(data["meta_memory_eval"])
-        if config.security_enabled and "security" in data:
-            memory.field.security.load_state(data["security"])
-        if config.swarm_memory and "swarm" in data:
-            memory.field.swarm.load_state(data["swarm"])
-
-        logger.info(f"import_field: loading {len(data['nodes'])} nodes")
-        for nd in data["nodes"]:
-            node = MemoryNode.from_dict(nd)
-            memory.field.nodes[node.id] = node
-            memory.field.node_index.append(node.id)
-        logger.info(f"import_field: successfully loaded {len(memory.field.nodes)} nodes")
-
-        # Reload stats from file, then reconcile with actual node count
-        saved_stats = data.get("stats", {})
-        memory.field.stats = saved_stats
-
-        # Reconcile: reset accumulation counters to match actual nodes
-        n_nodes = len(memory.field.nodes)
-        logger.info(f"import_field: reconciling stats for {n_nodes} nodes")
-        memory.field.stats["total_adds"] = n_nodes
-        memory.field.stats["active_nodes"] = n_nodes
-
-        # Reset historical accumulation counters (they reflect past life, not current state)
-        reset_keys = [
-            "projection_updates", "self_sup_checks", "total_queries",
-            "consolidations", "consolidation_validations", "blocked_consolidations",
-            "healing_events", "healing_history", "field_stability",
-            "tension_cache_hits", "tension_cache_misses", "tension_cache_hit_rate",
-            "engram_retrievals", "engrams_created", "engrams_merged",
-            "cross_modal_queries", "cross_modal_recall",
-            "meta_optimizations", "meta_best_params",
-            "federated_syncs", "federated_order_parameter",
-            "crystallizations", "crystallized_clusters",
-            "evaluations", "shadow_comparisons", "rollbacks",
-            "ode_steps", "response_smoothness",
-            "free_energy", "prediction_error", "surprise_level",
-            "scenarios_generated", "avg_scenario_confidence",
-            "privacy_budget_spent", "noise_std", "updates_clipped",
-            "shard_hits", "shard_misses", "avg_shard_query_time_ms",
-            "context_tokens_saved", "cognitive_compressions",
-            "async_queue_depth", "async_backpressure_events",
-            "active_goals", "completed_goals",
-            "avg_rl_reward", "reward_trend",
-            "attention_bias_applied", "compression_ratio", "compression_updates",
-            "events_processed", "event_queue_depth",
-            "recall_accuracy", "meta_reflections",
-            "security_violations", "tension_spikes_blocked",
-            "swarm_agents", "swarm_consensus_events",
-            "current_version", "n_versions",
-            "clarifications_generated",
-            "entropy", "entropy_state",
-            "triton_backend_used", "gpu_acceleration",
-            "n_symbolic_rules", "n_symbolic_inferences", "n_symbolic_conflicts",
-            "lyapunov_V", "lyapunov_dV_dt", "safety_regulation_factor", "safety_mode",
-            "n_shards", "shard_distribution", "cross_shard_exchanges",
-            "role_router_enabled",
-            "field_integrity_issues",
-            "plans_created", "hypotheses_verified", "tool_calls", "tool_misuse_rate",
-            "ragas_overall",
-            "tier_coherence",
-        ]
-        for key in reset_keys:
-            if key in memory.field.stats:
-                val = memory.field.stats[key]
-                if isinstance(val, (int, float)):
-                    memory.field.stats[key] = 0
-                elif isinstance(val, dict):
-                    memory.field.stats[key] = {}
-                elif isinstance(val, list):
-                    memory.field.stats[key] = []
-
-        # Recalculate tier_distribution from actual nodes
-        tier_dist = {}
-        for node in memory.field.nodes.values():
-            tier = node.content.get("tier", node.tier if hasattr(node, 'tier') else "semantic")
-            tier_dist[tier] = tier_dist.get(tier, 0) + 1
-        memory.field.stats["tier_distribution"] = tier_dist
-
-        # Reset avg_response to a reasonable default since we have no query history
-        memory.field.stats["avg_response"] = 0.0
-
-        logger.info(f"import_field: complete — {n_nodes} nodes, tier_distribution={tier_dist}")
-        return memory
 
     def export_to_dict(self) -> Dict:
         """Export field state to a dict (for UMP and other protocols)."""
