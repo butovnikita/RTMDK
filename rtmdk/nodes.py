@@ -62,6 +62,7 @@ class MemoryNode:
     evidence_spans: List[Dict] = field(default_factory=list)
     fact_state: str = "active"  # active | expired | superseded
     superseded_by: Optional[str] = None
+    covariance: Optional[NDArray[np.float32]] = None  # P2.2: Kalman uncertainty
 
     def to_dict(self) -> Dict:
         d = asdict(self)
@@ -76,6 +77,8 @@ class MemoryNode:
             d["acceleration"] = self.acceleration.tolist()
         if self.modal_embedding is not None:
             d["modal_embedding"] = self.modal_embedding.tolist()
+        if self.covariance is not None:
+            d["covariance"] = self.covariance.tolist()
         for k, v in self.do_interventions.items():
             if isinstance(v, np.ndarray):
                 d["do_interventions"][k] = v.tolist()
@@ -94,6 +97,8 @@ class MemoryNode:
             data["acceleration"] = np.array(data["acceleration"], dtype=np.float32)
         if data.get("modal_embedding"):
             data["modal_embedding"] = np.array(data["modal_embedding"], dtype=np.float32)
+        if data.get("covariance"):
+            data["covariance"] = np.array(data["covariance"], dtype=np.float32)
         for k, v in data.get("do_interventions", {}).items():
             if isinstance(v, list):
                 data["do_interventions"][k] = np.array(v, dtype=np.float32)

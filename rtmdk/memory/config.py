@@ -80,6 +80,11 @@ _FIELD_GROUPS: Dict[str, str] = {
     "spectral_consolidation": "CoreConfig",
     "spectral_max_clusters": "CoreConfig",
     "spectral_sigma": "CoreConfig",
+    "enable_kalman_filter": "CoreConfig",
+    "kalman_diagonal_approx": "CoreConfig",
+    "kalman_process_noise": "CoreConfig",
+    "kalman_measurement_noise": "CoreConfig",
+    "kalman_init_variance": "CoreConfig",
     "bandwidth": "CoreConfig",
     "bias_temperature": "RetrievalConfig",
     "bm25_b": "CoreConfig",
@@ -314,6 +319,11 @@ class CoreConfig:
         spectral_consolidation: bool = False
         spectral_max_clusters: int = 10
         spectral_sigma: float = 1.0
+        enable_kalman_filter: bool = False
+        kalman_diagonal_approx: bool = True
+        kalman_process_noise: float = 0.01
+        kalman_measurement_noise: float = 0.1
+        kalman_init_variance: float = 1.0
         attraction_lr: float = 0.02
         phase_sync_lr: float = 0.01
         decay_rate: float = 0.997  # Matches server default — half-life ~230 steps
@@ -729,6 +739,11 @@ class RTMDKConfig:
             ("RTMDK_SPECTRAL_CONSOLIDATION", "spectral_consolidation", lambda x: x.lower() == "true"),
             ("RTMDK_SPECTRAL_MAX_CLUSTERS", "spectral_max_clusters", int),
             ("RTMDK_SPECTRAL_SIGMA", "spectral_sigma", float),
+            ("RTMDK_ENABLE_KALMAN_FILTER", "enable_kalman_filter", lambda x: x.lower() == "true"),
+            ("RTMDK_KALMAN_DIAGONAL_APPROX", "kalman_diagonal_approx", lambda x: x.lower() == "true"),
+            ("RTMDK_KALMAN_PROCESS_NOISE", "kalman_process_noise", float),
+            ("RTMDK_KALMAN_MEASUREMENT_NOISE", "kalman_measurement_noise", float),
+            ("RTMDK_KALMAN_INIT_VARIANCE", "kalman_init_variance", float),
             ("RTMDK_USE_HNSW", "use_hnsw", lambda x: x.lower() == "true"),
             ("RTMDK_HNSW_M", "hnsw_m", int),
             ("RTMDK_BM25_FALLBACK", "bm25_fallback", lambda x: x.lower() == "true"),
