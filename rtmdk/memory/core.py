@@ -51,6 +51,7 @@ except ImportError:
 from rtmdk.support.bm25 import BM25Index
 from rtmdk.memory.conformal import ConformalCalibrator
 from rtmdk.memory.spectral import spectral_cluster_nodes
+from rtmdk.memory.kalman import KalmanFilter
 
 logger = logging.getLogger(__name__)
 
@@ -1424,6 +1425,19 @@ class RTMDKField:
         if config.conformal_prediction:
             self.conformal_calibrator = ConformalCalibrator(alpha=config.conformal_alpha)
 
+        # P2.2: Kalman filter for position uncertainty
+        self.kalman_filter: Optional[KalmanFilter] = None
+        if config.enable_kalman_filter:
+            self.kalman_filter = KalmanFilter(
+                latent_dim=config.latent_dim,
+                process_noise=config.kalman_process_noise,
+                measurement_noise=config.kalman_measurement_noise,
+                init_variance=config.kalman_init_variance,
+                diagonal_approx=config.kalman_diagonal_approx,
+                hyperbolic=config.hyperbolic,
+                ball_radius=config.ball_radius,
+            )
+
         if config.learn_projection:
             self.projection_learner = IncPCAProjection(
                 config.embedding_dim, config.pca_n_components or config.latent_dim,
@@ -2276,6 +2290,16 @@ class RTMDKField:
             if self.entropy_ctrl:
                 self.entropy_ctrl.record_response(results[0][1], results[0][2].salience)
 
+        # P2.2: Weight retrieval scores by uncertainty (lower uncertainty → higher score)
+        if self.kalman_filter is not None and results:
+            weighted = []
+            for nid, score, node in results:
+                if node.covariance is not None:
+                    w = self.kalman_filter.uncertainty_weight(node.covariance)
+                    score = score * w
+                weighted.append((nid, score, node))
+            results = weighted
+
         # Phase 13 Track 1: Goal relevance scoring
         if self.goal_tracker and results:
             for nid, resp, node in results:
@@ -2456,6 +2480,10 @@ class RTMDKField:
         node = MemoryNode(id=nid, latent_pos=latent, phase=phase,
                           amplitude=amplitude, salience=salience, content=content,
                           lineage=[], modality=modality)
+
+        # P2.2: Initialize uncertainty covariance
+        if self.kalman_filter is not None:
+            node.covariance = self.kalman_filter.init_covariance()
 
         if self.cfg.cross_modal:
             node.modal_embedding = embedding.copy()
@@ -2820,6 +2848,19 @@ class RTMDKField:
                 node.latent_pos = 0.5 * (node.latent_pos + partner.latent_pos)
             node.phase = np.arctan2(0.5*(np.sin(node.phase)+np.sin(partner.phase)),
                                     0.5*(np.cos(node.phase)+np.cos(partner.phase))) % (2*np.pi)
+
+        # P2.2: Kalman filter prediction + update on merge
+        if self.kalman_filter is not None:
+            if node.covariance is not None:
+                node.covariance = self.kalman_filter.predict(node.covariance)
+            # Treat partner position as measurement
+            if node.covariance is not None and partner.covariance is not None:
+                _, node.covariance = self.kalman_filter.update(
+                    node.latent_pos, partner.latent_pos, node.covariance
+                )
+                node.covariance = self.kalman_filter.merge_covariance(node.covariance, partner.covariance)
+            elif partner.covariance is not None:
+                node.covariance = partner.covariance.copy()
 
         node.tension = 0.0
         node.soft_gate = 1.0
