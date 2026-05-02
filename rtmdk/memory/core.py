@@ -50,6 +50,7 @@ except ImportError:
     _HNSWLIB_AVAILABLE = False
 from rtmdk.support.bm25 import BM25Index
 from rtmdk.memory.conformal import ConformalCalibrator
+from rtmdk.memory.spectral import spectral_cluster_nodes
 
 logger = logging.getLogger(__name__)
 
@@ -2683,6 +2684,171 @@ class RTMDKField:
     def get_effective_threshold(self) -> float:
         return self.adaptive_threshold.get_threshold() if self.adaptive_threshold else self.cfg.tension_threshold
 
+    def _spectral_merge_clusters(self, high_tension: List[str], mode: ConsolidationMode,
+                                  updated: List[str], pending_deletions: List[str],
+                                  processed: Set[str], pre_state: Dict) -> bool:
+        """P2.1: Spectral Graph Laplacian clustering for consolidation.
+
+        Groups high-tension nodes into clusters using spectral embedding,
+        then performs greedy pairwise merge within each cluster.
+        Returns True if any merge happened, False otherwise.
+        """
+        if len(high_tension) < 3:
+            return False
+
+        # Gather positions and phases for high-tension nodes
+        positions = []
+        phases = []
+        valid_nids = []
+        for nid in high_tension:
+            if nid in self.nodes and nid not in processed:
+                node = self.nodes[nid]
+                positions.append(node.latent_pos)
+                phases.append(node.phase)
+                valid_nids.append(nid)
+
+        if len(valid_nids) < 3:
+            return False
+
+        positions_arr = np.array(positions, dtype=np.float32)
+        phases_arr = np.array(phases, dtype=np.float32)
+
+        clusters = spectral_cluster_nodes(
+            positions_arr, phases_arr,
+            max_clusters=self.cfg.spectral_max_clusters,
+            sigma=self.cfg.spectral_sigma,
+            timeout_ms=500.0,
+            rng=self._rng,
+        )
+        if clusters is None:
+            return False
+
+        merged_any = False
+        for cluster_indices in clusters.values():
+            if len(cluster_indices) < 2:
+                continue
+            # Map local indices to node IDs
+            cluster_nids = [valid_nids[i] for i in cluster_indices]
+            # Greedy pairwise merge within cluster (closest pair first)
+            while len(cluster_nids) >= 2:
+                best_pair = None
+                best_dist = float('inf')
+                cluster_positions = {nid: self.nodes[nid].latent_pos for nid in cluster_nids if nid in self.nodes}
+                if len(cluster_positions) < 2:
+                    break
+                nids_list = list(cluster_positions.keys())
+                for i in range(len(nids_list)):
+                    for j in range(i + 1, len(nids_list)):
+                        nid_i, nid_j = nids_list[i], nids_list[j]
+                        d = np.linalg.norm(cluster_positions[nid_i] - cluster_positions[nid_j])
+                        if d < best_dist:
+                            best_dist = d
+                            best_pair = (nid_i, nid_j)
+                if best_pair is None:
+                    break
+                nid, pid = best_pair
+                if nid not in self.nodes or pid not in self.nodes or nid in processed or pid in processed:
+                    break
+                if self._do_merge(nid, pid, mode, updated, pending_deletions, processed, pre_state):
+                    merged_any = True
+                    # Remove pid from cluster, keep nid as merged survivor
+                    cluster_nids = [n for n in cluster_nids if n != pid and n in self.nodes]
+                else:
+                    break
+        return merged_any
+
+    def _do_merge(self, nid: str, pid: str, mode: ConsolidationMode,
+                  updated: List[str], pending_deletions: List[str],
+                  processed: Set[str], pre_state: Dict) -> bool:
+        """Execute a single merge of nid with pid. Returns True if merge succeeded."""
+        node = self.nodes[nid]
+        partner = self.nodes[pid]
+
+        if self.cfg.do_calculus_validation and self.causal_engine:
+            validation = self.causal_engine.validate_consolidation(nid, pid)
+            self.stats["consolidation_validations"] += 1
+            if not validation["safe"]:
+                self.stats["blocked_consolidations"] += 1
+                processed.add(nid)
+                processed.add(pid)
+                return False
+
+        if self.cfg.domain_consolidation_guard and node.domain != partner.domain:
+            if partner.id not in node.conflict_with:
+                node.conflict_with.append(partner.id)
+            if node.id not in partner.conflict_with:
+                partner.conflict_with.append(node.id)
+            processed.add(nid)
+            processed.add(pid)
+            return False
+
+        gate = self._soft_gate(max(node.tension, partner.tension))
+
+        if self.cfg.enable_rollback:
+            node.pre_consolidation_pos = node.latent_pos.copy()
+
+        if self.diff_consolidation and mode == ConsolidationMode.DIALECTICAL:
+            synth = self.diff_consolidation.compute_synthesis(node, partner, gate)
+            if self.cfg.hyperbolic:
+                node.latent_pos = exp_map_poincare(
+                    log_map_poincare(synth["latent_pos"], node.latent_pos, self.cfg.ball_radius),
+                    node.latent_pos,
+                    self.cfg.ball_radius,
+                )
+            else:
+                node.latent_pos = synth["latent_pos"]
+            node.phase = synth["phase"]
+            node.amplitude = synth["amplitude"]
+            node.salience = synth["salience"]
+        elif mode == ConsolidationMode.DIALECTICAL:
+            if self.cfg.hyperbolic:
+                node.latent_pos = poincare_midpoint(
+                    node.latent_pos, partner.latent_pos, self.cfg.ball_radius
+                )
+            else:
+                node.latent_pos = 0.5 * (node.latent_pos + partner.latent_pos)
+            node.phase = np.arctan2(0.5*(np.sin(node.phase)+np.sin(partner.phase)),
+                                    0.5*(np.cos(node.phase)+np.cos(partner.phase))) % (2*np.pi)
+            node.amplitude = min(1.0, 0.8*(node.amplitude+partner.amplitude))
+            node.salience = min(1.0, 0.7*(node.salience+partner.salience))
+        else:
+            if self.cfg.hyperbolic:
+                node.latent_pos = poincare_midpoint(
+                    node.latent_pos, partner.latent_pos, self.cfg.ball_radius
+                )
+            else:
+                node.latent_pos = 0.5 * (node.latent_pos + partner.latent_pos)
+            node.phase = np.arctan2(0.5*(np.sin(node.phase)+np.sin(partner.phase)),
+                                    0.5*(np.cos(node.phase)+np.cos(partner.phase))) % (2*np.pi)
+
+        node.tension = 0.0
+        node.soft_gate = 1.0
+        node.lineage = [f"{node.id}+{pid}"] + node.lineage + partner.lineage
+        node.content["synthesis_note"] = f"Consolidated with {pid} at t={time.time():.0f}"
+        if "merged_content" not in node.content:
+            node.content["merged_content"] = []
+        node.content["merged_content"].append(partner.content.get("text", "") or partner.content.get("input_text", ""))
+
+        if self.causal_engine:
+            for parent, strength in partner.causal_strength.items():
+                if parent not in node.causal_strength:
+                    node.causal_strength[parent] = strength
+                else:
+                    node.causal_strength[parent] = max(node.causal_strength[parent], strength)
+
+        if self.cfg.use_hnsw and self.hnsw_index:
+            self.hnsw_index.remove(pid)
+            self.hnsw_index.insert(nid, node.latent_pos)
+        if self.cfg.bm25_fallback and self.bm25_index:
+            self.bm25_index.remove_document(pid)
+
+        pending_deletions.append(pid)
+        processed.add(pid)
+        updated.append(nid)
+        self.stats["consolidations"] += 1
+        processed.add(nid)
+        return True
+
     @_locked
     def consolidate(self, mode: Optional[ConsolidationMode] = None) -> List[str]:
         mode = mode or self.cfg.consolidation_mode
@@ -2725,6 +2891,15 @@ class RTMDKField:
         # Fix: Snapshot node_index ONCE before outer loop (was O(N²) due to repeated copies)
         node_index_snapshot = list(self.node_index)
         n_snap = len(node_index_snapshot)
+
+        # P2.1: Spectral Graph Laplacian clustering (optional, opt-in)
+        if self.cfg.spectral_consolidation and len(high_tension) >= 3:
+            spectral_merged = self._spectral_merge_clusters(
+                high_tension, mode, updated, pending_deletions, processed, pre_state
+            )
+            if spectral_merged:
+                # Recompute high_tension excluding already processed nodes
+                high_tension = [nid for nid in high_tension if nid not in processed and nid in self.nodes]
 
         # FIX: Precompute positions for vectorized distance computation
         if self.cfg.use_hnsw and self.hnsw_index and n_snap > 50:
@@ -2969,6 +3144,9 @@ class RTMDKField:
         self._sweep_tension_cache()
         # Rebuild node_index in one pass
         self.node_index = [nid for nid in self.node_index if nid in self.nodes]
+        # P2.1: Invalidate position cache before verification queries
+        if pending_deletions or updated:
+            self._cache_dirty = True
 
         if updated:
             # FIX: Limit verification to first 10 nodes to avoid O(K×N) blowup
