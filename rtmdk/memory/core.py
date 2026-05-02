@@ -55,7 +55,12 @@ logger = logging.getLogger(__name__)
 # Custom exceptions (Fix 7: security violations should raise, not return "")
 class SecurityViolationError(Exception):
     """Raised when a node violates security policy (prompt injection detected)."""
-    pass
+
+# Phase 5: dataclass nodes extracted to rtmdk.nodes
+from rtmdk.nodes import (
+    MemoryNode, CausalEdge, ContradictionRecord, CounterfactualResult,
+    AgentPlan, ToolCall, Hypothesis, EvalResult, GoalNode, FederatedNode,
+)
 
 # Phase 15: New modules
 try:
@@ -388,17 +393,6 @@ class ScenarioPlanner:
 # DATA TYPES v7
 # ============================================================================
 
-@dataclass
-class CausalEdge:
-    source: str
-    target: str
-    strength: float
-    confidence: float
-    adjustment_set: List[str] = field(default_factory=list)
-    evidence_count: int = 0
-    is_contradicted: bool = False
-    contradiction_reason: str = ""
-
     def to_dict(self) -> Dict:
         return asdict(self)
 
@@ -407,16 +401,6 @@ class CausalEdge:
         return cls(**data)
 
 
-@dataclass
-class ContradictionRecord:
-    id: str
-    effect_node: str
-    causes: List[Tuple[str, float]]
-    timestamp: float = field(default_factory=time.time)
-    resolved: bool = False
-    resolution: str = ""
-    contradiction_reason: str = ""
-
     def to_dict(self) -> Dict:
         return {
             "id": self.id, "effect_node": self.effect_node, "causes": self.causes,
@@ -424,15 +408,6 @@ class ContradictionRecord:
             "resolution": self.resolution, "contradiction_reason": self.contradiction_reason,
         }
 
-
-@dataclass
-class CounterfactualResult:
-    query: str
-    intervention: Dict[str, Any]
-    predicted_outcomes: List[Tuple[str, float]]
-    confidence: float
-    reasoning_path: List[str]
-    assumptions: List[str]
 
     def to_dict(self) -> Dict:
         return {
@@ -443,111 +418,19 @@ class CounterfactualResult:
         }
 
 
-@dataclass
-class AgentPlan:
-    goal: str
-    subtasks: List[Dict[str, Any]]
-    tools_needed: List[str]
-    estimated_steps: int
-    confidence: float
-    reasoning: str
-
     def to_dict(self) -> Dict:
         return asdict(self)
 
 
-@dataclass
-class ToolCall:
-    tool_name: str
-    arguments: Dict[str, Any]
-    result: Optional[Any] = None
-    success: bool = False
-    latency_ms: float = 0.0
-    error: str = ""
-
     def to_dict(self) -> Dict:
         return asdict(self)
 
-
-@dataclass
-class Hypothesis:
-    statement: str
-    confidence: float
-    evidence_nodes: List[str]
-    causal_path: List[str]
-    verified: bool = False
-    verification_score: float = 0.0
-
-
-@dataclass
-class EvalResult:
-    context_precision: float = 0.0
-    context_recall: float = 0.0
-    answer_relevance: float = 0.0
-    faithfulness: float = 0.0
-    causal_consistency: float = 0.0
-    temporal_coherence: float = 0.0
-    overall_score: float = 0.0
-    metadata: Dict = field(default_factory=dict)
 
     def to_dict(self) -> Dict:
         return asdict(self)
 
 
 
-
-@dataclass
-class MemoryNode:
-    id: str
-    latent_pos: NDArray[np.float32]
-    phase: float
-    amplitude: float
-    salience: float
-    tension: float = 0.0
-    soft_gate: float = 1.0
-    content: Dict = field(default_factory=dict)
-    created_at: float = field(default_factory=time.time)
-    last_resonated: float = 0.0
-    lineage: List[str] = field(default_factory=list)
-    modality: str = "text"
-    self_sup_score: float = 1.0
-    modal_weight: float = 1.0
-    pre_consolidation_pos: Optional[NDArray[np.float32]] = None
-    causal_parents: List[str] = field(default_factory=list)
-    causal_strength: Dict[str, float] = field(default_factory=dict)
-    gradient_cache: Optional[NDArray[np.float32]] = None
-    is_healing: bool = False
-    healing_origin: Optional[str] = None
-    local_density: float = 0.0
-    causal_effects: Dict[str, float] = field(default_factory=dict)
-    do_interventions: Dict[str, NDArray] = field(default_factory=dict)
-    is_causal_root: bool = False
-    causal_context: Dict[str, Any] = field(default_factory=dict)
-    velocity: Optional[NDArray[np.float32]] = None
-    acceleration: Optional[NDArray[np.float32]] = None
-    goal_tags: List[str] = field(default_factory=list)
-    tool_usage_count: int = 0
-    modal_embedding: Optional[NDArray[np.float32]] = None
-    cross_modal_score: float = 0.0
-    # Phase 11 Track 1
-    tier: str = "semantic"
-    # Phase 13
-    goal_relevance: float = 0.0
-    rl_reward: float = 0.0
-
-    # Phase 20: Domain Memory & Concept Lifecycle
-    domain: str = "general"
-    subdomain: str = ""
-    topic: str = ""
-    state: str = "stable"
-    confidence: float = 1.0
-    revision_count: int = 0
-    conflict_with: List[str] = field(default_factory=list)
-    valid_from: Optional[float] = None
-    valid_until: Optional[float] = None
-    evidence_spans: List[Dict] = field(default_factory=list)
-    fact_state: str = "active"
-    superseded_by: Optional[str] = None
 
     def to_dict(self) -> Dict:
         d = asdict(self)
@@ -655,20 +538,6 @@ def cross_modal_resonance(q_mod: str, n_mod: str, base_resp: float,
 # ============================================================================
 # PHASE 13 TRACK 1: TELEOLOGICAL LAYER (Goal/Intent Tracking)
 # ============================================================================
-
-@dataclass
-class GoalNode:
-    id: str
-    description: str
-    subgoals: List[str] = field(default_factory=list)
-    dependencies: List[str] = field(default_factory=list)
-    completion: float = 0.0
-    priority: float = 1.0
-    created_at: float = field(default_factory=time.time)
-    last_updated: float = field(default_factory=time.time)
-    status: str = "active"  # active, completed, abandoned
-    related_nodes: List[str] = field(default_factory=list)
-    intent_signals: Dict[str, float] = field(default_factory=dict)
 
     def to_dict(self) -> Dict:
         return asdict(self)
