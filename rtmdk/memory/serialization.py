@@ -92,7 +92,7 @@ class FieldSerializer:
     def field_to_dict(field: RTMDKField) -> Dict[str, Any]:
         """Export field state to a dict."""
         # Serialize config
-        cd = asdict(field.config) if hasattr(field, 'config') else asdict(field.cfg)
+        cd = field.config.asdict() if hasattr(field, 'config') else field.cfg.asdict()
         cd = EnumSerializer.serialize_config(cd)
 
         # Build data dict

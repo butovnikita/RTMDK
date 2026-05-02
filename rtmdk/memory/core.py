@@ -4149,7 +4149,7 @@ class RTMDKField:
 
     def export_to_dict(self) -> Dict:
         """Export field state to a dict (for UMP and other protocols)."""
-        cd = asdict(self.config) if hasattr(self, 'config') else asdict(self.cfg)
+        cd = self.config.asdict() if hasattr(self, 'config') else self.cfg.asdict()
         cd["consolidation_mode"] = _enum_value(cd.get("consolidation_mode"), "dialectical")
         cd["backend"] = _enum_value(cd.get("backend"), "numpy")
         cd["context_format"] = _enum_value(cd.get("context_format"), "plain")
@@ -4877,7 +4877,7 @@ class RTMDKMemory(BaseModel):
             self.field.stats["tda_trend"] = self.field.tda_monitor.get_trend()
         if self.field.dp:
             self.field.stats["privacy_budget_spent"] = self.field.dp.get_privacy_spent()
-        return {**self.field.stats, "config": asdict(self.config)}
+        return {**self.field.stats, "config": self.config.asdict()}
 
     # Phase 11 Track 4: Counterfactual imagination
     def imagine_counterfactual(self, base_query: str, intervention: Dict[str, float]) -> List[Dict]:
