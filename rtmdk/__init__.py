@@ -9,13 +9,8 @@ Usage:
 
 __version__ = "8.0.0"
 
-from rtmdk.memory.core import RTMDKMemory, RTMDKConfig, RTMDKField
-
-# Re-export enums for convenience
-from rtmdk.memory.core import (
-    ConsolidationMode, Backend, ContextFormat,
-    FieldHealth, EvalMode,
-)
+from rtmdk.memory.config import RTMDKConfig, ConsolidationMode, Backend, ContextFormat, FieldHealth, EvalMode
+from rtmdk.memory.core import RTMDKMemory, RTMDKField
 
 # Bind preset methods to RTMDKConfig class
 from rtmdk.config import (
