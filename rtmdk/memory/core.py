@@ -40,7 +40,7 @@ import logging
 
 # Extracted engine classes (kept in sync with rtmdk/support/ modules)
 from rtmdk.support.kuramoto import KuramotoSync, FederatedRTMDK
-from rtmdk.support.hnsw import HNSWIndex
+from rtmdk.support.hnsw import NaiveGraphIndex, HNSWIndex
 from rtmdk.support.bm25 import BM25Index
 
 logger = logging.getLogger(__name__)
@@ -64,8 +64,9 @@ except ImportError:
     ENTROPY_AVAILABLE = False
 
 try:
-    from rtmdk.support.triton_backend import TritonBackend, TRITON_AVAILABLE
+    from rtmdk.support.triton_backend import GPUBackend, TritonBackend, TRITON_AVAILABLE
 except ImportError:
+    GPUBackend = None  # type: ignore
     TritonBackend = None  # type: ignore
     TRITON_AVAILABLE = False
 
@@ -1609,7 +1610,7 @@ class RTMDKField:
         self.gpu_backend = TorchBackend() if config.backend == Backend.TORCH else None
         if self.gpu_backend and not self.gpu_backend.available:
             self.gpu_backend = None
-        self.hnsw_index = HNSWIndex(config.hnsw_m, config.hnsw_ef_construction) if config.use_hnsw else None
+        self.hnsw_index = NaiveGraphIndex(config.hnsw_m, config.hnsw_ef_construction) if config.use_hnsw else None
 
         # Pre-select batch resonance backend to avoid branching in hot path
         if self.gpu_backend and self.gpu_backend.available:
@@ -1813,8 +1814,8 @@ class RTMDKField:
 
         # Phase 15 Track 5: Triton Backend
         self.triton_backend: Optional[Any] = None
-        if config.triton_backend and TritonBackend is not None:
-            self.triton_backend = TritonBackend(min_nodes_for_gpu=config.min_nodes_for_gpu)
+        if config.triton_backend and GPUBackend is not None:
+            self.triton_backend = GPUBackend(min_nodes_for_gpu=config.min_nodes_for_gpu)
 
         # Phase 16 Track 1: SymbolicOverlay
         self.symbolic_overlay: Optional["SymbolicOverlay"] = None

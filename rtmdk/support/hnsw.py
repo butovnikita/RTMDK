@@ -1,4 +1,10 @@
-"""HNSW index for RTMDK."""
+"""Naive graph index for RTMDK.
+
+NOTE: This is NOT a true HNSW (Hierarchical Navigable Small World) implementation.
+It is a flat greedy graph index with O(N) insertion and O(N) search in the worst case.
+The class was historically named HNSWIndex but has been renamed to reflect its
+actual algorithm. HNSWIndex remains available as a backward-compatible alias.
+"""
 from __future__ import annotations
 
 from typing import Dict, List
@@ -7,7 +13,13 @@ import numpy as np
 from numpy.typing import NDArray
 
 
-class HNSWIndex:
+class NaiveGraphIndex:
+    """Flat greedy graph index — NOT a true HNSW.
+
+    insert: O(N) — scans all existing nodes to find nearest neighbors
+    search: O(N) in worst case — greedy beam walk over a single-layer graph
+    """
+
     def __init__(self, m: int = 16, ef_construction: int = 200):
         self.m = m
         self.ef_construction = ef_construction
@@ -50,3 +62,7 @@ class HNSWIndex:
             visited.add(best)
             candidates.update(self.graph.get(best, []))
         return sorted(candidates, key=lambda nid: np.linalg.norm(self.positions[nid] - query_pos))[:top_k]
+
+
+# Backward-compatible alias
+HNSWIndex = NaiveGraphIndex
