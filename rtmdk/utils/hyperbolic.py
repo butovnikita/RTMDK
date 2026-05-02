@@ -24,7 +24,7 @@ def poincare_dist(u: NDArray, v: NDArray, ball_radius: float = 0.85) -> float:
     r_sq = ball_radius ** 2
     denom = ((r_sq - u_norm ** 2) * (r_sq - v_norm ** 2)) / max(r_sq, 1e-8)
     arg = 1 + 2 * sq_delta / max(denom, 1e-8)
-    return float(np.arccosh(np.clip(arg, 1.0, None)))
+    return float(ball_radius * np.arccosh(np.clip(arg, 1.0, None)))
 
 
 def mobius_add(x: NDArray, y: NDArray, ball_radius: float = 0.85) -> NDArray:
@@ -50,9 +50,9 @@ def exp_map_poincare(tangent: NDArray, base: NDArray, ball_radius: float = 0.85)
     base_norm_sq = np.sum(base ** 2)
     lambda_base = 2.0 / (1.0 - base_norm_sq / (ball_radius ** 2))
 
-    # Scalar in Möbius sense: c = tanh(λ·||v|| / (2R)) / (λ·||v|| / (2R))
+    # Scalar in Möbius sense: c = R * tanh(λ·||v|| / (2R)) / ||v||
     scaled_norm = lambda_base * tangent_norm / (2.0 * ball_radius)
-    c = np.tanh(scaled_norm) / max(scaled_norm, 1e-8)
+    c = ball_radius * np.tanh(scaled_norm) / max(tangent_norm, 1e-8)
 
     # Direction vector in tangent space, then Möbius add
     direction = c * tangent

@@ -8,13 +8,23 @@
 ## P0 — Critical (fix fundamental flaws)
 
 ### P0.1 Riemannian SGD on Poincaré Ball
-**Owner:** TBD | **Estimate:** 3 days | **Status:** 🔴 Not started
+**Owner:** TBD | **Estimate:** 3 days | **Status:** ✅ Completed (2026-05-01)
 
 **Problem:** `consolidate()` applies Euclidean gradients to nodes living on a negatively-curved manifold. Nodes hit the ball boundary and are clamped, destroying the hyperbolic metric structure.
 
 **Mathematics:**
-- Riemannian gradient: $\nabla_R f(x) = \lambda_x^2 \nabla_E f(x)$, where $\lambda_x = \frac{2}{1 - \|x\|^2/R^2}$
-- Update: $x_{new} = \exp_x(-\eta \cdot \nabla_R f(x))$ via Möbius scalar multiplication + Möbius addition
+- Riemannian gradient: $\nabla_R f(x) = (1/\lambda_x^2) \nabla_E f(x)$, where $\lambda_x = \frac{2}{1 - \|x\|^2/R^2}$
+- Update: $x_{new} = \exp_x(-\eta \cdot \nabla_R f(x))$ via Möbius addition
+- Midpoint: $m = \exp_a(\tfrac{1}{2} \log_a(b))$
+
+**Implementation:**
+- Fixed `exp_map_poincare` in `rtmdk/memory/geometry.py` and `rtmdk/utils/hyperbolic.py` — scalar factor was missing `ball_radius` multiplier, causing round-trip errors.
+- Added `poincare_midpoint()` and `mobius_scalar_mul()` to `geometry.py`.
+- Refactored `consolidate()` in `core.py` to use `poincare_midpoint()` for spatial merge when `hyperbolic=True`.
+- Refactored `step()` attraction update to use Riemannian SGD (`conformal * grad_e` + `exp_map_poincare`).
+- Added hyperbolic clamping in `add_node()` for `projection_learner` path (was missing).
+- Removed stale local copies of `poincare_dist`, `exp_map_poincare`, `log_map_poincare`, `mobius_add` from `core.py`.
+- Fixed `poincare_dist` in `geometry.py` / `hyperbolic.py` to multiply by `ball_radius` (was missing for R≠1).
 
 **Expected Impact:**
 | Metric | Current | Target | Measurement |
@@ -28,9 +38,9 @@
 - May change "feel" of retrieval if users rely on current (buggy) clustering geometry.
 
 **Acceptance Criteria:**
-- [ ] `exp_map_poincare` used in all position updates inside `consolidate()`
-- [ ] Unit test: node initialized at origin, gradient pushes it, position stays inside ball without clamping
-- [ ] Benchmark: consolidate on 1K nodes does not regress wall-time by >20%
+- [x] `exp_map_poincare` used in all position updates inside `consolidate()`
+- [x] Unit test: node initialized at origin, gradient pushes it, position stays inside ball without clamping
+- [x] Benchmark: consolidate on 1K nodes does not regress wall-time by >20%
 
 ---
 

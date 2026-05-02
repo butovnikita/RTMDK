@@ -26,7 +26,7 @@ def poincare_dist(u: NDArray, v: NDArray, ball_radius: float = 0.85) -> float:
     r_sq = ball_radius ** 2
     denom = ((r_sq - u_norm ** 2) * (r_sq - v_norm ** 2)) / max(r_sq, 1e-8)
     arg = 1 + 2 * sq_delta / max(denom, 1e-8)
-    return float(np.arccosh(np.clip(arg, 1.0, None)))
+    return float(ball_radius * np.arccosh(np.clip(arg, 1.0, None)))
 
 
 def exp_map_poincare(tangent: NDArray, base: NDArray, ball_radius: float = 0.85) -> NDArray:
@@ -38,7 +38,7 @@ def exp_map_poincare(tangent: NDArray, base: NDArray, ball_radius: float = 0.85)
     base_norm_sq = np.sum(base ** 2)
     lambda_base = 2.0 / (1.0 - base_norm_sq / (ball_radius ** 2))
     scaled_norm = lambda_base * tangent_norm / (2.0 * ball_radius)
-    c = np.tanh(scaled_norm) / max(scaled_norm, 1e-8)
+    c = ball_radius * np.tanh(scaled_norm) / max(tangent_norm, 1e-8)
     direction = c * tangent
     result = mobius_add(base, direction, ball_radius)
     return result.astype(np.float32)
@@ -71,3 +71,23 @@ def mobius_add(x: NDArray, y: NDArray, ball_radius: float = 0.85) -> NDArray:
     den = 1 + 2 * xy + x2 * y2
     result = num / max(den, 1e-8)
     return _clip_norm(result, ball_radius).astype(np.float32)
+
+
+def mobius_scalar_mul(r: float, x: NDArray, ball_radius: float = 0.85) -> NDArray:
+    """Scalar multiplication r ⊗ x in Poincaré ball of radius R."""
+    norm = np.linalg.norm(x)
+    if norm < 1e-8:
+        return x.copy().astype(np.float32)
+    # For ball radius R: r ⊗ x = tanh(r * arctanh(||x||/R)) * R * x / ||x||
+    scaled = r * np.arctanh(min(norm / ball_radius, 1.0 - 1e-8))
+    result = np.tanh(scaled) * ball_radius * x / norm
+    return _clip_norm(result, ball_radius).astype(np.float32)
+
+
+def poincare_midpoint(a: NDArray, b: NDArray, ball_radius: float = 0.85) -> NDArray:
+    """Hyperbolic midpoint of two points in Poincaré ball.
+
+    Computes m = exp_a(0.5 * log_a(b)).
+    """
+    tangent = log_map_poincare(b, a, ball_radius)
+    return exp_map_poincare(0.5 * tangent, a, ball_radius)
