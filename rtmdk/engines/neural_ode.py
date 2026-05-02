@@ -92,7 +92,7 @@ class NeuralODEDynamics:
             if sol.success:
                 chunks.append(sol.y.T)
             else:
-                chunks.append(odeint(ode_func, chunk_state.flatten(), t_span))
+                chunks.append(odeint(ode_func, chunk_state.flatten(), t_span, atol=self.atol, rtol=self.rtol))
         return np.concatenate(chunks, axis=1)
 
     def evolve_with_noise(self, initial_state: NDArray, input_signal: Optional[NDArray] = None,

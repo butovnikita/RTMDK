@@ -26,6 +26,7 @@ class TorchBackend:
         return self.torch is not None
 
     def batch_resonance(self, ql, qp, np_, nph, na, ns, bw, pc):
+        bw = max(bw, 1e-8)
         if not self.available:
             return self._numpy(ql, qp, np_, nph, na, ns, bw, pc)
         tq = self.torch.from_numpy(ql).to(self.device)
@@ -39,6 +40,7 @@ class TorchBackend:
 
     @staticmethod
     def _numpy(ql, qp, np_, nph, na, ns, bw, pc):
+        bw = max(bw, 1e-8)
         dists = cdist(ql, np_)
         # Bug #1 FIX: Gaussian kernel — sharper, matches theory
         spatial = np.exp(-dists ** 2 / (2 * bw ** 2))

@@ -2002,6 +2002,7 @@ class RTMDKField:
             dist = np.linalg.norm(query_latent - node.latent_pos)
         phase_diff = node.phase - query_phase
         bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self.cfg.bandwidth
+        bw = max(bw, 1e-8)
         pc = self.meta_kernel.get_phase_coupling() if self.meta_kernel else self.cfg.phase_coupling
 
         if self.learnable_kernel:
@@ -2052,6 +2053,7 @@ class RTMDKField:
         dists = cdist(query_latents, node_positions)
         # Gaussian kernel: exp(-d^2/(2*bw^2)) — use meta_kernel if available (Fix 2: consistency with single-node path)
         bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self.cfg.bandwidth
+        bw = max(bw, 1e-8)
         pc = self.meta_kernel.get_phase_coupling() if self.meta_kernel else self.cfg.phase_coupling
         spatial = np.exp(-dists ** 2 / (2 * bw ** 2))
         phase_diff = query_phases[:, np.newaxis] - node_phases[np.newaxis, :]
@@ -2194,6 +2196,7 @@ class RTMDKField:
 
         # Vectorized spatial kernel (gaussian)
         bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self.cfg.bandwidth
+        bw = max(bw, 1e-8)
         spatial = np.exp(-dists ** 2 / (2 * bw ** 2))
 
         # Vectorized phase alignment

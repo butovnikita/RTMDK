@@ -153,9 +153,13 @@ class CPENODECoupledSystem:
         return np.concatenate([parent_dx, child_dx])
     
     def integrate(self, t_span: Tuple[float, float], initial_state: np.ndarray,
-                  t_eval: Optional[np.ndarray] = None, method: str = 'RK45'):
+                  t_eval: Optional[np.ndarray] = None, method: str = 'RK45',
+                  atol: float = 1e-6, rtol: float = 1e-3):
         """Integrate the ODE system."""
-        sol = solve_ivp(self.dynamics, t_span, initial_state, method=method, t_eval=t_eval)
+        sol = solve_ivp(self.dynamics, t_span, initial_state, method=method,
+                        t_eval=t_eval, atol=atol, rtol=rtol)
+        if not sol.success:
+            raise RuntimeError(f"ODE integration failed: {sol.message}")
         return sol
 
 

@@ -52,6 +52,7 @@ class BM25Index:
             idf = math.log((n - df + 0.5) / (df + 0.5) + 1.0)
             for doc_id, text in self.documents.items():
                 tf = text.lower().count(token)
-                doc_len = self.doc_lengths.get(doc_id, 1)
-                scores[doc_id] += idf * tf * (self.k1 + 1) / (tf + self.k1 * (1 - self.b + self.b * doc_len / max(self.avg_doc_length, 1)))
+                doc_len = max(self.doc_lengths.get(doc_id, 1), 1)
+                denom = tf + self.k1 * (1 - self.b + self.b * doc_len / max(self.avg_doc_length, 1))
+                scores[doc_id] += idf * tf * (self.k1 + 1) / max(denom, 1e-8)
         return [(d, s) for d, s in sorted(scores.items(), key=lambda x: x[1], reverse=True)[:top_k] if s > 0]
