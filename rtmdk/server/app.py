@@ -474,9 +474,10 @@ async def shutdown():
         memory.field._workers.clear()
 
         try:
-            os.makedirs(os.path.dirname(MEMORY_FILE), exist_ok=True)
-            await run_sync(memory.export_field, MEMORY_FILE)
-            logger.info(f"Memory saved to {MEMORY_FILE} ({len(memory.field.nodes)} nodes)")
+            save_path = _get_save_path(MEMORY_FILE)
+            os.makedirs(os.path.dirname(save_path), exist_ok=True)
+            await run_sync(memory.export_field, save_path)
+            logger.info(f"Memory saved to {save_path} ({len(memory.field.nodes)} nodes)")
         except Exception:
             logger.exception("Failed to save memory on shutdown")
 
