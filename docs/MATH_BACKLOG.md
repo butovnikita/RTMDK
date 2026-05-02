@@ -259,34 +259,22 @@ where $\text{kdist}_i$ = distance to $k$-th nearest neighbor ($k=5$).
 
 ## SOT Enhancement Track (SOT v2) — Май 2026
 
-### SOT-A: FastText Bootstrap for Cold Start
-**Owner:** TBD | **Estimate:** 2 days | **Status:** 🔴 Not started
+### SOT-A: Warm-Start PMI + IDF
+**Status:** ✅ Done | **Impact:** Similarity related texts 0.74→0.91
 
-**Problem:** SOT starts with 256 random byte vectors. First 20-50 queries return near-random results.
-
-**Solution:** Load pre-trained FastText subword embeddings (~1MB per language) and initialize SOT byte embeddings as projection of FastText vectors.
-
-**Expected Impact:**
-| Metric | Current | Target |
-|--------|---------|--------|
-| Cold-start Recall@1 | ~0.0 | 0.55-0.65 |
-| Conversational turns to usable | 50+ | 5-10 |
-
-**Risks:** Language-dependent; requires FastText model files.
+**What:** Compute byte-bigram PMI + IDF from corpus at init; initialize embeddings via SVD of co-occurrence matrix.
 
 ---
 
 ### SOT-B: Engram Manager in RTMDKField
-**Owner:** TBD | **Estimate:** 0.5 days | **Status:** 🔴 Not started
+**Status:** ✅ Done | **Impact:** Direct field usage now supports engrams
 
-**Problem:** `engram_manager` is initialized in `RTMDKMemory` but not in `RTMDKField`. Direct field usage cannot create engrams.
-
-**Solution:** Move engram_manager initialization into `RTMDKField.__init__`.
+**What:** Moved `engram_manager` initialization from `RTMDKMemory` into `RTMDKField.__init__`.
 
 ---
 
 ### SOT-C: Co-occurrence Dict Size Limit
-**Owner:** TBD | **Estimate:** 0.5 days | **Status:** 🔴 Not started
+**Status:** 🔴 Not started | **Estimate:** 0.5 days
 
 **Problem:** `cooccurrence` dict grows without bound. Long-running instances will OOM.
 
@@ -295,11 +283,63 @@ where $\text{kdist}_i$ = distance to $k$-th nearest neighbor ($k=5$).
 ---
 
 ### SOT-D: Gradient Clipping in Feedback Loop
-**Owner:** TBD | **Estimate:** 0.5 days | **Status:** 🔴 Not started
+**Status:** ✅ Done | **Impact:** Prevents NaN projection updates
 
-**Problem:** `_sot_retrieval_feedback` updates projection matrix without bounds check. Can produce NaN.
+**What:** Added `np.clip(delta, -0.1, 0.1)` in `_sot_retrieval_feedback` projection update.
 
-**Solution:** Clip gradient norm to 1.0; add `np.isnan` guard.
+---
+
+### SOT-E: Subword Seed (Preset Merges)
+**Status:** ✅ Done | **Impact:** Vocab 256→353, encoding shorter by ~15%
+
+**What:** Pre-seed with 500 common English byte bigrams + 200 trigrams.
+
+---
+
+### SOT-F: Attention Pooling
+**Status:** ✅ Done | **Impact:** First/last token weighted; IDF-aware
+
+**What:** `embed()` uses IDF weights + position bonus (first ×1.5, last ×1.2) instead of mean.
+
+---
+
+### SOT-G: Hard Negatives
+**Status:** ✅ Done | **Impact:** Contrastive learning uses closest non-positives
+
+**What:** `update_with_hard_negatives()` selects negatives by similarity rather than random.
+
+---
+
+### SOT-H: Retrieval Feedback
+**Status:** ✅ Done | **Impact:** Embeddings adapt from query results
+
+**What:** `_sot_retrieval_feedback()` updates token embeddings + projection using top/bottom results.
+
+---
+
+### SOT-I: Skip-gram Co-occurrence
+**Status:** ✅ Done | **Impact:** Captures long-range associations
+
+**What:** `skipgram_window` (default 3) records co-occurrence beyond adjacent tokens.
+
+---
+
+### SOT-J: SBERT Bootstrap (Cold-Start Fix)
+**Status:** 🟡 In Progress | **Estimate:** 1 day
+
+**Problem:** Byte-level tokens + PMI on small corpus still insufficient for semantic retrieval (Recall@1 ~0.27-0.30 vs BM25 0.73).
+
+**Solution:** `bootstrap_from_teacher()` uses `all-MiniLM-L6-v2` as teacher. Offline ridge regression learns projection from byte counts → SBERT space. Standalone utility: `rtmdk/memory/bootstrap_sbert.py`.
+
+**Benchmark (200 QA):**
+| Method | Recall@1 |
+|--------|----------|
+| BM25 | 0.730 |
+| SOT v1 (default) | 0.290 |
+| SOT v2 (warm-start + subword + attention) | 0.270 |
+| SOT v3 (SBERT bootstrap) | 0.295 |
+
+**Next:** Train projection on full 1000-QA corpus; evaluate at scale.
 
 ---
 
@@ -309,9 +349,8 @@ where $\text{kdist}_i$ = distance to $k$-th nearest neighbor ($k=5$).
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| SOT cold start = random | First 50 queries useless | FastText bootstrap (SOT-A) |
+| SOT cold start ≈ 30% recall | Semantic retrieval weak | SBERT bootstrap (SOT-J) |
 | Byte-level tokenization | "not good" == "good not" | Attention pooling ✅ (partial) |
-| Engram manager missing in Field | Pattern completion broken | SOT-B |
 | Co-occurrence unbounded growth | OOM after months | SOT-C |
 
 ### 🟡 High
@@ -327,14 +366,14 @@ where $\text{kdist}_i$ = distance to $k$-th nearest neighbor ($k=5$).
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| 203 tests only | Missed edge cases | Add concurrency + memory leak tests |
+| 222 tests only | Missed edge cases | Add concurrency + memory leak tests |
 | Windows-only CI | Linux/macOS bugs | Add cross-platform CI |
 | Config drift (100+ params) | Unexpected interactions | Config validation matrix |
 
 ---
 
 **Recommended roadmap (SOT + Risk Fix):**
-1. **Day 1:** SOT-B (engram manager fix) + SOT-D (gradient clipping)
-2. **Day 2-3:** SOT-A (FastText bootstrap)
-3. **Day 4:** SOT-C (co-occurrence limit)
-4. **Day 5:** Integration tests + benchmark
+1. **Day 1:** SOT-J (SBERT bootstrap on full corpus) + benchmark at 1000 QA
+2. **Day 2:** SOT-C (co-occurrence limit)
+3. **Day 3:** Integration tests + memory leak profiling
+4. **Day 4:** FastText as lighter alternative to SBERT

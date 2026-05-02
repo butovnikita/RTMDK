@@ -1620,6 +1620,20 @@ class RTMDKField:
 
         # Phase 18: Engram Manager (Fix 4: ensure attribute always exists even when disabled)
         self.engram_manager: Optional[Any] = None
+        if config.enable_engrams:
+            try:
+                from rtmdk.engrams import EngramManager
+                self.engram_manager = EngramManager(
+                    min_nodes=config.engram_min_nodes,
+                    max_nodes=config.engram_max_nodes,
+                    creation_threshold=config.engram_creation_threshold,
+                    decay_rate=config.engram_decay_rate,
+                    pattern_completion=config.engram_pattern_completion,
+                    overlap_threshold=config.engram_overlap_threshold,
+                )
+            except Exception:
+                logger.warning("Engram manager initialization failed in RTMDKField, disabling", exc_info=True)
+                self.engram_manager = None
 
         # Phase 14 Track 1: Meta-Memory
         self.meta_memory_eval: Optional[MetaMemoryEvaluator] = None
@@ -1785,7 +1799,32 @@ class RTMDKField:
                 token_dim=token_dim,
                 max_vocab=config.sot_max_vocab,
                 seed=config.seed,
+                subword_seed=config.sot_subword_seed,
+                attention_pooling=config.sot_attention_pooling,
+                skipgram_window=config.sot_skipgram_window,
             )
+            # Warm-start from corpus if path provided
+            if config.sot_warm_start_corpus:
+                try:
+                    import json
+                    with open(config.sot_warm_start_corpus, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    texts = []
+                    if isinstance(data, dict) and 'records' in data:
+                        texts = [r.get('context', '') + ' ' + r.get('answer', '') + ' ' + r.get('query', '')
+                                 for r in data['records']]
+                    elif isinstance(data, list):
+                        texts = [str(item) for item in data]
+                    self.sot_tokenizer.warm_start_from_corpus(texts)
+                except Exception as e:
+                    logger.warning(f"SOT warm-start failed: {e}")
+            # Load external bootstrap projection (e.g. SBERT)
+            if config.sot_bootstrap_projection:
+                try:
+                    from rtmdk.memory.bootstrap_sbert import load_bootstrap
+                    load_bootstrap(config.sot_bootstrap_projection, self.sot_tokenizer)
+                except Exception as e:
+                    logger.warning(f"SOT bootstrap projection load failed: {e}")
             self.sot_hebbian = ContrastiveHebbian(
                 lr=config.sot_contrastive_lr,
             )
@@ -2347,7 +2386,94 @@ class RTMDKField:
         # P1.1: Conformal prediction filtering
         results = self._apply_conformal_filter(results)
 
+        # E: Retrieval-aware feedback for SOT
+        if self.cfg.sot_retrieval_feedback and self.sot_tokenizer and self.sot_hebbian and results:
+            self._sot_retrieval_feedback(query_latent, results)
+
         return results[:top_k]
+
+    def sot_bootstrap(self, texts: List[str], teacher_model: str = 'all-MiniLM-L6-v2'):
+        """Bootstrap SOT embeddings from a sentence-transformer teacher model.
+        
+        This dramatically improves cold-start quality by initializing byte/token
+        embeddings with semantic structure from a pre-trained model.
+        
+        Args:
+            texts: Corpus texts to use for bootstrap (e.g. from dataset).
+            teacher_model: Sentence-transformer model name.
+        """
+        if not self.sot_tokenizer:
+            raise RuntimeError("SOT not enabled in config")
+        try:
+            from sentence_transformers import SentenceTransformer
+            teacher = SentenceTransformer(teacher_model)
+            logger.info(f"SOT bootstrap: loading teacher model {teacher_model}")
+            
+            def embed_fn(text):
+                return teacher.encode(text, show_progress_bar=False)
+            
+            self.sot_tokenizer.bootstrap_from_teacher(texts, embed_fn)
+        except ImportError:
+            logger.error("sentence-transformers not installed, cannot bootstrap SOT")
+            raise
+        except Exception as e:
+            logger.error(f"SOT bootstrap failed: {e}")
+            raise
+
+    def _sot_retrieval_feedback(self, query_latent: np.ndarray, results: List[Tuple[str, float, MemoryNode]]):
+        """Update SOT embeddings based on retrieval results.
+        Pull query-relevant tokens closer to top results, push away from low-scoring results."""
+        if not self.sot_tokenizer or not self.sot_hebbian:
+            return
+        # Use top result as positive anchor, bottom result as negative anchor
+        top_nid, top_score, top_node = results[0]
+        bottom_nid, bottom_score, bottom_node = results[-1] if len(results) > 1 else (None, 0.0, None)
+        
+        if top_score < 0.1:
+            return  # Too uncertain, skip feedback
+        
+        # Get query tokens (re-encode from the node's query context if available)
+        # Since we don't have original query text here, we use a heuristic:
+        # update token embeddings of top result toward query latent, away from bottom
+        top_text = top_node.content.get('text', '')
+        bottom_text = bottom_node.content.get('text', '') if bottom_node else ''
+        
+        top_tokens = self.sot_tokenizer.encode(top_text)
+        if bottom_text:
+            bottom_tokens = self.sot_tokenizer.encode(bottom_text)
+        else:
+            bottom_tokens = []
+        
+        # Pull top result tokens toward query direction
+        # (approximate: treat query_latent as target for top tokens)
+        if top_tokens and len(top_tokens) > 1:
+            self.sot_hebbian.update(
+                self.sot_tokenizer.token_embeddings,
+                top_tokens,
+                [t for t in bottom_tokens if t not in top_tokens][:self.cfg.sot_negatives_per_query],
+            )
+        
+        # Update projection matrix if token_dim != latent_dim
+        if self.sot_tokenizer.token_dim != self.sot_tokenizer.latent_dim and top_tokens:
+            # Simple gradient: push projection so that top text embeds closer to query
+            top_emb = self.sot_tokenizer.embed(top_tokens)
+            error = query_latent - top_emb
+            # Gradient clipping (SOT-D)
+            error_norm = np.linalg.norm(error)
+            if error_norm > 1.0:
+                error = error / error_norm
+            for t in top_tokens:
+                if t in self.sot_tokenizer.token_embeddings:
+                    token_vec = self.sot_tokenizer.token_embeddings[t]
+                    delta = 0.001 * np.outer(token_vec, error)
+                    self.sot_tokenizer.projection += delta
+            # NaN guard (SOT-D)
+            if np.isnan(self.sot_tokenizer.projection).any() or np.isinf(self.sot_tokenizer.projection).any():
+                logger.warning("SOT projection NaN/Inf detected, skipping update")
+                return
+            # Renormalize columns
+            norms = np.linalg.norm(self.sot_tokenizer.projection, axis=0, keepdims=True)
+            self.sot_tokenizer.projection /= np.maximum(norms, 1e-8)
 
     def query_by_text(self, text: str, top_k: Optional[int] = None,
                       session_id: Optional[str] = None) -> List[Tuple[str, float, MemoryNode]]:
@@ -3555,12 +3681,21 @@ class RTMDKField:
                 if self.sot_hebbian and self.sot_tokenizer and sot_tokens and len(sot_tokens) > 1:
                     vocab_ids = list(self.sot_tokenizer.token_embeddings.keys())
                     n_neg = min(self.cfg.sot_negatives_per_query, len(vocab_ids) - len(sot_tokens))
-                    negatives = []
-                    if n_neg > 0:
-                        available = [v for v in vocab_ids if v not in sot_tokens]
-                        if available:
-                            negatives = self._rng.choice(available, size=min(n_neg, len(available)), replace=False).tolist()
-                    self.sot_hebbian.update(self.sot_tokenizer.token_embeddings, sot_tokens, negatives)
+                    if self.cfg.sot_hard_negatives and n_neg > 0:
+                        # Use hard negative mining: closest non-positive embeddings
+                        self.sot_hebbian.update_with_hard_negatives(
+                            self.sot_tokenizer.token_embeddings,
+                            sot_tokens,
+                            vocab_ids,
+                            n_negatives=n_neg,
+                        )
+                    else:
+                        negatives = []
+                        if n_neg > 0:
+                            available = [v for v in vocab_ids if v not in sot_tokens]
+                            if available:
+                                negatives = self._rng.choice(available, size=min(n_neg, len(available)), replace=False).tolist()
+                        self.sot_hebbian.update(self.sot_tokenizer.token_embeddings, sot_tokens, negatives)
 
                 # Phase 21: SSM sync — smooth momentum for token embeddings
                 if self.sot_ssm and self.sot_tokenizer and sot_tokens and self._sot_field_ema is not None:

@@ -273,6 +273,13 @@ _FIELD_GROUPS: Dict[str, str] = {
     "sot_ssm_sync": "SOTConfig",
     "sot_token_dim": "SOTConfig",
     "sot_use_for_query": "SOTConfig",
+    "sot_warm_start_corpus": "SOTConfig",
+    "sot_attention_pooling": "SOTConfig",
+    "sot_hard_negatives": "SOTConfig",
+    "sot_retrieval_feedback": "SOTConfig",
+    "sot_skipgram_window": "SOTConfig",
+    "sot_subword_seed": "SOTConfig",
+    "sot_bootstrap_projection": "SOTConfig",
     "sparse_routing": "RoutingConfig",
     "ssm_dynamics": "DynamicsConfig",
     "ssm_state_dim": "DynamicsConfig",
@@ -596,6 +603,13 @@ class SOTConfig:
         sot_merge_freq: int = 100
         sot_min_cooccurrence: int = 5
         sot_use_for_query: bool = False
+        sot_warm_start_corpus: Optional[str] = None  # Path to JSON corpus for warm-start
+        sot_attention_pooling: bool = False  # IDF + position weighted pooling
+        sot_hard_negatives: bool = False  # Use hardest negatives in contrastive learning
+        sot_retrieval_feedback: bool = False  # Update embeddings from query feedback
+        sot_skipgram_window: int = 1  # 1=adjacent only, >1=skip-gram window
+        sot_subword_seed: bool = False  # Pre-seed with common byte n-grams
+        sot_bootstrap_projection: Optional[str] = None  # Path to .npz bootstrap file
 
 
 @dataclass(init=False, repr=False, eq=False)

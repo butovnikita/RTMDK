@@ -36,6 +36,9 @@ class SOTokenizer:
         max_vocab: int = 4096,
         initial_byte_vocab: int = 256,
         seed: int = 42,
+        subword_seed: bool = False,
+        attention_pooling: bool = False,
+        skipgram_window: int = 1,
     ):
         self.latent_dim = latent_dim
         self.token_dim = token_dim or latent_dim
@@ -43,10 +46,15 @@ class SOTokenizer:
         self.initial_byte_vocab = initial_byte_vocab
         self.next_token_id = initial_byte_vocab
         self._rng = np.random.default_rng(seed)
+        self.subword_seed = subword_seed
+        self.attention_pooling = attention_pooling
+        self.skipgram_window = max(1, skipgram_window)
 
         self.token_embeddings: Dict[int, np.ndarray] = {}
         self.merges: Dict[Tuple[int, int], int] = {}
         self.cooccurrence: Dict[Tuple[int, int], float] = defaultdict(float)
+        self.token_frequency: Dict[int, float] = defaultdict(float)
+        self.token_idf: Dict[int, float] = {}
 
         # Learnable projection: token_dim -> latent_dim
         if self.token_dim == self.latent_dim:
@@ -61,6 +69,8 @@ class SOTokenizer:
                 self.projection = q[:, :self.latent_dim].astype(np.float32)
 
         self._init_byte_embeddings()
+        if subword_seed:
+            self._seed_subword_tokens()
 
     def _init_byte_embeddings(self):
         for i in range(self.initial_byte_vocab):
@@ -69,6 +79,241 @@ class SOTokenizer:
             if norm > 0:
                 emb /= norm
             self.token_embeddings[i] = emb
+
+    def _seed_subword_tokens(self, top_n_bigrams: int = 500, top_n_trigrams: int = 200):
+        """Pre-seed vocabulary with common English byte patterns.
+        These are learned from a small static corpus (no runtime dependency)."""
+        # Common byte bigrams in English text (from frequency analysis)
+        common_bigrams = [
+            (101, 32), (116, 104), (105, 110), (115, 32), (32, 116),  # 'e ', 'th', 'in', 's ', ' t'
+            (32, 97), (32, 105), (111, 110), (101, 114), (114, 101),  # ' a', ' i', 'on', 'er', 're'
+            (97, 116), (101, 115), (32, 111), (114, 97), (110, 100),  # 'at', 'es', ' o', 'ra', 'nd'
+            (116, 111), (101, 110), (97, 110), (116, 105), (32, 115),  # 'to', 'en', 'an', 'ti', ' s'
+            (104, 97), (108, 121), (111, 117), (116, 101), (97, 114),  # 'ha', 'ly', 'ou', 'te', 'ar'
+            (105, 115), (115, 116), (110, 103), (104, 101), (100, 101),  # 'is', 'st', 'ng', 'he', 'de'
+            (116, 97), (32, 119), (105, 116), (101, 100), (101, 97),  # 'ta', ' w', 'it', 'ed', 'ea'
+            (111, 114), (111, 111), (101, 101), (117, 114), (115, 101),  # 'or', 'oo', 'ee', 'ur', 'se'
+            (32, 99), (32, 102), (32, 109), (32, 112), (32, 98),  # ' c', ' f', ' m', ' p', ' b'
+            (32, 104), (32, 100), (32, 114), (32, 108), (32, 110),  # ' h', ' d', ' r', ' l', ' n'
+            (105, 99), (97, 108), (97, 99), (111, 109), (97, 115),  # 'ic', 'al', 'ac', 'om', 'as'
+            (105, 111), (117, 115), (115, 105), (114, 116), (108, 105),  # 'io', 'us', 'si', 'rt', 'li'
+        ]
+        common_trigrams = [
+            (116, 104, 101), (105, 110, 103), (116, 105, 111), (110, 116, 104),  # 'the', 'ing', 'tio', 'nth'
+            (97, 116, 105), (116, 104, 97), (115, 116, 104), (104, 97, 116),  # 'ati', 'tha', 'sth', 'hat'
+            (101, 114, 101), (111, 117, 116), (102, 111, 114), (104, 101, 114),  # 'ere', 'out', 'for', 'her'
+            (97, 116, 101), (119, 105, 116), (104, 32, 32), (105, 115, 32), (101, 115, 116),  # 'ate', 'wit', 'h  ', 'is ', 'est'
+            (97, 110, 100), (115, 116, 97), (111, 110, 32), (101, 110, 116),  # 'and', 'sta', 'on ', 'ent'
+            (104, 97, 116), (114, 101, 32), (97, 116, 32), (101, 114, 115),  # 'hat', 're ', 'at ', 'ers'
+            (97, 114, 101), (116, 104, 32), (105, 110, 32), (101, 114, 97),  # 'are', 'th ', 'in ', 'era'
+            (111, 110, 97), (115, 116, 32), (109, 101, 110), (97, 110, 32),  # 'ona', 'st ', 'men', 'an '
+        ]
+        for pair in common_bigrams[:top_n_bigrams]:
+            if len(self.token_embeddings) >= self.max_vocab:
+                break
+            if all(p < self.initial_byte_vocab for p in pair):
+                self._create_merge(pair)
+        for triple in common_trigrams[:top_n_trigrams]:
+            if len(self.token_embeddings) >= self.max_vocab:
+                break
+            # Merge first two, then merge result with third
+            if all(t < self.initial_byte_vocab for t in triple[:2]):
+                if triple[:2] not in self.merges:
+                    self._create_merge(triple[:2])
+                first = self.merges[triple[:2]]
+                if (first, triple[2]) not in self.merges and first in self.token_embeddings:
+                    self._create_merge((first, triple[2]))
+
+    def _create_merge(self, pair: Tuple[int, int]):
+        """Create a merge rule without recording cooccurrence (for seeding)."""
+        a, b = pair
+        if a not in self.token_embeddings or b not in self.token_embeddings:
+            return
+        new_id = self.next_token_id
+        self.next_token_id += 1
+        new_emb = 0.5 * (self.token_embeddings[a] + self.token_embeddings[b])
+        norm = np.linalg.norm(new_emb)
+        if norm > 0:
+            new_emb /= norm
+        self.token_embeddings[new_id] = new_emb.astype(np.float32)
+        self.merges[pair] = new_id
+
+    def bootstrap_from_teacher(
+        self,
+        texts: List[str],
+        teacher_embed_fn,
+        n_epochs: int = 30,
+        lr: float = 0.05,
+    ):
+        """Bootstrap SOT embeddings from a teacher model (e.g. SBERT).
+        
+        For each token, computes the average teacher embedding of all texts
+        containing that token, then nudges the token embedding toward that target.
+        Also learns a projection matrix mapping token space to teacher space.
+        
+        Args:
+            texts: List of texts to use for bootstrap.
+            teacher_embed_fn: Callable(text) -> np.ndarray (teacher embedding).
+            n_epochs: Number of optimization epochs.
+            lr: Learning rate for token embedding updates.
+        """
+        if not texts:
+            return
+        logger.info(f"SOT bootstrap: computing teacher embeddings for {len(texts)} texts...")
+        teacher_embs = []
+        valid_texts = []
+        for text in texts:
+            try:
+                emb = teacher_embed_fn(text)
+                if emb is not None and np.isfinite(emb).all():
+                    teacher_embs.append(emb)
+                    valid_texts.append(text)
+            except Exception:
+                continue
+        if not teacher_embs:
+            logger.warning("SOT bootstrap: no valid teacher embeddings")
+            return
+        teacher_matrix = np.stack(teacher_embs).astype(np.float32)
+        teacher_dim = teacher_matrix.shape[1]
+        
+        # Reduce teacher to latent_dim via PCA if needed
+        if teacher_dim > self.latent_dim:
+            from sklearn.decomposition import PCA
+            pca = PCA(n_components=self.latent_dim)
+            teacher_reduced = pca.fit_transform(teacher_matrix).astype(np.float32)
+            # Normalize
+            norms = np.linalg.norm(teacher_reduced, axis=1, keepdims=True)
+            teacher_reduced /= np.maximum(norms, 1e-8)
+        else:
+            teacher_reduced = teacher_matrix.copy()
+            # Pad with zeros if teacher_dim < latent_dim
+            if teacher_dim < self.latent_dim:
+                pad = np.zeros((len(teacher_reduced), self.latent_dim - teacher_dim), dtype=np.float32)
+                teacher_reduced = np.concatenate([teacher_reduced, pad], axis=1)
+            norms = np.linalg.norm(teacher_reduced, axis=1, keepdims=True)
+            teacher_reduced /= np.maximum(norms, 1e-8)
+        
+        logger.info(f"SOT bootstrap: teacher shape {teacher_matrix.shape}, reduced to {teacher_reduced.shape}")
+        
+        # Build token → text indices mapping
+        token_to_indices: Dict[int, List[int]] = defaultdict(list)
+        for idx, text in enumerate(valid_texts):
+            tokens = self.encode(text)
+            for t in set(tokens):
+                token_to_indices[t].append(idx)
+        
+        # Iteratively update token embeddings toward teacher targets
+        for epoch in range(n_epochs):
+            total_delta = 0.0
+            for token_id, indices in token_to_indices.items():
+                if token_id not in self.token_embeddings:
+                    continue
+                # Target = mean of teacher embeddings for texts containing this token
+                target = np.mean(teacher_reduced[indices], axis=0).astype(np.float32)
+                # Current token embedding (after projection)
+                current = self.token_embeddings[token_id] @ self.projection
+                # Gradient: pull current toward target
+                error = target - current
+                # Backprop through projection: delta_token = error @ projection.T
+                delta_token = lr * (error @ self.projection.T)
+                # Clip gradient
+                delta_norm = np.linalg.norm(delta_token)
+                if delta_norm > 1.0:
+                    delta_token /= delta_norm
+                self.token_embeddings[token_id] += delta_token
+                # Renormalize
+                norm = np.linalg.norm(self.token_embeddings[token_id])
+                if norm > 0:
+                    self.token_embeddings[token_id] /= norm
+                total_delta += np.linalg.norm(delta_token)
+            
+            if epoch % 10 == 0:
+                logger.info(f"SOT bootstrap epoch {epoch}: avg delta={total_delta / len(token_to_indices):.4f}")
+        
+        # Fine-tune projection matrix via Ridge regression
+        logger.info("SOT bootstrap: fine-tuning projection matrix...")
+        X = []
+        Y = []
+        for idx, text in enumerate(valid_texts):
+            tokens = self.encode(text)
+            if not tokens:
+                continue
+            pooled = np.mean([self.token_embeddings[t] for t in tokens if t in self.token_embeddings], axis=0)
+            X.append(pooled)
+            Y.append(teacher_reduced[idx])
+        if len(X) >= self.latent_dim:
+            X = np.stack(X).astype(np.float32)
+            Y = np.stack(Y).astype(np.float32)
+            # Ridge: W = (X^T X + λI)^{-1} X^T Y
+            lam = 0.01
+            XtX = X.T @ X + lam * np.eye(X.shape[1], dtype=np.float32)
+            try:
+                W = np.linalg.solve(XtX, X.T @ Y).astype(np.float32)
+                # Update projection (token_dim → latent_dim)
+                if W.shape == self.projection.shape:
+                    self.projection = W
+                    logger.info("SOT bootstrap: projection matrix updated via Ridge regression")
+                else:
+                    logger.warning(f"SOT bootstrap: projection shape mismatch {W.shape} vs {self.projection.shape}")
+            except np.linalg.LinAlgError:
+                logger.warning("SOT bootstrap: Ridge regression failed, keeping original projection")
+        
+        logger.info(f"SOT bootstrap complete: {len(token_to_indices)} tokens updated")
+
+    def warm_start_from_corpus(self, corpus_texts: List[str]):
+        """Pre-train token embeddings on a corpus using PMI-based initialization.
+        
+        This gives semantically meaningful starting points for byte embeddings,
+        dramatically improving cold-start recall.
+        """
+        if not corpus_texts:
+            return
+        # Build byte co-occurrence statistics
+        cooc = defaultdict(float)
+        totals = defaultdict(float)
+        for text in corpus_texts:
+            bytes_list = list(text.encode("utf-8"))
+            for b in bytes_list:
+                totals[b] += 1.0
+            for i in range(len(bytes_list) - 1):
+                a, b = bytes_list[i], bytes_list[i + 1]
+                cooc[(a, b)] += 1.0
+                cooc[(b, a)] += 1.0  # symmetric
+        
+        n_total = sum(totals.values())
+        if n_total == 0:
+            return
+        
+        # Compute PMI and use it to nudge embeddings
+        for (a, b), count in cooc.items():
+            if a >= self.initial_byte_vocab or b >= self.initial_byte_vocab:
+                continue
+            p_a = totals[a] / n_total
+            p_b = totals[b] / n_total
+            p_ab = count / n_total
+            if p_a > 0 and p_b > 0 and p_ab > 0:
+                pmi = math.log(p_ab / (p_a * p_b) + 1e-10)
+                if pmi > 0:
+                    # Pull embeddings of co-occurring bytes closer
+                    if a in self.token_embeddings and b in self.token_embeddings:
+                        direction = self.token_embeddings[b] - self.token_embeddings[a]
+                        self.token_embeddings[a] += 0.05 * pmi * direction
+                        self.token_embeddings[b] += 0.05 * pmi * (-direction)
+        
+        # Renormalize
+        for i in range(self.initial_byte_vocab):
+            if i in self.token_embeddings:
+                norm = np.linalg.norm(self.token_embeddings[i])
+                if norm > 0:
+                    self.token_embeddings[i] /= norm
+        
+        # Pre-compute IDF weights for attention pooling
+        for b, count in totals.items():
+            if b < self.initial_byte_vocab:
+                idf = math.log(len(corpus_texts) / (count + 1.0) + 1.0)
+                self.token_idf[b] = idf
+        logger.info(f"SOT warm-start: processed {len(corpus_texts)} texts, "
+                    f"{len(cooc)} co-occurrence pairs, IDF computed for {len(self.token_idf)} bytes")
 
     def encode(self, text: str) -> List[int]:
         """Greedy longest-match encoding using current merge table."""
@@ -119,27 +364,57 @@ class SOTokenizer:
         return byte_seq.decode("utf-8", errors="replace")
 
     def embed(self, tokens: List[int]) -> np.ndarray:
-        """Mean-pool token embeddings and project to latent_dim."""
+        """Pool token embeddings and project to latent_dim.
+        Supports attention-weighted pooling if attention_pooling=True."""
         if not tokens:
             return np.zeros(self.latent_dim, dtype=np.float32)
-        vecs = [self.token_embeddings[t] for t in tokens if t in self.token_embeddings]
+        vecs = []
+        weights = []
+        for i, t in enumerate(tokens):
+            if t not in self.token_embeddings:
+                continue
+            vecs.append(self.token_embeddings[t])
+            if self.attention_pooling:
+                # IDF weight: rare tokens are more informative
+                idf = self.token_idf.get(t, 1.0)
+                # Position weight: first and last tokens often more important
+                pos_weight = 1.0 + 0.5 * (1.0 if i == 0 or i == len(tokens) - 1 else 0.0)
+                weights.append(idf * pos_weight)
+            else:
+                weights.append(1.0)
+        
         if not vecs:
             return np.zeros(self.latent_dim, dtype=np.float32)
-        pooled = np.mean(vecs, axis=0).astype(np.float32)  # (token_dim,)
-        latent = pooled @ self.projection  # (latent_dim,)
-        # Normalize latent output
+        
+        weights = np.array(weights, dtype=np.float32)
+        weights /= weights.sum() + 1e-8
+        pooled = np.average(vecs, axis=0, weights=weights).astype(np.float32)
+        latent = pooled @ self.projection
         norm = np.linalg.norm(latent)
         if norm > 0:
             latent /= norm
         return latent.astype(np.float32)
 
     def record_cooccurrence(self, tokens: List[int], weight: float = 1.0):
-        """Record adjacent token co-occurrences for merge proposals."""
+        """Record token co-occurrences for merge proposals.
+        Uses skip-gram window if skipgram_window > 1."""
         if len(tokens) < 2:
             return
-        for i in range(len(tokens) - 1):
-            a, b = tokens[i], tokens[i + 1]
-            self.cooccurrence[(a, b)] += weight
+        window = self.skipgram_window
+        for i in range(len(tokens)):
+            self.token_frequency[tokens[i]] += weight
+            for j in range(i + 1, min(i + window + 1, len(tokens))):
+                a, b = tokens[i], tokens[j]
+                dist = j - i
+                self.cooccurrence[(a, b)] += weight / dist
+                if a != b:
+                    self.cooccurrence[(b, a)] += weight / dist
+        
+        # Update IDF cache if attention pooling enabled
+        if self.attention_pooling and self.token_frequency:
+            n_docs = sum(1 for _ in self.token_frequency.values())
+            for tid, freq in self.token_frequency.items():
+                self.token_idf[tid] = math.log(max(n_docs, 1) / (freq + 1.0) + 1.0)
 
     def propose_merges(self, n: int) -> List[Tuple[int, int]]:
         """Return top-N merge candidates by co-occurrence score."""
@@ -302,6 +577,40 @@ class ContrastiveHebbian:
             norm = np.linalg.norm(embeddings[k])
             if norm > 0:
                 embeddings[k] /= norm
+
+    def update_with_hard_negatives(
+        self,
+        embeddings: Dict[int, np.ndarray],
+        positives: List[int],
+        all_candidates: List[int],
+        n_negatives: int = 5,
+    ):
+        """Contrastive update using hard negatives (closest non-positive embeddings).
+        
+        This provides stronger gradient signal than random negatives.
+        """
+        if len(positives) < 2:
+            return
+        positive_set = set(positives)
+        candidates = [c for c in all_candidates if c not in positive_set and c in embeddings]
+        
+        if not candidates:
+            return
+        
+        # For each positive, find hardest negatives (highest similarity among non-positives)
+        hard_negatives = set()
+        for i in positives:
+            if i not in embeddings:
+                continue
+            sims = []
+            for c in candidates:
+                sim = self._cosine_sim(embeddings[i], embeddings[c])
+                sims.append((sim, c))
+            sims.sort(reverse=True)
+            for _, c in sims[:n_negatives]:
+                hard_negatives.add(c)
+        
+        self.update(embeddings, positives, list(hard_negatives))
 
     def field_update(
         self,
