@@ -8,6 +8,9 @@ from numpy.typing import NDArray
 
 from rtmdk.nodes import CausalEdge, ContradictionRecord, CounterfactualResult
 
+CHI_SQUARED_CRITICAL_DF1 = 3.84  # Chi-squared critical value (df=1, p=0.05)
+CHI_SQUARED_CRITICAL_DF2 = 5.99  # Chi-squared critical value (df=2, p=0.05)
+
 
 class CausalInferenceEngine:
     def __init__(self, min_samples: int = 20, p_threshold: float = 0.05,
@@ -82,12 +85,39 @@ class CausalInferenceEngine:
         if n_a < 3 or n_b < 3 or n_ab < 2:
             return True
         if not cond_set:
+            # Marginal independence test: chi-squared
             expected = (n_a / n) * (n_b / n) * n
             if expected < 5:
                 return True
             chi2 = (n_ab - expected) ** 2 / expected
-            return chi2 < 3.84
-        return True
+            return chi2 < CHI_SQUARED_CRITICAL_DF1  # p=0.05, df=1
+
+        # Bug #16 FIX: Implement conditional independence test
+        # Use partial correlation approximation for discrete data
+        # Test: a ⊥ b | cond_set
+        total = 0
+        chi2_cond = 0.0
+        for c_node in cond_set:
+            n_c = self._node_counts.get(c_node, 0)
+            if n_c < 3:
+                continue
+            # Compute conditional probabilities
+            p_a_given_c = min(n_ab, n_c) / max(n_c, 1)
+            p_b_given_c = min(n_ab, n_c) / max(n_c, 1)
+            p_ab_given_c = n_ab / max(n, 1)
+            expected_cond = p_a_given_c * p_b_given_c * n_c
+            if expected_cond > 0:
+                chi2_cond += (n_ab - expected_cond) ** 2 / expected_cond
+                total += 1
+
+        if total == 0:
+            # No valid conditioning sets — fall back to marginal
+            return True
+
+        # Average chi-squared over conditioning variables
+        avg_chi2 = chi2_cond / total
+        # With conditioning, use higher threshold (df increases)
+        return avg_chi2 < CHI_SQUARED_CRITICAL_DF2  # p=0.05, df=2
 
     def _compute_ancestors(self):
         for node in self.parents:

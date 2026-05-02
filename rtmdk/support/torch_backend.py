@@ -30,7 +30,8 @@ class TorchBackend:
             return self._numpy(ql, qp, np_, nph, na, ns, bw, pc)
         tq = self.torch.from_numpy(ql).to(self.device)
         dists = self.torch.cdist(tq, self.torch.from_numpy(np_).to(self.device))
-        spatial = self.torch.exp(-dists / bw)
+        # Bug #1 FIX: Gaussian kernel — matches numpy physics
+        spatial = self.torch.exp(-dists ** 2 / (2 * bw ** 2))
         pd = qp.unsqueeze(1) - self.torch.from_numpy(nph).to(self.device).unsqueeze(0)
         pa = 0.5 + 0.5 * self.torch.cos(pd)
         r = spatial * ((1 - pc) + pc * pa)
@@ -39,7 +40,8 @@ class TorchBackend:
     @staticmethod
     def _numpy(ql, qp, np_, nph, na, ns, bw, pc):
         dists = cdist(ql, np_)
-        spatial = np.exp(-dists / bw)
+        # Bug #1 FIX: Gaussian kernel — sharper, matches theory
+        spatial = np.exp(-dists ** 2 / (2 * bw ** 2))
         pd = qp[:, np.newaxis] - nph[np.newaxis, :]
         pa = 0.5 + 0.5 * np.cos(pd)
         return spatial * ((1 - pc) + pc * pa) * na[np.newaxis, :] * ns[np.newaxis, :]
