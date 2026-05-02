@@ -149,7 +149,8 @@ async def security_middleware(request: Request, call_next):
 # ============================================================================
 
 memory: Optional[RTMDKMemory] = None
-embedder_cache: Dict[str, np.ndarray] = {}
+from rtmdk.utils.lru_cache import LRUCache
+embedder_cache = LRUCache(maxsize=4096)
 lm_studio_available: bool = False
 chat_model: Optional[str] = None
 
@@ -199,8 +200,9 @@ async def check_lm_studio() -> bool:
 
 async def get_embedding(text: str, model: str = None) -> np.ndarray:
     """Get embedding from LM Studio or cache."""
-    if text in embedder_cache:
-        return embedder_cache[text]
+    cached = embedder_cache.get(text)
+    if cached is not None:
+        return cached
 
     embedder_model = model or EMBED_MODEL
 
@@ -221,7 +223,7 @@ async def get_embedding(text: str, model: str = None) -> np.ndarray:
             else:
                 embedding = np.pad(embedding, (0, expected_dim - len(embedding)), 'constant')
 
-        embedder_cache[text] = embedding
+        embedder_cache.set(text, embedding)
         return embedding
     except Exception:
         logger.warning("Embedding error, using fallback", exc_info=True)
