@@ -2299,14 +2299,14 @@ class RTMDKField:
             search_nodes = [(nid, self.nodes[nid]) for nid in candidate_ids if nid in self.nodes]
             self.stats["shard_hits"] += len(candidate_ids)
         else:
-            # OPTIMIZATION: Use vectorized batch resonance for N >= 50 nodes
-            if len(self.node_index) >= 50:
-                return self._query_vectorized(query_latent, phase, top_k, modality, session_id, t0)
-            search_nodes = [(nid, self.nodes[nid]) for nid in self.node_index]
-            if self.cfg.sparse_routing:
-                self.stats["shard_misses"] += 1
+            # Always use vectorized batch resonance (removes Python-loop overhead)
+            return self._query_vectorized(query_latent, phase, top_k, modality, session_id, t0)
 
-        # Original loop path (for small N < 50)
+        # Fallback loop path (should rarely reach here)
+        search_nodes = [(nid, self.nodes[nid]) for nid in self.node_index]
+        if self.cfg.sparse_routing:
+            self.stats["shard_misses"] += 1
+
         # Fix 3: Hyperbolic pre-filtering for candidate selection
         if self.cfg.hyperbolic and len(search_nodes) > top_k * 5:
             query_norm = np.linalg.norm(query_latent)
