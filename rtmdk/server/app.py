@@ -149,8 +149,7 @@ def check_lm_studio() -> bool:
             logger.info(f"LM Studio detected: {chat_model}")
             return True
     except Exception:
-        pass
-    logger.warning("LM Studio not available at %s", LM_STUDIO_URL)
+        logger.warning("LM Studio not available at %s", LM_STUDIO_URL, exc_info=True)
     return False
 
 
@@ -181,8 +180,8 @@ def get_embedding(text: str, model: str = None) -> np.ndarray:
 
         embedder_cache[text] = embedding
         return embedding
-    except Exception as e:
-        logger.warning(f"Embedding error: {e}, using fallback")
+    except Exception:
+        logger.warning("Embedding error, using fallback", exc_info=True)
         rng = np.random.default_rng(hash(text) % 2**32)
         emb = rng.standard_normal(768).astype(np.float32) * 0.1
         embedder_cache[text] = emb
@@ -213,8 +212,8 @@ def init_memory() -> RTMDKMemory:
             mem = RTMDKMemory.import_field(MEMORY_FILE, get_embedding)
             logger.info(f"Loaded memory from {MEMORY_FILE}: {len(mem.field.nodes)} nodes")
             return mem
-        except Exception as e:
-            logger.warning(f"Failed to load memory from {MEMORY_FILE}: {e}")
+        except Exception:
+            logger.warning("Failed to load memory from %s", MEMORY_FILE, exc_info=True)
             import shutil
             backup_path = MEMORY_FILE + f".corrupted.{int(time.time())}"
             try:
@@ -229,8 +228,8 @@ def init_memory() -> RTMDKMemory:
         mem.export_field(MEMORY_FILE)
         os.chmod(MEMORY_FILE, 0o600)  # Secure file permissions
         logger.info(f"Created new memory file at {MEMORY_FILE}")
-    except Exception as e:
-        logger.warning(f"Failed to create initial memory file: {e}")
+    except Exception:
+        logger.warning("Failed to create initial memory file", exc_info=True)
 
     return mem
 
@@ -247,8 +246,8 @@ def build_system_prompt(user_messages: List[ChatMessage], session_id: str) -> st
     if last_user and memory:
         try:
             ctx = memory.load_memory_variables({"input": last_user, "session_id": session_id})
-        except Exception as e:
-            logger.warning(f"Memory query failed: {e}")
+        except Exception:
+            logger.warning("Memory query failed", exc_info=True)
 
     # Check for custom system prompt (env var file)
     prompt_file = os.getenv("RTMDK_SYSTEM_PROMPT_FILE")
@@ -258,8 +257,8 @@ def build_system_prompt(user_messages: List[ChatMessage], session_id: str) -> st
         try:
             with open(prompt_file, 'r', encoding='utf-8') as f:
                 base_prompt = f.read().strip()
-        except Exception as e:
-            logger.warning(f"Failed to read prompt file: {e}")
+        except Exception:
+            logger.warning("Failed to read prompt file", exc_info=True)
             base_prompt = memory.config.system_prompt if memory else None
     else:
         env_prompt = os.getenv("RTMDK_SYSTEM_PROMPT")
@@ -286,8 +285,8 @@ def auto_save():
             os.makedirs(os.path.dirname(MEMORY_FILE), exist_ok=True)
             memory.export_field(MEMORY_FILE)
             logger.debug(f"Auto-saved memory: {len(memory.field.nodes)} nodes")
-        except Exception as e:
-            logger.error(f"Auto-save failed: {e}")
+        except Exception:
+            logger.exception("Auto-save failed")
 
 
 # ============================================================================
@@ -327,8 +326,8 @@ async def shutdown():
             os.makedirs(os.path.dirname(MEMORY_FILE), exist_ok=True)
             memory.export_field(MEMORY_FILE)
             logger.info(f"Memory saved to {MEMORY_FILE} ({len(memory.field.nodes)} nodes)")
-        except Exception as e:
-            logger.error(f"Failed to save memory on shutdown: {e}")
+        except Exception:
+            logger.exception("Failed to save memory on shutdown")
 
 
 # ============================================================================
@@ -372,8 +371,8 @@ async def chat_completions(req: ChatCompletionRequest):
                     {"input": last_user, "session_id": req.session_id},
                     {"output": ""}
                 )
-            except Exception as e:
-                logger.warning(f"Memory save failed: {e}")
+            except Exception:
+                logger.warning("Memory save failed", exc_info=True)
 
     lm_timeout = int(os.getenv("RTMDK_LM_STUDIO_TIMEOUT", "120"))
     request_model = req.model if req.model and req.model != "rtmdk" else None
@@ -403,8 +402,8 @@ async def chat_completions(req: ChatCompletionRequest):
                         line = chunk.decode("utf-8", errors='replace')
                         if line.startswith("data: "):
                             yield f"{line}\n\n"
-            except Exception as e:
-                logger.error(f"Streaming error: {e}")
+            except Exception:
+                logger.exception("Streaming error")
             finally:
                 if memory:
                     try:
@@ -435,8 +434,8 @@ async def chat_completions(req: ChatCompletionRequest):
                     {"input": last_user, "session_id": req.session_id},
                     {"output": response_content}
                 )
-        except Exception as e:
-            logger.warning(f"Memory update failed: {e}")
+        except Exception:
+            logger.warning("Memory update failed", exc_info=True)
 
     return data
 

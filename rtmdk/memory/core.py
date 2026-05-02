@@ -2559,8 +2559,8 @@ class RTMDKField:
                 self._cached_modal_weights = np.append(self._cached_modal_weights, 1.0)
                 self._cached_gates = np.append(self._cached_gates, 1.0)
                 self._cached_causal_boost = np.append(self._cached_causal_boost, 1.0)
-            except Exception as e:
-                logger.warning(f"Incremental cache append failed: {e}, falling back to full rebuild")
+            except Exception:
+                logger.warning("Incremental cache append failed, falling back to full rebuild", exc_info=True)
                 # Fallback: mark dirty for full rebuild
                 self._cache_dirty = True
         else:
@@ -3871,9 +3871,9 @@ class RTMDKField:
                     self.evolve_q.task_done()
                 except asyncio.TimeoutError:
                     continue
-                except Exception as e:
+                except Exception:
                     self._backpressure_events += 1
-                    logger.error(f"Evolve worker error: {e}")
+                    logger.exception("Evolve worker error")
         except asyncio.CancelledError:
             logger.info("Evolve worker cancelled cleanly.")
 
@@ -3888,8 +3888,8 @@ class RTMDKField:
                     self.save_q.task_done()
                 except asyncio.TimeoutError:
                     continue
-                except Exception as e:
-                    logger.error(f"Save worker error: {e}")
+                except Exception:
+                    logger.exception("Save worker error")
         except asyncio.CancelledError:
             logger.info("Save worker cancelled cleanly.")
     def _track_queue_depth(self):
@@ -4371,8 +4371,8 @@ class RTMDKMemory(BaseModel):
                     pattern_completion=self.config.engram_pattern_completion,
                     overlap_threshold=self.config.engram_overlap_threshold,
                 ))
-            except Exception as e:
-                logger.warning(f"Engram manager initialization failed, disabling: {e}")
+            except Exception:
+                logger.warning("Engram manager initialization failed, disabling", exc_info=True)
                 object.__setattr__(self, "engram_manager", None)
         else:
             object.__setattr__(self, "engram_manager", None)
