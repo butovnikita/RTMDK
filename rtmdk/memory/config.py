@@ -72,6 +72,8 @@ _FIELD_GROUPS: Dict[str, str] = {
     "auto_rollback_threshold": "ProductionConfig",
     "backend": "RetrievalConfig",
     "ball_radius": "MemorySystemConfig",
+    "adaptive_bandwidth": "CoreConfig",
+    "adaptive_bandwidth_k": "CoreConfig",
     "bandwidth": "CoreConfig",
     "bias_temperature": "RetrievalConfig",
     "bm25_b": "CoreConfig",
@@ -298,6 +300,8 @@ class CoreConfig:
         resonance_kernel: str = "gaussian_phase"
         phase_coupling: float = 0.3
         bandwidth: float = 1.0
+        adaptive_bandwidth: bool = False
+        adaptive_bandwidth_k: int = 5
         attraction_lr: float = 0.02
         phase_sync_lr: float = 0.01
         decay_rate: float = 0.997  # Matches server default — half-life ~230 steps
@@ -705,6 +709,8 @@ class RTMDKConfig:
             ("RTMDK_CONSOLIDATION_MODE", "consolidation_mode", lambda x: ConsolidationMode(x)),
             ("RTMDK_PHASE_COUPLING", "phase_coupling", float),
             ("RTMDK_BANDWIDTH", "bandwidth", float),
+            ("RTMDK_ADAPTIVE_BANDWIDTH", "adaptive_bandwidth", lambda x: x.lower() == "true"),
+            ("RTMDK_ADAPTIVE_BANDWIDTH_K", "adaptive_bandwidth_k", int),
             ("RTMDK_USE_HNSW", "use_hnsw", lambda x: x.lower() == "true"),
             ("RTMDK_HNSW_M", "hnsw_m", int),
             ("RTMDK_BM25_FALLBACK", "bm25_fallback", lambda x: x.lower() == "true"),
