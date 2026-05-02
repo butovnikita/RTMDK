@@ -524,6 +524,19 @@ class RTMDKConfig:
     hebbian_learning_rate: float = 0.01
     causal_masking: bool = False
 
+    # Phase 21: Self-Organizing Tokenizer + Embedding Field
+    sot_enabled: bool = False
+    sot_token_dim: Optional[int] = None  # None = same as latent_dim
+    sot_max_vocab: int = 4096
+    sot_merge_threshold: float = 0.7
+    sot_contrastive_lr: float = 0.01
+    sot_negatives_per_query: int = 5
+    sot_ssm_sync: bool = False
+    sot_diagonal_ssm: bool = True  # O(N*d) instead of O(N*d^2)
+    sot_merge_freq: int = 100
+    sot_min_cooccurrence: int = 5
+    sot_use_for_query: bool = False
+
     def __post_init__(self):
         # Phase 2: Env var overrides for critical config fields
         # Priority: explicit args > env vars > dataclass defaults
@@ -3764,6 +3777,31 @@ class RTMDKField:
             "tension_cache_hits": 0, "tension_cache_misses": 0,
             "tension_cache_hit_rate": 0.0,
         }
+        # Phase 21: Self-Organizing Tokenizer + Embedding Field
+        self.sot_tokenizer: Optional[Any] = None
+        self.sot_hebbian: Optional[Any] = None
+        self.sot_ssm: Optional[Any] = None
+        self._sot_field_ema: Optional[NDArray] = None
+        if config.sot_enabled:
+            from rtmdk.memory.self_organizing_field import SOTokenizer, ContrastiveHebbian, EmbeddingFieldSSM
+            token_dim = config.sot_token_dim or config.latent_dim
+            self.sot_tokenizer = SOTokenizer(
+                latent_dim=config.latent_dim,
+                token_dim=token_dim,
+                max_vocab=config.sot_max_vocab,
+                seed=config.seed,
+            )
+            self.sot_hebbian = ContrastiveHebbian(
+                lr=config.sot_contrastive_lr,
+            )
+            if config.sot_ssm_sync:
+                self.sot_ssm = EmbeddingFieldSSM(
+                    latent_dim=config.latent_dim,
+                    tokenizer=self.sot_tokenizer,
+                    diagonal=config.sot_diagonal_ssm,
+                )
+            self._sot_field_ema = np.zeros(config.latent_dim, dtype=np.float32)
+
         self._step_counter = 0
         # Rate limiting: track add_node timestamps (max 100 nodes/sec)
         self._add_node_timestamps: deque = deque(maxlen=1000)
@@ -3772,7 +3810,10 @@ class RTMDKField:
         self._active_node_history: deque = deque(maxlen=50)
 
     def _project(self, embedding: NDArray) -> NDArray:
-        if self.projection_learner:
+        # Phase 21: If embedding is already latent_dim, use directly
+        if len(embedding) == self.cfg.latent_dim:
+            latent = embedding.astype(np.float32)
+        elif self.projection_learner:
             latent = self.projection_learner.project(embedding)
         else:
             latent = ((embedding - 0) @ self._raw_projection).astype(np.float32) if embedding.ndim == 1 else (embedding @ self._raw_projection).astype(np.float32)
@@ -4224,6 +4265,27 @@ class RTMDKField:
 
         return results[:top_k]
 
+    def query_by_text(self, text: str, top_k: Optional[int] = None,
+                      session_id: Optional[str] = None) -> List[Tuple[str, float, MemoryNode]]:
+        """Query field using SOT tokenizer (no external embedder required).
+
+        Args:
+            text: Raw query text.
+            top_k: Number of results.
+            session_id: Optional session filter.
+
+        Returns:
+            List of (node_id, resonance_score, node) tuples.
+        """
+        top_k = top_k or self.cfg.top_k
+        if self.sot_tokenizer and self.cfg.sot_use_for_query:
+            tokens = self.sot_tokenizer.encode(text)
+            query_latent = self.sot_tokenizer.embed(tokens)
+            return self.query(query_latent, phase=0.0, top_k=top_k,
+                              modality="text", session_id=session_id)
+        # Fallback: use standard query path if SOT not enabled for queries
+        return []
+
     # B2: Lazy property for causal engine
     @property
     def causal_engine(self) -> Optional["CausalInferenceEngine"]:
@@ -4305,6 +4367,9 @@ class RTMDKField:
                     f"latent_dim {self.cfg.latent_dim}"
                 )
             latent = embedding
+        elif len(embedding) == self.cfg.latent_dim:
+            # Phase 21: SOT embeddings are already latent_dim — use directly
+            latent = embedding.astype(np.float32)
         elif self.projection_learner:
             latent = self.projection_learner.update(embedding)
             self.stats["projection_updates"] += 1
@@ -5058,18 +5123,28 @@ class RTMDKField:
         if inputs:
             for inp in inputs:
                 emb = inp["embedding"]
-                # Validate embedding dimension to prevent silent corruption
-                if len(emb) != self.cfg.embedding_dim:
-                    logger.warning(f"Embedding dimension mismatch in step(): expected {self.cfg.embedding_dim}, got {len(emb)}. Skipping.")
-                    continue
                 phase = inp.get("phase", 0.0)
                 content = inp.get("content", {})
                 session_id = inp.get("session_id")
                 modality = inp.get("modality", "text")
-                results = self.query(emb, phase, top_k=1, modality=modality)
+                text = content.get("text", "")
+
+                # Phase 21: SOT tokenization and optional query-by-text
+                sot_tokens = None
+                if self.sot_tokenizer and text:
+                    sot_tokens = self.sot_tokenizer.encode(text)
+                    self.sot_tokenizer.record_cooccurrence(sot_tokens)
+
+                # Validate embedding dimension — allow both embedding_dim and latent_dim
+                emb_dim = len(emb)
+                if emb_dim not in (self.cfg.embedding_dim, self.cfg.latent_dim):
+                    logger.warning(f"Embedding dimension mismatch in step(): expected {self.cfg.embedding_dim} or {self.cfg.latent_dim}, got {emb_dim}. Skipping.")
+                    continue
+
+                results = self.query(emb, phase, top_k=max(1, self.cfg.sot_negatives_per_query + 1), modality=modality)
                 if results and results[0][1] > 0.3:
                     nid, _, node = results[0]
-                    target = self._project(emb)
+                    target = emb if emb_dim == self.cfg.latent_dim else self._project(emb)
                     node.latent_pos += self.cfg.attraction_lr * (target - node.latent_pos)
                     pd = (phase - node.phase + np.pi) % (2*np.pi) - np.pi
                     node.phase = (node.phase + self.cfg.phase_sync_lr * pd) % (2 * np.pi)
@@ -5077,6 +5152,61 @@ class RTMDKField:
                     node.salience = min(1.0, node.salience + 0.03)
                 else:
                     self.add_node(emb, content, phase, session_id=session_id, modality=modality)
+
+                # Phase 21: Contrastive Hebbian update on field nodes
+                if self.sot_hebbian and results and len(self.node_index) > 1:
+                    snap_id_to_idx = {nid: idx for idx, nid in enumerate(self.node_index)}
+                    pos_indices = []
+                    for nid, _, _ in results:
+                        idx = snap_id_to_idx.get(nid)
+                        if idx is not None:
+                            pos_indices.append(idx)
+                    n_neg = min(self.cfg.sot_negatives_per_query, len(self.node_index) - len(pos_indices))
+                    neg_indices = []
+                    if n_neg > 0:
+                        all_idx = set(range(len(self.node_index)))
+                        available = list(all_idx - set(pos_indices))
+                        if available:
+                            neg_indices = self._rng.choice(available, size=min(n_neg, len(available)), replace=False).tolist()
+                    if pos_indices:
+                        positions = np.array([self.nodes[self.node_index[i]].latent_pos for i in range(len(self.node_index))], dtype=np.float32)
+                        self.sot_hebbian.field_update(positions, pos_indices, neg_indices)
+                        # Write back
+                        for i in range(len(self.node_index)):
+                            self.nodes[self.node_index[i]].latent_pos = positions[i]
+
+                # Phase 21: Contrastive Hebbian update on token embeddings
+                if self.sot_hebbian and self.sot_tokenizer and sot_tokens and len(sot_tokens) > 1:
+                    vocab_ids = list(self.sot_tokenizer.token_embeddings.keys())
+                    n_neg = min(self.cfg.sot_negatives_per_query, len(vocab_ids) - len(sot_tokens))
+                    negatives = []
+                    if n_neg > 0:
+                        available = [v for v in vocab_ids if v not in sot_tokens]
+                        if available:
+                            negatives = self._rng.choice(available, size=min(n_neg, len(available)), replace=False).tolist()
+                    self.sot_hebbian.update(self.sot_tokenizer.token_embeddings, sot_tokens, negatives)
+
+                # Phase 21: SSM sync — smooth momentum for token embeddings
+                if self.sot_ssm and self.sot_tokenizer and sot_tokens and self._sot_field_ema is not None:
+                    if len(self.nodes) > 0:
+                        active_positions = np.array([n.latent_pos for n in self.nodes.values()], dtype=np.float32)
+                        field_mean = np.mean(active_positions, axis=0)
+                    else:
+                        field_mean = np.zeros(self.cfg.latent_dim, dtype=np.float32)
+                    self._sot_field_ema = 0.9 * self._sot_field_ema + 0.1 * field_mean
+                    momentum = self.sot_ssm.step(sot_tokens, self._sot_field_ema)
+                    self.sot_ssm.sync_embeddings(sot_tokens, momentum)
+
+                # Phase 21: Periodic merge
+                if self.sot_tokenizer and self._step_counter % self.cfg.sot_merge_freq == 0 and self._step_counter > 0:
+                    candidates = self.sot_tokenizer.propose_merges(5)
+                    for pair in candidates:
+                        score = self.sot_tokenizer.cooccurrence.get(pair, 0.0)
+                        if score >= self.cfg.sot_merge_threshold and score >= self.cfg.sot_min_cooccurrence:
+                            try:
+                                self.sot_tokenizer.merge(pair)
+                            except RuntimeError:
+                                break  # Max vocab reached
 
         # Consolidation: periodic instead of probabilistic to avoid hot path spikes
         if len(self.nodes) > 10 and self._step_counter % 20 == 0:
@@ -5729,6 +5859,29 @@ class RTMDKField:
         from rtmdk.memory.serialization import FieldSerializer
         FieldSerializer.field_to_file(self, path, fmt)
 
+    def get_state(self) -> Dict[str, Any]:
+        """Get lightweight state dict for SOT persistence."""
+        state: Dict[str, Any] = {
+            "step_counter": self._step_counter,
+        }
+        if self.sot_tokenizer:
+            state["sot_tokenizer"] = self.sot_tokenizer.get_state()
+        if self.sot_hebbian:
+            state["sot_hebbian"] = {"lr": self.sot_hebbian.lr}
+        if self.sot_ssm:
+            state["sot_ssm"] = {"latent_dim": self.sot_ssm.latent_dim}
+        if self._sot_field_ema is not None:
+            state["sot_field_ema"] = self._sot_field_ema.tolist()
+        return state
+
+    def load_state(self, state: Dict[str, Any]):
+        """Load lightweight state dict for SOT persistence."""
+        self._step_counter = state.get("step_counter", self._step_counter)
+        if self.sot_tokenizer and "sot_tokenizer" in state:
+            self.sot_tokenizer.load_state(state["sot_tokenizer"])
+        if self._sot_field_ema is not None and "sot_field_ema" in state:
+            self._sot_field_ema = np.array(state["sot_field_ema"], dtype=np.float32)
+
     @classmethod
     def import_field(cls, path: str, embedder: Callable) -> "RTMDKMemory":
         path = _sanitize_path(path)
@@ -5746,6 +5899,13 @@ class RTMDKField:
         cd = {k: v for k, v in cd.items() if k in valid_fields}
         config = RTMDKConfig(**cd)
         memory = RTMDKMemory(config=config, embedder=embedder)
+
+        # Phase 21: SOT state restore
+        if config.sot_enabled:
+            if "sot_tokenizer" in data and memory.field.sot_tokenizer:
+                memory.field.sot_tokenizer.load_state(data["sot_tokenizer"])
+            if "sot_field_ema" in data and memory.field._sot_field_ema is not None:
+                memory.field._sot_field_ema = np.array(data["sot_field_ema"], dtype=np.float32)
 
         if config.learn_projection and "projection_state" in data:
             memory.field.projection_learner.load_state(data["projection_state"])
@@ -5920,6 +6080,11 @@ class RTMDKField:
             data["scenario_planner"] = self.scenario_planner.get_state()
         if self.engram_manager:
             data["engram_manager"] = self.engram_manager.get_state()
+        # Phase 21: SOT state
+        if self.sot_tokenizer:
+            data["sot_tokenizer"] = self.sot_tokenizer.get_state()
+        if self._sot_field_ema is not None:
+            data["sot_field_ema"] = self._sot_field_ema.tolist()
         return data
 
     @classmethod

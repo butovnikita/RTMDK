@@ -146,6 +146,26 @@ EngramPattern                    EngramIndex                    PatternCompleter
 | **Evidence Spans** | Traceability для legal/medical | `nodes.py` |
 | **Cross-domain Guard** | Запрет консолидации узлов из разных доменов | `core.py` |
 
+### Phase 21: Self-Organizing Tokenizer + Embedding Field (SOT)
+
+Заменяет статический `nn.Embedding` на динамическое поле, которое учится контрастным Хеббом, растёт от байт к субтокенам и синхронизируется с SSM-динамикой.
+
+| Компонент | Описание | Файл |
+|-----------|----------|------|
+| **SOTokenizer** | Байт → субтокен токенизатор, vocab растёт через co-retrieval merges. Поддерживает `token_dim != latent_dim` через learnable projection. | `memory/self_organizing_field.py` |
+| **ContrastiveHebbian** | Online contrastive learning: positives pull closer, negatives push apart | `memory/self_organizing_field.py` |
+| **EmbeddingFieldSSM** | SSM-моментум для плавных траекторий. Диагональный режим O(N·d) позволяет масштабировать `latent_dim` без просадок. | `memory/self_organizing_field.py` |
+| **SOT Integration** | `step()` / `query()` / `add_node()` адаптированы для любой размерности эмбеддингов | `memory/core.py` |
+
+**Ключевые свойства:**
+- **Автономность**: нет зависимости от внешнего embedder API для query.
+- **Адаптивность**: vocab растёт под домен поля (merge по co-retrieval, не по corpus frequency).
+- **Пластичность**: эмбеддинги нод и токенов дрейфуют в ответ на usage через Hebbian updates.
+- **Плавность**: SSM sync даёт инерцию обновлениям, предотвращая резкие скачки.
+- **Масштабируемость**: `token_dim=256` + `latent_dim=64` даёт высокую ёмкость токенов при быстром поле. Диагональный SSM убирает O(d²) bottleneck.
+
+**Флаги конфигурации:** `sot_enabled`, `sot_token_dim`, `sot_max_vocab`, `sot_contrastive_lr`, `sot_ssm_sync`, `sot_diagonal_ssm`, `sot_use_for_query`, `sot_merge_freq`, `sot_merge_threshold`.
+
 ---
 ---
 
