@@ -106,3 +106,29 @@ class CircuitBreaker:
             "failure_count": self._failure_count,
             "last_failure_time": self._last_failure_time,
         }
+
+
+class AsyncCircuitBreaker(CircuitBreaker):
+    """Async-aware circuit breaker for coroutine functions."""
+
+    async def call(self, func, *args, **kwargs):
+        if self.state == CircuitState.OPEN:
+            if self._should_attempt_reset():
+                self.state = CircuitState.HALF_OPEN
+                logger.info(f"[CircuitBreaker:{self.name}] HALF_OPEN — probing recovery")
+            else:
+                logger.debug(
+                    f"[CircuitBreaker:{self.name}] OPEN — fast-fail ({self._failure_count} failures)"
+                )
+                return self.default
+
+        try:
+            result = await func(*args, **kwargs)
+        except self.exclude_exceptions:
+            raise
+        except self.exceptions as e:
+            self._on_failure(e)
+            return self.default
+
+        self._on_success()
+        return result
