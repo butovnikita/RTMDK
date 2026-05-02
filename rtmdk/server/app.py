@@ -29,6 +29,16 @@ from rtmdk.memory.core import RTMDKMemory, RTMDKConfig
 
 
 # ============================================================================
+# ASYNC HELPERS
+# ============================================================================
+
+async def run_sync(func, *args, **kwargs):
+    """Run a synchronous function in the default thread pool."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, lambda: func(*args, **kwargs))
+
+
+# ============================================================================
 # CONFIGURATION
 # ============================================================================
 
@@ -315,7 +325,7 @@ async def _auto_save_loop():
     interval = int(os.getenv("RTMDK_AUTO_SAVE_INTERVAL", "60"))
     while True:
         await asyncio.sleep(interval)
-        auto_save()
+        await run_sync(auto_save)
 
 
 @app.on_event("shutdown")
@@ -324,7 +334,7 @@ async def shutdown():
     if memory:
         try:
             os.makedirs(os.path.dirname(MEMORY_FILE), exist_ok=True)
-            memory.export_field(MEMORY_FILE)
+            await run_sync(memory.export_field, MEMORY_FILE)
             logger.info(f"Memory saved to {MEMORY_FILE} ({len(memory.field.nodes)} nodes)")
         except Exception:
             logger.exception("Failed to save memory on shutdown")
@@ -355,7 +365,7 @@ async def chat_completions(req: ChatCompletionRequest):
         raise HTTPException(status_code=503, detail="LM Studio not available")
 
     import requests
-    system_prompt = build_system_prompt(req.messages, req.session_id)
+    system_prompt = await run_sync(build_system_prompt, req.messages, req.session_id)
     messages = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
@@ -367,7 +377,7 @@ async def chat_completions(req: ChatCompletionRequest):
         last_user = next((m.content for m in reversed(req.messages) if m.role == "user"), "")
         if last_user:
             try:
-                memory.save_context(
+                await run_sync(memory.save_context,
                     {"input": last_user, "session_id": req.session_id},
                     {"output": ""}
                 )
@@ -409,7 +419,7 @@ async def chat_completions(req: ChatCompletionRequest):
                     try:
                         last_user = next((m.content for m in reversed(req.messages) if m.role == "user"), "")
                         if last_user:
-                            memory.save_context(
+                            await run_sync(memory.save_context,
                                 {"input": last_user, "session_id": req.session_id},
                                 {"output": "[streamed]"}
                             )
@@ -430,7 +440,7 @@ async def chat_completions(req: ChatCompletionRequest):
         try:
             last_user = next((m.content for m in reversed(req.messages) if m.role == "user"), "")
             if last_user:
-                memory.save_context(
+                await run_sync(memory.save_context,
                     {"input": last_user, "session_id": req.session_id},
                     {"output": response_content}
                 )

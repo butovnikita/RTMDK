@@ -3857,7 +3857,8 @@ class RTMDKField:
                     # Throttling: Skip heavy meta-ops if backpressure high
                     backpressure_ok = self._backpressure_events < 3
                     
-                    self.step(inputs)
+                    loop = asyncio.get_event_loop()
+                    await loop.run_in_executor(None, self.step, inputs)
 
                     # Fix 10: Track recovery and update last successful step
                     self._last_successful_step = time.time()
