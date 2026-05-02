@@ -1414,6 +1414,7 @@ class RTMDKField:
         self._cached_modal_weights: Optional[NDArray] = None   # (N,)
         self._cached_gates: Optional[NDArray] = None           # (N,) soft_gate values
         self._cached_causal_boost: Optional[NDArray] = None    # (N,) causal boost factor
+        self._cached_bw: Optional[NDArray] = None              # (N,) per-node bandwidth (P1.2)
         self._cache_dirty: bool = False
 
         if config.learn_projection:
@@ -1866,10 +1867,16 @@ class RTMDKField:
 
         dists = cdist(query_latents, node_positions)
         # Gaussian kernel: exp(-d^2/(2*bw^2)) — use meta_kernel if available (Fix 2: consistency with single-node path)
-        bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self.cfg.bandwidth
-        bw = max(bw, 1e-8)
+        if self.cfg.adaptive_bandwidth and self._cached_bw is not None and len(self.node_index) > 0:
+            nid_to_idx = {nid: i for i, nid in enumerate(self.node_index)}
+            idxs = np.array([nid_to_idx[nid] for nid in node_ids], dtype=np.int64)
+            bw = self._cached_bw[idxs]
+        else:
+            bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self.cfg.bandwidth
+        bw = np.maximum(bw, 1e-8)
         pc = self.meta_kernel.get_phase_coupling() if self.meta_kernel else self.cfg.phase_coupling
-        spatial = np.exp(-dists ** 2 / (2 * bw ** 2))
+        # Broadcasting: per-node bw across queries
+        spatial = np.exp(-dists ** 2 / (2 * bw[np.newaxis, :] ** 2))
         phase_diff = query_phases[:, np.newaxis] - node_phases[np.newaxis, :]
         phase_align = 0.5 + 0.5 * np.cos(phase_diff)
         response = spatial * ((1 - pc) + pc * phase_align)
@@ -1880,6 +1887,10 @@ class RTMDKField:
         """Torch batch resonance — GPU accelerated."""
         if not node_ids:
             return np.empty((len(query_latents), 0), dtype=np.float32)
+
+        # P1.2 fallback: TorchBackend expects scalar bw; adaptive bw needs per-node vector
+        if self.cfg.adaptive_bandwidth:
+            return self._batch_resonance_numpy(query_latents, query_phases, node_ids)
 
         node_positions = np.array([self.nodes[nid].latent_pos for nid in node_ids])
         node_phases = np.array([self.nodes[nid].phase for nid in node_ids])
@@ -1906,6 +1917,7 @@ class RTMDKField:
             self._cached_modal_weights = np.empty(0, dtype=np.float32)
             self._cached_gates = np.empty(0, dtype=np.float32)
             self._cached_causal_boost = np.empty(0, dtype=np.float32)
+            self._cached_bw = None
             self._cache_dirty = False
             return
 
@@ -1932,6 +1944,18 @@ class RTMDKField:
                 cb = sum(node.causal_strength.get(p, 0) for p in node.causal_parents)
                 causal_boost[i] = 1.0 + 0.1 * cb
 
+        # Phase P1.2: Local adaptive bandwidth — precompute k-NN distances
+        if self.cfg.adaptive_bandwidth and n > self.cfg.adaptive_bandwidth_k:
+            tree = cKDTree(positions)
+            k = self.cfg.adaptive_bandwidth_k + 1  # +1 because query includes self
+            distances, _ = tree.query(positions, k=k)
+            kdist = distances[:, -1].astype(np.float32)
+            median_kdist = float(np.median(kdist))
+            bw_factors = np.sqrt(kdist / max(median_kdist, 1e-8))
+            self._cached_bw = (self.cfg.bandwidth * bw_factors).astype(np.float32)
+        else:
+            self._cached_bw = None
+
         self._cached_positions = positions
         self._cached_phases = phases
         self._cached_amplitudes = amplitudes
@@ -1943,12 +1967,20 @@ class RTMDKField:
 
     def _compute_resonance_chunk(self, positions, phases, amplitudes, saliences,
                                   modal_weights, gates, causal_boost,
-                                  query_latent, query_phase):
-        """Compute resonance response for a chunk of nodes."""
+                                  query_latent, query_phase, bw=None):
+        """Compute resonance response for a chunk of nodes.
+
+        Args:
+            bw: Optional per-node bandwidth vector (same length as positions).
+                If None, uses global bandwidth from config or meta_kernel.
+        """
         dists = np.linalg.norm(positions - query_latent, axis=1)
-        bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self.cfg.bandwidth
-        bw = max(bw, 1e-8)
-        spatial = np.exp(-dists ** 2 / (2 * bw ** 2))
+        if bw is not None:
+            local_bw = np.asarray(bw)
+        else:
+            local_bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self.cfg.bandwidth
+        local_bw = np.maximum(local_bw, 1e-8)
+        spatial = np.exp(-dists ** 2 / (2 * local_bw ** 2))
         pc = self.meta_kernel.get_phase_coupling() if self.meta_kernel else self.cfg.phase_coupling
         phase_align = 0.5 + 0.5 * np.cos(phases - query_phase)
         resp = spatial * ((1 - pc) + pc * phase_align) * amplitudes * saliences * modal_weights
@@ -2022,6 +2054,12 @@ class RTMDKField:
             causal_boost = self._cached_causal_boost
             session_indices = None
 
+        # P1.2: Adaptive bandwidth vector — must match filtered positions length
+        if self._cached_bw is not None and session_mask is not None and 0 < n_session < n_nodes * 0.3:
+            bw = self._cached_bw[session_mask]
+        else:
+            bw = self._cached_bw
+
         # Phase 3c: Chunked batch computation — prevents OOM and improves cache locality
         batch_size = self.cfg.gpu_batch_size
         n = len(positions)
@@ -2031,7 +2069,8 @@ class RTMDKField:
             resp = self._compute_resonance_chunk(
                 positions, phases, amplitudes, saliences,
                 modal_weights, gates, causal_boost,
-                query_latent, query_phase
+                query_latent, query_phase,
+                bw=bw,
             )
             if session_id and session_id != "default" and session_mask is not None and session_indices is None:
                 resp = resp * (1.0 + 0.5 * session_mask.astype(np.float32))
@@ -2064,7 +2103,8 @@ class RTMDKField:
                 resp = self._compute_resonance_chunk(
                     positions[start:end], phases[start:end], amplitudes[start:end],
                     saliences[start:end], modal_weights[start:end], gates[start:end],
-                    causal_boost[start:end], query_latent, query_phase
+                    causal_boost[start:end], query_latent, query_phase,
+                    bw=bw[start:end] if bw is not None else None,
                 )
                 if session_id and session_id != "default" and session_mask is not None and session_indices is None:
                     resp = resp * (1.0 + 0.5 * session_mask[start:end].astype(np.float32))
@@ -2438,6 +2478,11 @@ class RTMDKField:
                 self._cache_dirty = True
         else:
             self._cache_dirty = True
+
+        # P1.2: Adaptive bandwidth requires full rebuild (k-NN distances change for all nodes)
+        if self.cfg.adaptive_bandwidth:
+            self._cache_dirty = True
+            self._cached_bw = None
 
         # B1: Invalidate tension cache for neighbors (new node affects topology)
         self._invalidate_tension_cache(nid)
