@@ -257,7 +257,84 @@ where $\text{kdist}_i$ = distance to $k$-th nearest neighbor ($k=5$).
 - `_do_merge()` → `kf.merge_covariance()` при `enable_kalman_filter=True`
 - `add_node()` → инициализация `node.covariance` при `enable_kalman_filter=True`
 
-**Recommended roadmap (для P3):**
-1. **Week 1:** P3.1 (Wasserstein) — observability layer
-2. **Week 2–3:** P3.2 (Persistent Homology) — research feature
-4. **Month 2+:** P2.2 / P3.x — research tier, по необходимости
+## SOT Enhancement Track (SOT v2) — Май 2026
+
+### SOT-A: FastText Bootstrap for Cold Start
+**Owner:** TBD | **Estimate:** 2 days | **Status:** 🔴 Not started
+
+**Problem:** SOT starts with 256 random byte vectors. First 20-50 queries return near-random results.
+
+**Solution:** Load pre-trained FastText subword embeddings (~1MB per language) and initialize SOT byte embeddings as projection of FastText vectors.
+
+**Expected Impact:**
+| Metric | Current | Target |
+|--------|---------|--------|
+| Cold-start Recall@1 | ~0.0 | 0.55-0.65 |
+| Conversational turns to usable | 50+ | 5-10 |
+
+**Risks:** Language-dependent; requires FastText model files.
+
+---
+
+### SOT-B: Engram Manager in RTMDKField
+**Owner:** TBD | **Estimate:** 0.5 days | **Status:** 🔴 Not started
+
+**Problem:** `engram_manager` is initialized in `RTMDKMemory` but not in `RTMDKField`. Direct field usage cannot create engrams.
+
+**Solution:** Move engram_manager initialization into `RTMDKField.__init__`.
+
+---
+
+### SOT-C: Co-occurrence Dict Size Limit
+**Owner:** TBD | **Estimate:** 0.5 days | **Status:** 🔴 Not started
+
+**Problem:** `cooccurrence` dict grows without bound. Long-running instances will OOM.
+
+**Solution:** LRU eviction with max 100K entries; periodic pruning of low-weight pairs.
+
+---
+
+### SOT-D: Gradient Clipping in Feedback Loop
+**Owner:** TBD | **Estimate:** 0.5 days | **Status:** 🔴 Not started
+
+**Problem:** `_sot_retrieval_feedback` updates projection matrix without bounds check. Can produce NaN.
+
+**Solution:** Clip gradient norm to 1.0; add `np.isnan` guard.
+
+---
+
+## System Risk Audit (Май 2026)
+
+### 🔴 Critical
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| SOT cold start = random | First 50 queries useless | FastText bootstrap (SOT-A) |
+| Byte-level tokenization | "not good" == "good not" | Attention pooling ✅ (partial) |
+| Engram manager missing in Field | Pattern completion broken | SOT-B |
+| Co-occurrence unbounded growth | OOM after months | SOT-C |
+
+### 🟡 High
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| Conformal prediction 300ms latency | UX degradation | Reduce min_calib; cache threshold |
+| Spectral timeout 500ms | Incomplete clustering | Adaptive timeout based on N |
+| Kalman +50% query latency | Slow retrieval | Diagonal approx ✅; disable by default |
+| HNSW phantom nodes after delete | Returns deleted nodes | Rebuild HNSW after consolidate |
+
+### 🟢 Medium
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| 203 tests only | Missed edge cases | Add concurrency + memory leak tests |
+| Windows-only CI | Linux/macOS bugs | Add cross-platform CI |
+| Config drift (100+ params) | Unexpected interactions | Config validation matrix |
+
+---
+
+**Recommended roadmap (SOT + Risk Fix):**
+1. **Day 1:** SOT-B (engram manager fix) + SOT-D (gradient clipping)
+2. **Day 2-3:** SOT-A (FastText bootstrap)
+3. **Day 4:** SOT-C (co-occurrence limit)
+4. **Day 5:** Integration tests + benchmark
