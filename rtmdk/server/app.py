@@ -22,11 +22,29 @@ import numpy as np
 
 from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse, Response
 from pydantic import BaseModel
 
 # RTMDK package imports
 from rtmdk.memory.core import RTMDKMemory, RTMDKConfig
+from rtmdk.production.rate_limiter import RateLimiter
+from rtmdk.support.circuit_breaker import AsyncCircuitBreaker
+
+# Prometheus metrics
+try:
+    from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
+    _PROMETHEUS_AVAILABLE = True
+except ImportError:
+    _PROMETHEUS_AVAILABLE = False
+
+if _PROMETHEUS_AVAILABLE:
+    _metric_nodes = Gauge("rtmdk_nodes_total", "Number of memory nodes")
+    _metric_queries = Counter("rtmdk_queries_total", "Total memory queries")
+    _metric_query_dur = Histogram("rtmdk_query_duration_seconds", "Query duration")
+    _metric_consolidations = Counter("rtmdk_consolidations_total", "Total consolidations")
+    _metric_security = Counter("rtmdk_security_violations_total", "Security violations")
+    _metric_lm_requests = Counter("rtmdk_lm_requests_total", "LM Studio requests", ["endpoint"])
+    _metric_lm_errors = Counter("rtmdk_lm_errors_total", "LM Studio errors", ["endpoint"])
 
 
 # ============================================================================
@@ -94,11 +112,29 @@ def _atexit_save():
 # LOGGING
 # ============================================================================
 
+class JsonFormatter(logging.Formatter):
+    """Structured JSON log formatter for production observability."""
+    def format(self, record):
+        obj = {
+            "timestamp": self.formatTime(record),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        if hasattr(record, "request_id"):
+            obj["request_id"] = record.request_id
+        if record.exc_info:
+            obj["exception"] = self.formatException(record.exc_info)
+        return json.dumps(obj, ensure_ascii=False)
+
+
 log_level = getattr(logging, os.getenv("RTMDK_LOG_LEVEL", "INFO"))
-logging.basicConfig(
-    level=log_level,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-)
+_log_handler = logging.StreamHandler()
+if os.getenv("RTMDK_LOG_FORMAT", "").lower() == "json":
+    _log_handler.setFormatter(JsonFormatter())
+else:
+    _log_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+logging.basicConfig(level=log_level, handlers=[_log_handler])
 logger = logging.getLogger("rtmdk_production")
 
 # ============================================================================
@@ -144,6 +180,31 @@ async def security_middleware(request: Request, call_next):
             return JSONResponse(status_code=401, content={"error": "Unauthorized. Provide valid API key."})
 
     return await call_next(request)
+
+
+# Phase 4: Rate limiter middleware
+rate_limiter = RateLimiter(
+    max_per_minute=int(os.getenv("RTMDK_RATE_LIMIT_PER_MINUTE", "60")),
+    max_per_hour=int(os.getenv("RTMDK_RATE_LIMIT_PER_HOUR", "1000")),
+    max_per_day=int(os.getenv("RTMDK_RATE_LIMIT_PER_DAY", "10000")),
+)
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    """Enforce per-client rate limits."""
+    skip_paths = {"/health", "/v1/models", "/docs", "/openapi.json", "/redoc", "/dashboard", "/metrics"}
+    if request.url.path in skip_paths or request.url.path.startswith("/api/"):
+        return await call_next(request)
+    client_id = request.headers.get("x-api-key", request.client.host if request.client else "unknown")
+    if not rate_limiter.allow_request(client_id):
+        remaining = rate_limiter.get_remaining(client_id)
+        return JSONResponse(status_code=429, content={"error": "Rate limit exceeded", "remaining": remaining})
+    return await call_next(request)
+
+
+# Phase 4: Circuit breakers for external calls
+llm_chat_circuit = AsyncCircuitBreaker("llm_chat", failure_threshold=3, recovery_timeout=30.0, default=None)
+llm_embed_circuit = AsyncCircuitBreaker("llm_embed", failure_threshold=3, recovery_timeout=30.0, default=None)
 
 
 # ============================================================================
@@ -200,6 +261,19 @@ async def check_lm_studio() -> bool:
     return False
 
 
+async def _fetch_embedding(text: str, model: str) -> np.ndarray:
+    """Raw embedding fetch — wrapped by circuit breaker."""
+    if _PROMETHEUS_AVAILABLE:
+        _metric_lm_requests.labels(endpoint="embeddings").inc()
+    resp = await http_client.post(
+        f"{LM_STUDIO_URL}/embeddings",
+        json={"model": model, "input": text},
+        timeout=30,
+    )
+    data = resp.json()
+    return np.array(data["data"][0]["embedding"], dtype=np.float32)
+
+
 async def get_embedding(text: str, model: str = None) -> np.ndarray:
     """Get embedding from LM Studio or cache."""
     cached = embedder_cache.get(text)
@@ -208,31 +282,26 @@ async def get_embedding(text: str, model: str = None) -> np.ndarray:
 
     embedder_model = model or EMBED_MODEL
 
-    try:
-        resp = await http_client.post(
-            f"{LM_STUDIO_URL}/embeddings",
-            json={"model": embedder_model, "input": text},
-            timeout=30,
-        )
-        data = resp.json()
-        embedding = np.array(data["data"][0]["embedding"], dtype=np.float32)
-
-        expected_dim = 768
-        if len(embedding) != expected_dim:
-            logger.warning(f"Embedding dimension mismatch: got {len(embedding)}, expected {expected_dim}. Resizing.")
-            if len(embedding) > expected_dim:
-                embedding = embedding[:expected_dim]
-            else:
-                embedding = np.pad(embedding, (0, expected_dim - len(embedding)), 'constant')
-
-        embedder_cache.set(text, embedding)
-        return embedding
-    except Exception:
-        logger.warning("Embedding error, using fallback", exc_info=True)
+    embedding = await llm_embed_circuit.call(_fetch_embedding, text, embedder_model)
+    if embedding is None:
+        if _PROMETHEUS_AVAILABLE:
+            _metric_lm_errors.labels(endpoint="embeddings").inc()
+        logger.warning("Embedding circuit open or failed, using fallback")
         rng = np.random.default_rng(hash(text) % 2**32)
         emb = rng.standard_normal(768).astype(np.float32) * 0.1
-        embedder_cache[text] = emb
+        embedder_cache.set(text, emb)
         return emb
+
+    expected_dim = 768
+    if len(embedding) != expected_dim:
+        logger.warning(f"Embedding dimension mismatch: got {len(embedding)}, expected {expected_dim}. Resizing.")
+        if len(embedding) > expected_dim:
+            embedding = embedding[:expected_dim]
+        else:
+            embedding = np.pad(embedding, (0, expected_dim - len(embedding)), 'constant')
+
+    embedder_cache.set(text, embedding)
+    return embedding
 
 
 def init_memory() -> RTMDKMemory:
@@ -459,8 +528,10 @@ async def chat_completions(req: ChatCompletionRequest):
     request_model = req.model if req.model and req.model != "rtmdk" else None
     actual_model = request_model or chat_model or "local-model"
 
-    try:
-        resp = await http_client.post(
+    async def _fetch_chat():
+        if _PROMETHEUS_AVAILABLE:
+            _metric_lm_requests.labels(endpoint="chat").inc()
+        return await http_client.post(
             f"{LM_STUDIO_URL}/chat/completions",
             json={
                 "model": actual_model,
@@ -472,8 +543,12 @@ async def chat_completions(req: ChatCompletionRequest):
             timeout=lm_timeout,
             stream=req.stream,
         )
-    except httpx.RequestError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+
+    resp = await llm_chat_circuit.call(_fetch_chat)
+    if resp is None:
+        if _PROMETHEUS_AVAILABLE:
+            _metric_lm_errors.labels(endpoint="chat").inc()
+        raise HTTPException(status_code=503, detail="LM Studio unavailable (circuit open)")
 
     if req.stream:
         async def stream_generator():
@@ -549,6 +624,16 @@ async def health():
         "lm_studio": lm_studio_available,
         "memory_nodes": len(memory.field.nodes) if memory else 0,
     }
+
+
+@app.get("/metrics")
+async def metrics():
+    """Prometheus-compatible metrics endpoint."""
+    if not _PROMETHEUS_AVAILABLE:
+        raise HTTPException(status_code=501, detail="prometheus-client not installed")
+    if memory:
+        _metric_nodes.set(len(memory.field.nodes))
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 # ============================================================================
