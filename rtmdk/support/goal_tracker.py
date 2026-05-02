@@ -87,7 +87,7 @@ class GoalTracker:
     def get_state(self) -> Dict:
         return {
             "goals": {k: v.to_dict() for k, v in self.goals.items()},
-            "history": list(self._history)[-100:],  # deque doesn't support slice, convert to list
+            "history": self._history[-100:],
         }
 
     def load_state(self, state: Dict):

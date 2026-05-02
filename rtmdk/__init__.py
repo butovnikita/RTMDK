@@ -7,15 +7,10 @@ Usage:
     memory = RTMDKMemory(config=config, embedder=my_embedder)
 """
 
-__version__ = "8.0.0"
+__version__ = "8.1.0"
 
-from rtmdk.memory.core import RTMDKMemory, RTMDKConfig
-
-# Re-export enums for convenience
-from rtmdk.memory.core import (
-    ConsolidationMode, Backend, ContextFormat,
-    FieldHealth, EvalMode,
-)
+from rtmdk.memory.config import RTMDKConfig, ConsolidationMode, Backend, ContextFormat, FieldHealth, EvalMode
+from rtmdk.memory.core import RTMDKMemory, RTMDKField
 
 # Bind preset methods to RTMDKConfig class
 from rtmdk.config import (
@@ -69,9 +64,13 @@ def create_rtmdk(preset: str = "local", embedder=None) -> RTMDKMemory:
     return RTMDKMemory(config=config, embedder=embedder)
 
 
+from rtmdk.nodes import MemoryNode
+
 __all__ = [
     "RTMDKMemory",
     "RTMDKConfig",
+    "RTMDKField",
+    "MemoryNode",
     "ConsolidationMode", "Backend", "ContextFormat",
     "FieldHealth", "EvalMode",
     "list_presets",

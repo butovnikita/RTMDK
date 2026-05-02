@@ -44,10 +44,13 @@ class MetaAdaptiveKernel:
     def adapt(self):
         kurtosis = self.compute_resonance_kurtosis()
         self._kurtosis_history.append(kurtosis)
+        # Bug #9 FIX: Reversed direction was driving system AWAY from target
+        # Low kurtosis (flat distribution) → WIDEN bandwidth to sharpen
+        # High kurtosis (peaked distribution) → NARROW bandwidth to smooth
         if kurtosis < self.kurtosis_target_min:
-            self.effective_bandwidth *= (1.0 - self.adaptation_lr)
+            self.effective_bandwidth *= (1.0 + self.adaptation_lr)  # WIDEN to sharpen
         elif kurtosis > self.kurtosis_target_max:
-            self.effective_bandwidth *= (1.0 + self.adaptation_lr)
+            self.effective_bandwidth *= (1.0 - self.adaptation_lr)  # NARROW to smooth
         if self._semantic_density:
             density = np.mean(self._semantic_density)
             if density > 0.7:
@@ -66,3 +69,18 @@ class MetaAdaptiveKernel:
 
     def get_phase_coupling(self) -> float:
         return self.effective_phase_coupling
+
+    def get_state(self) -> Dict:
+        return {
+            "base_bandwidth": self.base_bandwidth, "base_phase_coupling": self.base_phase_coupling,
+            "effective_bandwidth": self.effective_bandwidth, "effective_phase_coupling": self.effective_phase_coupling,
+            "kurtosis": self.compute_resonance_kurtosis(),
+            "avg_density": float(np.mean(self._semantic_density)) if self._semantic_density else 0,
+            "avg_uncertainty": float(np.mean(self._uncertainty)) if self._uncertainty else 0,
+        }
+
+    def load_state(self, state: Dict):
+        self.base_bandwidth = state.get("base_bandwidth", self.base_bandwidth)
+        self.base_phase_coupling = state.get("base_phase_coupling", self.base_phase_coupling)
+        self.effective_bandwidth = state.get("effective_bandwidth", self.base_bandwidth)
+        self.effective_phase_coupling = state.get("effective_phase_coupling", self.base_phase_coupling)

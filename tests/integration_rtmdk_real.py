@@ -21,7 +21,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from embedder_lmstudio import LMStudioEmbedder
-from rtmdk_memory_v8 import RTMDKConfig, RTMDKMemory
+from rtmdk.memory.core import RTMDKConfig, RTMDKMemory
 
 # Configuration
 LM_STUDIO_URL = "http://127.0.0.1:12345/v1"

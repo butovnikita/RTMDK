@@ -180,7 +180,7 @@ class UniversalMemoryProtocol:
             RTMDKMemory instance
         """
         if memory_class is None:
-            from rtmdk_memory_v8 import RTMDKMemory
+            from rtmdk.memory.core import RTMDKMemory
             memory_class = RTMDKMemory
 
         # Verify SHA-256

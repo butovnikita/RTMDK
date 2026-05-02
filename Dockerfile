@@ -22,7 +22,6 @@ COPY rtmdk/ ./rtmdk/
 COPY start_production.py .
 COPY rtmdk_server_ux.py .
 COPY rtmdk_dashboard_ui.py .
-COPY rtmdk_memory_v8.py .
 COPY embedder_lmstudio.py .
 
 # Create data directories

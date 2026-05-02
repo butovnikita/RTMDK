@@ -34,7 +34,7 @@ class RTMDKMemory(BaseChatMessageHistory):
 
     Usage:
         from rtmdk.langchain_adapter import RTMDKMemory
-        from rtmdk_memory_v8 import RTMDKConfig, RTMDKMemory as CoreMemory
+        from rtmdk.memory.core import RTMDKConfig, RTMDKMemory as CoreMemory
 
         config = RTMDKConfig(...)
         core = CoreMemory(config=config, embedder=my_embedder)
@@ -53,7 +53,7 @@ class RTMDKMemory(BaseChatMessageHistory):
     ):
         """
         Args:
-            core_memory: RTMDKMemory instance (from rtmdk_memory_v8)
+            core_memory: RTMDKMemory instance (from rtmdk.memory.core)
             session_id: Session identifier for multi-session support
             embedder: Optional embedder function (uses core_memory.embedder if not provided)
         """
@@ -88,8 +88,8 @@ class RTMDKMemory(BaseChatMessageHistory):
         if self._embedder:
             embedding = self._embedder(str(content))
         else:
-            np.random.seed(hash(str(content)) % 2**32)
-            embedding = np.random.randn(768).astype(np.float32) * 0.1
+            rng = np.random.default_rng(hash(str(content)) % 2**32)
+            embedding = rng.standard_normal(768).astype(np.float32) * 0.1
 
         role = "user" if isinstance(message, HumanMessage) else "assistant"
         self._core.save_context(
@@ -128,14 +128,14 @@ def as_langchain(core_memory: Any, session_id: str = "default") -> RTMDKMemory:
     """D3: Wrap an RTMDKMemory instance for use with LangChain chains.
 
     Args:
-        core_memory: RTMDKMemory instance from rtmdk_memory_v8
+        core_memory: RTMDKMemory instance from rtmdk.memory.core
         session_id: Session identifier
 
     Returns:
         RTMDKMemory instance implementing BaseChatMessageHistory
 
     Example:
-        from rtmdk_memory_v8 import RTMDKMemory, RTMDKConfig
+        from rtmdk.memory.core import RTMDKMemory, RTMDKConfig
         from rtmdk.langchain_adapter import as_langchain
 
         config = RTMDKConfig(causal_topological=True)

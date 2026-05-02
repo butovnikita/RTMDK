@@ -81,8 +81,8 @@ RTMDK (Resonance-Topological Memory) — система памяти для LLM,
 # Модульный стиль (рекомендуется для новых проектов)
 from rtmdk import RTMDKMemory, RTMDKConfig, MemoryNode
 
-# Монолитный стиль (обратная совместимость)
-from rtmdk_memory_v8 import RTMDKMemory, RTMDKConfig, MemoryNode
+# Ядро напрямую
+from rtmdk.memory.core import RTMDKMemory, RTMDKConfig, MemoryNode
 ```
 
 ---
@@ -144,13 +144,13 @@ rtmdk/                              # Python-пакет (72+ публичных 
 
 | Файл | Описание |
 |------|----------|
-| `rtmdk_memory_v8.py` | Монолитное ядро: RTMDKField + RTMDKMemory (~5600 строк) |
+| `rtmdk/memory/core.py` | Ядро системы: RTMDKField + RTMDKMemory (~7000 строк) |
 | `rtmdk_server.py` | OpenAI-compatible HTTP-сервер |
 | `lmstudio_rtmdk_chat.py` | CLI-чат через LM Studio |
 | `streamlit_app.py` | Интерактивный дашборд |
 | `eval_pipeline.py` | Benchmarks: ContinualQA, LongBench, MemoryBench |
 | `swarm_memory.py` | Мультиагентная роевая память |
-| `smoke_test.py` | Быстрая проверка критических путей |
+| `tests/smoke_test.py` | Быстрая проверка критических путей |
 | `embedder_factory.py` | Unified embedding интерфейс |
 
 ---
@@ -177,7 +177,7 @@ from rtmdk import RTMDKConfig, RTMDKMemory
 import numpy as np
 
 def embedder(text: str) -> np.ndarray:
-    np.random.seed(hash(text) % 2**32)
+    rng = np.random.default_rng(hash(text) % 2**32)
     return np.random.randn(768).astype(np.float32) * 0.1
 
 config = RTMDKConfig(
@@ -489,6 +489,22 @@ print(ctx["rtmdk_context"])
 | `cross_shard_threshold` | 0.45 | Порог обмена между шардами |
 | `auto_role_detection` | True | Автодетект роли по тексту |
 
+#### Фаза 21: Self-Organizing Tokenizer + Embedding Field
+
+| Параметр | Default | Описание |
+|----------|---------|----------|
+| `sot_enabled` | False | Включить SOT |
+| `sot_token_dim` | None | Размерность токен-эмбеддингов (None = latent_dim) |
+| `sot_max_vocab` | 4096 | Максимальный размер vocab |
+| `sot_merge_threshold` | 0.7 | Порог co-retrieval для merge |
+| `sot_contrastive_lr` | 0.01 | LR контрастного Хебба |
+| `sot_negatives_per_query` | 5 | Число negative samples на query |
+| `sot_ssm_sync` | False | SSM-синхронизация эмбеддингов |
+| `sot_diagonal_ssm` | True | Диагональный SSM O(N*d) вместо O(N*d^2) |
+| `sot_merge_freq` | 100 | Шагов между merge-попытками |
+| `sot_min_cooccurrence` | 5 | Минимальная cooccurrence для merge |
+| `sot_use_for_query` | False | Использовать SOT эмбеддинги для query (без external API) |
+
 ---
 
 ## 5. Ядро: RTMDKMemory и RTMDKField
@@ -518,6 +534,7 @@ memory = RTMDKMemory(config=RTMDKConfig(), embedder=Callable[[str], np.ndarray])
 | `import_ump(path, embedder)` | RTMDKMemory | Импорт из UMP (classmethod) |
 | `validate_ump(path)` | Dict | Валидация UMP-файла |
 | `clear()` | None | Очистка памяти |
+| `query_by_text(text, top_k)` | List[(id, score, node)] | Query через SOT без external embedder |
 
 ### RTMDKField — внутренняя реализация
 
@@ -862,7 +879,7 @@ python lmstudio_rtmdk_chat.py
 
 ```bash
 # Smoke test (быстрая проверка)
-python smoke_test.py
+python tests/smoke_test.py
 
 # Eval pipeline
 python eval_pipeline.py --n_samples 50
@@ -910,7 +927,7 @@ v8 = V8Memory.import_field("state.json", embedder)
 - Все поля `MemoryNode` сохраняются/загружаются корректно
 - Новые поля получают значения по умолчанию при загрузке старого state
 - `RTMDKConfig` — новые параметры получают дефолтные значения
-- Монолит `rtmdk_memory_v8.py` и пакет `rtmdk/` полностью синхронизированы
+- Пакет `rtmdk/` — единственный актуальный источник кода
 
 ---
 

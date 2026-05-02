@@ -24,7 +24,6 @@ COPY rtmdk_dashboard_ui.py .
 COPY rtmdk_sillytavern_compat.py .
 COPY rtmdk_st_proxy.py .
 COPY rtmdk_sillytavern_launcher.py .
-COPY rtmdk_memory_v8.py .
 COPY embedder_lmstudio.py .
 
 # Copy SillyTavern config

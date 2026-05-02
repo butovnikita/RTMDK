@@ -10,7 +10,7 @@ import json, time, os, logging, importlib
 from typing import Dict, Any
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse, PlainTextResponse
-from rtmdk_memory_v8 import RTMDKMemory
+from rtmdk.memory.core import RTMDKMemory
 
 logger = logging.getLogger("rtmdk.ux")
 

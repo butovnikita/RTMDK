@@ -54,10 +54,10 @@
 
 | Компонент | Описание | Файл |
 |-----------|----------|------|
-| **MemoryNode** | Узел памяти: фаза, амплитуда, салентность, латентная позиция | `nodes.py` |
-| **RTMDKField** | Поле памяти: резонанс, консолидация, decay | `rtmdk_memory_v8.py` |
-| **Resonance** | K_spatial × K_phase × A × S — мера релевантности | `rtmdk_memory_v8.py` |
-| **Consolidation** | Диалектическое слияние узлов с высоким напряжением | `rtmdk_memory_v8.py` |
+| **MemoryNode** | Узел памяти: фаза, амплитуда, салентность, латентная позиция | `memory/core.py` (inline), `nodes.py` (standalone) |
+| **RTMDKField** | Поле памяти: резонанс, консолидация, decay | `memory/core.py` |
+| **Resonance** | K_spatial × K_phase × A × S — мера релевантности | `memory/core.py` |
+| **Consolidation** | Диалектическое слияние узлов с высоким напряжением | `memory/core.py` |
 | **HNSW** | Приближённый поиск O(log N) | `support/hnsw.py` |
 | **BM25** | Текстовый поиск fallback | `support/bm25.py` |
 | **IncPCA** | Инкрементальная проекция | `support/projection.py` |
@@ -145,6 +145,26 @@ EngramPattern                    EngramIndex                    PatternCompleter
 | **Concept Lifecycle** | `state`, `confidence`, `revision_count`, `conflict_with` | `nodes.py` |
 | **Evidence Spans** | Traceability для legal/medical | `nodes.py` |
 | **Cross-domain Guard** | Запрет консолидации узлов из разных доменов | `core.py` |
+
+### Phase 21: Self-Organizing Tokenizer + Embedding Field (SOT)
+
+Заменяет статический `nn.Embedding` на динамическое поле, которое учится контрастным Хеббом, растёт от байт к субтокенам и синхронизируется с SSM-динамикой.
+
+| Компонент | Описание | Файл |
+|-----------|----------|------|
+| **SOTokenizer** | Байт → субтокен токенизатор, vocab растёт через co-retrieval merges. Поддерживает `token_dim != latent_dim` через learnable projection. | `memory/self_organizing_field.py` |
+| **ContrastiveHebbian** | Online contrastive learning: positives pull closer, negatives push apart | `memory/self_organizing_field.py` |
+| **EmbeddingFieldSSM** | SSM-моментум для плавных траекторий. Диагональный режим O(N·d) позволяет масштабировать `latent_dim` без просадок. | `memory/self_organizing_field.py` |
+| **SOT Integration** | `step()` / `query()` / `add_node()` адаптированы для любой размерности эмбеддингов | `memory/core.py` |
+
+**Ключевые свойства:**
+- **Автономность**: нет зависимости от внешнего embedder API для query.
+- **Адаптивность**: vocab растёт под домен поля (merge по co-retrieval, не по corpus frequency).
+- **Пластичность**: эмбеддинги нод и токенов дрейфуют в ответ на usage через Hebbian updates.
+- **Плавность**: SSM sync даёт инерцию обновлениям, предотвращая резкие скачки.
+- **Масштабируемость**: `token_dim=256` + `latent_dim=64` даёт высокую ёмкость токенов при быстром поле. Диагональный SSM убирает O(d²) bottleneck.
+
+**Флаги конфигурации:** `sot_enabled`, `sot_token_dim`, `sot_max_vocab`, `sot_contrastive_lr`, `sot_ssm_sync`, `sot_diagonal_ssm`, `sot_use_for_query`, `sot_merge_freq`, `sot_merge_threshold`.
 
 ---
 ---
@@ -338,6 +358,62 @@ services:
 
 ---
 
+## Модульная структура (post-audit)
+
+```
+rtmdk/
+├── __init__.py          # Публичный API
+├── cli.py               # CLI интерфейс
+├── config.py            # 8 пресетов RTMDKConfig
+│
+├── memory/              # Core kernel
+│   ├── core.py          # RTMDKField, RTMDKMemory (~7000 lines)
+│   ├── serialization.py # Экспорт/импорт полей (msgpack/zlib/JSON)
+│   ├── snapshot.py      # Дельта-версионирование
+│   └── __init__.py
+│
+├── nodes.py             # Standalone dataclasses (MemoryNode, CausalEdge)
+│
+├── engines/             # Специализированные движки
+│   ├── dreamer.py       # OfflineDreamer (фоновая оптимизация)
+│   ├── causal.py        # CausalTraversalEngine
+│   ├── consensus.py     # SwarmConsensusProtocol
+│   ├── ssm.py           # SSMDynamics (Mamba)
+│   ├── symbolic.py      # SymbolicOverlay + NeuroSymbolicProver
+│   └── trust.py         # TrustConsensus
+│
+├── production/          # Production layer
+│   ├── analytics_engine.py   # SQLite analytics
+│   ├── cache_manager.py      # LRU кэш
+│   ├── trust_scorer.py       # Репутационные веса
+│   └── prover_factory.py     # Z3 / Prolog интеграция
+│
+├── support/             # Индексы и утилиты
+│   ├── hnsw.py          # HNSW индекс O(log N)
+│   ├── bm25.py          # Текстовый fallback
+│   └── projection.py    # IncPCA
+│
+├── utils/               # Хелперы
+│   └── domain_classifier.py  # Pattern-based domain detection
+│
+└── experimental/        # Исследовательские модули (опциональные)
+    ├── tpr.py           # Tensor Product Representations
+    ├── adversarial_arena.py  # Self-play robustness
+    └── active_inference.py   # Curiosity-driven exploration
+```
+
+## Тестовое покрытие
+
+| Модуль | Тесты | Статус |
+|--------|:-----:|:------:|
+| Security | `test_security.py` (9 тестов) | ✅ Pass |
+| MemoryNode | `test_nodes.py` (5 тестов) | ✅ Pass |
+| Phase 20 Domain | `test_domain_memory.py` (13 тестов) | ✅ Pass |
+| Analytics | `test_rtmdk_eval.py` (9 тестов) | ✅ Pass |
+| Swarm Consensus | `test_rtmdk_swarm.py` (10 тестов) | ✅ Pass |
+
+**Итого: 46 тестов, все проходят.**
+
 ## Статистика проекта
 
 | Метрика | Значение |
@@ -348,9 +424,11 @@ services:
 | **Модулей** | 28 |
 | **Публичных API** | 105+ |
 | **Профилей** | 8 |
-| **Phases** | 19 |
+| **Phases** | 20 |
 | **Документации** | 8 файлов |
+| **Тестов** | 46 |
 
 ---
 
 *Документ создан: Апрель 2026, RTMDK v8.1*
+*Обновлён: Май 2026 (post-audit)*

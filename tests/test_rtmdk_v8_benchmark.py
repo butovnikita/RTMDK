@@ -21,7 +21,7 @@ import numpy as np
 import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from rtmdk_memory_v8 import RTMDKConfig, RTMDKMemory
+from rtmdk.memory.core import RTMDKConfig, RTMDKMemory
 
 
 class BatchEmbedder:
@@ -78,11 +78,11 @@ class BatchEmbedder:
 
     @staticmethod
     def _fallback(text, dim=768):
-        np.random.seed(42)
-        base = np.random.randn(dim).astype(np.float32) * 0.01
+        rng = np.random.default_rng(42)
+        base = rng.standard_normal(dim).astype(np.float32) * 0.01
         for tok in text.lower().split()[:20]:
-            np.random.seed(hash(tok + "bench_seed") % 2**32)
-            d = np.random.randn(dim).astype(np.float32)
+            tok_rng = np.random.default_rng(hash(tok + "bench_seed") % 2**32)
+            d = tok_rng.standard_normal(dim).astype(np.float32)
             base += (d / (np.linalg.norm(d) + 1e-8)) * 0.5
         return base
 

@@ -15,6 +15,7 @@ import json
 import asyncio
 import logging
 import logging.handlers
+import httpx
 from typing import Dict, List, Optional
 from pathlib import Path
 import numpy as np
@@ -26,6 +27,16 @@ from pydantic import BaseModel
 
 # RTMDK package imports
 from rtmdk.memory.core import RTMDKMemory, RTMDKConfig
+
+
+# ============================================================================
+# ASYNC HELPERS
+# ============================================================================
+
+async def run_sync(func, *args, **kwargs):
+    """Run a synchronous function in the default thread pool."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, lambda: func(*args, **kwargs))
 
 
 # ============================================================================
@@ -42,6 +53,40 @@ ENABLE_LM_STUDIO = os.getenv("RTMDK_ENABLE_LM_STUDIO", "true").lower() == "true"
 ENABLE_API_AUTH = os.getenv("RTMDK_ENABLE_API_AUTH", "true").lower() == "true"
 MAX_PAYLOAD_SIZE = int(os.getenv("RTMDK_MAX_PAYLOAD_SIZE", "1048576"))
 ALLOWED_ORIGINS = os.getenv("RTMDK_ALLOWED_ORIGINS", "*").split(",")
+
+# Shared async HTTP client
+http_client = httpx.AsyncClient()
+
+# ============================================================================
+# SIGNAL / LIFECYCLE HANDLERS
+# ============================================================================
+
+import atexit
+import signal
+
+_memory_ref = None  # set in startup_event
+
+def _handle_sigterm(signum, frame):
+    logger.info("Received SIGTERM, initiating graceful shutdown...")
+    if _memory_ref is not None:
+        try:
+            _memory_ref.export_field(MEMORY_FILE)
+            logger.info(f"Memory saved to {MEMORY_FILE} on SIGTERM")
+        except Exception:
+            logger.exception("Failed to save memory on SIGTERM")
+    # Allow default handler to terminate the process
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _handle_sigterm)
+
+@atexit.register
+def _atexit_save():
+    if _memory_ref is not None:
+        try:
+            _memory_ref.export_field(MEMORY_FILE)
+            logger.info(f"Memory saved to {MEMORY_FILE} at exit")
+        except Exception:
+            logger.exception("Failed to save memory at exit")
 
 # ============================================================================
 # LOGGING
@@ -104,7 +149,8 @@ async def security_middleware(request: Request, call_next):
 # ============================================================================
 
 memory: Optional[RTMDKMemory] = None
-embedder_cache: Dict[str, np.ndarray] = {}
+from rtmdk.utils.lru_cache import LRUCache
+embedder_cache = LRUCache(maxsize=4096)
 lm_studio_available: bool = False
 chat_model: Optional[str] = None
 
@@ -137,11 +183,10 @@ class EmbeddingRequest(BaseModel):
 # HELPER FUNCTIONS
 # ============================================================================
 
-def check_lm_studio() -> bool:
+async def check_lm_studio() -> bool:
     """Check if LM Studio is available."""
-    import requests
     try:
-        resp = requests.get(f"{LM_STUDIO_URL}/models", timeout=3)
+        resp = await http_client.get(f"{LM_STUDIO_URL}/models", timeout=3)
         global chat_model
         models = resp.json().get("data", [])
         if models:
@@ -149,21 +194,20 @@ def check_lm_studio() -> bool:
             logger.info(f"LM Studio detected: {chat_model}")
             return True
     except Exception:
-        pass
-    logger.warning("LM Studio not available at %s", LM_STUDIO_URL)
+        logger.warning("LM Studio not available at %s", LM_STUDIO_URL, exc_info=True)
     return False
 
 
-def get_embedding(text: str, model: str = None) -> np.ndarray:
+async def get_embedding(text: str, model: str = None) -> np.ndarray:
     """Get embedding from LM Studio or cache."""
-    if text in embedder_cache:
-        return embedder_cache[text]
+    cached = embedder_cache.get(text)
+    if cached is not None:
+        return cached
 
-    import requests
     embedder_model = model or EMBED_MODEL
 
     try:
-        resp = requests.post(
+        resp = await http_client.post(
             f"{LM_STUDIO_URL}/embeddings",
             json={"model": embedder_model, "input": text},
             timeout=30,
@@ -179,12 +223,12 @@ def get_embedding(text: str, model: str = None) -> np.ndarray:
             else:
                 embedding = np.pad(embedding, (0, expected_dim - len(embedding)), 'constant')
 
-        embedder_cache[text] = embedding
+        embedder_cache.set(text, embedding)
         return embedding
-    except Exception as e:
-        logger.warning(f"Embedding error: {e}, using fallback")
-        np.random.seed(hash(text) % 2**32)
-        emb = np.random.randn(768).astype(np.float32) * 0.1
+    except Exception:
+        logger.warning("Embedding error, using fallback", exc_info=True)
+        rng = np.random.default_rng(hash(text) % 2**32)
+        emb = rng.standard_normal(768).astype(np.float32) * 0.1
         embedder_cache[text] = emb
         return emb
 
@@ -210,11 +254,11 @@ def init_memory() -> RTMDKMemory:
 
     if os.path.exists(MEMORY_FILE):
         try:
-            mem = RTMDKMemory.import_field(MEMORY_FILE, get_embedding)
+            mem = RTMDKMemory.import_field(MEMORY_FILE, get_embedding, wal_path=MEMORY_FILE + ".wal")
             logger.info(f"Loaded memory from {MEMORY_FILE}: {len(mem.field.nodes)} nodes")
             return mem
-        except Exception as e:
-            logger.warning(f"Failed to load memory from {MEMORY_FILE}: {e}")
+        except Exception:
+            logger.warning("Failed to load memory from %s", MEMORY_FILE, exc_info=True)
             import shutil
             backup_path = MEMORY_FILE + f".corrupted.{int(time.time())}"
             try:
@@ -223,14 +267,14 @@ def init_memory() -> RTMDKMemory:
             except Exception:
                 pass
 
-    mem = RTMDKMemory(config=config, embedder=get_embedding)
+    mem = RTMDKMemory(config=config, embedder=get_embedding, wal_path=MEMORY_FILE + ".wal")
     try:
         os.makedirs(os.path.dirname(MEMORY_FILE), exist_ok=True)
         mem.export_field(MEMORY_FILE)
         os.chmod(MEMORY_FILE, 0o600)  # Secure file permissions
         logger.info(f"Created new memory file at {MEMORY_FILE}")
-    except Exception as e:
-        logger.warning(f"Failed to create initial memory file: {e}")
+    except Exception:
+        logger.warning("Failed to create initial memory file", exc_info=True)
 
     return mem
 
@@ -247,8 +291,8 @@ def build_system_prompt(user_messages: List[ChatMessage], session_id: str) -> st
     if last_user and memory:
         try:
             ctx = memory.load_memory_variables({"input": last_user, "session_id": session_id})
-        except Exception as e:
-            logger.warning(f"Memory query failed: {e}")
+        except Exception:
+            logger.warning("Memory query failed", exc_info=True)
 
     # Check for custom system prompt (env var file)
     prompt_file = os.getenv("RTMDK_SYSTEM_PROMPT_FILE")
@@ -258,8 +302,8 @@ def build_system_prompt(user_messages: List[ChatMessage], session_id: str) -> st
         try:
             with open(prompt_file, 'r', encoding='utf-8') as f:
                 base_prompt = f.read().strip()
-        except Exception as e:
-            logger.warning(f"Failed to read prompt file: {e}")
+        except Exception:
+            logger.warning("Failed to read prompt file", exc_info=True)
             base_prompt = memory.config.system_prompt if memory else None
     else:
         env_prompt = os.getenv("RTMDK_SYSTEM_PROMPT")
@@ -286,8 +330,8 @@ def auto_save():
             os.makedirs(os.path.dirname(MEMORY_FILE), exist_ok=True)
             memory.export_field(MEMORY_FILE)
             logger.debug(f"Auto-saved memory: {len(memory.field.nodes)} nodes")
-        except Exception as e:
-            logger.error(f"Auto-save failed: {e}")
+        except Exception:
+            logger.exception("Auto-save failed")
 
 
 # ============================================================================
@@ -302,9 +346,11 @@ async def startup():
     logger.info(f"LM Studio URL: {LM_STUDIO_URL}")
 
     if ENABLE_LM_STUDIO:
-        lm_studio_available = check_lm_studio()
+        lm_studio_available = await check_lm_studio()
 
     memory = init_memory()
+    global _memory_ref
+    _memory_ref = memory
     asyncio.create_task(_auto_save_loop())
 
     logger.info(f"Server ready on {SERVER_HOST}:{SERVER_PORT}")
@@ -316,19 +362,29 @@ async def _auto_save_loop():
     interval = int(os.getenv("RTMDK_AUTO_SAVE_INTERVAL", "60"))
     while True:
         await asyncio.sleep(interval)
-        auto_save()
+        await run_sync(auto_save)
 
 
 @app.on_event("shutdown")
 async def shutdown():
     logger.info("RTMDK server shutting down...")
     if memory:
+        # Gracefully stop background workers
+        for task in memory.field._workers:
+            if not task.done():
+                task.cancel()
+                try:
+                    await asyncio.wait_for(task, timeout=10.0)
+                except (asyncio.CancelledError, asyncio.TimeoutError):
+                    pass
+        memory.field._workers.clear()
+
         try:
             os.makedirs(os.path.dirname(MEMORY_FILE), exist_ok=True)
-            memory.export_field(MEMORY_FILE)
+            await run_sync(memory.export_field, MEMORY_FILE)
             logger.info(f"Memory saved to {MEMORY_FILE} ({len(memory.field.nodes)} nodes)")
-        except Exception as e:
-            logger.error(f"Failed to save memory on shutdown: {e}")
+        except Exception:
+            logger.exception("Failed to save memory on shutdown")
 
 
 # ============================================================================
@@ -355,8 +411,7 @@ async def chat_completions(req: ChatCompletionRequest):
     if not lm_studio_available:
         raise HTTPException(status_code=503, detail="LM Studio not available")
 
-    import requests
-    system_prompt = build_system_prompt(req.messages, req.session_id)
+    system_prompt = await run_sync(build_system_prompt, req.messages, req.session_id)
     messages = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
@@ -368,19 +423,19 @@ async def chat_completions(req: ChatCompletionRequest):
         last_user = next((m.content for m in reversed(req.messages) if m.role == "user"), "")
         if last_user:
             try:
-                memory.save_context(
+                await run_sync(memory.save_context,
                     {"input": last_user, "session_id": req.session_id},
                     {"output": ""}
                 )
-            except Exception as e:
-                logger.warning(f"Memory save failed: {e}")
+            except Exception:
+                logger.warning("Memory save failed", exc_info=True)
 
     lm_timeout = int(os.getenv("RTMDK_LM_STUDIO_TIMEOUT", "120"))
     request_model = req.model if req.model and req.model != "rtmdk" else None
     actual_model = request_model or chat_model or "local-model"
 
     try:
-        resp = requests.post(
+        resp = await http_client.post(
             f"{LM_STUDIO_URL}/chat/completions",
             json={
                 "model": actual_model,
@@ -392,25 +447,24 @@ async def chat_completions(req: ChatCompletionRequest):
             timeout=lm_timeout,
             stream=req.stream,
         )
-    except requests.exceptions.RequestException as e:
+    except httpx.RequestError as e:
         raise HTTPException(status_code=502, detail=str(e))
 
     if req.stream:
         async def stream_generator():
             try:
-                for chunk in resp.iter_lines():
-                    if chunk:
-                        line = chunk.decode("utf-8", errors='replace')
+                async for line in resp.aiter_lines():
+                    if line:
                         if line.startswith("data: "):
                             yield f"{line}\n\n"
-            except Exception as e:
-                logger.error(f"Streaming error: {e}")
+            except Exception:
+                logger.exception("Streaming error")
             finally:
                 if memory:
                     try:
                         last_user = next((m.content for m in reversed(req.messages) if m.role == "user"), "")
                         if last_user:
-                            memory.save_context(
+                            await run_sync(memory.save_context,
                                 {"input": last_user, "session_id": req.session_id},
                                 {"output": "[streamed]"}
                             )
@@ -431,12 +485,12 @@ async def chat_completions(req: ChatCompletionRequest):
         try:
             last_user = next((m.content for m in reversed(req.messages) if m.role == "user"), "")
             if last_user:
-                memory.save_context(
+                await run_sync(memory.save_context,
                     {"input": last_user, "session_id": req.session_id},
                     {"output": response_content}
                 )
-        except Exception as e:
-            logger.warning(f"Memory update failed: {e}")
+        except Exception:
+            logger.warning("Memory update failed", exc_info=True)
 
     return data
 
@@ -447,7 +501,7 @@ async def create_embeddings(req: EmbeddingRequest):
     inputs = req.input if isinstance(req.input, list) else [req.input]
     data = []
     for i, text in enumerate(inputs):
-        embedding = get_embedding(text)
+        embedding = await get_embedding(text)
         data.append({
             "object": "embedding",
             "embedding": embedding.tolist(),

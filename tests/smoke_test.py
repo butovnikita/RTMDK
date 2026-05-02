@@ -8,16 +8,16 @@ import sys
 # Add project root to path
 sys.path.insert(0, '.')
 
-from rtmdk_memory_v8 import (
+from rtmdk.memory.core import (
     RTMDKConfig, RTMDKMemory, ContextFormat,
     apply_attention_bias, format_cognitive_context,
 )
 
-np.random.seed(42)
+_embed_rng = np.random.default_rng(42)
 
 def dummy_embedder(text: str) -> np.ndarray:
-    np.random.seed(hash(text) % 2**32)
-    base = np.random.randn(768).astype(np.float32) * 0.1
+    rng = np.random.default_rng(hash(text) % 2**32)
+    base = rng.standard_normal(768).astype(np.float32) * 0.1
     sig = np.array([hash(text + str(i)) % 1000 / 500 for i in range(10)], dtype=np.float32)
     base[:10] = sig
     return base

@@ -6,6 +6,7 @@ from .bm25_fallback import BM25FallbackRetriever
 from .backup_restore import BackupManager
 from .export import MemoryExporter
 from .analytics import MemoryAnalytics
+from .analytics_engine import AnalyticsStore, EventType
 from .health_monitor import HealthMonitor
 from .events import EventSystem
 from .tagging import TaggingSystem
@@ -51,6 +52,7 @@ __all__ = [
     "BackupManager",
     "MemoryExporter",
     "MemoryAnalytics",
+    "AnalyticsStore", "EventType",
     "HealthMonitor",
     "EventSystem",
     "TaggingSystem",

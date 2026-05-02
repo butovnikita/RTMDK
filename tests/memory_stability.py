@@ -11,11 +11,11 @@ Tests the CORE properties of a long-term memory system:
 7. Scalability stability (recall doesn't drop with N growth)
 
 Run standalone:
-    python test_memory_stability.py
+    python tests/test_memory_stability.py
 
 Run with pytest (if installed):
     pip install pytest
-    pytest test_memory_stability.py -v
+    pytest tests/test_memory_stability.py -v
 """
 
 import os
@@ -28,7 +28,7 @@ from collections import defaultdict
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from rtmdk_memory_v8 import RTMDKConfig, RTMDKMemory
+from rtmdk.memory.core import RTMDKConfig, RTMDKMemory
 
 # Try real embedder first
 try:
@@ -39,12 +39,12 @@ except Exception:
     USING_REAL_EMBEDDER = False
     def _make_hash_embedder(dim=768):
         def embed(text):
-            np.random.seed(42)
-            base = np.random.randn(dim).astype(np.float32) * 0.01
+            rng = np.random.default_rng(42)
+            base = rng.standard_normal(dim).astype(np.float32) * 0.01
             tokens = text.lower().split()
             for tok in tokens[:20]:
-                np.random.seed(hash(tok + "stab_seed") % 2**32)
-                d = np.random.randn(dim).astype(np.float32)
+                tok_rng = np.random.default_rng(hash(tok + "stab_seed") % 2**32)
+                d = tok_rng.standard_normal(dim).astype(np.float32)
                 d = d / (np.linalg.norm(d) + 1e-8)
                 base += d * 0.5
             return base

@@ -29,8 +29,8 @@ from rtmdk.utils.domain_classifier import detect_domain, get_domain_stats
 def make_embedder(dim=768):
     """Create a deterministic fake embedder."""
     def embedder(text):
-        np.random.seed(hash(text) % 2**32)
-        return np.random.randn(dim).astype(np.float32) * 0.1
+        rng = np.random.default_rng(hash(text) % 2**32)
+        return rng.standard_normal(dim).astype(np.float32) * 0.1
     return embedder
 
 
@@ -130,8 +130,8 @@ class TestBackwardCompatibility:
 
         # Export
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            memory.export_field(f.name)
             temp_path = f.name
+        memory.export_field(temp_path)
 
         # Manually remove Phase 20 fields to simulate old file
         with open(temp_path, 'r') as f:
@@ -259,18 +259,16 @@ class TestCrossDomainConsolidationGuard:
         nid2 = memory.field.add_node(emb.copy(), {"text": "Law node"}, phase=0.1)
         memory.field.nodes[nid2].domain = "Law"
 
+        # Ensure high tension to trigger consolidation path
+        memory.field.nodes[nid1].tension = 0.5
+        memory.field.nodes[nid2].tension = 0.5
+
         # Trigger consolidation
         memory.field.consolidate()
 
         # Both nodes should still exist (NOT merged)
-        assert nid1 in memory.field.nodes or nid2 in memory.field.nodes
-        # At least one should have conflict_with set
-        n1_exists = nid1 in memory.field.nodes
-        n2_exists = nid2 in memory.field.nodes
-        if n1_exists:
-            assert "Law" in [memory.field.nodes[nid2].domain for nid2 in memory.field.nodes[nid1].conflict_with] or \
-                   len(memory.field.nodes[nid1].conflict_with) > 0 or \
-                   nid2 not in memory.field.nodes
+        assert nid1 in memory.field.nodes
+        assert nid2 in memory.field.nodes
 
 
 # ============================================================================

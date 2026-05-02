@@ -1,6 +1,6 @@
 """
-rtmdk_memory_v8.py
-Resonance-Topological Memory - Version 8.0
+rtmdk/memory/core.py
+Resonance-Topological Memory - Version 8.1+
 
 Phase 11 Features:
 Track 1: Multi-level memory stratification (Episodic / Semantic / Procedural)
@@ -19,8 +19,10 @@ KuramotoSync, FederatedRTMDK, FederatedNode, detect_modality, cross_modal_resona
 
 from __future__ import annotations
 import asyncio
+import functools
 import json
 import math
+import threading
 import re
 import time
 import os
@@ -31,11 +33,22 @@ from typing import List, Dict, Optional, Tuple, Union, Callable, Any, Set, Froze
 from enum import Enum
 import numpy as np
 from numpy.typing import NDArray
-from scipy.spatial.distance import cdist
+from scipy.spatial.distance import cdist, pdist, squareform
+from scipy.spatial import cKDTree
 from scipy.integrate import odeint, solve_ivp
 from scipy import stats as scipy_stats
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 import logging
+
+# Extracted engine classes (kept in sync with rtmdk/support/ modules)
+from rtmdk.support.kuramoto import KuramotoSync, FederatedRTMDK
+from rtmdk.support.hnsw import NaiveGraphIndex, HNSWIndex
+try:
+    from rtmdk.support.hnsw_lib import HNSWLibIndex
+    _HNSWLIB_AVAILABLE = True
+except ImportError:
+    _HNSWLIB_AVAILABLE = False
+from rtmdk.support.bm25 import BM25Index
 
 logger = logging.getLogger(__name__)
 
@@ -58,8 +71,9 @@ except ImportError:
     ENTROPY_AVAILABLE = False
 
 try:
-    from rtmdk.support.triton_backend import TritonBackend, TRITON_AVAILABLE
+    from rtmdk.support.triton_backend import GPUBackend, TritonBackend, TRITON_AVAILABLE
 except ImportError:
+    GPUBackend = None  # type: ignore
     TritonBackend = None  # type: ignore
     TRITON_AVAILABLE = False
 
@@ -136,446 +150,59 @@ MAX_NODES_PRUNE_CHECK_FREQ = 10
 
 
 # ============================================================================
-# CONFIGURATION v7
+# SECURITY UTILITIES
 # ============================================================================
 
-class ConsolidationMode(Enum):
-    DIALECTICAL = "dialectical"
-    MERGE = "merge"
-    PRUNE = "prune"
+def _sanitize_path(path: str) -> str:
+    """Sanitize file path to prevent directory traversal attacks.
+    
+    Rejects paths containing '..' (path traversal).
+    Returns normalized path.
+    """
+    import os
+    # Reject parent directory references BEFORE normalization
+    # (normpath collapses 'a/../b' to 'b', which would hide the attack)
+    if ".." in path.replace("\\", "/").split("/"):
+        raise SecurityViolationError(f"Path traversal detected: {path}")
+    # Normalize to catch unicode tricks and mixed separators
+    normalized = os.path.normpath(path)
+    return normalized
 
-class Backend(Enum):
-    NUMPY = "numpy"
-    TORCH = "torch"
 
-class ContextFormat(Enum):
-    PLAIN = "plain"
-    JSON = "json"
-    YAML = "yaml"
-    ATTENTION = "attention"  # Control-tokens for attention-aware LLMs
+def _safe_json_load(path: str) -> Dict:
+    """Load JSON with size limit to prevent memory exhaustion."""
+    file_size = os.path.getsize(path)
+    if file_size > MAX_FILE_SIZE_BYTES:
+        raise ValueError(f"File too large: {file_size / (1024*1024):.1f}MB (max {MAX_FILE_SIZE_BYTES / (1024*1024):.0f}MB)")
+    with open(path, "r", encoding="utf-8") as f:
+        raw = f.read()
+    if len(raw.encode("utf-8")) > MAX_FILE_SIZE_BYTES:
+        raise ValueError("File exceeds maximum allowed size after encoding check")
+    return json.loads(raw)
 
-class FieldHealth(Enum):
-    STABLE = "stable"
-    DEGRADED = "degraded"
-    CRITICAL = "critical"
-    HEALING = "healing"
 
-class EvalMode(Enum):
-    PRODUCTION = "production"
-    SHADOW = "shadow"
-    EVALUATION = "evaluation"
+# ============================================================================
+# CONFIGURATION v7 — extracted to rtmdk/memory/config.py (P0 refactor)
+# ============================================================================
+from rtmdk.memory.config import (
+    ConsolidationMode, Backend, ContextFormat, FieldHealth, EvalMode,
+    RTMDKConfig,
+)
+# Extracted engine classes (P0 refactor � imported from canonical modules)
+from rtmdk.engines.predictive import PredictiveCodingModel
+from rtmdk.engines.privacy import DifferentialPrivacy
+from rtmdk.engines.neural_ode import NeuralODEDynamics
+from rtmdk.engines.causal import CausalInferenceEngine
+from rtmdk.support.meta_adaptive import MetaAdaptiveKernel
+from rtmdk.support.healer import TopologyHealer
+from rtmdk.support.agents import AgentPlanner, HypothesisVerifier, ToolRouter
+from rtmdk.support.production import ShadowModeEvaluator, RAGASPlusEvaluator, AutoRollbackManager
+from rtmdk.support.projection import IncPCAProjection
+from rtmdk.support.torch_backend import TorchBackend
+from rtmdk.support.learnable import LearnableKernel, DifferentiableConsolidation
+from rtmdk.support.meta_controller import MetaController
+from rtmdk.support.circuit_breaker import CircuitBreaker
 
-@dataclass
-class RTMDKConfig:
-    embedding_dim: int = 768
-    latent_dim: int = 64  # Matches server default — change only if you know the impact
-    resonance_kernel: str = "gaussian_phase"
-    phase_coupling: float = 0.3
-    bandwidth: float = 1.0
-    attraction_lr: float = 0.02
-    phase_sync_lr: float = 0.01
-    decay_rate: float = 0.997  # Matches server default — half-life ~230 steps
-    min_amplitude: float = 0.05
-    tension_threshold: float = 0.15  # Matches server default — moderate consolidation
-    consolidation_mode: ConsolidationMode = ConsolidationMode.DIALECTICAL
-    max_nodes: Optional[int] = 5000
-    top_k: int = 5
-    min_response: float = 0.005  # OPTIMIZED: 20x lower → more results pass filter
-    enable_async: bool = True
-    log_level: str = "INFO"
-
-    # Phase 1
-    context_format: ContextFormat = ContextFormat.PLAIN
-    use_structured_prompt: bool = True
-    adaptive_threshold: bool = False
-    adaptive_window: int = 30
-    learn_projection: bool = True  # OPTIMIZED: IncPCA instead of random matrix
-    projection_lr: float = 0.001
-    projection_update_freq: int = 300  # OPTIMIZED: >= latent_dim for IncPCA first fit
-    pca_n_components: Optional[int] = None
-    bm25_fallback: bool = True  # OPTIMIZED: text search as safety net
-    bm25_k1: float = 1.5
-    bm25_b: float = 0.75
-    hybrid_alpha: float = 1.0  # 1.0 = pure RTMDK, 0.0 = pure BM25, 0.7 = 70/30 blend
-
-    # Phase 2
-    soft_gates: bool = False
-    gate_temperature: float = 0.15
-    self_supervision: bool = False
-    self_sup_threshold: float = 0.3
-    self_sup_verify_after_consolidate: bool = False
-    backend: Backend = Backend.NUMPY
-    gpu_batch_size: int = 512
-    l2_regularization: float = 0.0001
-    false_merge_threshold: float = 0.4
-    field_stability_window: int = 20
-    enable_rollback: bool = False
-    max_rollback_history: int = 10  # Fix 7: Reduced from 50 — each snapshot stores full node copies, memory intensive
-
-    # Phase 3
-    multimodal: bool = False
-    modalities: List[str] = field(default_factory=lambda: ["text"])
-    modality_phase_shifts: Dict[str, float] = field(default_factory=dict)
-    use_hnsw: bool = True  # OPTIMIZED: fast approximate nearest neighbor
-    hnsw_m: int = 16
-    hnsw_ef_construction: int = 200
-    tda_monitoring: bool = False
-    tda_check_freq: int = 50
-
-    # Track 1: Differentiable field
-    differentiable: bool = False
-    learnable_bandwidth: bool = False
-    learnable_phase_coupling: bool = False
-    learnable_decay: bool = False
-    gradient_clip: float = 1.0
-    consolidation_loss_weight: float = 0.1
-
-    # Phase 5
-    meta_adaptive: bool = False
-    meta_adaptation_lr: float = 0.005
-    kurtosis_target_min: float = 1.5
-    kurtosis_target_max: float = 4.0
-    self_healing: bool = False
-    healing_check_freq: int = 25
-    dead_zone_threshold: float = 0.15
-    hyperconvergence_threshold: float = 0.05
-    fragmentation_threshold: float = 0.6
-    healing_strength: float = 0.1
-    max_healing_nodes_per_step: int = 5
-
-    # Phase 6
-    causal_topological: bool = False
-    causal_discovery_min_samples: int = 20
-    causal_p_threshold: float = 0.05
-    do_calculus_validation: bool = True
-    counterfactual_enabled: bool = False
-    counterfactual_max_depth: int = 3
-    contradiction_detection: bool = True
-    contradiction_threshold: float = 0.3
-    causal_adjustment_sets: bool = True
-
-    # Phase 7: Neural ODE/SDE
-    continuous_dynamics: bool = False
-    ode_solver: str = "RK45"
-    ode_atol: float = 1e-6
-    ode_rtol: float = 1e-5
-    ode_time_horizon: float = 1.0
-    ode_n_steps: int = 20
-    ode_chunk_size: int = 256
-    sde_noise_level: float = 0.01
-    adjoint_enabled: bool = False
-    response_smoothness_target: float = 0.92
-
-    # Phase 8: Agent orchestration
-    agent_orchestration: bool = False
-    max_plan_depth: int = 3
-    max_tool_calls: int = 5
-    tool_timeout: float = 15.0
-    hypothesis_verification: bool = True
-    verification_confidence_threshold: float = 0.7
-    goal_directed_routing: bool = False
-
-    # Phase 9: Production
-    production_mode: bool = False
-    eval_mode: EvalMode = EvalMode.PRODUCTION
-    shadow_mode: bool = False
-    shadow_fallback_threshold: float = 0.3
-    auto_rollback: bool = False
-    auto_rollback_threshold: float = 0.15
-    eval_frequency: int = 100
-    ragas_enabled: bool = False
-    drift_detection: bool = False
-    drift_window: int = 100
-    drift_threshold: float = 0.05
-    metrics_retention: int = 10000
-
-    # Track 10.1: Cross-modal resonance
-    cross_modal: bool = False
-    modal_phase_offsets: Dict[str, float] = field(default_factory=lambda: {
-        "text": 0.0,
-        "code": math.pi / 4,
-        "audio": math.pi / 2,
-        "vision": 3 * math.pi / 4,
-        "metrics": math.pi,
-    })
-    cross_modal_kernel_weight: float = 0.35
-
-    # Track 10.2: Meta-cognitive controller
-    meta_controller: bool = False
-    meta_optimization_freq: int = 500
-    meta_n_trials: int = 20
-    meta_optimize_params: List[str] = field(default_factory=lambda: [
-        "decay_rate", "tension_threshold", "phase_coupling", "bandwidth"
-    ])
-
-    # Phase 18: Engrams (biological memory patterns)
-    enable_engrams: bool = True
-    engram_min_nodes: int = 2
-    engram_max_nodes: int = 20
-    engram_creation_threshold: float = 0.6
-    engram_decay_rate: float = 0.998
-    engram_pattern_completion: bool = True
-    engram_overlap_threshold: float = 0.7
-
-    # Track 10.3: Federated sync
-    federated: bool = False
-    federated_sync_lr: float = 0.01
-    federated_sync_freq: int = 100
-    federated_min_resonance: float = 0.2
-    node_id: str = "local"
-
-    # Phase 11 Track 1: Memory stratification
-    memory_tiers: Set[str] = field(default_factory=lambda: {"episodic", "semantic", "procedural"})
-    tier_decay: Dict[str, float] = field(default_factory=lambda: {
-        "episodic": 0.992, "semantic": 0.999, "procedural": 1.0
-    })
-    tier_tension_thresh: Dict[str, float] = field(default_factory=lambda: {
-        "episodic": 0.10, "semantic": 0.22, "procedural": 0.35
-    })
-
-    # Phase 11 Track 2: Hyperbolic geometry
-    hyperbolic: bool = False
-    ball_radius: float = 0.85
-    curvature: float = -1.0
-
-    # Phase 11 Track 3: Predictive coding
-    predictive_coding: bool = False
-    pc_latent_dim: int = 32
-    pc_lr: float = 0.01
-
-    # Phase 11 Track 4: Counterfactual imagination
-    counterfactual_imagination: bool = False
-    max_scenarios: int = 5
-
-    # Phase 11 Track 5: Differential privacy
-    differential_privacy: bool = False
-    dp_epsilon: float = 2.0
-    dp_delta: float = 1e-5
-    dp_max_norm: float = 1.0
-
-    # Phase 12 Track 1: Sparse resonant routing (MoE-memory)
-    sparse_routing: bool = False
-    num_shards: int = 8
-    top_shards: int = 3
-
-    # Phase 12 Track 2: Cognitive context compression
-    cognitive_compression: bool = False
-    high_resonance_threshold: float = 0.6
-
-    # Phase 12 Track 3: Crystallization
-    crystallization: bool = False
-    crystallization_freq: int = 200
-    crystallization_similarity: float = 0.75
-    crystallization_min_cluster: int = 3
-
-    # Phase 12 Track 4: Async pipeline
-    async_pipeline: bool = False
-    query_queue_size: int = 50
-    save_queue_size: int = 100
-    evolve_queue_size: int = 20
-
-    # Phase 13 Track 1: Teleological layer (Goal/Intent Tracking)
-    goal_tracking: bool = False
-    max_goals: int = 20
-    goal_decay: float = 0.995
-    goal_completion_threshold: float = 0.8
-
-    # Phase 13 Track 2: Cognitive attention bias
-    attention_bias: bool = False
-    bias_temperature: float = 1.0
-
-    # Phase 13 Track 3: Closed-loop RL feedback
-    rl_feedback: bool = False
-    rl_learning_rate: float = 0.01
-    rl_reward_window: int = 10
-
-    # Phase 13 Track 4: Event-driven + Low-Rank compression
-    event_driven: bool = False
-    low_rank_compression: bool = False
-    compression_rank: int = 32
-    compression_freq: int = 500
-
-    # Phase 14 Track 1: Introspective Meta-Memory
-    meta_memory: bool = False
-    self_reflection_freq: int = 100
-    memory_age_factor: float = 0.001
-    recall_accuracy_threshold: float = 0.6
-
-    # Phase 14 Track 2: Formal Security
-    security_enabled: bool = False
-    max_node_text_length: int = 10000
-    tension_spike_threshold: float = 0.5
-    causal_graph_integrity_check: bool = True
-    prompt_injection_patterns: List[str] = field(default_factory=lambda: [
-        "ignore previous", "system prompt", "you are now", "disregard",
-        "ignore all", "new instruction", "override"
-    ])
-
-    # Phase 14 Track 5: Swarm Memory
-    swarm_memory: bool = False
-    swarm_consensus_threshold: float = 0.5
-    swarm_max_agents: int = 10
-    swarm_vote_weight: float = 0.3
-
-    # Phase 15 Track 1: Version Control (Memory Git)
-    version_control: bool = False
-    max_versions: int = 100
-
-    # Phase 15 Track 2: Proactive Clarification
-    proactive_clarification: bool = False
-    clarification_threshold_ratio: float = 0.5
-
-    # Phase 15 Track 3: Attention Tokens
-    attention_tokens: bool = True  # Enabled by default (extends attention_bias)
-
-    # Phase 15 Track 4: Entropy Control
-    entropy_management: bool = False
-    entropy_high_threshold: float = 3.0
-    entropy_low_threshold: float = 0.5
-
-    # Phase 15 Track 5: Triton/CUDA Backend
-    triton_backend: bool = False
-    min_nodes_for_gpu: int = 2000
-
-    # Phase 16 Track 1: SymbolicOverlay
-    symbolic_overlay: bool = False
-    symbolic_min_self_sup: float = 0.7
-    symbolic_max_tension: float = 0.15
-    symbolic_confidence_threshold: float = 0.65
-
-    # Phase 16 Track 2: SafetyCertifier
-    safety_certifier: bool = False
-    safety_mode: str = "soft_regulate"  # monitor_only | soft_regulate | hard_block
-    lyapunov_alpha: float = 0.4
-    lyapunov_beta: float = 0.4
-    lyapunov_gamma: float = 0.2
-    lyapunov_threshold: float = 0.1
-
-    # Phase 16 Track 3: Universal Memory Protocol
-    ump_enabled: bool = False
-
-    # Phase 17: RoleShardRouter
-    role_sharding: bool = False
-    role_shards: Set[str] = field(default_factory=lambda: {"default"})
-    cross_shard_threshold: float = 0.45
-    auto_role_detection: bool = True
-
-    # System prompt (None = no system prompt, used for SillyTavern)
-    system_prompt: Optional[str] = "You are a helpful assistant with long-term memory powered by RTMDK (Resonance-Topological Memory)."
-
-    # Phase 19: Advanced Improvements
-    offline_dreaming: bool = True
-    dreaming_freq: int = 50
-    causal_traversal: bool = True
-    causal_max_hops: int = 3
-    ssm_dynamics: bool = False
-    ssm_state_dim: int = 64
-    trust_consensus: bool = False
-    trust_min_reputation: float = 0.3
-    neuro_symbolic_prover: bool = False
-    prover_backend: str = "z3"
-
-    # CPEN+ specific flags
-    cpen_parent_ode: bool = False
-    cpen_child_ode: bool = False
-    hebbian_learning_rate: float = 0.01
-    causal_masking: bool = False
-
-    def __post_init__(self):
-        # Phase 2: Env var overrides for critical config fields
-        # Priority: explicit args > env vars > dataclass defaults
-        _env_overrides = [
-            # Core
-            ("RTMDK_EMBEDDING_DIM", "embedding_dim", int),
-            ("RTMDK_LATENT_DIM", "latent_dim", int),
-            ("RTMDK_DECAY_RATE", "decay_rate", float),
-            ("RTMDK_TENSION_THRESHOLD", "tension_threshold", float),
-            ("RTMDK_MIN_RESPONSE", "min_response", float),
-            ("RTMDK_TOP_K", "top_k", int),
-            ("RTMDK_MAX_NODES", "max_nodes", lambda x: int(x) if x and x.lower() != "none" else None),
-            ("RTMDK_CONSOLIDATION_MODE", "consolidation_mode", lambda x: ConsolidationMode(x)),
-            # Retrieval
-            ("RTMDK_PHASE_COUPLING", "phase_coupling", float),
-            ("RTMDK_BANDWIDTH", "bandwidth", float),
-            ("RTMDK_USE_HNSW", "use_hnsw", lambda x: x.lower() == "true"),
-            ("RTMDK_HNSW_M", "hnsw_m", int),
-            ("RTMDK_BM25_FALLBACK", "bm25_fallback", lambda x: x.lower() == "true"),
-            ("RTMDK_LEARN_PROJECTION", "learn_projection", lambda x: x.lower() == "true"),
-            ("RTMDK_PROJECTION_LR", "projection_lr", float),
-            ("RTMDK_PROJECTION_UPDATE_FREQ", "projection_update_freq", int),
-            # Performance
-            ("RTMDK_ENABLE_ASYNC", "enable_async", lambda x: x.lower() == "true"),
-            ("RTMDK_SOFT_GATES", "soft_gates", lambda x: x.lower() == "true"),
-            ("RTMDK_ATTENTION_BIAS", "attention_bias", lambda x: x.lower() == "true"),
-            ("RTMDK_ADAPTIVE_THRESHOLD", "adaptive_threshold", lambda x: x.lower() == "true"),
-            # Production
-            ("RTMDK_CROSS_MODAL", "cross_modal", lambda x: x.lower() == "true"),
-            ("RTMDK_CAUSAL_TOPOLOGICAL", "causal_topological", lambda x: x.lower() == "true"),
-            ("RTMDK_META_ADAPTIVE", "meta_adaptive", lambda x: x.lower() == "true"),
-            ("RTMDK_SELF_HEALING", "self_healing", lambda x: x.lower() == "true"),
-            ("RTMDK_VERSION_CONTROL", "version_control", lambda x: x.lower() == "true"),
-            # Phase 18: Engrams
-            ("RTMDK_ENABLE_ENGRAMS", "enable_engrams", lambda x: x.lower() == "true"),
-            ("RTMDK_ENGRAM_MIN_NODES", "engram_min_nodes", int),
-            ("RTMDK_ENGRAM_MAX_NODES", "engram_max_nodes", int),
-            # Phase 19
-            ("RTMDK_OFFLINE_DREAMING", "offline_dreaming", lambda x: x.lower() == "true"),
-            ("RTMDK_CAUSAL_TRAVERSAL", "causal_traversal", lambda x: x.lower() == "true"),
-            ("RTMDK_CAUSAL_MAX_HOPS", "causal_max_hops", int),
-            ("RTMDK_SSM_DYNAMICS", "ssm_dynamics", lambda x: x.lower() == "true"),
-            ("RTMDK_SSM_STATE_DIM", "ssm_state_dim", int),
-            ("RTMDK_TRUST_CONSENSUS", "trust_consensus", lambda x: x.lower() == "true"),
-            ("RTMDK_NEURO_SYMBOLIC_PROVER", "neuro_symbolic_prover", lambda x: x.lower() == "true"),
-            # Phase 11
-            ("RTMDK_HYPERBOLIC", "hyperbolic", lambda x: x.lower() == "true"),
-            ("RTMDK_PREDICTIVE_CODING", "predictive_coding", lambda x: x.lower() == "true"),
-            ("RTMDK_COUNTERFACTUAL_IMAGINATION", "counterfactual_imagination", lambda x: x.lower() == "true"),
-            ("RTMDK_DIFFERENTIAL_PRIVACY", "differential_privacy", lambda x: x.lower() == "true"),
-            ("RTMDK_DP_EPSILON", "dp_epsilon", float),
-            # Phase 12-17
-            ("RTMDK_SPARSE_ROUTING", "sparse_routing", lambda x: x.lower() == "true"),
-            ("RTMDK_NUM_SHARDS", "num_shards", int),
-            ("RTMDK_GOAL_TRACKING", "goal_tracking", lambda x: x.lower() == "true"),
-            ("RTMDK_RL_FEEDBACK", "rl_feedback", lambda x: x.lower() == "true"),
-            ("RTMDK_LOW_RANK_COMPRESSION", "low_rank_compression", lambda x: x.lower() == "true"),
-            ("RTMDK_META_MEMORY", "meta_memory", lambda x: x.lower() == "true"),
-            ("RTMDK_SECURITY_ENABLED", "security_enabled", lambda x: x.lower() == "true"),
-            ("RTMDK_SWARM_MEMORY", "swarm_memory", lambda x: x.lower() == "true"),
-            ("RTMDK_SYMBOLIC_OVERLAY", "symbolic_overlay", lambda x: x.lower() == "true"),
-            ("RTMDK_SAFETY_CERTIFIER", "safety_certifier", lambda x: x.lower() == "true"),
-            ("RTMDK_ROLE_SHARDING", "role_sharding", lambda x: x.lower() == "true"),
-            ("RTMDK_CONTEXT_FORMAT", "context_format", lambda x: ContextFormat(x)),
-            ("RTMDK_LOG_LEVEL", "log_level", str),
-            ("RTMDK_SYSTEM_PROMPT", "system_prompt", str),
-            ("RTMDK_CPEN_PARENT_ODE", "cpen_parent_ode", lambda x: x.lower() == "true"),
-            ("RTMDK_CPEN_CHILD_ODE", "cpen_child_ode", lambda x: x.lower() == "true"),
-            ("RTMDK_HEBBIAN_LEARNING_RATE", "hebbian_learning_rate", float),
-            ("RTMDK_CAUSAL_MASKING", "causal_masking", lambda x: x.lower() == "true")
-        ]
-        for env_key, attr, type_fn in _env_overrides:
-            val = os.getenv(env_key)
-            if val is not None:
-                try:
-                    parsed = type_fn(val)
-                    # Handle empty string as None for Optional[str] fields
-                    if attr == "system_prompt" and parsed == "":
-                        parsed = None
-                    elif attr == "system_prompt" and parsed.lower() == "none":
-                        parsed = None
-                    object.__setattr__(self, attr, parsed)
-                except (ValueError, TypeError) as e:
-                    logging.getLogger("rtmdk").warning(
-                        f"Invalid env var {env_key}={val}: {e}"
-                    )
-
-        logger.setLevel(getattr(logging, self.log_level.upper()))
-        if not self.modality_phase_shifts:
-            self.modality_phase_shifts = {
-                "text": 0.0, "audio": np.pi / 3,
-                "image": np.pi / 2, "video": np.pi,
-            }
-        if self.pca_n_components is None:
-            self.pca_n_components = self.latent_dim
 
 
 # ============================================================================
@@ -624,7 +251,7 @@ def poincare_dist(u: NDArray, v: NDArray, ball_radius: float = 0.85) -> float:
     r_sq = ball_radius ** 2
     denom = ((r_sq - u_norm ** 2) * (r_sq - v_norm ** 2)) / max(r_sq, 1e-8)
     arg = 1 + 2 * sq_delta / max(denom, 1e-8)
-    return float(np.arccosh(np.clip(arg, 1.0, None)))
+    return float(ball_radius * np.arccosh(np.clip(arg, 1.0, None)))
 
 
 def exp_map_poincare(tangent: NDArray, base: NDArray, ball_radius: float = 0.85) -> NDArray:
@@ -676,52 +303,6 @@ def mobius_add(x: NDArray, y: NDArray, ball_radius: float = 0.85) -> NDArray:
     return result.astype(np.float32)
 
 
-# ============================================================================
-# PHASE 11 TRACK 3: PREDICTIVE CODING
-# ============================================================================
-
-class PredictiveCodingModel:
-    """Predictive coding / active inference for field dynamics."""
-
-    def __init__(self, latent_dim: int, hidden_dim: int = 128, lr: float = 0.01):
-        self.latent_dim = latent_dim
-        self.state_dim = latent_dim * 4  # pos, phase, amp, sal encoded
-        self.hidden_dim = hidden_dim
-        self.lr = lr
-        # Simple linear predictor: W * state + b
-        self.W = np.random.randn(self.state_dim, self.state_dim).astype(np.float32) * 0.01
-        self.b = np.zeros(self.state_dim, dtype=np.float32)
-        self._complexity_weight = 0.01
-
-    def predict(self, state: NDArray) -> NDArray:
-        """Predict next state from current state."""
-        return (state @ self.W + self.b).astype(np.float32)
-
-    def compute_free_energy(self, state_t: NDArray, state_t1: NDArray) -> float:
-        """Compute variational free energy (prediction error + complexity)."""
-        pred = self.predict(state_t)
-        prediction_error = float(np.mean((pred - state_t1) ** 2))
-        complexity = float(np.mean(self.W ** 2)) * self._complexity_weight
-        return prediction_error + complexity
-
-    def update(self, state_t: NDArray, state_t1: NDArray, lr: Optional[float] = None):
-        """Update predictor weights to minimize free energy."""
-        lr = lr or self.lr
-        pred = self.predict(state_t)
-        error = pred - state_t1
-        # Gradient descent on prediction error
-        self.W -= lr * np.outer(state_t, error)
-        self.b -= lr * error
-        # L2 regularization
-        self.W *= (1.0 - lr * self._complexity_weight)
-
-    def get_state(self) -> Dict:
-        return {"W": self.W.tolist(), "b": self.b.tolist(), "lr": self.lr}
-
-    def load_state(self, state: Dict):
-        self.W = np.array(state["W"], dtype=np.float32)
-        self.b = np.array(state["b"], dtype=np.float32)
-        self.lr = state.get("lr", self.lr)
 
 
 # ============================================================================
@@ -801,64 +382,6 @@ class ScenarioPlanner:
         return float(np.clip(coherence, 0.0, 1.0))
 
 
-# ============================================================================
-# PHASE 11 TRACK 5: DIFFERENTIAL PRIVACY
-# ============================================================================
-
-class DifferentialPrivacy:
-    """Differential privacy for federated learning."""
-
-    def __init__(self, epsilon: float = 2.0, delta: float = 1e-5, max_norm: float = 1.0):
-        self.epsilon = epsilon
-        self.delta = delta
-        self.max_norm = max_norm
-        self._privacy_spent = 0.0
-        self._num_updates = 0
-
-    def clip_update(self, update: NDArray) -> NDArray:
-        """Clip update to max_norm."""
-        norm = np.linalg.norm(update)
-        if norm > self.max_norm:
-            return (update * self.max_norm / norm).astype(np.float32)
-        return update
-
-    def add_noise(self, update: NDArray, sensitivity: float = 1.0) -> NDArray:
-        """Add calibrated Gaussian noise."""
-        noise_std = self.compute_noise_multiplier(sensitivity)
-        noise = np.random.randn(*update.shape).astype(np.float32) * noise_std
-        return (update + noise).astype(np.float32)
-
-    def compute_noise_multiplier(self, sensitivity: float = 1.0) -> float:
-        """Compute noise multiplier for given privacy budget."""
-        if self.epsilon <= 0:
-            return float('inf')
-        # Bug #10 FIX: Gaussian mechanism — sigma = sensitivity * sqrt(2*ln(1.25/delta)) / epsilon
-        # The sensitivity (Delta_f) MUST be multiplied — without it, DP guarantees don't hold
-        sigma = sensitivity * math.sqrt(2 * math.log(1.25 / self.delta)) / self.epsilon
-        return sigma
-
-    def get_privacy_spent(self) -> float:
-        """Return cumulative privacy budget spent."""
-        return self._privacy_spent
-
-    def record_update(self, n_samples: int = 1):
-        """Record that an update was made (track privacy budget)."""
-        self._num_updates += n_samples
-        # Bug #11 FIX: Advanced composition — use per-mechanism epsilon correctly
-        # epsilon_total = sqrt(2 * k * ln(1/delta')) * epsilon_per_mechanism
-        k = self._num_updates
-        self._privacy_spent = math.sqrt(2 * k * math.log(1 / self.delta)) * self.epsilon
-
-    def get_state(self) -> Dict:
-        return {"epsilon": self.epsilon, "delta": self.delta, "max_norm": self.max_norm,
-                "privacy_spent": self._privacy_spent, "num_updates": self._num_updates}
-
-    def load_state(self, state: Dict):
-        self.epsilon = state.get("epsilon", self.epsilon)
-        self.delta = state.get("delta", self.delta)
-        self.max_norm = state.get("max_norm", self.max_norm)
-        self._privacy_spent = state.get("privacy_spent", 0.0)
-        self._num_updates = state.get("num_updates", 0)
 
 
 # ============================================================================
@@ -971,23 +494,6 @@ class EvalResult:
         return asdict(self)
 
 
-@dataclass
-class FederatedNode:
-    node_id: str
-    phase: float
-    natural_freq: float = 1.0
-    amplitude: float = 1.0
-    last_sync_time: float = field(default_factory=time.time)
-    params: Dict[str, float] = field(default_factory=dict)
-    is_active: bool = True
-    sync_count: int = 0
-
-    def to_dict(self) -> Dict:
-        return asdict(self)
-
-    @classmethod
-    def from_dict(cls, data: Dict) -> "FederatedNode":
-        return cls(**data)
 
 
 @dataclass
@@ -1028,6 +534,20 @@ class MemoryNode:
     # Phase 13
     goal_relevance: float = 0.0
     rl_reward: float = 0.0
+
+    # Phase 20: Domain Memory & Concept Lifecycle
+    domain: str = "general"
+    subdomain: str = ""
+    topic: str = ""
+    state: str = "stable"
+    confidence: float = 1.0
+    revision_count: int = 0
+    conflict_with: List[str] = field(default_factory=list)
+    valid_from: Optional[float] = None
+    valid_until: Optional[float] = None
+    evidence_spans: List[Dict] = field(default_factory=list)
+    fact_state: str = "active"
+    superseded_by: Optional[str] = None
 
     def to_dict(self) -> Dict:
         d = asdict(self)
@@ -1116,795 +636,20 @@ def cross_modal_resonance(q_mod: str, n_mod: str, base_resp: float,
     return base_resp * boost
 
 
-# ============================================================================
-# TRACK 10.2: META-COGNITIVE CONTROLLER
-# ============================================================================
 
-class MetaController:
-    def __init__(self, n_trials: int = 20, optimize_params: Optional[List[str]] = None,
-                 optimization_freq: int = 500):
-        self.n_trials = n_trials
-        self.optimize_params = optimize_params or [
-            "decay_rate", "tension_threshold", "phase_coupling", "bandwidth"
-        ]
-        self.optimization_freq = optimization_freq
-        self._optuna_available = False
-        self._best_params: Dict[str, float] = {}
-        self._optimization_history: deque = deque(maxlen=50)
-        self._step_counter = 0
-        self._last_optimization_time: float = 0.0
-        self._total_optimizations = 0
-        self._try_load_optuna()
 
-    def _try_load_optuna(self):
-        try:
-            import optuna
-            self._optuna_available = True
-            self.optuna = optuna
-        except ImportError:
-            self._optuna_available = False
 
-    def optimize(self, field: Any) -> Dict[str, float]:
-        self._step_counter += 1
-        if self._optuna_available:
-            return self._optimize_with_optuna(field)
-        else:
-            return self._optimize_grid_search(field)
 
-    def _optimize_with_optuna(self, field: Any) -> Dict[str, float]:
-        def objective(trial):
-            params = {}
-            if "decay_rate" in self.optimize_params:
-                params["decay_rate"] = trial.suggest_float("decay_rate", 0.95, 0.9999)
-            if "tension_threshold" in self.optimize_params:
-                params["tension_threshold"] = trial.suggest_float("tension_threshold", 0.1, 0.5)
-            if "phase_coupling" in self.optimize_params:
-                params["phase_coupling"] = trial.suggest_float("phase_coupling", 0.05, 0.8)
-            if "bandwidth" in self.optimize_params:
-                params["bandwidth"] = trial.suggest_float("bandwidth", 0.3, 5.0)
-            return self._evaluate_params(field, params)
 
-        study = self.optuna.create_study(direction="maximize", sampler=self.optuna.samplers.TPESampler(seed=42))
-        study.optimize(objective, n_trials=self.n_trials, show_progress_bar=False)
-        best_params = study.best_params
-        self._best_params = best_params
-        self._total_optimizations += 1
-        self._last_optimization_time = time.time()
-        self._optimization_history.append({
-            "time": time.time(), "best_value": study.best_value,
-            "params": best_params, "n_trials": self.n_trials,
-        })
-        return best_params
 
-    def _optimize_grid_search(self, field: Any) -> Dict[str, float]:
-        # Replaced full grid search with random search for performance.
-        # Original grid: 5^4 = 625 combinations → now 50 random trials.
-        grid = {
-            "decay_rate": [0.97, 0.98, 0.99, 0.995, 0.998],
-            "tension_threshold": [0.15, 0.2, 0.25, 0.3, 0.35],
-            "phase_coupling": [0.1, 0.2, 0.3, 0.4, 0.5],
-            "bandwidth": [0.5, 1.0, 1.5, 2.0, 3.0],
-        }
-        filtered_grid = {k: v for k, v in grid.items() if k in self.optimize_params}
-        best_score = -float("inf")
-        best_params = {}
-        keys = list(filtered_grid.keys())
-        values = list(filtered_grid.values())
-        n_trials = min(50, max(len(v) for v in values) ** len(keys))
 
-        for _ in range(n_trials):
-            params = {k: values[i][np.random.randint(len(values[i]))] for i, k in enumerate(keys)}
-            score = self._evaluate_params(field, params)
-            if score > best_score:
-                best_score = score
-                best_params = params.copy()
 
-        self._best_params = best_params
-        self._total_optimizations += 1
-        self._last_optimization_time = time.time()
-        self._optimization_history.append({
-            "time": time.time(), "best_value": best_score,
-            "params": best_params, "method": "random_search", "n_trials": n_trials,
-        })
-        return best_params
 
-    def _evaluate_params(self, field: Any, params: Dict[str, float]) -> float:
-        score = 0.0
-        n_nodes = len(field.nodes)
-        if n_nodes < 2:
-            return 0.5
-        positions = np.array([n.latent_pos for n in field.nodes.values()])
-        dists = cdist(positions, positions)
-        np.fill_diagonal(dists, np.inf)
-        valid_dists = dists[dists < np.inf]
-        if len(valid_dists) > 0:
-            mean_dist = np.mean(valid_dists)
-            std_dist = np.std(valid_dists)
-            cv = std_dist / (mean_dist + 1e-8)
-            score += max(0, 1.0 - cv) * 0.4
-        phases = np.array([n.phase for n in field.nodes.values()])
-        phase_order = np.abs(np.mean(np.exp(1j * phases)))
-        score += phase_order * 0.3
-        amplitudes = np.array([n.amplitude for n in field.nodes.values()])
-        alive_ratio = np.mean(amplitudes > field.cfg.min_amplitude)
-        score += alive_ratio * 0.3
-        if "decay_rate" in params:
-            decay_penalty = abs(params["decay_rate"] - field.cfg.decay_rate) * 10
-            score -= decay_penalty * 0.1
-        if field.stats.get("avg_response", 0) > 0:
-            score += min(0.5, field.stats["avg_response"] * 0.5)
-        return max(0.0, min(1.0, score))
 
-    def apply_params(self, field: Any, params: Dict[str, float]):
-        if "decay_rate" in params:
-            field.cfg.decay_rate = params["decay_rate"]
-            if field.learnable_kernel:
-                field.learnable_kernel.decay_rate = params["decay_rate"]
-        if "tension_threshold" in params:
-            field.cfg.tension_threshold = params["tension_threshold"]
-        if "phase_coupling" in params:
-            field.cfg.phase_coupling = params["phase_coupling"]
-            if field.meta_kernel:
-                field.meta_kernel.base_phase_coupling = params["phase_coupling"]
-        if "bandwidth" in params:
-            field.cfg.bandwidth = params["bandwidth"]
-            if field.meta_kernel:
-                field.meta_kernel.base_bandwidth = params["bandwidth"]
 
-    def should_optimize(self) -> bool:
-        return self._step_counter > 0 and self._step_counter % self.optimization_freq == 0
 
-    def get_state(self) -> Dict:
-        return {
-            "best_params": self._best_params,
-            "optimization_history": self._optimization_history,
-            "total_optimizations": self._total_optimizations,
-            "optuna_available": self._optuna_available,
-            "step_counter": self._step_counter,
-            "last_optimization_time": self._last_optimization_time,
-        }
 
-    def load_state(self, state: Dict):
-        self._best_params = state.get("best_params", {})
-        self._optimization_history = state.get("optimization_history", [])
-        self._total_optimizations = state.get("total_optimizations", 0)
-        self._step_counter = state.get("step_counter", 0)
-        self._last_optimization_time = state.get("last_optimization_time", 0.0)
 
-
-# ============================================================================
-# TRACK 10.3: KURAMOTO SYNCHRONIZATION & FEDERATED SYNC
-# ============================================================================
-
-class KuramotoSync:
-    def __init__(self, coupling_strength: float = 0.5, dt: float = 0.01):
-        self.coupling_strength = coupling_strength
-        self.dt = dt
-        self.phases: Dict[str, float] = {}
-        self.natural_freqs: Dict[str, float] = {}
-        self._order_history: deque = deque(maxlen=100)
-
-    def add_oscillator(self, node_id: str, phase: float, natural_freq: float = 1.0):
-        self.phases[node_id] = phase
-        self.natural_freqs[node_id] = natural_freq
-
-    def remove_oscillator(self, node_id: str):
-        self.phases.pop(node_id, None)
-        self.natural_freqs.pop(node_id, None)
-
-    def step(self, n_steps: int = 1) -> Dict[str, float]:
-        for _ in range(n_steps):
-            new_phases = {}
-            n = len(self.phases)
-            if n < 2:
-                continue
-            K_over_N = self.coupling_strength / n
-            for nid, phi in self.phases.items():
-                omega = self.natural_freqs.get(nid, 1.0)
-                coupling = 0.0
-                for other_id, other_phi in self.phases.items():
-                    if other_id != nid:
-                        coupling += math.sin(other_phi - phi)
-                new_phases[nid] = (phi + self.dt * (omega + K_over_N * coupling)) % (2 * math.pi)
-            self.phases.update(new_phases)
-        self._order_history.append(self.compute_order_parameter())
-        return self.phases
-
-    def compute_order_parameter(self) -> float:
-        if not self.phases:
-            return 0.0
-        n = len(self.phases)
-        sum_exp = sum(complex(math.cos(p), math.sin(p)) for p in self.phases.values())
-        return abs(sum_exp) / n
-
-    def sync_to_target(self, target_phases: Dict[str, float], n_steps: int = 10) -> Dict[str, float]:
-        for nid, target_phi in target_phases.items():
-            if nid in self.phases:
-                diff = target_phi - self.phases[nid]
-                diff = (diff + math.pi) % (2 * math.pi) - math.pi
-                self.phases[nid] = (self.phases[nid] + self.coupling_strength * diff) % (2 * math.pi)
-        for _ in range(n_steps):
-            self.step()
-        return self.phases
-
-    def get_state(self) -> Dict:
-        return {
-            "phases": dict(self.phases), "natural_freqs": dict(self.natural_freqs),
-            "order_parameter": self.compute_order_parameter(),
-            "coupling_strength": self.coupling_strength,
-        }
-
-    def load_state(self, state: Dict):
-        self.phases = state.get("phases", {})
-        self.natural_freqs = state.get("natural_freqs", {})
-        self.coupling_strength = state.get("coupling_strength", self.coupling_strength)
-
-
-class FederatedRTMDK:
-    def __init__(self, node_id: str = "local", sync_lr: float = 0.01,
-                 sync_freq: int = 100, min_resonance: float = 0.2,
-                 coupling_strength: float = 0.5):
-        self.node_id = node_id
-        self.sync_lr = sync_lr
-        self.sync_freq = sync_freq
-        self.min_resonance = min_resonance
-        self.kuramoto = KuramotoSync(coupling_strength=coupling_strength)
-        self.peers: Dict[str, FederatedNode] = {}
-        self._sync_history: deque = deque(maxlen=100)
-        self._total_syncs = 0
-        self._step_counter = 0
-
-    def register_peer(self, peer: FederatedNode):
-        self.peers[peer.node_id] = peer
-        self.kuramoto.add_oscillator(peer.node_id, peer.phase, peer.natural_freq)
-
-    def unregister_peer(self, peer_id: str):
-        self.peers.pop(peer_id, None)
-        self.kuramoto.remove_oscillator(peer_id)
-
-    def sync_with_peers(self, local_phases: Dict[str, float],
-                        local_params: Dict[str, float]) -> Dict[str, Any]:
-        self._step_counter += 1
-        if self._step_counter % self.sync_freq != 0:
-            return {"synced": False, "reason": "not_sync_step"}
-        if not self.peers:
-            return {"synced": False, "reason": "no_peers"}
-        sync_results = []
-        for peer_id, peer in self.peers.items():
-            if not peer.is_active:
-                continue
-            resonance = self._compute_param_resonance(local_params, peer.params)
-            if resonance < self.min_resonance:
-                continue
-            self.kuramoto.sync_to_target(local_phases, n_steps=5)
-            blended_params = self._blend_params(local_params, peer.params, self.sync_lr)
-            peer.params = blended_params
-            peer.sync_count += 1
-            peer.last_sync_time = time.time()
-            sync_results.append({
-                "peer_id": peer_id, "resonance": resonance,
-                "params_updated": list(blended_params.keys()),
-            })
-        self._total_syncs += 1
-        self._sync_history.append({
-            "time": time.time(), "peers_synced": len(sync_results),
-            "order_parameter": self.kuramoto.compute_order_parameter(),
-        })
-        return {
-            "synced": True, "results": sync_results,
-            "order_parameter": self.kuramoto.compute_order_parameter(),
-            "total_syncs": self._total_syncs,
-        }
-
-    def _compute_param_resonance(self, params_a: Dict[str, float],
-                                  params_b: Dict[str, float]) -> float:
-        common_keys = set(params_a.keys()) & set(params_b.keys())
-        if not common_keys:
-            return 0.0
-        diffs = []
-        for key in common_keys:
-            a, b = params_a[key], params_b[key]
-            denom = max(abs(a) + abs(b), 1e-8)
-            diffs.append(1.0 - abs(a - b) / denom)
-        return float(np.mean(diffs))
-
-    def _blend_params(self, params_a: Dict[str, float],
-                      params_b: Dict[str, float], lr: float) -> Dict[str, float]:
-        blended = {}
-        all_keys = set(params_a.keys()) | set(params_b.keys())
-        for key in all_keys:
-            a = params_a.get(key, 0.0)
-            b = params_b.get(key, 0.0)
-            blended[key] = (1 - lr) * a + lr * b
-        return blended
-
-    def get_aggregated_params(self) -> Dict[str, float]:
-        all_params: Dict[str, List[float]] = defaultdict(list)
-        for peer in self.peers.values():
-            if peer.is_active:
-                for k, v in peer.params.items():
-                    all_params[k].append(v)
-        return {k: float(np.mean(v)) for k, v in all_params.items() if v}
-
-    def get_sync_status(self) -> Dict:
-        return {
-            "node_id": self.node_id, "n_peers": len(self.peers),
-            "active_peers": sum(1 for p in self.peers.values() if p.is_active),
-            "order_parameter": self.kuramoto.compute_order_parameter(),
-            "total_syncs": self._total_syncs,
-            "sync_history": self._sync_history[-10:],
-            "kuramoto_state": self.kuramoto.get_state(),
-        }
-
-    def export_state(self) -> Dict:
-        return {
-            "node_id": self.node_id,
-            "peers": {pid: p.to_dict() for pid, p in self.peers.items()},
-            "kuramoto": self.kuramoto.get_state(),
-            "sync_history": self._sync_history, "total_syncs": self._total_syncs,
-        }
-
-    def import_state(self, state: Dict):
-        self.node_id = state.get("node_id", self.node_id)
-        self._total_syncs = state.get("total_syncs", 0)
-        self._sync_history = state.get("sync_history", [])
-        for pid, pdata in state.get("peers", {}).items():
-            peer = FederatedNode.from_dict(pdata)
-            self.peers[pid] = peer
-            self.kuramoto.add_oscillator(pid, peer.phase, peer.natural_freq)
-        if "kuramoto" in state:
-            self.kuramoto.load_state(state["kuramoto"])
-
-
-# ============================================================================
-# PHASE 7: NEURAL ODE/SDE DYNAMICS
-# ============================================================================
-
-class NeuralODEDynamics:
-    def __init__(self, latent_dim: int, noise_level: float = 0.01,
-                 time_horizon: float = 1.0, n_steps: int = 20,
-                 chunk_size: int = 256, solver: str = "RK45",
-                 atol: float = 1e-6, rtol: float = 1e-5):
-        self.latent_dim = latent_dim
-        self.noise_level = noise_level
-        self.time_horizon = time_horizon
-        self.n_steps = n_steps
-        self.chunk_size = chunk_size
-        self.solver = solver
-        self.atol = atol
-        self.rtol = rtol
-        self.alpha = 0.1
-        self.beta = 0.05
-        self.gamma = 0.02
-        self.W = np.random.randn(latent_dim, latent_dim).astype(np.float32) * 0.01
-        self._response_history: deque = deque(maxlen=100)
-        self._state_history: deque = deque(maxlen=2)
-
-    def _sigma(self, x: NDArray) -> NDArray:
-        return np.tanh(x)
-
-    def _dynamics(self, t: float, state: NDArray, input_signal: Optional[NDArray] = None,
-                  topology_gradient: Optional[NDArray] = None) -> NDArray:
-        n_nodes = len(state) // self.latent_dim
-        if n_nodes == 0:
-            return state
-        X = state.reshape(n_nodes, self.latent_dim)
-        damping = -self.alpha * X
-        nonlinear = self.W @ self._sigma(X.T)
-        nonlinear = nonlinear.T
-        if input_signal is not None:
-            u = input_signal.reshape(n_nodes, self.latent_dim)
-            attraction = self.beta * (u - X)
-        else:
-            attraction = 0.0
-        if topology_gradient is not None:
-            topo = self.gamma * topology_gradient.reshape(n_nodes, self.latent_dim)
-        else:
-            topo = 0.0
-        dX = damping + nonlinear + attraction + topo
-        return dX.flatten()
-
-    def evolve(self, initial_state: NDArray, input_signal: Optional[NDArray] = None,
-               topology_gradient: Optional[NDArray] = None,
-               t_span: Optional[NDArray] = None) -> NDArray:
-        if t_span is None:
-            t_span = np.linspace(0, self.time_horizon, self.n_steps)
-        n_nodes = len(initial_state) // self.latent_dim
-        if n_nodes > self.chunk_size:
-            return self._evolve_chunked(initial_state, input_signal, topology_gradient, t_span)
-        def ode_func(t, state):
-            return self._dynamics(t, state, input_signal, topology_gradient)
-        solution = solve_ivp(
-            ode_func, [t_span[0], t_span[-1]], initial_state.flatten(),
-            t_eval=t_span, method=self.solver, atol=self.atol, rtol=self.rtol
-        )
-        if solution.success:
-            trajectory = solution.y.T
-        else:
-            trajectory = odeint(ode_func, initial_state.flatten(), t_span,
-                                atol=self.atol * 10, rtol=self.rtol * 10)
-        self._state_history.append(trajectory[-1].copy())
-        return trajectory
-
-    def _evolve_chunked(self, initial_state: NDArray, input_signal: Optional[NDArray],
-                        topology_gradient: Optional[NDArray], t_span: NDArray) -> NDArray:
-        n_nodes = len(initial_state) // self.latent_dim
-        chunks = []
-        for i in range(0, n_nodes, self.chunk_size):
-            end = min(i + self.chunk_size, n_nodes)
-            chunk_state = initial_state[i * self.latent_dim:end * self.latent_dim]
-            chunk_input = input_signal[i * self.latent_dim:end * self.latent_dim] if input_signal is not None else None
-            chunk_topo = topology_gradient[i * self.latent_dim:end * self.latent_dim] if topology_gradient is not None else None
-            def ode_func(t, state):
-                return self._dynamics(t, state, chunk_input, chunk_topo)
-            sol = solve_ivp(ode_func, [t_span[0], t_span[-1]], chunk_state.flatten(),
-                            t_eval=t_span, method=self.solver, atol=self.atol, rtol=self.rtol)
-            if sol.success:
-                chunks.append(sol.y.T)
-            else:
-                chunks.append(odeint(ode_func, chunk_state.flatten(), t_span))
-        return np.concatenate(chunks, axis=1)
-
-    def evolve_with_noise(self, initial_state: NDArray, input_signal: Optional[NDArray] = None,
-                          topology_gradient: Optional[NDArray] = None,
-                          dt: float = 0.05) -> NDArray:
-        n_steps = int(self.time_horizon / dt)
-        state = initial_state.flatten().copy()
-        trajectory = [state.copy()]
-        for _ in range(n_steps):
-            deterministic = self._dynamics(0, state, input_signal, topology_gradient) * dt
-            noise = self.noise_level * np.random.randn(len(state)) * np.sqrt(dt)
-            state = state + deterministic + noise
-            trajectory.append(state.copy())
-        self._state_history.append(trajectory[-1].copy())
-        return np.array(trajectory)
-
-    def compute_topology_gradient(self, nodes: Dict[str, MemoryNode]) -> Optional[NDArray]:
-        if len(nodes) < 2:
-            return None
-        node_ids = list(nodes.keys())
-        positions = np.array([nodes[nid].latent_pos for nid in node_ids])
-        n = len(positions)
-        dists = cdist(positions, positions)
-        np.fill_diagonal(dists, np.inf)
-        gradient = np.zeros_like(positions)
-        for i in range(n):
-            for j in range(i + 1, n):
-                if dists[i, j] < 2.0:
-                    direction = (positions[i] - positions[j]) / (dists[i, j] + 1e-8)
-                    gradient[i] += direction * 0.01
-                    gradient[j] -= direction * 0.01
-        return gradient.flatten()
-
-    def compute_response_smoothness(self) -> float:
-        if len(self._response_history) < 2:
-            return 1.0
-        responses = np.array(self._response_history)
-        std = np.std(responses)
-        return max(0.0, 1.0 - std)
-
-    def record_response(self, response: float):
-        self._response_history.append(response)
-
-    def get_state(self) -> Dict:
-        return {
-            "alpha": self.alpha, "beta": self.beta, "gamma": self.gamma,
-            "W": self.W.tolist(), "noise_level": self.noise_level,
-            "smoothness": self.compute_response_smoothness(),
-        }
-
-    def load_state(self, state: Dict):
-        self.alpha = state.get("alpha", self.alpha)
-        self.beta = state.get("beta", self.beta)
-        self.gamma = state.get("gamma", self.gamma)
-        if "W" in state:
-            self.W = np.array(state["W"], dtype=np.float32)
-        self.noise_level = state.get("noise_level", self.noise_level)
-
-
-# ============================================================================
-# PHASE 8: AGENT ORCHESTRATION
-# ============================================================================
-
-class AgentPlanner:
-    def __init__(self, max_depth: int = 3, max_tool_calls: int = 5,
-                 tool_timeout: float = 15.0):
-        self.max_depth = max_depth
-        self.max_tool_calls = max_tool_calls
-        self.tool_timeout = tool_timeout
-        self._visited_tools: Set[str] = set()
-        self._call_count = 0
-
-    def create_plan(self, goal: str, available_tools: List[str],
-                    context: Dict[str, Any]) -> AgentPlan:
-        subtasks = self._decompose_goal(goal, context)
-        tools_needed = self._select_tools(goal, subtasks, available_tools)
-        return AgentPlan(
-            goal=goal, subtasks=subtasks, tools_needed=tools_needed,
-            estimated_steps=len(subtasks),
-            confidence=self._estimate_confidence(goal, subtasks, tools_needed),
-            reasoning=f"Decomposed goal into {len(subtasks)} subtasks"
-        )
-
-    def _decompose_goal(self, goal: str, context: Dict) -> List[Dict[str, Any]]:
-        subtasks = []
-        subtasks.append({"type": "retrieve", "description": f"Find memories related to: {goal}", "priority": 1})
-        if context.get("hypothesis_verification", False):
-            subtasks.append({"type": "verify", "description": "Verify causal hypotheses", "priority": 2})
-        subtasks.append({"type": "synthesize", "description": f"Synthesize response for: {goal}", "priority": 3})
-        return subtasks[:self.max_depth]
-
-    def _select_tools(self, goal: str, subtasks: List[Dict],
-                      available_tools: List[str]) -> List[str]:
-        selected = []
-        for task in subtasks:
-            task_type = task.get("type", "")
-            for tool in available_tools:
-                if task_type in tool.lower() and tool not in selected:
-                    selected.append(tool)
-        return selected[:self.max_tool_calls]
-
-    def _estimate_confidence(self, goal: str, subtasks: List[Dict],
-                             tools: List[str]) -> float:
-        base = 0.5
-        base += min(0.2, len(subtasks) * 0.05)
-        base += min(0.2, len(tools) * 0.05)
-        base += 0.1 if len(subtasks) <= self.max_depth else -0.1
-        return min(1.0, max(0.0, base))
-
-    def reset(self):
-        self._visited_tools.clear()
-        self._call_count = 0
-
-    def can_call_tool(self, tool_name: str) -> bool:
-        if tool_name in self._visited_tools and tool_name != "retrieve":
-            return False
-        return self._call_count < self.max_tool_calls
-
-    def record_tool_call(self, tool_name: str):
-        self._visited_tools.add(tool_name)
-        self._call_count += 1
-
-
-class HypothesisVerifier:
-    def __init__(self, confidence_threshold: float = 0.7):
-        self.confidence_threshold = confidence_threshold
-
-    def verify(self, hypothesis: str, causal_engine: Any,
-               active_nodes: List[str]) -> Hypothesis:
-        evidence_nodes = []
-        causal_path = []
-        confidence = 0.5
-        if causal_engine and hasattr(causal_engine, "causal_effects"):
-            for (cause, effect), edge in causal_engine.causal_effects.items():
-                if cause in active_nodes or effect in active_nodes:
-                    evidence_nodes.append(cause)
-                    evidence_nodes.append(effect)
-                    causal_path.append(f"{cause} -> {effect} (P={edge.strength:.2f})")
-                    confidence = max(confidence, edge.strength * edge.confidence)
-        verified = confidence >= self.confidence_threshold
-        return Hypothesis(
-            statement=hypothesis, confidence=confidence,
-            evidence_nodes=list(set(evidence_nodes)),
-            causal_path=causal_path, verified=verified,
-            verification_score=confidence,
-        )
-
-
-class ToolRouter:
-    def __init__(self, timeout: float = 15.0):
-        self.timeout = timeout
-        self._tool_registry: Dict[str, Callable] = {}
-        self._call_history: deque = deque(maxlen=100)
-
-    def register_tool(self, name: str, func: Callable):
-        self._tool_registry[name] = func
-
-    def execute(self, tool_name: str, arguments: Dict[str, Any]) -> ToolCall:
-        t0 = time.time()
-        call = ToolCall(tool_name=tool_name, arguments=arguments)
-        if tool_name not in self._tool_registry:
-            call.error = f"Tool not registered: {tool_name}"
-            call.latency_ms = (time.time() - t0) * 1000
-            return call
-        try:
-            func = self._tool_registry[tool_name]
-            result = func(**arguments)
-            call.result = result
-            call.success = True
-        except Exception as e:
-            call.error = str(e)
-        call.latency_ms = (time.time() - t0) * 1000
-        self._call_history.append(call)
-        return call
-
-    def get_misuse_rate(self) -> float:
-        if not self._call_history:
-            return 0.0
-        failures = sum(1 for c in self._call_history if not c.success)
-        return failures / len(self._call_history)
-
-
-# ============================================================================
-# PHASE 9: PRODUCTION STACK
-# ============================================================================
-
-class ShadowModeEvaluator:
-    def __init__(self, fallback_threshold: float = 0.3):
-        self.fallback_threshold = fallback_threshold
-        self._shadow_results: List[Dict] = []
-        self._production_results: List[Dict] = []
-        self._fallback_count = 0
-        self._total_comparisons = 0
-
-    def compare(self, shadow_output: Any, production_output: Any,
-                metric_name: str = "response_quality") -> Dict[str, Any]:
-        self._shadow_results.append({"value": shadow_output, "metric": metric_name})
-        self._production_results.append({"value": production_output, "metric": metric_name})
-        self._total_comparisons += 1
-        diff = abs(float(shadow_output) - float(production_output))
-        is_better = shadow_output > production_output
-        if diff > self.fallback_threshold:
-            self._fallback_count += 1
-        return {
-            "shadow_value": shadow_output, "production_value": production_output,
-            "difference": diff, "shadow_better": is_better,
-            "fallback_triggered": diff > self.fallback_threshold,
-        }
-
-    def get_correlation(self) -> float:
-        if len(self._shadow_results) < 3:
-            return 0.0
-        shadow_vals = [r["value"] for r in self._shadow_results]
-        prod_vals = [r["value"] for r in self._production_results]
-        if np.std(shadow_vals) < 1e-8 or np.std(prod_vals) < 1e-8:
-            return 1.0
-        corr = np.corrcoef(shadow_vals, prod_vals)[0, 1]
-        return float(corr) if not np.isnan(corr) else 0.0
-
-    def get_fallback_rate(self) -> float:
-        return self._fallback_count / max(self._total_comparisons, 1)
-
-
-class RAGASPlusEvaluator:
-    def __init__(self):
-        self._eval_history: deque = deque(maxlen=500)
-
-    def evaluate(self, question: str, answer: str, contexts: List[str],
-                 ground_truth: Optional[str] = None,
-                 causal_edges: Optional[List[Tuple[str, str, float]]] = None) -> EvalResult:
-        result = EvalResult()
-        result.context_precision = self._compute_context_precision(question, contexts)
-        if ground_truth:
-            result.context_recall = self._compute_context_recall(ground_truth, contexts)
-        else:
-            result.context_recall = result.context_precision * 0.8
-        result.answer_relevance = self._compute_answer_relevance(question, answer)
-        result.faithfulness = self._compute_faithfulness(answer, contexts)
-        if causal_edges:
-            result.causal_consistency = self._compute_causal_consistency(answer, causal_edges)
-        else:
-            result.causal_consistency = 0.5
-        result.temporal_coherence = self._compute_temporal_coherence(contexts)
-        weights = [0.2, 0.15, 0.2, 0.2, 0.15, 0.1]
-        scores = [result.context_precision, result.context_recall,
-                  result.answer_relevance, result.faithfulness,
-                  result.causal_consistency, result.temporal_coherence]
-        result.overall_score = sum(w * s for w, s in zip(weights, scores))
-        self._eval_history.append(result)
-        return result
-
-    def _compute_context_precision(self, question: str, contexts: List[str]) -> float:
-        if not contexts:
-            return 0.0
-        q_tokens = set(re.findall(r"\b\w+\b", question.lower()))
-        if not q_tokens:
-            return 0.0
-        precision_scores = []
-        for ctx in contexts:
-            c_tokens = set(re.findall(r"\b\w+\b", ctx.lower()))
-            if c_tokens:
-                precision_scores.append(len(q_tokens & c_tokens) / len(q_tokens))
-        return float(np.mean(precision_scores)) if precision_scores else 0.0
-
-    def _compute_context_recall(self, ground_truth: str, contexts: List[str]) -> float:
-        gt_tokens = set(re.findall(r"\b\w+\b", ground_truth.lower()))
-        if not gt_tokens:
-            return 0.0
-        all_ctx_tokens = set()
-        for ctx in contexts:
-            all_ctx_tokens.update(re.findall(r"\b\w+\b", ctx.lower()))
-        if not all_ctx_tokens:
-            return 0.0
-        return len(gt_tokens & all_ctx_tokens) / len(gt_tokens)
-
-    def _compute_answer_relevance(self, question: str, answer: str) -> float:
-        q_tokens = set(re.findall(r"\b\w+\b", question.lower()))
-        a_tokens = set(re.findall(r"\b\w+\b", answer.lower()))
-        if not q_tokens or not a_tokens:
-            return 0.0
-        return len(q_tokens & a_tokens) / len(q_tokens)
-
-    def _compute_faithfulness(self, answer: str, contexts: List[str]) -> float:
-        a_tokens = set(re.findall(r"\b\w+\b", answer.lower()))
-        if not a_tokens:
-            return 0.0
-        all_ctx = " ".join(contexts).lower()
-        ctx_tokens = set(re.findall(r"\b\w+\b", all_ctx))
-        if not ctx_tokens:
-            return 0.5
-        return len(a_tokens & ctx_tokens) / len(a_tokens)
-
-    def _compute_causal_consistency(self, answer: str,
-                                     causal_edges: List[Tuple[str, str, float]]) -> float:
-        if not causal_edges:
-            return 0.5
-        answer_lower = answer.lower()
-        consistent = 0
-        for cause, effect, strength in causal_edges:
-            if cause.lower() in answer_lower and effect.lower() in answer_lower:
-                consistent += strength
-        return consistent / len(causal_edges) if causal_edges else 0.5
-
-    def _compute_temporal_coherence(self, contexts: List[str]) -> float:
-        if len(contexts) < 2:
-            return 1.0
-        temporal_markers = ["then", "after", "before", "next", "later", "previously"]
-        coherent = 0
-        for ctx in contexts:
-            ctx_lower = ctx.lower()
-            if any(m in ctx_lower for m in temporal_markers):
-                coherent += 1
-        return coherent / len(contexts)
-
-    def get_trend(self) -> Dict[str, float]:
-        if len(self._eval_history) < 5:
-            return {}
-        recent = self._eval_history[-10:]
-        older = self._eval_history[-20:-10] if len(self._eval_history) >= 20 else self._eval_history[:5]
-        return {
-            "recent_overall": np.mean([e.overall_score for e in recent]),
-            "older_overall": np.mean([e.overall_score for e in older]),
-            "trend": "improving" if np.mean([e.overall_score for e in recent]) > np.mean([e.overall_score for e in older]) else "degrading",
-        }
-
-
-class AutoRollbackManager:
-    def __init__(self, threshold: float = 0.15):
-        self.threshold = threshold
-        self._baseline_score: Optional[float] = None
-        self._recent_scores: deque = deque(maxlen=50)
-        self._rollback_count = 0
-        self._last_rollback_time: float = 0
-        self._cooldown_period: float = 300.0
-
-    def set_baseline(self, score: float):
-        self._baseline_score = score
-
-    def record_score(self, score: float) -> bool:
-        self._recent_scores.append(score)
-        if self._baseline_score is None or len(self._recent_scores) < 10:
-            return False
-        if time.time() - self._last_rollback_time < self._cooldown_period:
-            return False
-        recent_mean = np.mean(self._recent_scores)
-        degradation = self._baseline_score - recent_mean
-        if degradation > self.threshold:
-            self._rollback_count += 1
-            self._last_rollback_time = time.time()
-            return True
-        return False
-
-    def get_rollback_rate(self) -> float:
-        return self._rollback_count / max(len(self._recent_scores), 1)
-
-    def get_state(self) -> Dict:
-        return {
-            "baseline_score": self._baseline_score,
-            "recent_mean": float(np.mean(self._recent_scores)) if self._recent_scores else 0,
-            "rollback_count": self._rollback_count,
-            "rollback_rate": self.get_rollback_rate(),
-        }
 
 
 # ============================================================================
@@ -2587,688 +1332,12 @@ class SwarmConsensusProtocol:
 # SUPPORTING COMPONENTS
 # ============================================================================
 
-class MetaAdaptiveKernel:
-    def __init__(self, base_bandwidth: float = 1.0, base_phase_coupling: float = 0.3,
-                 adaptation_lr: float = 0.005, kurtosis_target_min: float = 1.5,
-                 kurtosis_target_max: float = 4.0):
-        self.base_bandwidth = base_bandwidth
-        self.base_phase_coupling = base_phase_coupling
-        self.adaptation_lr = adaptation_lr
-        self.kurtosis_target_min = kurtosis_target_min
-        self.kurtosis_target_max = kurtosis_target_max
-        self.effective_bandwidth = base_bandwidth
-        self.effective_phase_coupling = base_phase_coupling
-        self._response_history: deque = deque(maxlen=100)
-        self._semantic_density: deque = deque(maxlen=50)
-        self._uncertainty: deque = deque(maxlen=20)
-        self._kurtosis_history: deque = deque(maxlen=50)
-
-    def record_response(self, response: float):
-        self._response_history.append(response)
-
-    def record_semantic_density(self, density: float):
-        self._semantic_density.append(density)
-
-    def record_uncertainty(self, entropy: float):
-        self._uncertainty.append(entropy)
-
-    def compute_resonance_kurtosis(self) -> float:
-        if len(self._response_history) < 4:
-            return 3.0
-        responses = np.array(self._response_history)
-        if np.std(responses) < 1e-8:
-            return 3.0
-        return float(scipy_stats.kurtosis(responses) + 3.0)
-
-    def adapt(self):
-        kurtosis = self.compute_resonance_kurtosis()
-        self._kurtosis_history.append(kurtosis)
-        # Bug #9 FIX: Reversed direction was driving system AWAY from target
-        # Low kurtosis (flat distribution) → WIDEN bandwidth to sharpen
-        # High kurtosis (peaked distribution) → NARROW bandwidth to smooth
-        if kurtosis < self.kurtosis_target_min:
-            self.effective_bandwidth *= (1.0 + self.adaptation_lr)  # WIDEN to sharpen
-        elif kurtosis > self.kurtosis_target_max:
-            self.effective_bandwidth *= (1.0 - self.adaptation_lr)  # NARROW to smooth
-        if self._semantic_density:
-            density = np.mean(self._semantic_density)
-            if density > 0.7:
-                self.effective_phase_coupling = min(0.9, self.effective_phase_coupling + self.adaptation_lr * 0.5)
-            elif density < 0.2:
-                self.effective_phase_coupling = max(0.05, self.effective_phase_coupling - self.adaptation_lr * 0.5)
-        if self._uncertainty:
-            uncertainty = np.mean(self._uncertainty)
-            if uncertainty > 1.5:
-                self.effective_bandwidth *= (1.0 + self.adaptation_lr)
-        self.effective_bandwidth = max(0.1, min(10.0, self.effective_bandwidth))
-        self.effective_phase_coupling = max(0.0, min(1.0, self.effective_phase_coupling))
-
-    def get_bandwidth(self) -> float:
-        return self.effective_bandwidth
-
-    def get_phase_coupling(self) -> float:
-        return self.effective_phase_coupling
-
-    def get_state(self) -> Dict:
-        return {
-            "base_bandwidth": self.base_bandwidth, "base_phase_coupling": self.base_phase_coupling,
-            "effective_bandwidth": self.effective_bandwidth, "effective_phase_coupling": self.effective_phase_coupling,
-            "kurtosis": self.compute_resonance_kurtosis(),
-            "avg_density": float(np.mean(self._semantic_density)) if self._semantic_density else 0,
-            "avg_uncertainty": float(np.mean(self._uncertainty)) if self._uncertainty else 0,
-        }
-
-    def load_state(self, state: Dict):
-        self.base_bandwidth = state.get("base_bandwidth", self.base_bandwidth)
-        self.base_phase_coupling = state.get("base_phase_coupling", self.base_phase_coupling)
-        self.effective_bandwidth = state.get("effective_bandwidth", self.base_bandwidth)
-        self.effective_phase_coupling = state.get("effective_phase_coupling", self.base_phase_coupling)
 
 
-class TopologyHealer:
-    def __init__(self, dead_zone_threshold: float = 0.15, hyperconvergence_threshold: float = 0.05,
-                 fragmentation_threshold: float = 0.6, healing_strength: float = 0.1,
-                 max_healing_nodes: int = 5):
-        self.dead_zone_threshold = dead_zone_threshold
-        self.hyperconvergence_threshold = hyperconvergence_threshold
-        self.fragmentation_threshold = fragmentation_threshold
-        self.healing_strength = healing_strength
-        self.max_healing_nodes = max_healing_nodes
-        self._health_history: deque = deque(maxlen=100)
-
-    def detect_dead_zones(self, nodes: Dict[str, MemoryNode]) -> List[str]:
-        if len(nodes) < 3:
-            return []
-        positions = np.array([n.latent_pos for n in nodes.values()])
-        dists = cdist(positions, positions)
-        np.fill_diagonal(dists, np.inf)
-        min_dists = np.min(dists, axis=1)
-        threshold = np.median(min_dists) * (1.0 + self.dead_zone_threshold * 5)
-        return [nid for i, nid in enumerate(nodes) if min_dists[i] > threshold]
-
-    def detect_hyperconvergence(self, nodes: Dict[str, MemoryNode]) -> bool:
-        if len(nodes) < 3:
-            return False
-        positions = np.array([n.latent_pos for n in nodes.values()])
-        dists = cdist(positions, positions)
-        np.fill_diagonal(dists, np.inf)
-        return np.mean(dists[dists < np.inf]) < self.hyperconvergence_threshold
-
-    def detect_fragmentation(self, nodes: Dict[str, MemoryNode], radius: float = 2.0) -> float:
-        if len(nodes) < 2:
-            return 0.0
-        positions = np.array([n.latent_pos for n in nodes.values()])
-        dists = cdist(positions, positions)
-        np.fill_diagonal(dists, np.inf)
-        isolated = np.sum(np.all(dists > radius, axis=1))
-        return float(isolated / len(nodes))
-
-    def compute_field_health(self, nodes: Dict[str, MemoryNode]) -> Tuple[FieldHealth, Dict]:
-        diagnostics = {}
-        dead = self.detect_dead_zones(nodes)
-        diagnostics["dead_zones"] = len(dead)
-        diagnostics["dead_zone_nodes"] = dead
-        hyperconv = self.detect_hyperconvergence(nodes)
-        diagnostics["hyperconvergence"] = hyperconv
-        frag = self.detect_fragmentation(nodes)
-        diagnostics["fragmentation"] = frag
-        if len(nodes) >= 3:
-            positions = np.array([n.latent_pos for n in nodes.values()])
-            dists = cdist(positions, positions)
-            np.fill_diagonal(dists, np.inf)
-            valid = dists[dists < np.inf]
-            diagnostics["avg_pairwise_dist"] = float(np.mean(valid))
-            diagnostics["std_pairwise_dist"] = float(np.std(valid))
-            diagnostics["density_cv"] = float(np.std(valid) / max(np.mean(valid), 1e-8))
-        else:
-            diagnostics["avg_pairwise_dist"] = 0.0
-            diagnostics["density_cv"] = 0.0
-        if hyperconv or frag > 0.8:
-            health = FieldHealth.CRITICAL
-        elif len(dead) > len(nodes) * 0.3 or frag > self.fragmentation_threshold:
-            health = FieldHealth.DEGRADED
-        else:
-            health = FieldHealth.STABLE
-        self._health_history.append(health.value)
-        diagnostics["health"] = health.value
-        diagnostics["stable_fraction"] = (
-            sum(1 for h in self._health_history if h == "stable") / max(len(self._health_history), 1))
-        return health, diagnostics
-
-    def heal_dead_zones(self, nodes: Dict[str, MemoryNode], dead_ids: List[str]) -> List[Dict]:
-        healed = []
-        alive_ids = [nid for nid in nodes if nid not in dead_ids]
-        if not alive_ids or not dead_ids:
-            return healed
-        alive_positions = np.array([nodes[nid].latent_pos for nid in alive_ids])
-        for dead_id in dead_ids[:self.max_healing_nodes]:
-            dead_node = nodes[dead_id]
-            dists = np.linalg.norm(alive_positions - dead_node.latent_pos, axis=1)
-            nearest_idx = np.argmin(dists)
-            nearest_id = alive_ids[nearest_idx]
-            old_pos = dead_node.latent_pos.copy()
-            dead_node.latent_pos = ((1.0 - self.healing_strength) * old_pos + self.healing_strength * nodes[nearest_id].latent_pos).astype(np.float32)
-            dead_node.is_healing = True
-            dead_node.healing_origin = nearest_id
-            dead_node.salience = max(dead_node.salience, 0.1)
-            dead_node.amplitude = max(dead_node.amplitude, 0.1)
-            healed.append({"node_id": dead_id, "from": old_pos.tolist(), "to": dead_node.latent_pos.tolist(), "type": "dead_zone"})
-        return healed
-
-    def heal_hyperconvergence(self, nodes: Dict[str, MemoryNode]) -> List[Dict]:
-        healed = []
-        if len(nodes) < 3:
-            return healed
-        positions = np.array([n.latent_pos for n in nodes.values()])
-        centroid = np.mean(positions, axis=0)
-        for nid in list(nodes.keys())[:self.max_healing_nodes]:
-            node = nodes[nid]
-            direction = node.latent_pos - centroid
-            norm = np.linalg.norm(direction)
-            if norm < 1e-8:
-                direction = np.random.randn(len(centroid)).astype(np.float32)
-                norm = 1.0
-            direction = direction / norm
-            old_pos = node.latent_pos.copy()
-            node.latent_pos = (old_pos + self.healing_strength * direction).astype(np.float32)
-            node.is_healing = True
-            node.healing_origin = "hyperconvergence"
-            healed.append({"node_id": nid, "from": old_pos.tolist(), "to": node.latent_pos.tolist(), "type": "hyperconvergence"})
-        return healed
-
-    def heal_fragmentation(self, nodes: Dict[str, MemoryNode], isolated_ids: List[str]) -> List[Dict]:
-        healed = []
-        non_isolated = [nid for nid in nodes if nid not in isolated_ids]
-        if not non_isolated or not isolated_ids:
-            return healed
-        non_iso_positions = np.array([nodes[nid].latent_pos for nid in non_isolated])
-        centroid = np.mean(non_iso_positions, axis=0)
-        for iso_id in isolated_ids[:self.max_healing_nodes]:
-            node = nodes[iso_id]
-            old_pos = node.latent_pos.copy()
-            node.latent_pos = ((1.0 - self.healing_strength) * old_pos + self.healing_strength * centroid).astype(np.float32)
-            node.is_healing = True
-            node.healing_origin = "fragmentation"
-            healed.append({"node_id": iso_id, "from": old_pos.tolist(), "to": node.latent_pos.tolist(), "type": "fragmentation"})
-        return healed
-
-    def get_state(self) -> Dict:
-        return {"health_history": list(self._health_history),
-                "stable_fraction": sum(1 for h in self._health_history if h == "stable") / max(len(self._health_history), 1)}
-
-    def load_state(self, state: Dict):
-        self._health_history = deque(state.get("health_history", []), maxlen=100)
 
 
-class CausalInferenceEngine:
-    def __init__(self, min_samples: int = 20, p_threshold: float = 0.05,
-                 adjustment_sets_enabled: bool = True):
-        self.min_samples = min_samples
-        self.p_threshold = p_threshold
-        self.adjustment_sets_enabled = adjustment_sets_enabled
-        self.parents: Dict[str, Set[str]] = defaultdict(set)
-        self.children: Dict[str, Set[str]] = defaultdict(set)
-        self.ancestors: Dict[str, Set[str]] = defaultdict(set)
-        self._cooccurrence: Dict[Tuple[str, str], int] = defaultdict(int)
-        self._conditional_counts: Dict[Tuple[str, str, str], int] = defaultdict(int)
-        self._node_counts: Dict[str, int] = defaultdict(int)
-        self._total_observations = 0
-        self.causal_effects: Dict[Tuple[str, str], CausalEdge] = {}
-        self.contradictions: Dict[str, ContradictionRecord] = {}
-        self._contradiction_counter = 0
-        self._counterfactual_cache: Dict[str, CounterfactualResult] = {}
-        self._intervention_store: Dict[str, List[Dict]] = {}
-
-    def record_cooccurrence(self, a: str, b: str):
-        self._cooccurrence[(a, b)] += 1
-        self._cooccurrence[(b, a)] += 1
-        self._node_counts[a] += 1
-        self._node_counts[b] += 1
-        self._total_observations += 1
-
-    def record_observation(self, active_nodes: List[str], context: Optional[Dict] = None):
-        self._total_observations += 1
-        for node in active_nodes:
-            self._node_counts[node] += 1
-        for i, a in enumerate(active_nodes):
-            for b in active_nodes[i+1:]:
-                self._cooccurrence[(a, b)] += 1
-                self._cooccurrence[(b, a)] += 1
-                if context:
-                    for ctx_key, ctx_val in context.items():
-                        self._conditional_counts[(a, b, f"{ctx_key}={ctx_val}")] += 1
-
-    def discover_causal_structure(self) -> Dict[str, Set[str]]:
-        nodes = list(self._node_counts.keys())
-        if len(nodes) < 3 or self._total_observations < self.min_samples:
-            return dict(self.parents)
-        skeleton: Dict[str, Set[str]] = defaultdict(set)
-        for i, a in enumerate(nodes):
-            for b in nodes[i+1:]:
-                if self._test_independence(a, b, set()):
-                    continue
-                skeleton[a].add(b)
-                skeleton[b].add(a)
-        new_parents: Dict[str, Set[str]] = defaultdict(set)
-        new_children: Dict[str, Set[str]] = defaultdict(set)
-        for z in nodes:
-            neighbors = list(skeleton.get(z, set()))
-            for i, x in enumerate(neighbors):
-                for y in neighbors[i+1:]:
-                    if y not in skeleton.get(x, set()):
-                        new_parents[z].add(x)
-                        new_parents[z].add(y)
-                        new_children[x].add(z)
-                        new_children[y].add(z)
-        self.parents = new_parents
-        self.children = new_children
-        self._compute_ancestors()
-        return dict(self.parents)
-
-    def _test_independence(self, a: str, b: str, cond_set: Set[str]) -> bool:
-        n_ab = self._cooccurrence.get((a, b), 0)
-        n_a = self._node_counts.get(a, 0)
-        n_b = self._node_counts.get(b, 0)
-        n = max(self._total_observations, 1)
-        if n_a < 3 or n_b < 3 or n_ab < 2:
-            return True
-        if not cond_set:
-            # Marginal independence test: chi-squared
-            expected = (n_a / n) * (n_b / n) * n
-            if expected < 5:
-                return True
-            chi2 = (n_ab - expected) ** 2 / expected
-            return chi2 < CHI_SQUARED_CRITICAL_DF1  # p=0.05, df=1
-
-        # Bug #16 FIX: Implement conditional independence test
-        # Use partial correlation approximation for discrete data
-        # Test: a ⊥ b | cond_set
-        total = 0
-        chi2_cond = 0.0
-        for c_node in cond_set:
-            n_c = self._node_counts.get(c_node, 0)
-            if n_c < 3:
-                continue
-            # Compute conditional probabilities
-            p_a_given_c = min(n_ab, n_c) / max(n_c, 1)
-            p_b_given_c = min(n_ab, n_c) / max(n_c, 1)
-            p_ab_given_c = n_ab / max(n, 1)
-            expected_cond = p_a_given_c * p_b_given_c * n_c
-            if expected_cond > 0:
-                chi2_cond += (n_ab - expected_cond) ** 2 / expected_cond
-                total += 1
-
-        if total == 0:
-            # No valid conditioning sets — fall back to marginal
-            return True
-
-        # Average chi-squared over conditioning variables
-        avg_chi2 = chi2_cond / total
-        # With conditioning, use higher threshold (df increases)
-        return avg_chi2 < CHI_SQUARED_CRITICAL_DF2  # p=0.05, df=2
-
-    def _compute_ancestors(self):
-        for node in self.parents:
-            self.ancestors[node] = self._get_ancestors(node, set())
-
-    def _get_ancestors(self, node: str, visited: Set[str]) -> Set[str]:
-        if node in visited:
-            return set()
-        visited.add(node)
-        ancestors = set()
-        for parent in self.parents.get(node, set()):
-            ancestors.add(parent)
-            ancestors.update(self._get_ancestors(parent, visited))
-        return ancestors
-
-    def _get_descendants(self, node: str, visited: Optional[Set[str]] = None) -> Set[str]:
-        if visited is None:
-            visited = set()
-        if node in visited:
-            return set()
-        visited.add(node)
-        descendants = set()
-        for child in self.children.get(node, set()):
-            descendants.add(child)
-            descendants.update(self._get_descendants(child, visited))
-        return descendants
-
-    def compute_do_probability(self, effect: str, intervention: str,
-                               evidence: Optional[Dict[str, Any]] = None) -> float:
-        edge = self.causal_effects.get((intervention, effect))
-        if edge:
-            return edge.strength
-        return self._naive_causal_estimate(intervention, effect)
-
-    def _naive_causal_estimate(self, cause: str, effect: str) -> float:
-        n_cause = self._node_counts.get(cause, 0)
-        n_both = self._cooccurrence.get((cause, effect), 0)
-        if n_cause < 3:
-            return 0.5
-        return min(1.0, n_both / n_cause)
-
-    def _find_adjustment_set(self, cause: str, effect: str) -> Set[str]:
-        if not self.adjustment_sets_enabled:
-            return set()
-        parents_of_cause = self.parents.get(cause, set())
-        descendants = self._get_descendants(cause)
-        return parents_of_cause - descendants
-
-    def _validate_do_calculus(self, effect: str, intervention: str) -> bool:
-        z_set = self._find_adjustment_set(intervention, effect)
-        has_frontdoor = self._has_frontdoor_path(intervention, effect)
-        descendants = self._get_descendants(intervention)
-        return bool(z_set) or has_frontdoor or effect in descendants
-
-    def _has_frontdoor_path(self, cause: str, effect: str) -> bool:
-        for mediator in self.children.get(cause, set()):
-            if effect in self.children.get(mediator, set()):
-                return True
-        return False
-
-    def detect_contradictions(self, threshold: float = 0.3) -> List[ContradictionRecord]:
-        new_contradictions = []
-        effect_causes: Dict[str, List[Tuple[str, float]]] = defaultdict(list)
-        for (cause, effect), edge in self.causal_effects.items():
-            if edge.strength > 0.1:
-                effect_causes[effect].append((cause, edge.strength))
-        for effect_node, causes in effect_causes.items():
-            if len(causes) < 2:
-                continue
-            for i, (cause_a, strength_a) in enumerate(causes):
-                for cause_b, strength_b in causes[i+1:]:
-                    cooc = self._cooccurrence.get((cause_a, cause_b), 0)
-                    n_a = self._node_counts.get(cause_a, 0)
-                    n_b = self._node_counts.get(cause_b, 0)
-                    if n_a > 0 and n_b > 0:
-                        expected = (n_a / self._total_observations) * (n_b / self._total_observations) * self._total_observations
-                        if expected > 0 and cooc / expected < (1.0 - threshold):
-                            self._contradiction_counter += 1
-                            record = ContradictionRecord(
-                                id=f"contr_{self._contradiction_counter}",
-                                effect_node=effect_node,
-                                causes=[(cause_a, strength_a), (cause_b, strength_b)],
-                                contradiction_reason=f"Causes {cause_a} and {cause_b} are negatively correlated"
-                            )
-                            self.contradictions[record.id] = record
-                            new_contradictions.append(record)
-                            if (cause_a, effect_node) in self.causal_effects:
-                                self.causal_effects[(cause_a, effect_node)].is_contradicted = True
-                            if (cause_b, effect_node) in self.causal_effects:
-                                self.causal_effects[(cause_b, effect_node)].is_contradicted = True
-        return new_contradictions
-
-    def counterfactual_query(self, intervention: Dict[str, Any], query_nodes: List[str],
-                             evidence: Optional[Dict[str, Any]] = None,
-                             max_depth: int = 3) -> CounterfactualResult:
-        query_str = f"do({intervention})|{query_nodes}"
-        if query_str in self._counterfactual_cache:
-            return self._counterfactual_cache[query_str]
-        outcomes = []
-        reasoning_path = []
-        for target in query_nodes[:max_depth]:
-            if target in intervention:
-                outcomes.append((target, 1.0))
-                reasoning_path.append(f"{target} is directly set")
-                continue
-            best_prob = 0.0
-            best_path = ""
-            for int_var, int_val in intervention.items():
-                prob = self.compute_do_probability(target, int_var)
-                if prob > best_prob:
-                    best_prob = prob
-                    best_path = f"do({int_var}) -> {target} (P={prob:.3f})"
-            if best_path:
-                outcomes.append((target, best_prob))
-                reasoning_path.append(best_path)
-            else:
-                outcomes.append((target, 0.5))
-                reasoning_path.append(f"No causal path to {target}")
-        confidence = np.mean([p for _, p in outcomes]) if outcomes else 0.5
-        result = CounterfactualResult(
-            query=query_str, intervention=intervention, predicted_outcomes=outcomes,
-            confidence=float(confidence), reasoning_path=reasoning_path, assumptions=[])
-        self._counterfactual_cache[query_str] = result
-        return result
-
-    def validate_consolidation(self, node_a: str, node_b: str) -> Dict[str, Any]:
-        result = {"safe": True, "reasons": [], "causal_conflicts": [], "recommendation": "proceed"}
-        common_targets = set(self.children.get(node_a, set())) & set(self.children.get(node_b, set()))
-        for target in common_targets:
-            edge_a = self.causal_effects.get((node_a, target))
-            edge_b = self.causal_effects.get((node_b, target))
-            if edge_a and edge_b:
-                diff = abs(edge_a.strength - edge_b.strength)
-                if diff > 0.4:
-                    result["safe"] = False
-                    result["causal_conflicts"].append({"target": target, "effect_a": edge_a.strength, "effect_b": edge_b.strength, "difference": diff})
-                    result["reasons"].append(f"Opposing effects on {target}")
-        if node_b in self.children.get(node_a, set()) or node_a in self.children.get(node_b, set()):
-            result["safe"] = False
-            result["reasons"].append("Causal relationship exists")
-            result["recommendation"] = "preserve_separate"
-        if node_a in self.ancestors.get(node_b, set()) or node_b in self.ancestors.get(node_a, set()):
-            result["safe"] = False
-            result["reasons"].append("Merging would create causal cycle")
-            result["recommendation"] = "preserve_separate"
-        for cid, record in self.contradictions.items():
-            if record.resolved:
-                continue
-            causes = [c for c, _ in record.causes]
-            if node_a in causes and node_b in causes:
-                result["safe"] = False
-                result["reasons"].append(f"Unresolved contradiction: {cid}")
-                result["recommendation"] = "resolve_contradiction_first"
-        return result
-
-    def do_intervention(self, node_id: str, new_pos: NDArray):
-        """Apply do-calculus intervention: set node position to counterfactual state."""
-        if node_id not in self.parents and node_id not in self.children:
-            # Node not in causal graph — record it as a causal root
-            self.parents[node_id] = set()
-        # Store intervention for tracking
-        if node_id not in self._intervention_store:
-            self._intervention_store[node_id] = []
-        self._intervention_store[node_id].append({
-            "new_pos": new_pos.copy(),
-            "timestamp": time.time(),
-        })
-        # Update causal effects with intervention strength
-        for child in self.children.get(node_id, set()):
-            edge_key = (node_id, child)
-            if edge_key in self.causal_effects:
-                edge = self.causal_effects[edge_key]
-                edge.strength = min(1.0, edge.strength * 1.2)  # Boost causal strength under intervention
-                edge.evidence_count += 1
-
-    def clear_interventions(self):
-        """Clear all recorded interventions."""
-        self._intervention_store = {}
-
-    def get_state(self) -> Dict:
-        return {
-            "parents": {k: list(v) for k, v in self.parents.items()},
-            "children": {k: list(v) for k, v in self.children.items()},
-            "causal_effects": {f"{k[0]}->{k[1]}": v.to_dict() for k, v in self.causal_effects.items()},
-            "contradictions": {k: v.to_dict() for k, v in self.contradictions.items()},
-            "node_counts": dict(self._node_counts),
-            "total_observations": self._total_observations,
-            "intervention_store": {k: [{"new_pos": v["new_pos"].tolist() if hasattr(v["new_pos"], 'tolist') else v["new_pos"], "timestamp": v["timestamp"]} for v in vals] for k, vals in self._intervention_store.items()},
-        }
-
-    def load_state(self, state: Dict):
-        self.parents = defaultdict(set, {k: set(v) for k, v in state.get("parents", {}).items()})
-        self.children = defaultdict(set, {k: set(v) for k, v in state.get("children", {}).items()})
-        self._node_counts = defaultdict(int, state.get("node_counts", {}))
-        self._total_observations = state.get("total_observations", 0)
-        self._intervention_store = {}
-        for node_id, interventions in state.get("intervention_store", {}).items():
-            self._intervention_store[node_id] = [
-                {"new_pos": np.array(iv["new_pos"], dtype=np.float32), "timestamp": iv["timestamp"]}
-                for iv in interventions
-            ]
-        for key, edge_data in state.get("causal_effects", {}).items():
-            parts = key.split("->")
-            if len(parts) == 2:
-                self.causal_effects[(parts[0], parts[1])] = CausalEdge.from_dict(edge_data)
-        for cid, record_data in state.get("contradictions", {}).items():
-            self.contradictions[cid] = ContradictionRecord(
-                id=record_data["id"], effect_node=record_data["effect_node"],
-                causes=record_data["causes"], timestamp=record_data["timestamp"],
-                resolved=record_data["resolved"], resolution=record_data["resolution"],
-                contradiction_reason=record_data.get("contradiction_reason", ""))
-        self._compute_ancestors()
 
 
-class IncPCAProjection:
-    def __init__(self, input_dim: int, latent_dim: int, lr: float = 0.001, update_freq: int = 50, l2_reg: float = 0.0001):
-        self.input_dim = input_dim
-        self.latent_dim = latent_dim
-        self.lr = lr
-        self.update_freq = update_freq
-        self.l2_reg = l2_reg
-        self.projection = np.random.randn(input_dim, latent_dim).astype(np.float32) * 0.1
-        self.mean = np.zeros(input_dim, dtype=np.float32)
-        self.buffer: List[NDArray] = []
-        self.n_samples = 0
-        self._try_sklearn()
-
-    def _try_sklearn(self):
-        try:
-            from sklearn.decomposition import IncrementalPCA
-            self.ipca = IncrementalPCA(n_components=self.latent_dim, batch_size=min(64, self.update_freq))
-            self.use_sklearn = True
-            self._ipca_fitted = False
-            self._ipca_error = None  # Store any sklearn errors for fallback
-        except ImportError:
-            self.use_sklearn = False
-            self._ipca_error = "sklearn not installed"
-
-    def update(self, embedding: NDArray) -> NDArray:
-        self.n_samples += 1
-        self.buffer.append(embedding.copy())
-        if len(self.buffer) >= self.update_freq:
-            batch = np.array(self.buffer, dtype=np.float32)
-            self.buffer = []
-            if self.use_sklearn:
-                try:
-                    self.ipca.partial_fit(batch)
-                    # Only mark as fitted if we have enough samples
-                    if self.ipca.n_samples_seen_ >= self.latent_dim:
-                        self._ipca_fitted = True
-                        self.projection = self.ipca.components_.T.astype(np.float32)
-                        self.mean = self.ipca.mean_.astype(np.float32)
-                    else:
-                        # Not enough samples yet, use manual update
-                        self._ipca_fitted = False
-                        alpha = self.lr / (1 + self.n_samples * self.lr * 0.01)
-                        self.mean += alpha * (batch.mean(axis=0) - self.mean)
-                except Exception as e:
-                    self._ipca_error = str(e)
-                    self._ipca_fitted = False
-            else:
-                alpha = self.lr / (1 + self.n_samples * self.lr * 0.01)
-                self.mean += alpha * (batch.mean(axis=0) - self.mean)
-                for emb in batch:
-                    centered = emb - self.mean
-                    latent = centered @ self.projection
-                    reconstructed = latent @ self.projection.T
-                    error = centered - reconstructed
-                    self.projection += alpha * (np.outer(centered, latent) - np.outer(error, latent))
-                    self.projection -= alpha * self.l2_reg * self.projection
-                    norm = np.linalg.norm(self.projection, axis=0, keepdims=True)
-                    self.projection /= np.maximum(norm, 1e-8)
-        return self.project(embedding)
-
-    def project(self, embedding: NDArray) -> NDArray:
-        # Only use sklearn transform if properly fitted
-        if self.use_sklearn and self._ipca_fitted and self._ipca_error is None:
-            try:
-                return self.ipca.transform(embedding.reshape(1, -1))[0].astype(np.float32)
-            except Exception as e:
-                logger.warning(f"IncrementalPCA projection failed, falling back to manual: {e}")
-                self._ipca_fitted = False
-        # Fix 9: Fallback to manual projection — track reconstruction error to detect divergence
-        reconstructed = embedding - self.mean
-        proj_norm = np.linalg.norm(self.projection)
-        if proj_norm < 1e-8:
-            logger.warning("IncPCAProjection: projection matrix ill-conditioned, may diverge")
-        return ((embedding - self.mean) @ self.projection).astype(np.float32)
-
-    def get_state(self) -> Dict:
-        return {
-            "projection": self.projection.tolist(),
-            "mean": self.mean.tolist(),
-            "n_samples": self.n_samples,
-            "use_sklearn": self.use_sklearn,
-            "ipca_fitted": self._ipca_fitted,
-        }
-
-    def set_matrix(self, matrix: NDArray):
-        """Set projection matrix directly (for import/initialization)."""
-        assert matrix.shape == (self.input_dim, self.latent_dim), \
-            f"Expected shape ({self.input_dim}, {self.latent_dim}), got {matrix.shape}"
-        self.projection = matrix.astype(np.float32)
-        # Don't try to initialize sklearn here - it's safer to use manual projection
-        self._ipca_fitted = False
-        self.use_sklearn = False
-
-    def load_state(self, state: Dict):
-        self.projection = np.array(state["projection"], dtype=np.float32)
-        self.mean = np.array(state["mean"], dtype=np.float32)
-        self.n_samples = state.get("n_samples", 0)
-        self._ipca_fitted = state.get("ipca_fitted", False)
-        # Don't re-initialize sklearn from state - use manual projection
-        self.use_sklearn = False
-
-
-class BM25Index:
-    def __init__(self, k1: float = 1.5, b: float = 0.75):
-        self.k1 = k1
-        self.b = b
-        self.documents: Dict[str, str] = {}
-        self.doc_freq: Dict[str, int] = {}
-        self.doc_lengths: Dict[str, int] = {}
-        self.avg_doc_length: float = 0.0
-
-    @staticmethod
-    def _tokenize(text: str) -> List[str]:
-        return re.findall(r"\b\w+\b", text.lower())
-
-    def add_document(self, doc_id: str, text: str):
-        self.documents[doc_id] = text
-        tokens = self._tokenize(text)
-        self.doc_lengths[doc_id] = len(tokens)
-        for token in set(tokens):
-            self.doc_freq[token] = self.doc_freq.get(token, 0) + 1
-        self.avg_doc_length = np.mean(list(self.doc_lengths.values())) if self.doc_lengths else 0.0
-
-    def remove_document(self, doc_id: str):
-        if doc_id in self.documents:
-            text = self.documents.pop(doc_id)
-            for token in set(self._tokenize(text)):
-                self.doc_freq[token] = max(0, self.doc_freq.get(token, 1) - 1)
-                if self.doc_freq[token] == 0:
-                    del self.doc_freq[token]
-            self.doc_lengths.pop(doc_id, None)
-            if self.doc_lengths:
-                self.avg_doc_length = np.mean(list(self.doc_lengths.values()))
-
-    def search(self, query: str, top_k: int = 5) -> List[Tuple[str, float]]:
-        if not self.documents:
-            return []
-        n = len(self.documents)
-        scores = {doc_id: 0.0 for doc_id in self.documents}
-        for token in self._tokenize(query):
-            df = self.doc_freq.get(token, 0)
-            if df == 0:
-                continue
-            idf = math.log((n - df + 0.5) / (df + 0.5) + 1.0)
-            for doc_id, text in self.documents.items():
-                tf = text.lower().count(token)
-                doc_len = self.doc_lengths.get(doc_id, 1)
-                scores[doc_id] += idf * tf * (self.k1 + 1) / (tf + self.k1 * (1 - self.b + self.b * doc_len / max(self.avg_doc_length, 1)))
-        return [(d, s) for d, s in sorted(scores.items(), key=lambda x: x[1], reverse=True)[:top_k] if s > 0]
 
 
 class AdaptiveThreshold:
@@ -3296,18 +1365,16 @@ class TDAMonitor:
             return {"H0": 0, "H1": 0, "avg_persistence": 0.0}
         positions = np.array([n.latent_pos for n in nodes.values()])
         n = len(positions)
-        dists = cdist(positions, positions)
-        np.fill_diagonal(dists, np.inf)
-        valid = dists[dists < np.inf]
+        valid = pdist(positions)
         if len(valid) < 2:
             return {"H0": n, "H1": 0, "avg_persistence": 0.0}
         threshold = np.median(valid)
         
-        # Union-Find with path compression — O(N² α(N)) ≈ O(N²)
+        # Union-Find with path compression — O(N log N) with cKDTree
         parent = list(range(n))
         def find(x):
             while parent[x] != x:
-                parent[x] = parent[parent[x]]  # Path compression
+                parent[x] = parent[parent[x]]
                 x = parent[x]
             return x
         def union(x, y):
@@ -3315,13 +1382,13 @@ class TDAMonitor:
             if px != py:
                 parent[px] = py
         
-        for i in range(n):
-            for j in range(i + 1, n):
-                if dists[i, j] < threshold:
-                    union(i, j)
+        tree = cKDTree(positions)
+        for i, j in tree.query_pairs(threshold):
+            union(i, j)
         
         h0 = len(set(find(i) for i in range(n)))
-        h1 = max(0, len(valid) - n + h0)
+        n_edges_threshold = len(tree.query_pairs(threshold))
+        h1 = max(0, n_edges_threshold - n + h0)
         result = {"H0": h0, "H1": h1, "avg_persistence": 0.0}
         self.history.append(result)
         return result
@@ -3335,164 +1402,10 @@ class TDAMonitor:
         return "stable"
 
 
-class HNSWIndex:
-    def __init__(self, m: int = 16, ef_construction: int = 200):
-        self.m = m
-        self.ef_construction = ef_construction
-        self.graph: Dict[str, List[str]] = {}
-        self.positions: Dict[str, NDArray] = {}
-
-    def insert(self, node_id: str, pos: NDArray):
-        self.positions[node_id] = pos
-        self.graph[node_id] = []
-        if len(self.positions) <= 1:
-            return
-        candidates = [c for c in list(self.positions.keys()) if c != node_id][:self.ef_construction]
-        if candidates:
-            cand_pos = np.array([self.positions[c] for c in candidates])
-            dists = np.linalg.norm(cand_pos - pos, axis=1)
-            nearest = [candidates[i] for i in np.argsort(dists)[:self.m]]
-            self.graph[node_id] = nearest
-            for nb in nearest:
-                if nb in self.graph:
-                    self.graph[nb].append(node_id)
-                    if len(self.graph[nb]) > self.m * 2:
-                        self.graph[nb] = self.graph[nb][-self.m:]
-
-    def remove(self, node_id: str):
-        self.graph.pop(node_id, None)
-        self.positions.pop(node_id, None)
-        for nid in self.graph:
-            self.graph[nid] = [n for n in self.graph[nid] if n != node_id]
-
-    def search(self, query_pos: NDArray, top_k: int = 10) -> List[str]:
-        if not self.positions:
-            return []
-        start = list(self.positions.keys())[0]
-        candidates = {start}
-        visited = set()
-        for _ in range(min(self.ef_construction, len(self.positions))):
-            best = min((c for c in candidates - visited), key=lambda c: np.linalg.norm(self.positions[c] - query_pos), default=None)
-            if best is None:
-                break
-            visited.add(best)
-            candidates.update(self.graph.get(best, []))
-        return sorted(candidates, key=lambda nid: np.linalg.norm(self.positions[nid] - query_pos))[:top_k]
 
 
-class TorchBackend:
-    def __init__(self):
-        self.torch = None
-        self.device = None
-        try:
-            import torch
-            self.torch = torch
-            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        except ImportError:
-            pass
-
-    @property
-    def available(self) -> bool:
-        return self.torch is not None
-
-    def batch_resonance(self, ql, qp, np_, nph, na, ns, bw, pc):
-        if not self.available:
-            return self._numpy(ql, qp, np_, nph, na, ns, bw, pc)
-        tq = self.torch.from_numpy(ql).to(self.device)
-        dists = self.torch.cdist(tq, self.torch.from_numpy(np_).to(self.device))
-        # Bug #1 FIX: Gaussian kernel exp(-d^2/(2*bw^2))
-        spatial = self.torch.exp(-dists ** 2 / (2 * bw ** 2))
-        pd = qp.unsqueeze(1) - self.torch.from_numpy(nph).to(self.device).unsqueeze(0)
-        pa = 0.5 + 0.5 * self.torch.cos(pd)
-        r = spatial * ((1 - pc) + pc * pa)
-        return (r * self.torch.from_numpy(na).to(self.device).unsqueeze(0) * self.torch.from_numpy(ns).to(self.device).unsqueeze(0)).cpu().numpy()
-
-    @staticmethod
-    def _numpy(ql, qp, np_, nph, na, ns, bw, pc):
-        dists = cdist(ql, np_)
-        # Bug #1 FIX: Use proper Gaussian kernel exp(-d^2/(2*bw^2)) instead of Laplacian exp(-d/bw)
-        spatial = np.exp(-dists ** 2 / (2 * bw ** 2))
-        pd = qp[:, np.newaxis] - nph[np.newaxis, :]
-        pa = 0.5 + 0.5 * np.cos(pd)
-        return spatial * ((1 - pc) + pc * pa) * na[np.newaxis, :] * ns[np.newaxis, :]
 
 
-class LearnableKernel:
-    def __init__(self, bandwidth: float = 1.0, phase_coupling: float = 0.3,
-                 decay_rate: float = 0.998, gradient_clip: float = 1.0):
-        self.bandwidth = bandwidth
-        self.phase_coupling = phase_coupling
-        self.decay_rate = decay_rate
-        self.gradient_clip = gradient_clip
-        self._grad_bandwidth = 0.0
-        self._grad_phase_coupling = 0.0
-        self._adam_state = {
-            "bandwidth": {"m": 0.0, "v": 0.0, "t": 0},
-            "phase_coupling": {"m": 0.0, "v": 0.0, "t": 0},
-        }
-
-    def resonance_response(self, dist: float, phase_diff: float, amplitude: float, salience: float) -> float:
-        # Bug #1 FIX: Gaussian kernel exp(-d^2/(2*bw^2))
-        spatial = math.exp(-dist ** 2 / (2 * self.bandwidth ** 2))
-        phase_align = 0.5 + 0.5 * math.cos(phase_diff)
-        return spatial * ((1 - self.phase_coupling) + self.phase_coupling * phase_align) * amplitude * salience
-
-    def compute_gradients(self, dist: float, phase_diff: float, amplitude: float, salience: float, loss_gradient: float = 1.0):
-        # Bug #1 FIX: Gradients for Gaussian kernel
-        spatial = math.exp(-dist ** 2 / (2 * self.bandwidth ** 2))
-        phase_align = 0.5 + 0.5 * math.cos(phase_diff)
-        self._grad_bandwidth += loss_gradient * spatial * (dist ** 2 / self.bandwidth ** 3) * ((1 - self.phase_coupling) + self.phase_coupling * phase_align) * amplitude * salience
-        self._grad_phase_coupling += loss_gradient * spatial * (phase_align - 1.0) * amplitude * salience
-
-    def step(self):
-        for param_name, grad in [("bandwidth", self._grad_bandwidth), ("phase_coupling", self._grad_phase_coupling)]:
-            if abs(grad) < 1e-12:
-                continue
-            grad = np.clip(grad, -self.gradient_clip, self.gradient_clip)
-            s = self._adam_state[param_name]
-            s["t"] += 1
-            s["m"] = 0.9 * s["m"] + 0.1 * grad
-            s["v"] = 0.999 * s["v"] + 0.001 * grad ** 2
-            m_hat = s["m"] / (1 - 0.9 ** s["t"])
-            v_hat = s["v"] / (1 - 0.999 ** s["t"])
-            lr = 0.001
-            update = lr * m_hat / (math.sqrt(v_hat) + 1e-8)
-            if param_name == "bandwidth":
-                self.bandwidth = max(0.1, self.bandwidth - update)
-            elif param_name == "phase_coupling":
-                self.phase_coupling = float(np.clip(self.phase_coupling - update, 0.0, 1.0))
-        self._grad_bandwidth = 0.0
-        self._grad_phase_coupling = 0.0
-
-    def get_state(self) -> Dict:
-        return {"bandwidth": self.bandwidth, "phase_coupling": self.phase_coupling, "decay_rate": self.decay_rate,
-                "adam_state": {k: dict(v) for k, v in self._adam_state.items()}}
-
-    def load_state(self, state: Dict):
-        self.bandwidth = state["bandwidth"]
-        self.phase_coupling = state["phase_coupling"]
-        self.decay_rate = state.get("decay_rate", self.decay_rate)
-        if "adam_state" in state:
-            self._adam_state = state["adam_state"]
-
-
-class DifferentiableConsolidation:
-    def __init__(self, loss_weight: float = 0.1):
-        self.loss_weight = loss_weight
-        self.consolidation_loss = 0.0
-
-    def compute_synthesis(self, node1: MemoryNode, node2: MemoryNode, gate: float) -> Dict:
-        w1, w2 = gate, 1.0 - gate
-        new_latent = w1 * node1.latent_pos + w2 * node2.latent_pos
-        new_phase = np.arctan2(w1*np.sin(node1.phase)+w2*np.sin(node2.phase),
-                               w1*np.cos(node1.phase)+w2*np.cos(node2.phase)) % (2*np.pi)
-        new_amp = min(1.0, w1*node1.amplitude + w2*node2.amplitude)
-        new_sal = w1*node1.salience + w2*node2.salience
-        pos_loss = np.sum((new_latent - node1.latent_pos)**2) + np.sum((new_latent - node2.latent_pos)**2)
-        phase_loss = min(abs(new_phase-node1.phase), 2*np.pi-abs(new_phase-node1.phase)) + min(abs(new_phase-node2.phase), 2*np.pi-abs(new_phase-node2.phase))
-        self.consolidation_loss = self.loss_weight * (pos_loss + phase_loss * 0.1)
-        return {"latent_pos": new_latent, "phase": new_phase, "amplitude": new_amp,
-                "salience": new_sal, "loss": self.consolidation_loss}
 
 
 # ============================================================================
@@ -3610,6 +1523,13 @@ def format_context(results: List[Tuple[str, float, MemoryNode]], fmt: ContextFor
             goal_rel = getattr(node, 'goal_relevance', 0.0)
             tokens = (f"[ATTN:{resp:.3f}][SAL:{node.salience:.3f}]"
                       f"[TIER:{content.get('tier', getattr(node, 'tier', 'semantic'))[0].upper()}]")
+            # Phase 20: Domain & State tokens
+            domain = getattr(node, 'domain', 'general')
+            if domain and domain != 'general':
+                tokens += f"[DOM:{domain.upper()[:3]}]"
+            state = getattr(node, 'state', '')
+            if state and state != 'stable':
+                tokens += f"[STATE:{state[0].upper()}]"
             if causal > 0:
                 tokens += f"[CAUSAL:{causal}]"
             if goal_rel > 0.3:
@@ -3663,11 +1583,26 @@ def build_system_prompt(context: str, fmt: ContextFormat, use_structured: bool) 
 # CORE: RTmdKField v7
 # ============================================================================
 
+def _locked(method):
+    """Decorator that wraps method in self._write_lock RLock."""
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with self._write_lock:
+            return method(self, *args, **kwargs)
+    return wrapper
+
+
 class RTMDKField:
-    def __init__(self, config: RTMDKConfig, projection_matrix: Optional[NDArray] = None):
+    def __init__(self, config: RTMDKConfig, projection_matrix: Optional[NDArray] = None,
+                 wal_path: Optional[str] = None):
         self.cfg = config
+        self._rng = np.random.default_rng(config.seed)
         self.nodes: Dict[str, MemoryNode] = {}
         self.node_index: List[str] = []
+
+        # WAL for durability
+        from rtmdk.memory.wal import WAL
+        self.wal = WAL(wal_path, enabled=wal_path is not None)
 
         # P0: Cached numpy arrays for vectorized query — avoids O(N) Python loop on every query
         self._cached_positions: Optional[NDArray] = None       # (N, latent_dim)
@@ -3688,7 +1623,7 @@ class RTMDKField:
         else:
             self.projection_learner = None
             self._raw_projection = (projection_matrix.astype(np.float32) if projection_matrix is not None
-                                    else np.random.randn(config.embedding_dim, config.latent_dim).astype(np.float32) * 0.1)
+                                    else self._rng.standard_normal((config.embedding_dim, config.latent_dim)).astype(np.float32) * 0.1)
 
         self.adaptive_threshold = AdaptiveThreshold(config.adaptive_window, config.tension_threshold) if config.adaptive_threshold else None
         self.bm25_index = BM25Index(config.bm25_k1, config.bm25_b) if config.bm25_fallback else None
@@ -3696,7 +1631,14 @@ class RTMDKField:
         self.gpu_backend = TorchBackend() if config.backend == Backend.TORCH else None
         if self.gpu_backend and not self.gpu_backend.available:
             self.gpu_backend = None
-        self.hnsw_index = HNSWIndex(config.hnsw_m, config.hnsw_ef_construction) if config.use_hnsw else None
+        if config.use_hnsw:
+            if _HNSWLIB_AVAILABLE:
+                self.hnsw_index = HNSWLibIndex(dim=config.latent_dim, m=config.hnsw_m,
+                                               ef_construction=config.hnsw_ef_construction)
+            else:
+                self.hnsw_index = NaiveGraphIndex(config.hnsw_m, config.hnsw_ef_construction)
+        else:
+            self.hnsw_index = None
 
         # Pre-select batch resonance backend to avoid branching in hot path
         if self.gpu_backend and self.gpu_backend.available:
@@ -3783,7 +1725,7 @@ class RTMDKField:
         self.shard_router: Optional[NDArray] = None
         self._node_shard_map: Dict[str, int] = {}
         if config.sparse_routing:
-            self.shard_centers = np.random.randn(config.num_shards, config.latent_dim).astype(np.float32)
+            self.shard_centers = self._rng.standard_normal((config.num_shards, config.latent_dim)).astype(np.float32)
             self.shard_router = np.zeros(config.num_shards, dtype=np.float32)
 
         # Phase 12 Track 3: Crystallization
@@ -3792,10 +1734,27 @@ class RTMDKField:
 
         # Fix 3: Lifecycle & Throttling Controls
         self._workers: List[asyncio.Task] = []
-        self._write_lock: Optional[asyncio.Lock] = None
+        self._write_lock = threading.RLock()
         self._backpressure_events = 0
         self._heavy_modules_degraded = False  # Track if we've entered degraded mode
         self._last_successful_step = time.time()  # For recovery tracking
+
+        # P1: Per-subsystem circuit breakers (replaces _safe_run catch-all)
+        self._circuit_breakers: Dict[str, CircuitBreaker] = {
+            "ODEEvolve": CircuitBreaker("ODEEvolve", default=0),
+            "Consolidate": CircuitBreaker("Consolidate", default=[]),
+            "SelfHeal": CircuitBreaker("SelfHeal"),
+            "PredictorFreeEnergy": CircuitBreaker("PredictorFreeEnergy", default=0.0),
+            "PredictorUpdate": CircuitBreaker("PredictorUpdate"),
+            "SelfSupervise": CircuitBreaker("SelfSupervise"),
+            "TDA": CircuitBreaker("TDA"),
+            "MetaKernelAdapt": CircuitBreaker("MetaKernelAdapt"),
+            "MetaControllerOptimize": CircuitBreaker("MetaControllerOptimize", default={}),
+            "MetaControllerApply": CircuitBreaker("MetaControllerApply"),
+            "FederatedSync": CircuitBreaker("FederatedSync"),
+            "ODESmoothness": CircuitBreaker("ODESmoothness", default=1.0),
+            "ShardUpdate": CircuitBreaker("ShardUpdate"),
+        }
 
         # B1: Tension caching
         self._tension_cache: Dict[str, Tuple[float, float]] = {}  # node_id -> (tension, step)
@@ -3883,8 +1842,8 @@ class RTMDKField:
 
         # Phase 15 Track 5: Triton Backend
         self.triton_backend: Optional[Any] = None
-        if config.triton_backend and TritonBackend is not None:
-            self.triton_backend = TritonBackend(min_nodes_for_gpu=config.min_nodes_for_gpu)
+        if config.triton_backend and GPUBackend is not None:
+            self.triton_backend = GPUBackend(min_nodes_for_gpu=config.min_nodes_for_gpu)
 
         # Phase 16 Track 1: SymbolicOverlay
         self.symbolic_overlay: Optional["SymbolicOverlay"] = None
@@ -3985,13 +1944,43 @@ class RTMDKField:
             "tension_cache_hits": 0, "tension_cache_misses": 0,
             "tension_cache_hit_rate": 0.0,
         }
+        # Phase 21: Self-Organizing Tokenizer + Embedding Field
+        self.sot_tokenizer: Optional[Any] = None
+        self.sot_hebbian: Optional[Any] = None
+        self.sot_ssm: Optional[Any] = None
+        self._sot_field_ema: Optional[NDArray] = None
+        if config.sot_enabled:
+            from rtmdk.memory.self_organizing_field import SOTokenizer, ContrastiveHebbian, EmbeddingFieldSSM
+            token_dim = config.sot_token_dim or config.latent_dim
+            self.sot_tokenizer = SOTokenizer(
+                latent_dim=config.latent_dim,
+                token_dim=token_dim,
+                max_vocab=config.sot_max_vocab,
+                seed=config.seed,
+            )
+            self.sot_hebbian = ContrastiveHebbian(
+                lr=config.sot_contrastive_lr,
+            )
+            if config.sot_ssm_sync:
+                self.sot_ssm = EmbeddingFieldSSM(
+                    latent_dim=config.latent_dim,
+                    tokenizer=self.sot_tokenizer,
+                    diagonal=config.sot_diagonal_ssm,
+                )
+            self._sot_field_ema = np.zeros(config.latent_dim, dtype=np.float32)
+
         self._step_counter = 0
+        # Rate limiting: track add_node timestamps (max 100 nodes/sec)
+        self._add_node_timestamps: deque = deque(maxlen=1000)
         self._rollback_history: deque = deque(maxlen=config.max_rollback_history)
         self._stability_buffer: deque = deque(maxlen=config.field_stability_window)
         self._active_node_history: deque = deque(maxlen=50)
 
     def _project(self, embedding: NDArray) -> NDArray:
-        if self.projection_learner:
+        # Phase 21: If embedding is already latent_dim, use directly
+        if len(embedding) == self.cfg.latent_dim:
+            latent = embedding.astype(np.float32)
+        elif self.projection_learner:
             latent = self.projection_learner.project(embedding)
         else:
             latent = ((embedding - 0) @ self._raw_projection).astype(np.float32) if embedding.ndim == 1 else (embedding @ self._raw_projection).astype(np.float32)
@@ -4025,6 +2014,7 @@ class RTMDKField:
             dist = np.linalg.norm(query_latent - node.latent_pos)
         phase_diff = node.phase - query_phase
         bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self.cfg.bandwidth
+        bw = max(bw, 1e-8)
         pc = self.meta_kernel.get_phase_coupling() if self.meta_kernel else self.cfg.phase_coupling
 
         if self.learnable_kernel:
@@ -4075,6 +2065,7 @@ class RTMDKField:
         dists = cdist(query_latents, node_positions)
         # Gaussian kernel: exp(-d^2/(2*bw^2)) — use meta_kernel if available (Fix 2: consistency with single-node path)
         bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self.cfg.bandwidth
+        bw = max(bw, 1e-8)
         pc = self.meta_kernel.get_phase_coupling() if self.meta_kernel else self.cfg.phase_coupling
         spatial = np.exp(-dists ** 2 / (2 * bw ** 2))
         phase_diff = query_phases[:, np.newaxis] - node_phases[np.newaxis, :]
@@ -4217,6 +2208,7 @@ class RTMDKField:
 
         # Vectorized spatial kernel (gaussian)
         bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self.cfg.bandwidth
+        bw = max(bw, 1e-8)
         spatial = np.exp(-dists ** 2 / (2 * bw ** 2))
 
         # Vectorized phase alignment
@@ -4319,14 +2311,14 @@ class RTMDKField:
             search_nodes = [(nid, self.nodes[nid]) for nid in candidate_ids if nid in self.nodes]
             self.stats["shard_hits"] += len(candidate_ids)
         else:
-            # OPTIMIZATION: Use vectorized batch resonance for N >= 50 nodes
-            if len(self.node_index) >= 50:
-                return self._query_vectorized(query_latent, phase, top_k, modality, session_id, t0)
-            search_nodes = [(nid, self.nodes[nid]) for nid in self.node_index]
-            if self.cfg.sparse_routing:
-                self.stats["shard_misses"] += 1
+            # Always use vectorized batch resonance (removes Python-loop overhead)
+            return self._query_vectorized(query_latent, phase, top_k, modality, session_id, t0)
 
-        # Original loop path (for small N < 50)
+        # Fallback loop path (should rarely reach here)
+        search_nodes = [(nid, self.nodes[nid]) for nid in self.node_index]
+        if self.cfg.sparse_routing:
+            self.stats["shard_misses"] += 1
+
         # Fix 3: Hyperbolic pre-filtering for candidate selection
         if self.cfg.hyperbolic and len(search_nodes) > top_k * 5:
             query_norm = np.linalg.norm(query_latent)
@@ -4415,9 +2407,7 @@ class RTMDKField:
             self.meta_kernel.record_response(results[0][1] if results else 0.0)
             if len(results) >= 2:
                 positions = np.array([n.latent_pos for _, _, n in results])
-                dists = cdist(positions, positions)
-                np.fill_diagonal(dists, np.inf)
-                valid = dists[dists < np.inf]
+                valid = pdist(positions)
                 density = 1.0 / (1.0 + np.mean(valid)) if len(valid) > 0 else 0.0
                 self.meta_kernel.record_semantic_density(float(density))
             if len(results) >= 2:
@@ -4444,6 +2434,27 @@ class RTMDKField:
             self.stats["recall_accuracy"] = self.meta_memory_eval.evaluate_recall_accuracy()
 
         return results[:top_k]
+
+    def query_by_text(self, text: str, top_k: Optional[int] = None,
+                      session_id: Optional[str] = None) -> List[Tuple[str, float, MemoryNode]]:
+        """Query field using SOT tokenizer (no external embedder required).
+
+        Args:
+            text: Raw query text.
+            top_k: Number of results.
+            session_id: Optional session filter.
+
+        Returns:
+            List of (node_id, resonance_score, node) tuples.
+        """
+        top_k = top_k or self.cfg.top_k
+        if self.sot_tokenizer and self.cfg.sot_use_for_query:
+            tokens = self.sot_tokenizer.encode(text)
+            query_latent = self.sot_tokenizer.embed(tokens)
+            return self.query(query_latent, phase=0.0, top_k=top_k,
+                              modality="text", session_id=session_id)
+        # Fallback: use standard query path if SOT not enabled for queries
+        return []
 
     # B2: Lazy property for causal engine
     @property
@@ -4491,9 +2502,18 @@ class RTMDKField:
         self._meta_controller = value
         self._meta_controller_initialized = value is not None
 
+    @_locked
     def add_node(self, embedding: NDArray, content: Dict, phase: Optional[float] = None,
                  node_id: Optional[str] = None, session_id: Optional[str] = None, modality: str = "text",
                  skip_projection: bool = False) -> str:
+        # Rate limiting: max 100 nodes per second
+        now = time.time()
+        while self._add_node_timestamps and self._add_node_timestamps[0] < now - 1.0:
+            self._add_node_timestamps.popleft()
+        if len(self._add_node_timestamps) >= 100:
+            raise SecurityViolationError("Rate limit exceeded: max 100 nodes/second")
+        self._add_node_timestamps.append(now)
+
         # Phase 14 Track 2: Security validation
         if self.security:
             # Check ALL text fields for prompt injection, not just 'text'
@@ -4518,6 +2538,9 @@ class RTMDKField:
                     f"latent_dim {self.cfg.latent_dim}"
                 )
             latent = embedding
+        elif len(embedding) == self.cfg.latent_dim:
+            # Phase 21: SOT embeddings are already latent_dim — use directly
+            latent = embedding.astype(np.float32)
         elif self.projection_learner:
             latent = self.projection_learner.update(embedding)
             self.stats["projection_updates"] += 1
@@ -4568,8 +2591,8 @@ class RTMDKField:
                 self._cached_modal_weights = np.append(self._cached_modal_weights, 1.0)
                 self._cached_gates = np.append(self._cached_gates, 1.0)
                 self._cached_causal_boost = np.append(self._cached_causal_boost, 1.0)
-            except Exception as e:
-                logger.warning(f"Incremental cache append failed: {e}, falling back to full rebuild")
+            except Exception:
+                logger.warning("Incremental cache append failed, falling back to full rebuild", exc_info=True)
                 # Fallback: mark dirty for full rebuild
                 self._cache_dirty = True
         else:
@@ -4602,6 +2625,7 @@ class RTMDKField:
         if self.event_scheduler:
             self.event_scheduler.enqueue("node_added", {"node_id": nid, "modality": modality})
 
+        self.wal.append_add_node(nid, content, modality)
         return nid
 
     def _invalidate_tension_cache(self, node_id: Optional[str] = None):
@@ -4722,6 +2746,7 @@ class RTMDKField:
     def get_effective_threshold(self) -> float:
         return self.adaptive_threshold.get_threshold() if self.adaptive_threshold else self.cfg.tension_threshold
 
+    @_locked
     def consolidate(self, mode: Optional[ConsolidationMode] = None) -> List[str]:
         mode = mode or self.cfg.consolidation_mode
         updated = []
@@ -4804,6 +2829,16 @@ class RTMDKField:
                         processed.add(pid)
                         continue
 
+                # Phase 20: Domain consolidation guard — don't merge nodes from different domains
+                if self.cfg.domain_consolidation_guard and node.domain != partner.domain:
+                    if partner.id not in node.conflict_with:
+                        node.conflict_with.append(partner.id)
+                    if node.id not in partner.conflict_with:
+                        partner.conflict_with.append(node.id)
+                    processed.add(nid)
+                    processed.add(pid)
+                    continue
+
                 gate = self._soft_gate(max(node.tension, partner.tension))
 
                 if self.cfg.enable_rollback:
@@ -4821,11 +2856,20 @@ class RTMDKField:
                                             0.5*(np.cos(node.phase)+np.cos(partner.phase))) % (2*np.pi)
                     node.amplitude = min(1.0, 0.8*(node.amplitude+partner.amplitude))
                     node.salience = min(1.0, 0.7*(node.salience+partner.salience))
+                else:
+                    # MERGE and PRUNE modes: same spatial merge, keep amplitude/salience from survivor
+                    node.latent_pos = 0.5 * (node.latent_pos + partner.latent_pos)
+                    node.phase = np.arctan2(0.5*(np.sin(node.phase)+np.sin(partner.phase)),
+                                            0.5*(np.cos(node.phase)+np.cos(partner.phase))) % (2*np.pi)
 
                 node.tension = 0.0
                 node.soft_gate = 1.0
                 node.lineage = [f"{node.id}+{pid}"] + node.lineage + partner.lineage
+                # Preserve partner content for traceability
                 node.content["synthesis_note"] = f"Consolidated with {pid} at t={time.time():.0f}"
+                if "merged_content" not in node.content:
+                    node.content["merged_content"] = []
+                node.content["merged_content"].append(partner.content.get("text", "") or partner.content.get("input_text", ""))
 
                 if self.causal_engine:
                     for parent, strength in partner.causal_strength.items():
@@ -4893,6 +2937,16 @@ class RTMDKField:
                         processed.add(nid)
                         processed.add(pid)
                         continue
+
+                # Phase 20: Domain consolidation guard — don't merge nodes from different domains
+                if self.cfg.domain_consolidation_guard and node.domain != partner.domain:
+                    if partner.id not in node.conflict_with:
+                        node.conflict_with.append(partner.id)
+                    if node.id not in partner.conflict_with:
+                        partner.conflict_with.append(node.id)
+                    processed.add(nid)
+                    processed.add(pid)
+                    continue
 
                 gate = self._soft_gate(max(node.tension, partner.tension))
 
@@ -5006,6 +3060,7 @@ class RTMDKField:
         if updated:
             self._cache_dirty = True
 
+        self.wal.append_consolidate(updated)
         return updated
 
     def _verify_consistency(self, updated_nodes: List[str], pre_state: Optional[Dict] = None):
@@ -5020,7 +3075,7 @@ class RTMDKField:
                 continue
             node = self.nodes[nid]
             # FIX: Probe around the node's actual position, not np.zeros
-            probe = node.latent_pos + np.random.normal(0, 0.05, node.latent_pos.shape)
+            probe = node.latent_pos + self._rng.normal(0, 0.05, node.latent_pos.shape)
             results = self.query(probe, phase=node.phase, top_k=1)
             if results and results[0][0] == nid:
                 node.self_sup_score = max(0.5, results[0][1])
@@ -5037,7 +3092,7 @@ class RTMDKField:
                 continue
             node = self.nodes[nid]
             # FIX: Probe around the node's actual position
-            probe = node.latent_pos + np.random.normal(0, 0.05, node.latent_pos.shape)
+            probe = node.latent_pos + self._rng.normal(0, 0.05, node.latent_pos.shape)
             results = self.query(probe, phase=node.phase, top_k=1)
             if results and results[0][0] == nid:
                 node.self_sup_score = max(0.5, results[0][1])
@@ -5110,9 +3165,13 @@ class RTMDKField:
         healed = []
         for nid, node in self.nodes.items():
             needs_heal = False
-            if np.any(np.isnan(node.latent_pos)) or np.any(np.isinf(node.latent_pos)):
+            if np.any(np.isnan(node.latent_pos)):
                 n_nan += 1
-                issues.append(f"NaN/Inf in {nid} — will heal")
+                issues.append(f"NaN in {nid} — will heal")
+                needs_heal = True
+            if np.any(np.isinf(node.latent_pos)):
+                n_inf += 1
+                issues.append(f"Inf in {nid} — will heal")
                 needs_heal = True
             if np.isnan(node.phase) or np.isinf(node.phase):
                 issues.append(f"Invalid phase in {nid} — will heal")
@@ -5124,7 +3183,7 @@ class RTMDKField:
                 node.amplitude = self.cfg.min_amplitude
             # Fix 11: Actually heal NaN positions by resetting to small random values
             if needs_heal:
-                node.latent_pos = np.random.randn(self.cfg.latent_dim).astype(np.float32) * 0.01
+                node.latent_pos = self._rng.standard_normal(self.cfg.latent_dim).astype(np.float32) * 0.01
                 healed.append(nid)
                 self.stats["field_integrity_issues"] = self.stats.get("field_integrity_issues", 0) + 1
         return {
@@ -5232,39 +3291,104 @@ class RTMDKField:
         
         if self.cfg.continuous_dynamics and self.ode_dynamics:
             # Fix: Safe run for ODE to prevent crashes
-            self._safe_run("ODEEvolve", self.evolve_continuous, inputs, use_sde=self.cfg.sde_noise_level > 0, default=0)
+            self._circuit_breakers["ODEEvolve"].call(self.evolve_continuous, inputs, use_sde=self.cfg.sde_noise_level > 0)
             return
             
         if inputs:
             for inp in inputs:
                 emb = inp["embedding"]
-                # Validate embedding dimension to prevent silent corruption
-                if len(emb) != self.cfg.embedding_dim:
-                    logger.warning(f"Embedding dimension mismatch in step(): expected {self.cfg.embedding_dim}, got {len(emb)}. Skipping.")
-                    continue
                 phase = inp.get("phase", 0.0)
                 content = inp.get("content", {})
                 session_id = inp.get("session_id")
                 modality = inp.get("modality", "text")
-                results = self.query(emb, phase, top_k=1, modality=modality)
+                text = content.get("text", "")
+
+                # Phase 21: SOT tokenization and optional query-by-text
+                sot_tokens = None
+                if self.sot_tokenizer and text:
+                    sot_tokens = self.sot_tokenizer.encode(text)
+                    self.sot_tokenizer.record_cooccurrence(sot_tokens)
+
+                # Validate embedding dimension — allow both embedding_dim and latent_dim
+                emb_dim = len(emb)
+                if emb_dim not in (self.cfg.embedding_dim, self.cfg.latent_dim):
+                    logger.warning(f"Embedding dimension mismatch in step(): expected {self.cfg.embedding_dim} or {self.cfg.latent_dim}, got {emb_dim}. Skipping.")
+                    continue
+
+                results = self.query(emb, phase, top_k=max(1, self.cfg.sot_negatives_per_query + 1), modality=modality)
                 if results and results[0][1] > 0.3:
                     nid, _, node = results[0]
-                    target = self._project(emb)
+                    target = emb if emb_dim == self.cfg.latent_dim else self._project(emb)
                     node.latent_pos += self.cfg.attraction_lr * (target - node.latent_pos)
                     pd = (phase - node.phase + np.pi) % (2*np.pi) - np.pi
-                    node.phase += self.cfg.phase_sync_lr * pd
+                    node.phase = (node.phase + self.cfg.phase_sync_lr * pd) % (2 * np.pi)
                     node.amplitude = min(1.0, node.amplitude + 0.05)
                     node.salience = min(1.0, node.salience + 0.03)
                 else:
                     self.add_node(emb, content, phase, session_id=session_id, modality=modality)
 
-        # Consolidation: 15% chance (lightweight)
-        if len(self.nodes) > 10 and np.random.random() < 0.15:
-            self._safe_run("Consolidate", self.consolidate, default=[])
+                # Phase 21: Contrastive Hebbian update on field nodes
+                if self.sot_hebbian and results and len(self.node_index) > 1:
+                    snap_id_to_idx = {nid: idx for idx, nid in enumerate(self.node_index)}
+                    pos_indices = []
+                    for nid, _, _ in results:
+                        idx = snap_id_to_idx.get(nid)
+                        if idx is not None:
+                            pos_indices.append(idx)
+                    n_neg = min(self.cfg.sot_negatives_per_query, len(self.node_index) - len(pos_indices))
+                    neg_indices = []
+                    if n_neg > 0:
+                        all_idx = set(range(len(self.node_index)))
+                        available = list(all_idx - set(pos_indices))
+                        if available:
+                            neg_indices = self._rng.choice(available, size=min(n_neg, len(available)), replace=False).tolist()
+                    if pos_indices:
+                        positions = np.array([self.nodes[self.node_index[i]].latent_pos for i in range(len(self.node_index))], dtype=np.float32)
+                        self.sot_hebbian.field_update(positions, pos_indices, neg_indices)
+                        # Write back
+                        for i in range(len(self.node_index)):
+                            self.nodes[self.node_index[i]].latent_pos = positions[i]
+
+                # Phase 21: Contrastive Hebbian update on token embeddings
+                if self.sot_hebbian and self.sot_tokenizer and sot_tokens and len(sot_tokens) > 1:
+                    vocab_ids = list(self.sot_tokenizer.token_embeddings.keys())
+                    n_neg = min(self.cfg.sot_negatives_per_query, len(vocab_ids) - len(sot_tokens))
+                    negatives = []
+                    if n_neg > 0:
+                        available = [v for v in vocab_ids if v not in sot_tokens]
+                        if available:
+                            negatives = self._rng.choice(available, size=min(n_neg, len(available)), replace=False).tolist()
+                    self.sot_hebbian.update(self.sot_tokenizer.token_embeddings, sot_tokens, negatives)
+
+                # Phase 21: SSM sync — smooth momentum for token embeddings
+                if self.sot_ssm and self.sot_tokenizer and sot_tokens and self._sot_field_ema is not None:
+                    if len(self.nodes) > 0:
+                        active_positions = np.array([n.latent_pos for n in self.nodes.values()], dtype=np.float32)
+                        field_mean = np.mean(active_positions, axis=0)
+                    else:
+                        field_mean = np.zeros(self.cfg.latent_dim, dtype=np.float32)
+                    self._sot_field_ema = 0.9 * self._sot_field_ema + 0.1 * field_mean
+                    momentum = self.sot_ssm.step(sot_tokens, self._sot_field_ema)
+                    self.sot_ssm.sync_embeddings(sot_tokens, momentum)
+
+                # Phase 21: Periodic merge
+                if self.sot_tokenizer and self._step_counter % self.cfg.sot_merge_freq == 0 and self._step_counter > 0:
+                    candidates = self.sot_tokenizer.propose_merges(5)
+                    for pair in candidates:
+                        score = self.sot_tokenizer.cooccurrence.get(pair, 0.0)
+                        if score >= self.cfg.sot_merge_threshold and score >= self.cfg.sot_min_cooccurrence:
+                            try:
+                                self.sot_tokenizer.merge(pair)
+                            except RuntimeError:
+                                break  # Max vocab reached
+
+        # Consolidation: periodic instead of probabilistic to avoid hot path spikes
+        if len(self.nodes) > 10 and self._step_counter % 20 == 0:
+            self._circuit_breakers["Consolidate"].call(self.consolidate)
 
         # Self-healing: every N steps
         if self.cfg.self_healing and self._step_counter % self.cfg.healing_check_freq == 0:
-            self._safe_run("SelfHeal", self._self_heal)
+            self._circuit_breakers["SelfHeal"].call(self._self_heal)
 
         # Tier-specific decay: every step (cheap)
         tier_counts = defaultdict(int)
@@ -5295,14 +3419,14 @@ class RTMDKField:
             state = self._encode_field_state()
             self._state_history.append(state)
             if len(self._state_history) >= 2:
-                fe = self._safe_run("PredictorFreeEnergy", self.predictor.compute_free_energy, self._state_history[-2], self._state_history[-1], default=0.0)
+                fe = self._circuit_breakers["PredictorFreeEnergy"].call(self.predictor.compute_free_energy, self._state_history[-2], self._state_history[-1])
                 self.stats["free_energy"] = fe
                 self.stats["prediction_error"] = float(np.mean((self.predictor.predict(self._state_history[-2]) - self._state_history[-1]) ** 2))
                 self.stats["surprise_level"] = float(np.clip(fe, 0, 1))
                 if fe > 0.3 and len(self.nodes) > 10:
-                    self._safe_run("Consolidate", self.consolidate, default=[])
+                    self._circuit_breakers["Consolidate"].call(self.consolidate)
                 if fe > 0.01:
-                    self._safe_run("PredictorUpdate", self.predictor.update, self._state_history[-2], self._state_history[-1], lr=self.cfg.pc_lr)
+                    self._circuit_breakers["PredictorUpdate"].call(self.predictor.update, self._state_history[-2], self._state_history[-1], lr=self.cfg.pc_lr)
 
         # Max nodes pruning: every 10 steps
         if self.cfg.max_nodes and len(self.nodes) > self.cfg.max_nodes and self._step_counter % 10 == 0:
@@ -5323,24 +3447,24 @@ class RTMDKField:
 
         # Self-supervision: every 20 steps
         if self.cfg.self_supervision and self._step_counter % 20 == 0:
-            self._safe_run("SelfSupervise", self._self_supervise)
+            self._circuit_breakers["SelfSupervise"].call(self._self_supervise)
 
         # TDA: every N steps (Throttled)
         if backpressure_ok and self.cfg.tda_monitoring and self._step_counter % self.cfg.tda_check_freq == 0:
-            self._safe_run("TDA", self._check_tda)
+            self._circuit_breakers["TDA"].call(self._check_tda)
 
         # Meta-kernel adaptation: every 5 steps
         if self.meta_kernel and self._step_counter % 5 == 0:
-            self._safe_run("MetaKernelAdapt", self.meta_kernel.adapt)
+            self._circuit_breakers["MetaKernelAdapt"].call(self.meta_kernel.adapt)
             self.stats["meta_kurtosis"] = self.meta_kernel.compute_resonance_kurtosis()
             self.stats["meta_bandwidth"] = self.meta_kernel.get_bandwidth()
             self.stats["meta_phase_coupling"] = self.meta_kernel.get_phase_coupling()
 
         # Meta-controller optimization: every N steps (Throttled)
         if backpressure_ok and self.meta_controller and self.meta_controller.should_optimize() and self._step_counter % self.cfg.meta_opt_freq == 0:
-            best_params = self._safe_run("MetaControllerOptimize", self.meta_controller.optimize, self, default={})
+            best_params = self._circuit_breakers["MetaControllerOptimize"].call(self.meta_controller.optimize, self)
             if best_params:
-                self._safe_run("MetaControllerApply", self.meta_controller.apply_params, self, best_params)
+                self._circuit_breakers["MetaControllerApply"].call(self.meta_controller.apply_params, self, best_params)
                 self.stats["meta_optimizations"] += 1
                 self.stats["meta_best_params"] = best_params
 
@@ -5351,15 +3475,15 @@ class RTMDKField:
                 "decay_rate": self.cfg.decay_rate, "tension_threshold": self.cfg.tension_threshold,
                 "phase_coupling": self.cfg.phase_coupling, "bandwidth": self.cfg.bandwidth,
             }
-            self._safe_run("FederatedSync", self.federated.sync_with_peers, local_phases, local_params)
+            self._circuit_breakers["FederatedSync"].call(self.federated.sync_with_peers, local_phases, local_params)
 
         # ODE smoothness: every 10 steps (Throttled)
         if backpressure_ok and self.ode_dynamics and self._step_counter % 10 == 0:
-            self.stats["response_smoothness"] = self._safe_run("ODESmoothness", self.ode_dynamics.compute_response_smoothness, default=1.0)
+            self.stats["response_smoothness"] = self._circuit_breakers["ODESmoothness"].call(self.ode_dynamics.compute_response_smoothness)
 
         # Shard center updates: every 100 steps
         if self.cfg.sparse_routing and self._step_counter % 100 == 0 and len(self.nodes) > self.cfg.num_shards * 2:
-            self._safe_run("ShardUpdate", self._update_shard_centers)
+            self._circuit_breakers["ShardUpdate"].call(self._update_shard_centers)
             self.stats["avg_rl_reward"] = self.rl_feedback_loop.get_average_reward()
 
         # Event-driven processing: every 10 steps
@@ -5506,9 +3630,9 @@ class RTMDKField:
         if diagnostics.get("fragmentation", 0) > self.cfg.fragmentation_threshold:
             if len(self.nodes) >= 2:
                 positions = np.array([n.latent_pos for n in self.nodes.values()])
-                dists = cdist(positions, positions)
-                np.fill_diagonal(dists, np.inf)
-                isolated = [self.node_index[i] for i in range(len(self.node_index)) if np.all(dists[i] > 2.0)]
+                tree = cKDTree(positions)
+                neighbors = tree.query_ball_point(positions, 2.0)
+                isolated = [self.node_index[i] for i in range(len(self.node_index)) if len(neighbors[i]) <= 1]
                 if isolated:
                     healed.extend(self.healer.heal_fragmentation(self.nodes, isolated))
         if healed:
@@ -5734,27 +3858,11 @@ class RTMDKField:
     # PHASE 12 TRACK 4: ASYNC MULTI-THREADED EVOLUTION PIPELINE
     # ========================================================================
 
-    def _safe_run(self, module_name: str, func, *args, default=None, **kwargs):
-        """Execute a heavy module safely, handling exceptions and throttling."""
-        try:
-            return func(*args, **kwargs)
-        except Exception as e:
-            logger.warning(f"[SafeRun] {module_name} failed: {e}")
-            self._backpressure_events += 1
-            # Fix 10: Track when we enter degraded mode
-            if self._backpressure_events >= 3 and not self._heavy_modules_degraded:
-                self._heavy_modules_degraded = True
-                logger.warning("Entering degraded mode — heavy modules disabled until recovery")
-            return default
-
     async def _start_workers(self):
         """Start background worker tasks for async pipeline with lifecycle tracking."""
         if self._workers_started:
             return
         self._workers_started = True
-        if self._write_lock is None:
-            self._write_lock = asyncio.Lock()
-        
         # Fix 3: Track tasks for cancellation in clear()
         t_evolve = asyncio.create_task(self._worker_evolve())
         t_save = asyncio.create_task(self._worker_save())
@@ -5771,7 +3879,8 @@ class RTMDKField:
                     # Throttling: Skip heavy meta-ops if backpressure high
                     backpressure_ok = self._backpressure_events < 3
                     
-                    self.step(inputs)
+                    loop = asyncio.get_event_loop()
+                    await loop.run_in_executor(None, self.step, inputs)
 
                     # Fix 10: Track recovery and update last successful step
                     self._last_successful_step = time.time()
@@ -5779,7 +3888,7 @@ class RTMDKField:
                     if backpressure_ok and self.meta_controller:
                         # Safe execution for optimization
                         if self.meta_controller.should_optimize():
-                            self._safe_run("MetaControllerOptimize", self.meta_controller.optimize, self)
+                            self._circuit_breakers["MetaControllerOptimize"].call(self.meta_controller.optimize, self)
 
                     # Decay backpressure on success — also check if we can recover from degraded mode
                     if self._backpressure_events > 0:
@@ -5795,9 +3904,9 @@ class RTMDKField:
                     self.evolve_q.task_done()
                 except asyncio.TimeoutError:
                     continue
-                except Exception as e:
+                except Exception:
                     self._backpressure_events += 1
-                    logger.error(f"Evolve worker error: {e}")
+                    logger.exception("Evolve worker error")
         except asyncio.CancelledError:
             logger.info("Evolve worker cancelled cleanly.")
 
@@ -5812,8 +3921,8 @@ class RTMDKField:
                     self.save_q.task_done()
                 except asyncio.TimeoutError:
                     continue
-                except Exception as e:
-                    logger.error(f"Save worker error: {e}")
+                except Exception:
+                    logger.exception("Save worker error")
         except asyncio.CancelledError:
             logger.info("Save worker cancelled cleanly.")
     def _track_queue_depth(self):
@@ -5885,6 +3994,7 @@ class RTMDKField:
         self.stats["avg_rl_reward"] = self.rl_feedback_loop.get_average_reward()
         return reward
 
+    @_locked
     def export_field(self, path: str, fmt: str = "json"):
         """Export field state to file.
 
@@ -5892,6 +4002,7 @@ class RTMDKField:
             path: Output file path
             fmt: "json" (default) or "msgpack" (binary, requires msgpack)
         """
+        path = _sanitize_path(path)
         # Safety check: prevent overwriting non-empty file with empty memory
         n_nodes = len(self.nodes)
         if n_nodes == 0 and os.path.exists(path):
@@ -5907,69 +4018,37 @@ class RTMDKField:
         logger.info(f"export_field: exporting {n_nodes} nodes to {path}")
         from rtmdk.memory.serialization import FieldSerializer
         FieldSerializer.field_to_file(self, path, fmt)
+        self.wal.truncate()
+
+    def get_state(self) -> Dict[str, Any]:
+        """Get lightweight state dict for SOT persistence."""
+        state: Dict[str, Any] = {
+            "step_counter": self._step_counter,
+        }
+        if self.sot_tokenizer:
+            state["sot_tokenizer"] = self.sot_tokenizer.get_state()
+        if self.sot_hebbian:
+            state["sot_hebbian"] = {"lr": self.sot_hebbian.lr}
+        if self.sot_ssm:
+            state["sot_ssm"] = {"latent_dim": self.sot_ssm.latent_dim}
+        if self._sot_field_ema is not None:
+            state["sot_field_ema"] = self._sot_field_ema.tolist()
+        return state
+
+    def load_state(self, state: Dict[str, Any]):
+        """Load lightweight state dict for SOT persistence."""
+        self._step_counter = state.get("step_counter", self._step_counter)
+        if self.sot_tokenizer and "sot_tokenizer" in state:
+            self.sot_tokenizer.load_state(state["sot_tokenizer"])
+        if self._sot_field_ema is not None and "sot_field_ema" in state:
+            self._sot_field_ema = np.array(state["sot_field_ema"], dtype=np.float32)
 
     @classmethod
-    def import_field(cls, path: str, embedder: Callable) -> "RTMDKMemory":
+    def import_field(cls, path: str, embedder: Callable,
+                     wal_path: Optional[str] = None) -> "RTMDKMemory":
+        path = _sanitize_path(path)
         from rtmdk.memory.serialization import FieldSerializer
-        return FieldSerializer.field_from_file(path, embedder)
-
-        # Health check: verify file has valid JSON structure
-        if file_size < 10:
-            raise ValueError(f"File too small ({file_size} bytes): possibly corrupted")
-
-        # Auto-detect format: msgpack files are zlib compressed (magic bytes 0x78)
-        with open(path, "rb") as f:
-            header = f.read(2)
-        # zlib magic bytes: 0x78 0x01, 0x78 0x5e, 0x78 0x9c, 0x78 0xda
-        is_msgpack = header[0:1] == b'\x78' and header[1:2] in (b'\x01', b'\x5e', b'\x9c', b'\xda')
-
-        if is_msgpack:
-            logger.info("import_field: detected msgpack+zlib format")
-            try:
-                import msgpack
-                import zlib
-                with open(path, "rb") as f:
-                    compressed = f.read()
-                packed = zlib.decompress(compressed)
-                data = msgpack.unpackb(packed, raw=False)
-            except ImportError:
-                raise ImportError("msgpack required for binary import. Install: pip install msgpack")
-        else:
-            logger.info("import_field: loading JSON format")
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-
-        # Health check: verify required keys
-        if "config" not in data:
-            raise ValueError(f"Invalid memory file: missing 'config' key")
-        if "nodes" not in data:
-            raise ValueError(f"Invalid memory file: missing 'nodes' key")
-
-        n_file_nodes = len(data["nodes"])
-        logger.info(f"import_field: file contains {n_file_nodes} nodes, {file_size/1024:.0f}KB")
-
-        cd = data["config"]
-        logger.info(f"import_field: loading config (context_format={cd.get('context_format','?')})")
-        if isinstance(cd.get("consolidation_mode"), str):
-            cd["consolidation_mode"] = ConsolidationMode(cd["consolidation_mode"])
-        if isinstance(cd.get("backend"), str):
-            cd["backend"] = Backend(cd["backend"])
-        if isinstance(cd.get("context_format"), str):
-            cd["context_format"] = ContextFormat(cd["context_format"])
-        if isinstance(cd.get("eval_mode"), str):
-            cd["eval_mode"] = EvalMode(cd["eval_mode"])
-        # Convert memory_tiers list back to set
-        if "memory_tiers" in cd and isinstance(cd["memory_tiers"], list):
-            cd["memory_tiers"] = set(cd["memory_tiers"])
-        # Handle v5/v6 backward compatibility
-        if "causal_modeling" in cd and "causal_topological" not in cd:
-            cd["causal_topological"] = cd.pop("causal_modeling")
-        elif "causal_modeling" in cd:
-            cd.pop("causal_modeling")
-        valid_fields = set(f.name for f in RTMDKConfig.__dataclass_fields__.values())
-        cd = {k: v for k, v in cd.items() if k in valid_fields}
-        config = RTMDKConfig(**cd)
-        memory = RTMDKMemory(config=config, embedder=embedder)
+        return FieldSerializer.field_from_file(path, embedder, wal_path=wal_path)
 
         if config.learn_projection and "projection_state" in data:
             memory.field.projection_learner.load_state(data["projection_state"])
@@ -6087,7 +4166,7 @@ class RTMDKField:
 
     def export_to_dict(self) -> Dict:
         """Export field state to a dict (for UMP and other protocols)."""
-        cd = asdict(self.config) if hasattr(self, 'config') else asdict(self.cfg)
+        cd = self.config.asdict() if hasattr(self, 'config') else self.cfg.asdict()
         cd["consolidation_mode"] = _enum_value(cd.get("consolidation_mode"), "dialectical")
         cd["backend"] = _enum_value(cd.get("backend"), "numpy")
         cd["context_format"] = _enum_value(cd.get("context_format"), "plain")
@@ -6144,6 +4223,11 @@ class RTMDKField:
             data["scenario_planner"] = self.scenario_planner.get_state()
         if self.engram_manager:
             data["engram_manager"] = self.engram_manager.get_state()
+        # Phase 21: SOT state
+        if self.sot_tokenizer:
+            data["sot_tokenizer"] = self.sot_tokenizer.get_state()
+        if self._sot_field_ema is not None:
+            data["sot_field_ema"] = self._sot_field_ema.tolist()
         return data
 
     @classmethod
@@ -6291,19 +4375,21 @@ class RTMDKMemory(BaseModel):
     embedder: Callable[[str], NDArray[np.float32]]
     field: Optional[RTMDKField] = Field(default=None, exclude=True)
     session_phases: Dict[str, float] = Field(default_factory=dict)
+    wal_path: Optional[str] = Field(default=None, exclude=True)
 
     @model_validator(mode="before")
     @classmethod
     def _init_field(cls, data):
         if isinstance(data, dict) and data.get("field") is None:
             cfg = data.get("config", RTMDKConfig())
+            wal = data.get("wal_path")
             data = dict(data)
-            data["field"] = RTMDKField(cfg)
+            data["field"] = RTMDKField(cfg, wal_path=wal)
         return data
 
     def model_post_init(self, __context):
         if self.field is None:
-            object.__setattr__(self, "field", RTMDKField(self.config))
+            object.__setattr__(self, "field", RTMDKField(self.config, wal_path=self.wal_path))
         # Fix 4: Auto-start async workers if async_pipeline is enabled
         if self.config.async_pipeline and not self.field._workers_started:
             try:
@@ -6323,8 +4409,8 @@ class RTMDKMemory(BaseModel):
                     pattern_completion=self.config.engram_pattern_completion,
                     overlap_threshold=self.config.engram_overlap_threshold,
                 ))
-            except Exception as e:
-                logger.warning(f"Engram manager initialization failed, disabling: {e}")
+            except Exception:
+                logger.warning("Engram manager initialization failed, disabling", exc_info=True)
                 object.__setattr__(self, "engram_manager", None)
         else:
             object.__setattr__(self, "engram_manager", None)
@@ -6332,6 +4418,10 @@ class RTMDKMemory(BaseModel):
     @property
     def memory_variables(self) -> List[str]:
         return ["rtmdk_context"]
+
+    def add_node(self, embedding: NDArray, content: Dict, **kwargs) -> str:
+        """Add a node to the memory field. Delegates to RTMDKField.add_node."""
+        return self.field.add_node(embedding, content, **kwargs)
 
     def _get_phase(self, session_id: Optional[str] = None, embedding: Optional[NDArray] = None) -> float:
         if session_id and session_id in self.session_phases:
@@ -6341,39 +4431,30 @@ class RTMDKMemory(BaseModel):
             self.session_phases[session_id] = phase
         return phase
 
-    def load_memory_variables(self, inputs: Dict[str, str]) -> Dict[str, str]:
-        query = inputs.get("input", inputs.get("query", ""))
-        session_id = inputs.get("session_id", "default")
-        if not query:
-            return {"rtmdk_context": ""}
-        embedding = self.embedder(query)
+    def _retrieve_and_format(self, query: str, embedding: NDArray, session_id: str) -> str:
+        """Core retrieval pipeline shared by load_memory_variables and with_embedding."""
         phase = self._get_phase(session_id, embedding)
 
         # Phase 18: Engram-based retrieval (if enabled)
         if self.engram_manager is not None and self.engram_manager.index.size > 0:
-            # Collect node embeddings for pattern completion
             node_embs = {}
             for nid, node in self.field.nodes.items():
                 emb = self._get_node_embedding(nid, node)
                 if emb is not None:
                     node_embs[nid] = emb
 
-            # Retrieve engrams
             engram_results = self.engram_manager.retrieve_engrams(
                 embedding, node_embs, top_k=self.field.cfg.top_k
             )
 
             if engram_results:
-                # Expand engrams to node-level results
                 results = self.engram_manager.expand_engrams(
                     engram_results, self.field, top_k=self.field.cfg.top_k
                 )
                 self.field.stats["engram_retrievals"] += 1
             else:
-                # Fallback to standard node-level retrieval
                 results = self.field.query(embedding, phase, top_k=self.field.cfg.top_k, session_id=session_id)
         else:
-            # Standard node-level retrieval
             results = self.field.query(embedding, phase, top_k=self.field.cfg.top_k, session_id=session_id)
 
         # Session-scoped retrieval: filter results by session_id, with global fallback
@@ -6382,7 +4463,6 @@ class RTMDKMemory(BaseModel):
                 (nid, score, node) for nid, score, node in results
                 if node.content.get("session") == session_id
             ]
-            # If session results are fewer than top_k, supplement with global results
             if len(session_results) < self.field.cfg.top_k:
                 global_results = [
                     (nid, score, node) for nid, score, node in results
@@ -6390,7 +4470,6 @@ class RTMDKMemory(BaseModel):
                 ]
                 needed = self.field.cfg.top_k - len(session_results)
                 session_results.extend(global_results[:needed])
-            # Boost session-matching scores
             boosted = []
             for nid, score, node in session_results:
                 if node.content.get("session") == session_id:
@@ -6400,24 +4479,48 @@ class RTMDKMemory(BaseModel):
             results = boosted[:self.field.cfg.top_k]
             self.field.stats["session_scoped_retrievals"] = self.field.stats.get("session_scoped_retrievals", 0) + 1
 
+        # Phase 1: Hybrid retrieval — blend RTMDK resonance with BM25 text scores
+        if self.field.cfg.hybrid_alpha < 1.0 and self.field.bm25_index is not None and results:
+            bm25_results = self.field.bm25_index.search(query, self.field.cfg.top_k * 2)
+            if bm25_results:
+                bm25_scores = {nid: score for nid, score in bm25_results}
+                max_bm25 = max(bm25_scores.values()) if bm25_scores else 1.0
+                if max_bm25 > 0:
+                    bm25_scores = {nid: s / max_bm25 for nid, s in bm25_scores.items()}
+
+                alpha = self.field.cfg.hybrid_alpha
+                blended = []
+                for nid, score, node in results:
+                    bm25_score = bm25_scores.get(nid, 0.0)
+                    blended_score = alpha * score + (1 - alpha) * bm25_score
+                    blended.append((nid, blended_score, node))
+
+                for nid, bm25_score in bm25_scores.items():
+                    if nid not in [n[0] for n in blended] and bm25_score > self.field.cfg.min_response:
+                        node = self.field.nodes.get(nid)
+                        if node:
+                            blended_score = alpha * 0.0 + (1 - alpha) * bm25_score
+                            blended.append((nid, blended_score, node))
+
+                blended.sort(key=lambda x: x[1], reverse=True)
+                results = blended[:self.field.cfg.top_k]
+                self.field.stats["hybrid_retrievals"] = self.field.stats.get("hybrid_retrievals", 0) + 1
+
         # Phase 15 Track 2: Proactive Clarification
         if self.config.proactive_clarification and results:
             max_score = results[0][1] if results else 0.0
             threshold = self.field.cfg.min_response * self.config.clarification_threshold_ratio
             if 0 < max_score < threshold:
-                # Weak resonance — generate clarification from near-miss nodes
                 clarification = self._generate_clarification(results, query)
                 self.field.stats["clarifications_generated"] += 1
-                return {"rtmdk_context": clarification}
+                return clarification
 
-        # Phase 15 Track 3: Attention Token formatting
+        # Context formatting
         if self.config.attention_tokens and results:
             context = format_context(results, ContextFormat.ATTENTION)
-        # Phase 13 Track 2: Cognitive attention bias formatting
         elif self.config.attention_bias and results:
             context = format_cognitive_context(results, bias_applied=True)
             self.field.stats["attention_bias_applied"] += 1
-        # Phase 12 Track 2: Cognitive context compression
         elif self.config.cognitive_compression and results:
             context = self.field._cognitive_compress(results)
             raw_context = format_context(results, self.config.context_format)
@@ -6427,9 +4530,8 @@ class RTMDKMemory(BaseModel):
         else:
             context = format_context(results, self.config.context_format)
 
-        # Phase 16 Track 1: SymbolicOverlay — add symbolic context
+        # Phase 16 Track 1: SymbolicOverlay
         if self.config.symbolic_overlay and self.field.symbolic_overlay and results:
-            # Extract facts from top results
             facts = []
             for nid, score, node in results[:3]:
                 text = node.content.get("text", "")
@@ -6444,7 +4546,15 @@ class RTMDKMemory(BaseModel):
                                      if r.is_contextual_exception)
                     self.field.stats["n_symbolic_conflicts"] = n_conflicts
 
-        return {"rtmdk_context": context}
+        return context
+
+    def load_memory_variables(self, inputs: Dict[str, str]) -> Dict[str, str]:
+        query = inputs.get("input", inputs.get("query", ""))
+        session_id = inputs.get("session_id", "default")
+        if not query:
+            return {"rtmdk_context": ""}
+        embedding = self.embedder(query)
+        return {"rtmdk_context": self._retrieve_and_format(query, embedding, session_id)}
 
     def load_memory_variables_with_embedding(
         self, inputs: Dict[str, str], embedding: NDArray
@@ -6466,122 +4576,7 @@ class RTMDKMemory(BaseModel):
         session_id = inputs.get("session_id", "default")
         if not query:
             return {"rtmdk_context": ""}
-
-        # Use provided embedding instead of calling self.embedder()
-        phase = self._get_phase(session_id, embedding)
-
-        # Phase 18: Engram-based retrieval (if enabled)
-        if self.engram_manager is not None and self.engram_manager.index.size > 0:
-            node_embs = {}
-            for nid, node in self.field.nodes.items():
-                emb = self._get_node_embedding(nid, node)
-                if emb is not None:
-                    node_embs[nid] = emb
-
-            engram_results = self.engram_manager.retrieve_engrams(
-                embedding, node_embs, top_k=self.field.cfg.top_k
-            )
-
-            if engram_results:
-                results = self.engram_manager.expand_engrams(
-                    engram_results, self.field, top_k=self.field.cfg.top_k
-                )
-                self.field.stats["engram_retrievals"] += 1
-            else:
-                results = self.field.query(embedding, phase, top_k=self.field.cfg.top_k, session_id=session_id)
-        else:
-            results = self.field.query(embedding, phase, top_k=self.field.cfg.top_k, session_id=session_id)
-
-        # Session-scoped retrieval
-        if session_id and session_id != "default" and results:
-            session_results = [
-                (nid, score, node) for nid, score, node in results
-                if node.content.get("session") == session_id
-            ]
-            if len(session_results) < self.field.cfg.top_k:
-                global_results = [
-                    (nid, score, node) for nid, score, node in results
-                    if node.content.get("session") != session_id
-                ]
-                needed = self.field.cfg.top_k - len(session_results)
-                session_results.extend(global_results[:needed])
-            boosted = []
-            for nid, score, node in session_results:
-                if node.content.get("session") == session_id:
-                    score *= 1.5
-                boosted.append((nid, score, node))
-            boosted.sort(key=lambda x: x[1], reverse=True)
-            results = boosted[:self.field.cfg.top_k]
-            self.field.stats["session_scoped_retrievals"] = self.field.stats.get("session_scoped_retrievals", 0) + 1
-
-        # Phase 1: Hybrid retrieval — blend RTMDK resonance with BM25 text scores
-        if self.field.cfg.hybrid_alpha < 1.0 and self.field.bm25_index is not None and results:
-            # Get BM25 scores for the query
-            bm25_results = self.field.bm25_index.search(query, self.field.cfg.top_k * 2)
-            if bm25_results:
-                # Create BM25 score lookup
-                bm25_scores = {nid: score for nid, score in bm25_results}
-                # Normalize BM25 scores to [0, 1]
-                max_bm25 = max(bm25_scores.values()) if bm25_scores else 1.0
-                if max_bm25 > 0:
-                    bm25_scores = {nid: s / max_bm25 for nid, s in bm25_scores.items()}
-
-                # Blend scores: final = α × resonance + (1-α) × bm25
-                alpha = self.field.cfg.hybrid_alpha
-                blended = []
-                for nid, score, node in results:
-                    bm25_score = bm25_scores.get(nid, 0.0)
-                    blended_score = alpha * score + (1 - alpha) * bm25_score
-                    blended.append((nid, blended_score, node))
-
-                # Also add high-BM25 nodes that weren't in RTMDK results
-                for nid, bm25_score in bm25_scores.items():
-                    if nid not in [n[0] for n in blended] and bm25_score > self.field.cfg.min_response:
-                        node = self.field.nodes.get(nid)
-                        if node:
-                            blended_score = alpha * 0.0 + (1 - alpha) * bm25_score
-                            blended.append((nid, blended_score, node))
-
-                blended.sort(key=lambda x: x[1], reverse=True)
-                results = blended[:self.field.cfg.top_k]
-                self.field.stats["hybrid_retrievals"] = self.field.stats.get("hybrid_retrievals", 0) + 1
-
-        # Context formatting (same as load_memory_variables)
-        if self.config.proactive_clarification and results:
-            max_score = results[0][1] if results else 0.0
-            threshold = self.field.cfg.min_response * self.config.clarification_threshold_ratio
-            if 0 < max_score < threshold:
-                clarification = self._generate_clarification(results, query)
-                self.field.stats["clarifications_generated"] += 1
-                return {"rtmdk_context": clarification}
-
-        if self.config.attention_tokens and results:
-            context = format_context(results, ContextFormat.ATTENTION)
-        elif self.config.attention_bias and results:
-            context = format_cognitive_context(results, bias_applied=True)
-            self.field.stats["attention_bias_applied"] += 1
-        elif self.config.cognitive_compression and results:
-            context = self.field._cognitive_compress(results)
-            self.field.stats["cognitive_compressions"] += 1
-        else:
-            context = format_context(results, self.config.context_format)
-
-        if self.config.symbolic_overlay and self.field.symbolic_overlay and results:
-            facts = []
-            for nid, score, node in results[:3]:
-                text = node.content.get("text", "")
-                concepts = self.field.symbolic_overlay._extract_concepts(text)
-                facts.extend(concepts)
-            if facts:
-                symbolic_ctx = self.field.symbolic_overlay.get_symbolic_context(facts, max_depth=2)
-                if symbolic_ctx:
-                    context += "\n\n" + symbolic_ctx
-                    self.field.stats["n_symbolic_inferences"] += 1
-                    n_conflicts = sum(1 for r in self.field.symbolic_overlay.rules.values()
-                                     if r.is_contextual_exception)
-                    self.field.stats["n_symbolic_conflicts"] = n_conflicts
-
-        return {"rtmdk_context": context}
+        return {"rtmdk_context": self._retrieve_and_format(query, embedding, session_id)}
 
     def _get_node_embedding(self, nid: str, node) -> Optional[np.ndarray]:
         """Retrieve stored embedding for a node, or approximate from latent position."""
@@ -6901,7 +4896,7 @@ class RTMDKMemory(BaseModel):
             self.field.stats["tda_trend"] = self.field.tda_monitor.get_trend()
         if self.field.dp:
             self.field.stats["privacy_budget_spent"] = self.field.dp.get_privacy_spent()
-        return {**self.field.stats, "config": asdict(self.config)}
+        return {**self.field.stats, "config": self.config.asdict()}
 
     # Phase 11 Track 4: Counterfactual imagination
     def imagine_counterfactual(self, base_query: str, intervention: Dict[str, float]) -> List[Dict]:
@@ -6913,12 +4908,14 @@ class RTMDKMemory(BaseModel):
         self.field.export_field(path)
 
     @classmethod
-    def import_field(cls, path: str, embedder: Callable) -> "RTMDKMemory":
-        return RTMDKField.import_field(path, embedder)
+    def import_field(cls, path: str, embedder: Callable,
+                     wal_path: Optional[str] = None) -> "RTMDKMemory":
+        return RTMDKField.import_field(path, embedder, wal_path=wal_path)
 
     # Phase 16 Track 3: Universal Memory Protocol
     def export_ump(self, path: str, source: str = "", comment: str = ""):
         """Export to Universal Memory Protocol format."""
+        path = _sanitize_path(path)
         if not UMP_AVAILABLE:
             raise ImportError("Universal Memory Protocol not available. Install rtmdk.support.ump")
         ump = UniversalMemoryProtocol.export(self.field, self, source=source, comment=comment)
@@ -6928,16 +4925,16 @@ class RTMDKMemory(BaseModel):
     @classmethod
     def import_ump(cls, path: str, embedder: Callable) -> "RTMDKMemory":
         """Import from Universal Memory Protocol format."""
+        path = _sanitize_path(path)
         if not UMP_AVAILABLE:
             raise ImportError("Universal Memory Protocol not available. Install rtmdk.support.ump")
-        with open(path, "r", encoding="utf-8") as f:
-            ump = json.load(f)
+        ump = _safe_json_load(path)
         return UniversalMemoryProtocol.import_ump(ump, embedder, memory_class=cls)
 
     def validate_ump(self, path: str) -> Dict:
         """Validate a UMP file."""
+        path = _sanitize_path(path)
         if not UMP_AVAILABLE:
             return {"valid": False, "issues": ["UMP not available"]}
-        with open(path, "r", encoding="utf-8") as f:
-            ump = json.load(f)
+        ump = _safe_json_load(path)
         return UniversalMemoryProtocol.validate(ump)

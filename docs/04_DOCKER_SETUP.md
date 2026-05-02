@@ -208,7 +208,7 @@ docker-compose -f docker-compose.prod.yml logs -f
 ### Smoke test
 
 ```bash
-python smoke_test.py
+python tests/smoke_test.py
 ```
 
 ### Python REPL

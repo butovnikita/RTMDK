@@ -1,7 +1,7 @@
 # RTMDK Calibration Reference & Values Guide
 
 Полная документация по калибровке переменных, гиперпараметров и конфигураций системы RTMDK.
-Данные актуальны для `rtmdk_memory_v8.py` и `swarm_memory.py`.
+Данные актуальны для `rtmdk/memory/core.py` и `rtmdk/support/swarm.py`.
 
 ---
 

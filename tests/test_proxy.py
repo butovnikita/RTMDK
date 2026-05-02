@@ -4,7 +4,7 @@ test_proxy.py — Quick test for RTMDK SillyTavern Proxy.
 Usage:
     1. Make sure RTMDK server is running (python rtmdk_server.py)
     2. Make sure Proxy is running (python rtmdk_st_proxy.py)
-    3. Run this test: python test_proxy.py
+    3. Run this test: python tests/test_proxy.py
 """
 
 import requests

@@ -49,6 +49,20 @@ class MemoryNode:
     goal_relevance: float = 0.0
     rl_reward: float = 0.0
 
+    # Phase 20: Domain Memory & Concept Lifecycle
+    domain: str = "general"
+    subdomain: str = ""
+    topic: str = ""
+    state: str = "stable"  # stable | weakened | disputed | deprecated
+    confidence: float = 1.0
+    revision_count: int = 0
+    conflict_with: List[str] = field(default_factory=list)
+    valid_from: Optional[float] = None
+    valid_until: Optional[float] = None
+    evidence_spans: List[Dict] = field(default_factory=list)
+    fact_state: str = "active"  # active | expired | superseded
+    superseded_by: Optional[str] = None
+
     def to_dict(self) -> Dict:
         d = asdict(self)
         d["latent_pos"] = self.latent_pos.tolist()

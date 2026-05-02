@@ -25,14 +25,16 @@ class LearnableKernel:
         }
 
     def resonance_response(self, dist: float, phase_diff: float, amplitude: float, salience: float) -> float:
-        spatial = math.exp(-dist / self.bandwidth)
+        # Bug #1 FIX: Gaussian kernel for sharper resonance
+        spatial = math.exp(-dist ** 2 / (2 * self.bandwidth ** 2))
         phase_align = 0.5 + 0.5 * math.cos(phase_diff)
         return spatial * ((1 - self.phase_coupling) + self.phase_coupling * phase_align) * amplitude * salience
 
     def compute_gradients(self, dist: float, phase_diff: float, amplitude: float, salience: float, loss_gradient: float = 1.0):
-        spatial = math.exp(-dist / self.bandwidth)
+        # Bug #1 FIX: Gaussian kernel gradient
+        spatial = math.exp(-dist ** 2 / (2 * self.bandwidth ** 2))
         phase_align = 0.5 + 0.5 * math.cos(phase_diff)
-        self._grad_bandwidth += loss_gradient * spatial * (dist / self.bandwidth ** 2) * ((1 - self.phase_coupling) + self.phase_coupling * phase_align) * amplitude * salience
+        self._grad_bandwidth += loss_gradient * spatial * (dist ** 2 / (self.bandwidth ** 3)) * ((1 - self.phase_coupling) + self.phase_coupling * phase_align) * amplitude * salience
         self._grad_phase_coupling += loss_gradient * spatial * (phase_align - 1.0) * amplitude * salience
 
     def step(self):

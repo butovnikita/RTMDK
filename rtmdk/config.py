@@ -5,7 +5,7 @@ The single source of truth for RTMDKConfig is in rtmdk.memory.core.
 This module provides convenience presets only.
 
 Usage:
-    from rtmdk.config import RTMDKConfig  # Same as from rtmdk.memory.core import RTMDKConfig
+    from rtmdk.config import RTMDKConfig  # Same as from rtmdk.memory.config import RTMDKConfig
     config = RTMDKConfig.local()           # Minimal resources
     config = RTMDKConfig.production()      # Full optimizations
     config = RTMDKConfig.research()        # Maximum accuracy
@@ -25,7 +25,7 @@ Presets:
 from rtmdk.memory.core import RTMDKConfig
 
 # Re-export enums
-from rtmdk.memory.core import (
+from rtmdk.memory.config import (
     ConsolidationMode, Backend, ContextFormat,
     FieldHealth, EvalMode,
 )
@@ -131,6 +131,8 @@ def _legal() -> RTMDKConfig:
         ssm_dynamics=False,
         trust_consensus=True,
         neuro_symbolic_prover=True, prover_backend="z3",
+        domain_aware_retrieval=True,
+        domain_consolidation_guard=True,
     )
 
 
@@ -148,6 +150,8 @@ def _medical() -> RTMDKConfig:
         ssm_dynamics=False,
         trust_consensus=True, trust_min_reputation=0.5,
         neuro_symbolic_prover=True, prover_backend="z3",
+        domain_aware_retrieval=True,
+        domain_consolidation_guard=True,
     )
 
 

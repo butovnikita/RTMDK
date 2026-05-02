@@ -1,7 +1,9 @@
-"""rtmdk/support/triton_backend.py — Sparse resonance kernel via Triton/CUDA.
+"""rtmdk/support/triton_backend.py — GPU-accelerated resonance backend.
 
-Provides GPU-accelerated sparse resonance computation for large fields (N > 2000).
-Falls back to TorchBackend or numpy if Triton is unavailable.
+NOTE: This is NOT a true Triton kernel backend. It uses PyTorch/CUDA for
+GPU acceleration with a placeholder for future Triton kernel integration.
+The class has been renamed to GPUBackend to reflect its actual implementation.
+TritonBackend remains available as a backward-compatible alias.
 """
 from __future__ import annotations
 from typing import Optional, List
@@ -119,10 +121,11 @@ def _triton_resonance(query_latents, query_phases, node_positions, node_phases,
     return response.cpu().numpy().astype(np.float32)
 
 
-class TritonBackend:
-    """GPU backend with Triton/CUDA acceleration for resonance computation.
+class GPUBackend:
+    """GPU backend using PyTorch/CUDA for resonance computation.
 
     Auto-selects backend based on availability and field size.
+    A Triton kernel implementation may replace the torch fallback in future.
     """
 
     def __init__(self, min_nodes_for_gpu: int = 2000):
@@ -171,17 +174,9 @@ class TritonBackend:
     @property
     def backend_name(self) -> str:
         if self._use_gpu and TRITON_AVAILABLE:
-            return "triton"
+            return "cuda"
         return "numpy"
 
-    def get_state(self) -> Dict:
-        """Get state for serialization (Fix 4: needed for export_to_dict)."""
-        return {
-            "min_nodes_for_gpu": self.min_nodes_for_gpu,
-            "fallback_reason": self._fallback_reason,
-        }
 
-    def load_state(self, state: Dict):
-        """Load state from serialization (Fix 4: needed for import_from_dict)."""
-        self.min_nodes_for_gpu = state.get("min_nodes_for_gpu", self.min_nodes_for_gpu)
-        self._fallback_reason = state.get("fallback_reason", "")
+# Backward-compatible alias
+TritonBackend = GPUBackend

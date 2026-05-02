@@ -932,7 +932,7 @@ def create_dashboard_router(memory: Callable, config: Dict[str, Any]) -> APIRout
             temp_path = f.name
 
         try:
-            from rtmdk_memory_v8 import RTMDKMemory
+            from rtmdk.memory.core import RTMDKMemory
             mem2 = RTMDKMemory.import_field(temp_path, mem.embedder)
             if not mem2 or len(mem2.field.nodes) == 0:
                 return {"error": "Failed to restore: no nodes found"}

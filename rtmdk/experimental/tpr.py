@@ -22,8 +22,8 @@ class TensorProductRepresentation:
     
     def _get_role_vector(self, role: str) -> np.ndarray:
         if role not in self.role_vectors:
-            np.random.seed(hash(role) % 2**32)
-            v = np.random.randn(self.role_dim).astype(np.float32)
+            rng = np.random.default_rng(hash(role) % 2**32)
+            v = rng.standard_normal(self.role_dim).astype(np.float32)
             v /= np.linalg.norm(v) + 1e-8
             self.role_vectors[role] = v
         return self.role_vectors[role]
