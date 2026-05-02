@@ -15,6 +15,7 @@ import json
 import asyncio
 import logging
 import logging.handlers
+import httpx
 from typing import Dict, List, Optional
 from pathlib import Path
 import numpy as np
@@ -52,6 +53,9 @@ ENABLE_LM_STUDIO = os.getenv("RTMDK_ENABLE_LM_STUDIO", "true").lower() == "true"
 ENABLE_API_AUTH = os.getenv("RTMDK_ENABLE_API_AUTH", "true").lower() == "true"
 MAX_PAYLOAD_SIZE = int(os.getenv("RTMDK_MAX_PAYLOAD_SIZE", "1048576"))
 ALLOWED_ORIGINS = os.getenv("RTMDK_ALLOWED_ORIGINS", "*").split(",")
+
+# Shared async HTTP client
+http_client = httpx.AsyncClient()
 
 # ============================================================================
 # LOGGING
@@ -147,11 +151,10 @@ class EmbeddingRequest(BaseModel):
 # HELPER FUNCTIONS
 # ============================================================================
 
-def check_lm_studio() -> bool:
+async def check_lm_studio() -> bool:
     """Check if LM Studio is available."""
-    import requests
     try:
-        resp = requests.get(f"{LM_STUDIO_URL}/models", timeout=3)
+        resp = await http_client.get(f"{LM_STUDIO_URL}/models", timeout=3)
         global chat_model
         models = resp.json().get("data", [])
         if models:
@@ -163,16 +166,15 @@ def check_lm_studio() -> bool:
     return False
 
 
-def get_embedding(text: str, model: str = None) -> np.ndarray:
+async def get_embedding(text: str, model: str = None) -> np.ndarray:
     """Get embedding from LM Studio or cache."""
     if text in embedder_cache:
         return embedder_cache[text]
 
-    import requests
     embedder_model = model or EMBED_MODEL
 
     try:
-        resp = requests.post(
+        resp = await http_client.post(
             f"{LM_STUDIO_URL}/embeddings",
             json={"model": embedder_model, "input": text},
             timeout=30,
@@ -311,7 +313,7 @@ async def startup():
     logger.info(f"LM Studio URL: {LM_STUDIO_URL}")
 
     if ENABLE_LM_STUDIO:
-        lm_studio_available = check_lm_studio()
+        lm_studio_available = await check_lm_studio()
 
     memory = init_memory()
     asyncio.create_task(_auto_save_loop())
@@ -364,7 +366,6 @@ async def chat_completions(req: ChatCompletionRequest):
     if not lm_studio_available:
         raise HTTPException(status_code=503, detail="LM Studio not available")
 
-    import requests
     system_prompt = await run_sync(build_system_prompt, req.messages, req.session_id)
     messages = []
     if system_prompt:
@@ -389,7 +390,7 @@ async def chat_completions(req: ChatCompletionRequest):
     actual_model = request_model or chat_model or "local-model"
 
     try:
-        resp = requests.post(
+        resp = await http_client.post(
             f"{LM_STUDIO_URL}/chat/completions",
             json={
                 "model": actual_model,
@@ -401,15 +402,14 @@ async def chat_completions(req: ChatCompletionRequest):
             timeout=lm_timeout,
             stream=req.stream,
         )
-    except requests.exceptions.RequestException as e:
+    except httpx.RequestError as e:
         raise HTTPException(status_code=502, detail=str(e))
 
     if req.stream:
         async def stream_generator():
             try:
-                for chunk in resp.iter_lines():
-                    if chunk:
-                        line = chunk.decode("utf-8", errors='replace')
+                async for line in resp.aiter_lines():
+                    if line:
                         if line.startswith("data: "):
                             yield f"{line}\n\n"
             except Exception:
@@ -456,7 +456,7 @@ async def create_embeddings(req: EmbeddingRequest):
     inputs = req.input if isinstance(req.input, list) else [req.input]
     data = []
     for i, text in enumerate(inputs):
-        embedding = get_embedding(text)
+        embedding = await get_embedding(text)
         data.append({
             "object": "embedding",
             "embedding": embedding.tolist(),
