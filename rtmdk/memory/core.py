@@ -19,8 +19,10 @@ KuramotoSync, FederatedRTMDK, FederatedNode, detect_modality, cross_modal_resona
 
 from __future__ import annotations
 import asyncio
+import functools
 import json
 import math
+import threading
 import re
 import time
 import os
@@ -1576,6 +1578,15 @@ def build_system_prompt(context: str, fmt: ContextFormat, use_structured: bool) 
 # CORE: RTmdKField v7
 # ============================================================================
 
+def _locked(method):
+    """Decorator that wraps method in self._write_lock RLock."""
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with self._write_lock:
+            return method(self, *args, **kwargs)
+    return wrapper
+
+
 class RTMDKField:
     def __init__(self, config: RTMDKConfig, projection_matrix: Optional[NDArray] = None):
         self.cfg = config
@@ -1706,7 +1717,7 @@ class RTMDKField:
 
         # Fix 3: Lifecycle & Throttling Controls
         self._workers: List[asyncio.Task] = []
-        self._write_lock: Optional[asyncio.Lock] = None
+        self._write_lock = threading.RLock()
         self._backpressure_events = 0
         self._heavy_modules_degraded = False  # Track if we've entered degraded mode
         self._last_successful_step = time.time()  # For recovery tracking
@@ -2471,6 +2482,7 @@ class RTMDKField:
         self._meta_controller = value
         self._meta_controller_initialized = value is not None
 
+    @_locked
     def add_node(self, embedding: NDArray, content: Dict, phase: Optional[float] = None,
                  node_id: Optional[str] = None, session_id: Optional[str] = None, modality: str = "text",
                  skip_projection: bool = False) -> str:
@@ -2713,6 +2725,7 @@ class RTMDKField:
     def get_effective_threshold(self) -> float:
         return self.adaptive_threshold.get_threshold() if self.adaptive_threshold else self.cfg.tension_threshold
 
+    @_locked
     def consolidate(self, mode: Optional[ConsolidationMode] = None) -> List[str]:
         mode = mode or self.cfg.consolidation_mode
         updated = []
@@ -3828,9 +3841,6 @@ class RTMDKField:
         if self._workers_started:
             return
         self._workers_started = True
-        if self._write_lock is None:
-            self._write_lock = asyncio.Lock()
-        
         # Fix 3: Track tasks for cancellation in clear()
         t_evolve = asyncio.create_task(self._worker_evolve())
         t_save = asyncio.create_task(self._worker_save())
@@ -3961,6 +3971,7 @@ class RTMDKField:
         self.stats["avg_rl_reward"] = self.rl_feedback_loop.get_average_reward()
         return reward
 
+    @_locked
     def export_field(self, path: str, fmt: str = "json"):
         """Export field state to file.
 
