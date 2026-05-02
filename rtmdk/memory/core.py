@@ -49,6 +49,7 @@ try:
 except ImportError:
     _HNSWLIB_AVAILABLE = False
 from rtmdk.support.bm25 import BM25Index
+from rtmdk.memory.conformal import ConformalCalibrator
 
 logger = logging.getLogger(__name__)
 
@@ -1417,6 +1418,11 @@ class RTMDKField:
         self._cached_bw: Optional[NDArray] = None              # (N,) per-node bandwidth (P1.2)
         self._cache_dirty: bool = False
 
+        # P1.1: Conformal prediction calibrator
+        self.conformal_calibrator: Optional[ConformalCalibrator] = None
+        if config.conformal_prediction:
+            self.conformal_calibrator = ConformalCalibrator(alpha=config.conformal_alpha)
+
         if config.learn_projection:
             self.projection_learner = IncPCAProjection(
                 config.embedding_dim, config.pca_n_components or config.latent_dim,
@@ -1746,6 +1752,10 @@ class RTMDKField:
             # B1: Tension cache stats
             "tension_cache_hits": 0, "tension_cache_misses": 0,
             "tension_cache_hit_rate": 0.0,
+            # P1.1: Conformal prediction stats
+            "conformal_threshold": 0.0,
+            "conformal_confidence": 0.0,
+            "conformal_prediction_set_size": 0,
         }
         # Phase 21: Self-Organizing Tokenizer + Embedding Field
         self.sot_tokenizer: Optional[Any] = None
@@ -2187,42 +2197,43 @@ class RTMDKField:
             self.stats["shard_hits"] += len(candidate_ids)
         else:
             # Always use vectorized batch resonance (removes Python-loop overhead)
-            return self._query_vectorized(query_latent, phase, top_k, modality, session_id, t0)
+            results = self._query_vectorized(query_latent, phase, top_k, modality, session_id, t0)
 
         # Fallback loop path (should rarely reach here)
-        search_nodes = [(nid, self.nodes[nid]) for nid in self.node_index]
-        if self.cfg.sparse_routing:
-            self.stats["shard_misses"] += 1
+        if 'results' not in locals():
+            search_nodes = [(nid, self.nodes[nid]) for nid in self.node_index]
+            if self.cfg.sparse_routing:
+                self.stats["shard_misses"] += 1
 
-        # Fix 3: Hyperbolic pre-filtering for candidate selection
-        if self.cfg.hyperbolic and len(search_nodes) > top_k * 5:
-            query_norm = np.linalg.norm(query_latent)
-            if query_norm >= self.cfg.ball_radius:
-                query_latent = query_latent * (self.cfg.ball_radius - 1e-6) / max(query_norm, 1e-8)
-            prefiltered = []
+            # Fix 3: Hyperbolic pre-filtering for candidate selection
+            if self.cfg.hyperbolic and len(search_nodes) > top_k * 5:
+                query_norm = np.linalg.norm(query_latent)
+                if query_norm >= self.cfg.ball_radius:
+                    query_latent = query_latent * (self.cfg.ball_radius - 1e-6) / max(query_norm, 1e-8)
+                prefiltered = []
+                for nid, node in search_nodes:
+                    # FIX: Never mutate node.latent_pos — use a local copy for projection
+                    node_norm = np.linalg.norm(node.latent_pos)
+                    node_pos = node.latent_pos
+                    if node_norm >= self.cfg.ball_radius:
+                        node_pos = node.latent_pos * (self.cfg.ball_radius - 1e-6) / max(node_norm, 1e-8)
+                    hdist = poincare_dist(query_latent, node_pos, self.cfg.ball_radius)
+                    if hdist < 3.0:
+                        prefiltered.append((nid, node))
+                if len(prefiltered) > 0:
+                    search_nodes = prefiltered
+
+            results = []
             for nid, node in search_nodes:
-                # FIX: Never mutate node.latent_pos — use a local copy for projection
-                node_norm = np.linalg.norm(node.latent_pos)
-                node_pos = node.latent_pos
-                if node_norm >= self.cfg.ball_radius:
-                    node_pos = node.latent_pos * (self.cfg.ball_radius - 1e-6) / max(node_norm, 1e-8)
-                hdist = poincare_dist(query_latent, node_pos, self.cfg.ball_radius)
-                if hdist < 3.0:
-                    prefiltered.append((nid, node))
-            if len(prefiltered) > 0:
-                search_nodes = prefiltered
+                resp = self._resonance_response(query_latent, phase, node, query_modality=modality)
+                # Session priority bonus: boost nodes matching the queried session
+                if session_id and node.content.get("session") == session_id:
+                    resp *= 1.3  # 30% boost for session-matching nodes
+                if resp >= self.cfg.min_response:
+                    results.append((nid, resp, node))
+                    node.last_resonated = time.time()
 
-        results = []
-        for nid, node in search_nodes:
-            resp = self._resonance_response(query_latent, phase, node, query_modality=modality)
-            # Session priority bonus: boost nodes matching the queried session
-            if session_id and node.content.get("session") == session_id:
-                resp *= 1.3  # 30% boost for session-matching nodes
-            if resp >= self.cfg.min_response:
-                results.append((nid, resp, node))
-                node.last_resonated = time.time()
-
-        results.sort(key=lambda x: x[1], reverse=True)
+            results.sort(key=lambda x: x[1], reverse=True)
         self.stats["total_queries"] += 1
 
         # Track shard query time
@@ -2307,6 +2318,9 @@ class RTMDKField:
             avg_age = np.mean([time.time() - n.created_at for _, _, n in results])
             self.meta_memory_eval.record_recall("", top_score, node_age=avg_age)
             self.stats["recall_accuracy"] = self.meta_memory_eval.evaluate_recall_accuracy()
+
+        # P1.1: Conformal prediction filtering
+        results = self._apply_conformal_filter(results)
 
         return results[:top_k]
 
@@ -2514,6 +2528,42 @@ class RTMDKField:
         self.wal.append_add_node(nid, content, modality)
         self._dirty = True
         return nid
+
+    def calibrate(self, query_embedding: NDArray, node_id: str, is_relevant: bool) -> None:
+        """Add a labeled query-result pair to the conformal calibration set.
+
+        Args:
+            query_embedding: the query embedding used for retrieval
+            node_id: the retrieved node id
+            is_relevant: whether this node was judged relevant for the query
+        """
+        if not self.cfg.conformal_prediction or self.conformal_calibrator is None:
+            return
+        if not is_relevant or node_id not in self.nodes:
+            return
+        node = self.nodes[node_id]
+        query_latent = self._project(query_embedding)
+        score = self._resonance_response(query_latent, node.phase, node)
+        self.conformal_calibrator.add_sample(score)
+
+    def _apply_conformal_filter(self, results: List[Tuple[str, float, MemoryNode]]) -> List[Tuple[str, float, MemoryNode]]:
+        """Filter query results through conformal prediction threshold.
+
+        Returns only results whose score lies in the conformal prediction set.
+        Records threshold and confidence in stats.
+        """
+        if not self.cfg.conformal_prediction or self.conformal_calibrator is None:
+            return results
+        if self.conformal_calibrator.n_calibrated < self.cfg.conformal_min_calib:
+            return results
+        scores = [score for _, score, _ in results]
+        nids = [nid for nid, _, _ in results]
+        pred_set, confidence, threshold = self.conformal_calibrator.predict(scores, nids)
+        self.stats["conformal_threshold"] = threshold
+        self.stats["conformal_confidence"] = confidence
+        self.stats["conformal_prediction_set_size"] = len(pred_set)
+        pred_set_lookup = set(pred_set)
+        return [(nid, score, node) for nid, score, node in results if nid in pred_set_lookup]
 
     def _invalidate_tension_cache(self, node_id: Optional[str] = None):
         """B1: Invalidate tension cache. If node_id given, invalidate that node and neighbors.

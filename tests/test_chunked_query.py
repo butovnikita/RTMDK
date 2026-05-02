@@ -12,6 +12,7 @@ def _make_field(n_nodes: int, batch_size: int):
         embedding_dim=64,
         use_hnsw=False,
         gpu_batch_size=batch_size,
+        bm25_fallback=False,
     )
     field = RTMDKField(config)
     rng = np.random.default_rng(42)

@@ -74,6 +74,9 @@ _FIELD_GROUPS: Dict[str, str] = {
     "ball_radius": "MemorySystemConfig",
     "adaptive_bandwidth": "CoreConfig",
     "adaptive_bandwidth_k": "CoreConfig",
+    "conformal_prediction": "CoreConfig",
+    "conformal_alpha": "CoreConfig",
+    "conformal_min_calib": "CoreConfig",
     "bandwidth": "CoreConfig",
     "bias_temperature": "RetrievalConfig",
     "bm25_b": "CoreConfig",
@@ -302,6 +305,9 @@ class CoreConfig:
         bandwidth: float = 1.0
         adaptive_bandwidth: bool = False
         adaptive_bandwidth_k: int = 5
+        conformal_prediction: bool = False
+        conformal_alpha: float = 0.10
+        conformal_min_calib: int = 50
         attraction_lr: float = 0.02
         phase_sync_lr: float = 0.01
         decay_rate: float = 0.997  # Matches server default — half-life ~230 steps
@@ -711,6 +717,9 @@ class RTMDKConfig:
             ("RTMDK_BANDWIDTH", "bandwidth", float),
             ("RTMDK_ADAPTIVE_BANDWIDTH", "adaptive_bandwidth", lambda x: x.lower() == "true"),
             ("RTMDK_ADAPTIVE_BANDWIDTH_K", "adaptive_bandwidth_k", int),
+            ("RTMDK_CONFORMAL_PREDICTION", "conformal_prediction", lambda x: x.lower() == "true"),
+            ("RTMDK_CONFORMAL_ALPHA", "conformal_alpha", float),
+            ("RTMDK_CONFORMAL_MIN_CALIB", "conformal_min_calib", int),
             ("RTMDK_USE_HNSW", "use_hnsw", lambda x: x.lower() == "true"),
             ("RTMDK_HNSW_M", "hnsw_m", int),
             ("RTMDK_BM25_FALLBACK", "bm25_fallback", lambda x: x.lower() == "true"),
