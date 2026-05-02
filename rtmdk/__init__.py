@@ -7,7 +7,7 @@ Usage:
     memory = RTMDKMemory(config=config, embedder=my_embedder)
 """
 
-__version__ = "8.0.0"
+__version__ = "8.1.0"
 
 from rtmdk.memory.config import RTMDKConfig, ConsolidationMode, Backend, ContextFormat, FieldHealth, EvalMode
 from rtmdk.memory.core import RTMDKMemory, RTMDKField
