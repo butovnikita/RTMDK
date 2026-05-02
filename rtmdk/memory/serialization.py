@@ -139,7 +139,19 @@ class FieldSerializer:
             try:
                 import msgpack
                 import zlib
-                packed = msgpack.packb(data, use_bin_type=True)
+
+                def _msgpack_default(obj):
+                    if isinstance(obj, set):
+                        return list(obj)
+                    if isinstance(obj, np.ndarray):
+                        return obj.tolist()
+                    if isinstance(obj, (np.float32, np.float64)):
+                        return float(obj)
+                    if isinstance(obj, (np.int32, np.int64)):
+                        return int(obj)
+                    raise TypeError(f"Cannot serialize {type(obj)}")
+
+                packed = msgpack.packb(data, use_bin_type=True, default=_msgpack_default)
                 compressed = zlib.compress(packed)
                 tmp_path = path + ".tmp"
                 with open(tmp_path, "wb") as f:

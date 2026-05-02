@@ -70,8 +70,9 @@ def _handle_sigterm(signum, frame):
     logger.info("Received SIGTERM, initiating graceful shutdown...")
     if _memory_ref is not None:
         try:
-            _memory_ref.export_field(MEMORY_FILE)
-            logger.info(f"Memory saved to {MEMORY_FILE} on SIGTERM")
+            save_path = _get_save_path(MEMORY_FILE)
+            _memory_ref.export_field(save_path)
+            logger.info(f"Memory saved to {save_path} on SIGTERM")
         except Exception:
             logger.exception("Failed to save memory on SIGTERM")
     # Allow default handler to terminate the process
@@ -83,8 +84,9 @@ signal.signal(signal.SIGTERM, _handle_sigterm)
 def _atexit_save():
     if _memory_ref is not None:
         try:
-            _memory_ref.export_field(MEMORY_FILE)
-            logger.info(f"Memory saved to {MEMORY_FILE} at exit")
+            save_path = _get_save_path(MEMORY_FILE)
+            _memory_ref.export_field(save_path)
+            logger.info(f"Memory saved to {save_path} at exit")
         except Exception:
             logger.exception("Failed to save memory at exit")
 
@@ -252,27 +254,34 @@ def init_memory() -> RTMDKMemory:
     logger.info(f"  latent_dim={config.latent_dim}, decay={config.decay_rate}")
     logger.info(f"  tension={config.tension_threshold}, top_k={config.top_k}")
 
-    if os.path.exists(MEMORY_FILE):
+    load_path = MEMORY_FILE
+    if not os.path.exists(load_path):
+        msgpack_path = os.path.splitext(load_path)[0] + ".msgpack"
+        if os.path.exists(msgpack_path):
+            load_path = msgpack_path
+
+    if os.path.exists(load_path):
         try:
-            mem = RTMDKMemory.import_field(MEMORY_FILE, get_embedding, wal_path=MEMORY_FILE + ".wal")
-            logger.info(f"Loaded memory from {MEMORY_FILE}: {len(mem.field.nodes)} nodes")
+            mem = RTMDKMemory.import_field(load_path, get_embedding, wal_path=load_path + ".wal")
+            logger.info(f"Loaded memory from {load_path}: {len(mem.field.nodes)} nodes")
             return mem
         except Exception:
-            logger.warning("Failed to load memory from %s", MEMORY_FILE, exc_info=True)
+            logger.warning("Failed to load memory from %s", load_path, exc_info=True)
             import shutil
-            backup_path = MEMORY_FILE + f".corrupted.{int(time.time())}"
+            backup_path = load_path + f".corrupted.{int(time.time())}"
             try:
-                shutil.copy2(MEMORY_FILE, backup_path)
-                os.remove(MEMORY_FILE)
+                shutil.copy2(load_path, backup_path)
+                os.remove(load_path)
             except Exception:
                 pass
 
-    mem = RTMDKMemory(config=config, embedder=get_embedding, wal_path=MEMORY_FILE + ".wal")
+    save_path = _get_save_path(MEMORY_FILE)
+    mem = RTMDKMemory(config=config, embedder=get_embedding, wal_path=save_path + ".wal")
     try:
-        os.makedirs(os.path.dirname(MEMORY_FILE), exist_ok=True)
-        mem.export_field(MEMORY_FILE)
-        os.chmod(MEMORY_FILE, 0o600)  # Secure file permissions
-        logger.info(f"Created new memory file at {MEMORY_FILE}")
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        mem.export_field(save_path)
+        os.chmod(save_path, 0o600)  # Secure file permissions
+        logger.info(f"Created new memory file at {save_path}")
     except Exception:
         logger.warning("Failed to create initial memory file", exc_info=True)
 
@@ -323,15 +332,31 @@ def build_system_prompt(user_messages: List[ChatMessage], session_id: str) -> st
     return system_prompt
 
 
+def _get_save_path(base_path: str) -> str:
+    """Select msgpack path if available, otherwise json."""
+    try:
+        import msgpack
+        if not base_path.endswith(".msgpack"):
+            return os.path.splitext(base_path)[0] + ".msgpack"
+    except ImportError:
+        pass
+    return base_path
+
+
 def auto_save():
-    """Auto-save memory to file."""
-    if memory:
-        try:
-            os.makedirs(os.path.dirname(MEMORY_FILE), exist_ok=True)
-            memory.export_field(MEMORY_FILE)
-            logger.debug(f"Auto-saved memory: {len(memory.field.nodes)} nodes")
-        except Exception:
-            logger.exception("Auto-save failed")
+    """Auto-save memory to file if state changed since last save."""
+    if not memory:
+        return
+    if not memory.field._dirty:
+        logger.debug("Auto-save skipped: no changes since last save")
+        return
+    try:
+        save_path = _get_save_path(MEMORY_FILE)
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        memory.export_field(save_path)
+        logger.debug(f"Auto-saved memory: {len(memory.field.nodes)} nodes to {save_path}")
+    except Exception:
+        logger.exception("Auto-save failed")
 
 
 # ============================================================================
