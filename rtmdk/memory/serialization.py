@@ -144,6 +144,8 @@ class FieldSerializer:
                 tmp_path = path + ".tmp"
                 with open(tmp_path, "wb") as f:
                     f.write(compressed)
+                    f.flush()
+                    os.fsync(f.fileno())
                 os.replace(tmp_path, path)
             except ImportError:
                 import warnings
@@ -151,11 +153,15 @@ class FieldSerializer:
                 tmp_path = path + ".tmp"
                 with open(tmp_path, "w", encoding="utf-8") as f:
                     json.dump(data, f, ensure_ascii=False, indent=2, default=str)
+                    f.flush()
+                    os.fsync(f.fileno())
                 os.replace(tmp_path, path)
         else:
             tmp_path = path + ".tmp"
             with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2, default=str)
+                f.flush()
+                os.fsync(f.fileno())
             os.replace(tmp_path, path)
             try:
                 os.chmod(path, 0o600)
@@ -164,7 +170,8 @@ class FieldSerializer:
 
     @staticmethod
     def field_from_file(path: str, embedder: Callable,
-                        config: Optional[RTMDKConfig] = None):
+                        config: Optional[RTMDKConfig] = None,
+                        wal_path: Optional[str] = None):
         """Import field state from file.
 
         Args:
@@ -241,7 +248,7 @@ class FieldSerializer:
 
         logger.info(f"import_field: loading config (context_format={cd.get('context_format', '?')})")
 
-        memory = RTMDKMemory(config=config, embedder=embedder)
+        memory = RTMDKMemory(config=config, embedder=embedder, wal_path=wal_path)
 
         # Load projection
         if config.learn_projection and "projection_state" in data:

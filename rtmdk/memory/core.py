@@ -1588,11 +1588,16 @@ def _locked(method):
 
 
 class RTMDKField:
-    def __init__(self, config: RTMDKConfig, projection_matrix: Optional[NDArray] = None):
+    def __init__(self, config: RTMDKConfig, projection_matrix: Optional[NDArray] = None,
+                 wal_path: Optional[str] = None):
         self.cfg = config
         self._rng = np.random.default_rng(config.seed)
         self.nodes: Dict[str, MemoryNode] = {}
         self.node_index: List[str] = []
+
+        # WAL for durability
+        from rtmdk.memory.wal import WAL
+        self.wal = WAL(wal_path, enabled=wal_path is not None)
 
         # P0: Cached numpy arrays for vectorized query — avoids O(N) Python loop on every query
         self._cached_positions: Optional[NDArray] = None       # (N, latent_dim)
@@ -2605,6 +2610,7 @@ class RTMDKField:
         if self.event_scheduler:
             self.event_scheduler.enqueue("node_added", {"node_id": nid, "modality": modality})
 
+        self.wal.append_add_node(nid, content, modality)
         return nid
 
     def _invalidate_tension_cache(self, node_id: Optional[str] = None):
@@ -3039,6 +3045,7 @@ class RTMDKField:
         if updated:
             self._cache_dirty = True
 
+        self.wal.append_consolidate(updated)
         return updated
 
     def _verify_consistency(self, updated_nodes: List[str], pre_state: Optional[Dict] = None):
@@ -3996,6 +4003,7 @@ class RTMDKField:
         logger.info(f"export_field: exporting {n_nodes} nodes to {path}")
         from rtmdk.memory.serialization import FieldSerializer
         FieldSerializer.field_to_file(self, path, fmt)
+        self.wal.truncate()
 
     def get_state(self) -> Dict[str, Any]:
         """Get lightweight state dict for SOT persistence."""
@@ -4021,10 +4029,11 @@ class RTMDKField:
             self._sot_field_ema = np.array(state["sot_field_ema"], dtype=np.float32)
 
     @classmethod
-    def import_field(cls, path: str, embedder: Callable) -> "RTMDKMemory":
+    def import_field(cls, path: str, embedder: Callable,
+                     wal_path: Optional[str] = None) -> "RTMDKMemory":
         path = _sanitize_path(path)
         from rtmdk.memory.serialization import FieldSerializer
-        return FieldSerializer.field_from_file(path, embedder)
+        return FieldSerializer.field_from_file(path, embedder, wal_path=wal_path)
 
         if config.learn_projection and "projection_state" in data:
             memory.field.projection_learner.load_state(data["projection_state"])
@@ -4351,19 +4360,21 @@ class RTMDKMemory(BaseModel):
     embedder: Callable[[str], NDArray[np.float32]]
     field: Optional[RTMDKField] = Field(default=None, exclude=True)
     session_phases: Dict[str, float] = Field(default_factory=dict)
+    wal_path: Optional[str] = Field(default=None, exclude=True)
 
     @model_validator(mode="before")
     @classmethod
     def _init_field(cls, data):
         if isinstance(data, dict) and data.get("field") is None:
             cfg = data.get("config", RTMDKConfig())
+            wal = data.get("wal_path")
             data = dict(data)
-            data["field"] = RTMDKField(cfg)
+            data["field"] = RTMDKField(cfg, wal_path=wal)
         return data
 
     def model_post_init(self, __context):
         if self.field is None:
-            object.__setattr__(self, "field", RTMDKField(self.config))
+            object.__setattr__(self, "field", RTMDKField(self.config, wal_path=self.wal_path))
         # Fix 4: Auto-start async workers if async_pipeline is enabled
         if self.config.async_pipeline and not self.field._workers_started:
             try:
@@ -4882,8 +4893,9 @@ class RTMDKMemory(BaseModel):
         self.field.export_field(path)
 
     @classmethod
-    def import_field(cls, path: str, embedder: Callable) -> "RTMDKMemory":
-        return RTMDKField.import_field(path, embedder)
+    def import_field(cls, path: str, embedder: Callable,
+                     wal_path: Optional[str] = None) -> "RTMDKMemory":
+        return RTMDKField.import_field(path, embedder, wal_path=wal_path)
 
     # Phase 16 Track 3: Universal Memory Protocol
     def export_ump(self, path: str, source: str = "", comment: str = ""):

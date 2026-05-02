@@ -221,7 +221,7 @@ def init_memory() -> RTMDKMemory:
 
     if os.path.exists(MEMORY_FILE):
         try:
-            mem = RTMDKMemory.import_field(MEMORY_FILE, get_embedding)
+            mem = RTMDKMemory.import_field(MEMORY_FILE, get_embedding, wal_path=MEMORY_FILE + ".wal")
             logger.info(f"Loaded memory from {MEMORY_FILE}: {len(mem.field.nodes)} nodes")
             return mem
         except Exception:
@@ -234,7 +234,7 @@ def init_memory() -> RTMDKMemory:
             except Exception:
                 pass
 
-    mem = RTMDKMemory(config=config, embedder=get_embedding)
+    mem = RTMDKMemory(config=config, embedder=get_embedding, wal_path=MEMORY_FILE + ".wal")
     try:
         os.makedirs(os.path.dirname(MEMORY_FILE), exist_ok=True)
         mem.export_field(MEMORY_FILE)
