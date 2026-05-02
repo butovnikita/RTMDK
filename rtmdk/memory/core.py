@@ -193,6 +193,7 @@ from rtmdk.support.projection import IncPCAProjection
 from rtmdk.support.torch_backend import TorchBackend
 from rtmdk.support.learnable import LearnableKernel, DifferentiableConsolidation
 from rtmdk.support.meta_controller import MetaController
+from rtmdk.support.circuit_breaker import CircuitBreaker
 
 
 
@@ -1708,6 +1709,23 @@ class RTMDKField:
         self._backpressure_events = 0
         self._heavy_modules_degraded = False  # Track if we've entered degraded mode
         self._last_successful_step = time.time()  # For recovery tracking
+
+        # P1: Per-subsystem circuit breakers (replaces _safe_run catch-all)
+        self._circuit_breakers: Dict[str, CircuitBreaker] = {
+            "ODEEvolve": CircuitBreaker("ODEEvolve", default=0),
+            "Consolidate": CircuitBreaker("Consolidate", default=[]),
+            "SelfHeal": CircuitBreaker("SelfHeal"),
+            "PredictorFreeEnergy": CircuitBreaker("PredictorFreeEnergy", default=0.0),
+            "PredictorUpdate": CircuitBreaker("PredictorUpdate"),
+            "SelfSupervise": CircuitBreaker("SelfSupervise"),
+            "TDA": CircuitBreaker("TDA"),
+            "MetaKernelAdapt": CircuitBreaker("MetaKernelAdapt"),
+            "MetaControllerOptimize": CircuitBreaker("MetaControllerOptimize", default={}),
+            "MetaControllerApply": CircuitBreaker("MetaControllerApply"),
+            "FederatedSync": CircuitBreaker("FederatedSync"),
+            "ODESmoothness": CircuitBreaker("ODESmoothness", default=1.0),
+            "ShardUpdate": CircuitBreaker("ShardUpdate"),
+        }
 
         # B1: Tension caching
         self._tension_cache: Dict[str, Tuple[float, float]] = {}  # node_id -> (tension, step)
@@ -3237,7 +3255,7 @@ class RTMDKField:
         
         if self.cfg.continuous_dynamics and self.ode_dynamics:
             # Fix: Safe run for ODE to prevent crashes
-            self._safe_run("ODEEvolve", self.evolve_continuous, inputs, use_sde=self.cfg.sde_noise_level > 0, default=0)
+            self._circuit_breakers["ODEEvolve"].call(self.evolve_continuous, inputs, use_sde=self.cfg.sde_noise_level > 0)
             return
             
         if inputs:
@@ -3330,11 +3348,11 @@ class RTMDKField:
 
         # Consolidation: periodic instead of probabilistic to avoid hot path spikes
         if len(self.nodes) > 10 and self._step_counter % 20 == 0:
-            self._safe_run("Consolidate", self.consolidate, default=[])
+            self._circuit_breakers["Consolidate"].call(self.consolidate)
 
         # Self-healing: every N steps
         if self.cfg.self_healing and self._step_counter % self.cfg.healing_check_freq == 0:
-            self._safe_run("SelfHeal", self._self_heal)
+            self._circuit_breakers["SelfHeal"].call(self._self_heal)
 
         # Tier-specific decay: every step (cheap)
         tier_counts = defaultdict(int)
@@ -3365,14 +3383,14 @@ class RTMDKField:
             state = self._encode_field_state()
             self._state_history.append(state)
             if len(self._state_history) >= 2:
-                fe = self._safe_run("PredictorFreeEnergy", self.predictor.compute_free_energy, self._state_history[-2], self._state_history[-1], default=0.0)
+                fe = self._circuit_breakers["PredictorFreeEnergy"].call(self.predictor.compute_free_energy, self._state_history[-2], self._state_history[-1])
                 self.stats["free_energy"] = fe
                 self.stats["prediction_error"] = float(np.mean((self.predictor.predict(self._state_history[-2]) - self._state_history[-1]) ** 2))
                 self.stats["surprise_level"] = float(np.clip(fe, 0, 1))
                 if fe > 0.3 and len(self.nodes) > 10:
-                    self._safe_run("Consolidate", self.consolidate, default=[])
+                    self._circuit_breakers["Consolidate"].call(self.consolidate)
                 if fe > 0.01:
-                    self._safe_run("PredictorUpdate", self.predictor.update, self._state_history[-2], self._state_history[-1], lr=self.cfg.pc_lr)
+                    self._circuit_breakers["PredictorUpdate"].call(self.predictor.update, self._state_history[-2], self._state_history[-1], lr=self.cfg.pc_lr)
 
         # Max nodes pruning: every 10 steps
         if self.cfg.max_nodes and len(self.nodes) > self.cfg.max_nodes and self._step_counter % 10 == 0:
@@ -3393,24 +3411,24 @@ class RTMDKField:
 
         # Self-supervision: every 20 steps
         if self.cfg.self_supervision and self._step_counter % 20 == 0:
-            self._safe_run("SelfSupervise", self._self_supervise)
+            self._circuit_breakers["SelfSupervise"].call(self._self_supervise)
 
         # TDA: every N steps (Throttled)
         if backpressure_ok and self.cfg.tda_monitoring and self._step_counter % self.cfg.tda_check_freq == 0:
-            self._safe_run("TDA", self._check_tda)
+            self._circuit_breakers["TDA"].call(self._check_tda)
 
         # Meta-kernel adaptation: every 5 steps
         if self.meta_kernel and self._step_counter % 5 == 0:
-            self._safe_run("MetaKernelAdapt", self.meta_kernel.adapt)
+            self._circuit_breakers["MetaKernelAdapt"].call(self.meta_kernel.adapt)
             self.stats["meta_kurtosis"] = self.meta_kernel.compute_resonance_kurtosis()
             self.stats["meta_bandwidth"] = self.meta_kernel.get_bandwidth()
             self.stats["meta_phase_coupling"] = self.meta_kernel.get_phase_coupling()
 
         # Meta-controller optimization: every N steps (Throttled)
         if backpressure_ok and self.meta_controller and self.meta_controller.should_optimize() and self._step_counter % self.cfg.meta_opt_freq == 0:
-            best_params = self._safe_run("MetaControllerOptimize", self.meta_controller.optimize, self, default={})
+            best_params = self._circuit_breakers["MetaControllerOptimize"].call(self.meta_controller.optimize, self)
             if best_params:
-                self._safe_run("MetaControllerApply", self.meta_controller.apply_params, self, best_params)
+                self._circuit_breakers["MetaControllerApply"].call(self.meta_controller.apply_params, self, best_params)
                 self.stats["meta_optimizations"] += 1
                 self.stats["meta_best_params"] = best_params
 
@@ -3421,15 +3439,15 @@ class RTMDKField:
                 "decay_rate": self.cfg.decay_rate, "tension_threshold": self.cfg.tension_threshold,
                 "phase_coupling": self.cfg.phase_coupling, "bandwidth": self.cfg.bandwidth,
             }
-            self._safe_run("FederatedSync", self.federated.sync_with_peers, local_phases, local_params)
+            self._circuit_breakers["FederatedSync"].call(self.federated.sync_with_peers, local_phases, local_params)
 
         # ODE smoothness: every 10 steps (Throttled)
         if backpressure_ok and self.ode_dynamics and self._step_counter % 10 == 0:
-            self.stats["response_smoothness"] = self._safe_run("ODESmoothness", self.ode_dynamics.compute_response_smoothness, default=1.0)
+            self.stats["response_smoothness"] = self._circuit_breakers["ODESmoothness"].call(self.ode_dynamics.compute_response_smoothness)
 
         # Shard center updates: every 100 steps
         if self.cfg.sparse_routing and self._step_counter % 100 == 0 and len(self.nodes) > self.cfg.num_shards * 2:
-            self._safe_run("ShardUpdate", self._update_shard_centers)
+            self._circuit_breakers["ShardUpdate"].call(self._update_shard_centers)
             self.stats["avg_rl_reward"] = self.rl_feedback_loop.get_average_reward()
 
         # Event-driven processing: every 10 steps
@@ -3804,19 +3822,6 @@ class RTMDKField:
     # PHASE 12 TRACK 4: ASYNC MULTI-THREADED EVOLUTION PIPELINE
     # ========================================================================
 
-    def _safe_run(self, module_name: str, func, *args, default=None, **kwargs):
-        """Execute a heavy module safely, handling exceptions and throttling."""
-        try:
-            return func(*args, **kwargs)
-        except Exception as e:
-            logger.warning(f"[SafeRun] {module_name} failed: {e}")
-            self._backpressure_events += 1
-            # Fix 10: Track when we enter degraded mode
-            if self._backpressure_events >= 3 and not self._heavy_modules_degraded:
-                self._heavy_modules_degraded = True
-                logger.warning("Entering degraded mode — heavy modules disabled until recovery")
-            return default
-
     async def _start_workers(self):
         """Start background worker tasks for async pipeline with lifecycle tracking."""
         if self._workers_started:
@@ -3849,7 +3854,7 @@ class RTMDKField:
                     if backpressure_ok and self.meta_controller:
                         # Safe execution for optimization
                         if self.meta_controller.should_optimize():
-                            self._safe_run("MetaControllerOptimize", self.meta_controller.optimize, self)
+                            self._circuit_breakers["MetaControllerOptimize"].call(self.meta_controller.optimize, self)
 
                     # Decay backpressure on success — also check if we can recover from degraded mode
                     if self._backpressure_events > 0:
