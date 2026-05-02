@@ -286,9 +286,11 @@ async def get_embedding(text: str, model: str = None) -> np.ndarray:
     if embedding is None:
         if _PROMETHEUS_AVAILABLE:
             _metric_lm_errors.labels(endpoint="embeddings").inc()
-        logger.warning("Embedding circuit open or failed, using fallback")
-        rng = np.random.default_rng(hash(text) % 2**32)
-        emb = rng.standard_normal(768).astype(np.float32) * 0.1
+        logger.warning("Embedding fallback for: %s...", text[:50])
+        # Deterministic fallback: stable for same text, low amplitude to minimize field distortion
+        rng = np.random.default_rng(hash(text) & 0xFFFFFFFF)
+        emb = rng.standard_normal(768).astype(np.float32)
+        emb = emb / (np.linalg.norm(emb) + 1e-8) * 0.01
         embedder_cache.set(text, emb)
         return emb
 

@@ -3053,6 +3053,8 @@ class RTMDKField:
         to_remove = [nid for nid in self.node_index
                      if self.nodes[nid].amplitude < self.cfg.min_amplitude
                      or self.nodes[nid].salience < self.cfg.min_amplitude * 0.5]
+        if to_remove:
+            self.wal.append_delete(to_remove)
         for nid in to_remove:
             if self.cfg.use_hnsw and self.hnsw_index:
                 self.hnsw_index.remove(nid)
@@ -3342,6 +3344,8 @@ class RTMDKField:
             sorted_nodes = sorted(self.node_index, key=lambda nid: self.nodes[nid].salience * self.nodes[nid].amplitude)
             n_pruned = len(self.nodes) - self.cfg.max_nodes
             pruned_ids = set(sorted_nodes[:n_pruned])
+            if pruned_ids:
+                self.wal.append_delete(list(pruned_ids))
             for nid in pruned_ids:
                 if self.cfg.use_hnsw and self.hnsw_index:
                     self.hnsw_index.remove(nid)
