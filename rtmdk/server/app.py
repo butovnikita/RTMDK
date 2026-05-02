@@ -58,6 +58,37 @@ ALLOWED_ORIGINS = os.getenv("RTMDK_ALLOWED_ORIGINS", "*").split(",")
 http_client = httpx.AsyncClient()
 
 # ============================================================================
+# SIGNAL / LIFECYCLE HANDLERS
+# ============================================================================
+
+import atexit
+import signal
+
+_memory_ref = None  # set in startup_event
+
+def _handle_sigterm(signum, frame):
+    logger.info("Received SIGTERM, initiating graceful shutdown...")
+    if _memory_ref is not None:
+        try:
+            _memory_ref.export_field(MEMORY_FILE)
+            logger.info(f"Memory saved to {MEMORY_FILE} on SIGTERM")
+        except Exception:
+            logger.exception("Failed to save memory on SIGTERM")
+    # Allow default handler to terminate the process
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _handle_sigterm)
+
+@atexit.register
+def _atexit_save():
+    if _memory_ref is not None:
+        try:
+            _memory_ref.export_field(MEMORY_FILE)
+            logger.info(f"Memory saved to {MEMORY_FILE} at exit")
+        except Exception:
+            logger.exception("Failed to save memory at exit")
+
+# ============================================================================
 # LOGGING
 # ============================================================================
 
@@ -316,6 +347,8 @@ async def startup():
         lm_studio_available = await check_lm_studio()
 
     memory = init_memory()
+    global _memory_ref
+    _memory_ref = memory
     asyncio.create_task(_auto_save_loop())
 
     logger.info(f"Server ready on {SERVER_HOST}:{SERVER_PORT}")
@@ -334,6 +367,16 @@ async def _auto_save_loop():
 async def shutdown():
     logger.info("RTMDK server shutting down...")
     if memory:
+        # Gracefully stop background workers
+        for task in memory.field._workers:
+            if not task.done():
+                task.cancel()
+                try:
+                    await asyncio.wait_for(task, timeout=10.0)
+                except (asyncio.CancelledError, asyncio.TimeoutError):
+                    pass
+        memory.field._workers.clear()
+
         try:
             os.makedirs(os.path.dirname(MEMORY_FILE), exist_ok=True)
             await run_sync(memory.export_field, MEMORY_FILE)
