@@ -2139,6 +2139,23 @@ class RTMDKField:
         self._cached_causal_boost = causal_boost
         self._cache_dirty = False
 
+    def _compute_resonance_chunk(self, positions, phases, amplitudes, saliences,
+                                  modal_weights, gates, causal_boost,
+                                  query_latent, query_phase):
+        """Compute resonance response for a chunk of nodes."""
+        dists = np.linalg.norm(positions - query_latent, axis=1)
+        bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self.cfg.bandwidth
+        bw = max(bw, 1e-8)
+        spatial = np.exp(-dists ** 2 / (2 * bw ** 2))
+        pc = self.meta_kernel.get_phase_coupling() if self.meta_kernel else self.cfg.phase_coupling
+        phase_align = 0.5 + 0.5 * np.cos(phases - query_phase)
+        resp = spatial * ((1 - pc) + pc * phase_align) * amplitudes * saliences * modal_weights
+        if self.cfg.soft_gates:
+            resp = resp * gates
+        if self.causal_engine:
+            resp = resp * causal_boost
+        return resp
+
     def _query_vectorized(self, query_latent: NDArray, query_phase: float,
                           top_k: int, modality: str, session_id: Optional[str],
                           t0: float) -> List[Tuple[str, float, MemoryNode]]:
@@ -2203,63 +2220,79 @@ class RTMDKField:
             causal_boost = self._cached_causal_boost
             session_indices = None
 
-        # Vectorized distance computation
-        dists = np.linalg.norm(positions - query_latent, axis=1)
+        # Phase 3c: Chunked batch computation — prevents OOM and improves cache locality
+        batch_size = self.cfg.gpu_batch_size
+        n = len(positions)
 
-        # Vectorized spatial kernel (gaussian)
-        bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self.cfg.bandwidth
-        bw = max(bw, 1e-8)
-        spatial = np.exp(-dists ** 2 / (2 * bw ** 2))
-
-        # Vectorized phase alignment
-        pc = self.meta_kernel.get_phase_coupling() if self.meta_kernel else self.cfg.phase_coupling
-        phase_align = 0.5 + 0.5 * np.cos(phases - query_phase)
-
-        # Vectorized resonance response
-        resp = spatial * ((1 - pc) + pc * phase_align) * amplitudes * saliences * modal_weights
-
-        # Apply soft gates (matches single query: resp *= gate)
-        if self.cfg.soft_gates:
-            resp = resp * gates
-
-        # Apply causal boosting (matches single query: resp *= (1 + 0.1 * sum(causal_strength)))
-        if self.causal_engine:
-            resp = resp * causal_boost
-
-        # Session boost (vectorized) — apply to full-array case
-        if session_id and session_id != "default" and session_mask is not None and session_indices is None:
-            resp = resp * (1.0 + 0.5 * session_mask.astype(np.float32))
-
-        # Filter by min_response threshold
-        above_threshold = resp >= self.cfg.min_response
-        indices = np.where(above_threshold)[0]
-
-        if len(indices) == 0:
-            self.stats["total_queries"] += 1
-            return []
-
-        # Map back to original node_index if session-filtered
-        if session_indices is not None:
-            indices = session_indices[indices]
-
-        # P1: Use argpartition for partial sort — O(N) instead of O(N log N)
-        n_results = min(len(indices), top_k * 2)  # Get top_k*2 to be safe
-        if len(indices) > top_k * 3:
-            # Partial sort: only guarantee top_k are correct
-            scores = resp[indices]
-            if n_results < len(scores):
-                partition_idx = np.argpartition(scores, -n_results)[-n_results:]
-                top_local = partition_idx[np.argsort(scores[partition_idx])[::-1][:top_k]]
+        if n <= batch_size:
+            # Single chunk — old fast path
+            resp = self._compute_resonance_chunk(
+                positions, phases, amplitudes, saliences,
+                modal_weights, gates, causal_boost,
+                query_latent, query_phase
+            )
+            if session_id and session_id != "default" and session_mask is not None and session_indices is None:
+                resp = resp * (1.0 + 0.5 * session_mask.astype(np.float32))
+            above_threshold = resp >= self.cfg.min_response
+            indices = np.where(above_threshold)[0]
+            if len(indices) == 0:
+                self.stats["total_queries"] += 1
+                return []
+            if session_indices is not None:
+                indices = session_indices[indices]
+            scores = resp[indices] if session_indices is None else resp[np.where(above_threshold)[0]]
+            n_results = min(len(indices), top_k * 2)
+            if len(indices) > top_k * 3:
+                if n_results < len(scores):
+                    partition_idx = np.argpartition(scores, -n_results)[-n_results:]
+                    top_local = partition_idx[np.argsort(scores[partition_idx])[::-1][:top_k]]
+                else:
+                    top_local = np.argsort(scores)[::-1][:top_k]
+                top_indices = indices[top_local]
+                top_scores = scores[top_local]
             else:
-                top_local = np.argsort(scores)[::-1][:top_k]
-            top_indices = indices[top_local]
-            top_scores = scores[top_local]
+                sorted_order = np.argsort(scores)[::-1][:top_k]
+                top_indices = indices[sorted_order]
+                top_scores = scores[sorted_order]
         else:
-            # Small result set — full sort is fine
-            scores = resp[indices]
-            sorted_order = np.argsort(scores)[::-1][:top_k]
-            top_indices = indices[sorted_order]
-            top_scores = scores[sorted_order]
+            # Multi-chunk path — accumulate local top_k then global sort
+            candidates: List[Tuple[int, float]] = []
+            for start in range(0, n, batch_size):
+                end = min(start + batch_size, n)
+                resp = self._compute_resonance_chunk(
+                    positions[start:end], phases[start:end], amplitudes[start:end],
+                    saliences[start:end], modal_weights[start:end], gates[start:end],
+                    causal_boost[start:end], query_latent, query_phase
+                )
+                if session_id and session_id != "default" and session_mask is not None and session_indices is None:
+                    resp = resp * (1.0 + 0.5 * session_mask[start:end].astype(np.float32))
+                above = resp >= self.cfg.min_response
+                local_idx = np.where(above)[0]
+                if len(local_idx) == 0:
+                    continue
+                scores = resp[local_idx]
+                local_idx += start
+                chunk_n = min(len(local_idx), top_k * 2)
+                if len(local_idx) > top_k * 3:
+                    if chunk_n < len(scores):
+                        part_idx = np.argpartition(scores, -chunk_n)[-chunk_n:]
+                        top_local = part_idx[np.argsort(scores[part_idx])[::-1][:top_k]]
+                    else:
+                        top_local = np.argsort(scores)[::-1][:top_k]
+                else:
+                    top_local = np.argsort(scores)[::-1][:top_k]
+                for li in top_local:
+                    candidates.append((int(local_idx[li]), float(scores[li])))
+            if not candidates:
+                self.stats["total_queries"] += 1
+                return []
+            candidates.sort(key=lambda x: x[1], reverse=True)
+            top_candidates = candidates[:top_k]
+            if session_indices is not None:
+                top_indices = np.array([session_indices[idx] for idx, _ in top_candidates], dtype=np.int64)
+            else:
+                top_indices = np.array([idx for idx, _ in top_candidates], dtype=np.int64)
+            top_scores = np.array([score for _, score in top_candidates], dtype=np.float32)
 
         # Build result list
         results = []
