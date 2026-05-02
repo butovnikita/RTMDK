@@ -6,7 +6,7 @@ from typing import List, Tuple, TYPE_CHECKING
 if TYPE_CHECKING:
     from rtmdk.nodes import MemoryNode
 
-from rtmdk.config import ContextFormat
+from rtmdk.memory.config import ContextFormat
 
 SYSTEM_PROMPT_TEMPLATES = {
     ContextFormat.PLAIN: (

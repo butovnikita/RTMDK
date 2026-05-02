@@ -9,7 +9,7 @@ from numpy.typing import NDArray
 from scipy.spatial.distance import cdist
 
 if TYPE_CHECKING:
-    from rtmdk.config import FieldHealth
+    from rtmdk.memory.config import FieldHealth
     from rtmdk.nodes import MemoryNode
 
 
@@ -52,7 +52,7 @@ class TopologyHealer:
         return float(isolated / len(nodes))
 
     def compute_field_health(self, nodes: Dict[str, "MemoryNode"]) -> Tuple["FieldHealth", Dict]:
-        from rtmdk.config import FieldHealth
+        from rtmdk.memory.config import FieldHealth
         diagnostics = {}
         dead = self.detect_dead_zones(nodes)
         diagnostics["dead_zones"] = len(dead)
