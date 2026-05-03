@@ -280,6 +280,7 @@ _FIELD_GROUPS: Dict[str, str] = {
     "sot_skipgram_window": "SOTConfig",
     "sot_subword_seed": "SOTConfig",
     "sot_bootstrap_projection": "SOTConfig",
+    "sot_tokenization_mode": "SOTConfig",
     "sparse_routing": "RoutingConfig",
     "ssm_dynamics": "DynamicsConfig",
     "ssm_state_dim": "DynamicsConfig",
@@ -610,6 +611,7 @@ class SOTConfig:
         sot_skipgram_window: int = 1  # 1=adjacent only, >1=skip-gram window
         sot_subword_seed: bool = False  # Pre-seed with common byte n-grams
         sot_bootstrap_projection: Optional[str] = None  # Path to .npz bootstrap file
+        sot_tokenization_mode: str = "byte"  # "byte" or "word"
 
 
 @dataclass(init=False, repr=False, eq=False)

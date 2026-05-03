@@ -324,22 +324,46 @@ where $\text{kdist}_i$ = distance to $k$-th nearest neighbor ($k=5$).
 
 ---
 
-### SOT-J: SBERT Bootstrap (Cold-Start Fix)
-**Status:** 🟡 In Progress | **Estimate:** 1 day
+### SOT-J: SBERT Bootstrap + Word-Level Tokenization
+**Status:** ✅ Done | **Impact:** Recall@1 0.22 → 0.80 (1000 QA)
 
-**Problem:** Byte-level tokens + PMI on small corpus still insufficient for semantic retrieval (Recall@1 ~0.27-0.30 vs BM25 0.73).
+**Problem:** Byte-level tokens cannot capture word-level semantics. "earthquake" and "quake" share no bytes → SBERT bootstrap on bytes gives marginal gain (0.23 vs 0.22).
 
-**Solution:** `bootstrap_from_teacher()` uses `all-MiniLM-L6-v2` as teacher. Offline ridge regression learns projection from byte counts → SBERT space. Standalone utility: `rtmdk/memory/bootstrap_sbert.py`.
+**Solution:** 
+1. **Word-level tokenization** (`tokenization_mode="word"`): split on whitespace/punctuation, each word gets an embedding.
+2. **SBERT bootstrap** (`bootstrap_from_teacher`): iterative update of word embeddings toward teacher targets, then ridge regression on projection matrix.
 
 **Benchmark (200 QA):**
 | Method | Recall@1 |
 |--------|----------|
 | BM25 | 0.730 |
-| SOT v1 (default) | 0.290 |
-| SOT v2 (warm-start + subword + attention) | 0.270 |
-| SOT v3 (SBERT bootstrap) | 0.295 |
+| Byte v1 | 0.300 |
+| Word v1 | 0.360 |
+| Word + warm-start | 0.410 |
+| **Word + SBERT bootstrap** | **0.670** |
 
-**Next:** Train projection on full 1000-QA corpus; evaluate at scale.
+**Benchmark (1000 QA):**
+| Method | Recall@1 |
+|--------|----------|
+| BM25 | 0.691 |
+| Byte v1 | 0.224 |
+| Word v1 | 0.356 |
+| **Word + SBERT bootstrap** | **0.799** |
+
+**Analysis:**
+- Word-level solves the fundamental byte-token mismatch.
+- SBERT bootstrap gives semantic cold-start: word embeddings initialized from teacher signals.
+- **0.799 > BM25 0.691**: SOT now exceeds BM25 on this benchmark.
+
+**Config:**
+```python
+RTMDKConfig(
+    latent_dim=64,
+    sot_enabled=True,
+    sot_tokenization_mode="word",
+)
+# Then call field.sot_tokenizer.bootstrap_from_teacher(texts, teacher_fn)
+```
 
 ---
 

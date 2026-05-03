@@ -39,6 +39,7 @@ class SOTokenizer:
         subword_seed: bool = False,
         attention_pooling: bool = False,
         skipgram_window: int = 1,
+        tokenization_mode: str = "byte",
     ):
         self.latent_dim = latent_dim
         self.token_dim = token_dim or latent_dim
@@ -49,12 +50,18 @@ class SOTokenizer:
         self.subword_seed = subword_seed
         self.attention_pooling = attention_pooling
         self.skipgram_window = max(1, skipgram_window)
+        self.tokenization_mode = tokenization_mode
 
         self.token_embeddings: Dict[int, np.ndarray] = {}
         self.merges: Dict[Tuple[int, int], int] = {}
         self.cooccurrence: Dict[Tuple[int, int], float] = defaultdict(float)
         self.token_frequency: Dict[int, float] = defaultdict(float)
         self.token_idf: Dict[int, float] = {}
+
+        # Word-level vocab
+        self.word_to_id: Dict[str, int] = {}
+        self.id_to_word: Dict[int, str] = {}
+        self._unk_token_id: Optional[int] = None
 
         # Learnable projection: token_dim -> latent_dim
         if self.token_dim == self.latent_dim:
@@ -68,9 +75,18 @@ class SOTokenizer:
                 q, _ = np.linalg.qr(self.projection)
                 self.projection = q[:, :self.latent_dim].astype(np.float32)
 
-        self._init_byte_embeddings()
-        if subword_seed:
-            self._seed_subword_tokens()
+        if self.tokenization_mode == "byte":
+            self._init_byte_embeddings()
+            if subword_seed:
+                self._seed_subword_tokens()
+        else:
+            # Word mode: reserve IDs 0..255 for special / fallback
+            for i in range(self.initial_byte_vocab):
+                emb = self._rng.standard_normal(self.token_dim).astype(np.float32)
+                norm = np.linalg.norm(emb)
+                if norm > 0:
+                    emb /= norm
+                self.token_embeddings[i] = emb
 
     def _init_byte_embeddings(self):
         for i in range(self.initial_byte_vocab):
@@ -144,18 +160,23 @@ class SOTokenizer:
         teacher_embed_fn,
         n_epochs: int = 30,
         lr: float = 0.05,
+        fit_projection_only: bool = True,
     ):
         """Bootstrap SOT embeddings from a teacher model (e.g. SBERT).
         
-        For each token, computes the average teacher embedding of all texts
-        containing that token, then nudges the token embedding toward that target.
-        Also learns a projection matrix mapping token space to teacher space.
+        Two modes:
+        - fit_projection_only=True (default): keeps token embeddings fixed,
+          learns a projection matrix W such that mean(token_emb) @ W ≈ teacher_emb.
+          This is more stable and preserves byte-level structure.
+        - fit_projection_only=False: iteratively updates token embeddings toward
+          teacher targets, then fine-tunes projection. May overfit.
         
         Args:
             texts: List of texts to use for bootstrap.
             teacher_embed_fn: Callable(text) -> np.ndarray (teacher embedding).
-            n_epochs: Number of optimization epochs.
-            lr: Learning rate for token embedding updates.
+            n_epochs: Number of optimization epochs (only used when fit_projection_only=False).
+            lr: Learning rate for token embedding updates (only used when fit_projection_only=False).
+            fit_projection_only: If True, only fit the projection matrix via Ridge regression.
         """
         if not texts:
             return
@@ -195,43 +216,38 @@ class SOTokenizer:
         
         logger.info(f"SOT bootstrap: teacher shape {teacher_matrix.shape}, reduced to {teacher_reduced.shape}")
         
-        # Build token → text indices mapping
-        token_to_indices: Dict[int, List[int]] = defaultdict(list)
-        for idx, text in enumerate(valid_texts):
-            tokens = self.encode(text)
-            for t in set(tokens):
-                token_to_indices[t].append(idx)
-        
-        # Iteratively update token embeddings toward teacher targets
-        for epoch in range(n_epochs):
-            total_delta = 0.0
-            for token_id, indices in token_to_indices.items():
-                if token_id not in self.token_embeddings:
-                    continue
-                # Target = mean of teacher embeddings for texts containing this token
-                target = np.mean(teacher_reduced[indices], axis=0).astype(np.float32)
-                # Current token embedding (after projection)
-                current = self.token_embeddings[token_id] @ self.projection
-                # Gradient: pull current toward target
-                error = target - current
-                # Backprop through projection: delta_token = error @ projection.T
-                delta_token = lr * (error @ self.projection.T)
-                # Clip gradient
-                delta_norm = np.linalg.norm(delta_token)
-                if delta_norm > 1.0:
-                    delta_token /= delta_norm
-                self.token_embeddings[token_id] += delta_token
-                # Renormalize
-                norm = np.linalg.norm(self.token_embeddings[token_id])
-                if norm > 0:
-                    self.token_embeddings[token_id] /= norm
-                total_delta += np.linalg.norm(delta_token)
+        if not fit_projection_only:
+            # Build token → text indices mapping
+            token_to_indices: Dict[int, List[int]] = defaultdict(list)
+            for idx, text in enumerate(valid_texts):
+                tokens = self.encode(text)
+                for t in set(tokens):
+                    token_to_indices[t].append(idx)
             
-            if epoch % 10 == 0:
-                logger.info(f"SOT bootstrap epoch {epoch}: avg delta={total_delta / len(token_to_indices):.4f}")
+            # Iteratively update token embeddings toward teacher targets
+            for epoch in range(n_epochs):
+                total_delta = 0.0
+                for token_id, indices in token_to_indices.items():
+                    if token_id not in self.token_embeddings:
+                        continue
+                    target = np.mean(teacher_reduced[indices], axis=0).astype(np.float32)
+                    current = self.token_embeddings[token_id] @ self.projection
+                    error = target - current
+                    delta_token = lr * (error @ self.projection.T)
+                    delta_norm = np.linalg.norm(delta_token)
+                    if delta_norm > 1.0:
+                        delta_token /= delta_norm
+                    self.token_embeddings[token_id] += delta_token
+                    norm = np.linalg.norm(self.token_embeddings[token_id])
+                    if norm > 0:
+                        self.token_embeddings[token_id] /= norm
+                    total_delta += np.linalg.norm(delta_token)
+                
+                if epoch % 10 == 0:
+                    logger.info(f"SOT bootstrap epoch {epoch}: avg delta={total_delta / len(token_to_indices):.4f}")
         
-        # Fine-tune projection matrix via Ridge regression
-        logger.info("SOT bootstrap: fine-tuning projection matrix...")
+        # Fit projection matrix via Ridge regression
+        logger.info("SOT bootstrap: fitting projection matrix...")
         X = []
         Y = []
         for idx, text in enumerate(valid_texts):
@@ -245,11 +261,10 @@ class SOTokenizer:
             X = np.stack(X).astype(np.float32)
             Y = np.stack(Y).astype(np.float32)
             # Ridge: W = (X^T X + λI)^{-1} X^T Y
-            lam = 0.01
+            lam = 1.0  # stronger regularization for stability
             XtX = X.T @ X + lam * np.eye(X.shape[1], dtype=np.float32)
             try:
                 W = np.linalg.solve(XtX, X.T @ Y).astype(np.float32)
-                # Update projection (token_dim → latent_dim)
                 if W.shape == self.projection.shape:
                     self.projection = W
                     logger.info("SOT bootstrap: projection matrix updated via Ridge regression")
@@ -258,7 +273,7 @@ class SOTokenizer:
             except np.linalg.LinAlgError:
                 logger.warning("SOT bootstrap: Ridge regression failed, keeping original projection")
         
-        logger.info(f"SOT bootstrap complete: {len(token_to_indices)} tokens updated")
+        logger.info(f"SOT bootstrap complete")
 
     def warm_start_from_corpus(self, corpus_texts: List[str]):
         """Pre-train token embeddings on a corpus using PMI-based initialization.
@@ -315,14 +330,51 @@ class SOTokenizer:
         logger.info(f"SOT warm-start: processed {len(corpus_texts)} texts, "
                     f"{len(cooc)} co-occurrence pairs, IDF computed for {len(self.token_idf)} bytes")
 
+    def _word_tokenize(self, text: str) -> List[str]:
+        """Simple word tokenization: lowercase, strip punctuation, split on whitespace."""
+        import re
+        text = text.lower()
+        words = re.findall(r"[a-z0-9']+", text)
+        return words
+
+    def _get_word_id(self, word: str) -> int:
+        """Map a word to its token ID, expanding vocab if under limit."""
+        if word in self.word_to_id:
+            return self.word_to_id[word]
+        if self.next_token_id < self.max_vocab:
+            wid = self.next_token_id
+            self.next_token_id += 1
+            self.word_to_id[word] = wid
+            self.id_to_word[wid] = word
+            # Initialize embedding
+            emb = self._rng.standard_normal(self.token_dim).astype(np.float32)
+            norm = np.linalg.norm(emb)
+            if norm > 0:
+                emb /= norm
+            self.token_embeddings[wid] = emb
+            return wid
+        # Fallback to unk
+        if self._unk_token_id is None:
+            self._unk_token_id = self.next_token_id
+            self.next_token_id += 1
+            emb = self._rng.standard_normal(self.token_dim).astype(np.float32)
+            norm = np.linalg.norm(emb)
+            if norm > 0:
+                emb /= norm
+            self.token_embeddings[self._unk_token_id] = emb
+        return self._unk_token_id
+
     def encode(self, text: str) -> List[int]:
-        """Greedy longest-match encoding using current merge table."""
+        """Encode text to token IDs."""
         if not text:
             return []
+        if self.tokenization_mode == "word":
+            words = self._word_tokenize(text)
+            return [self._get_word_id(w) for w in words]
+        # Byte mode (default)
         raw_bytes = list(text.encode("utf-8"))
         if not self.merges:
             return raw_bytes
-
         tokens = raw_bytes[:]
         changed = True
         while changed and len(tokens) > 1:
@@ -344,6 +396,19 @@ class SOTokenizer:
         """Decode tokens back to a string."""
         if not tokens:
             return ""
+        if self.tokenization_mode == "word":
+            words = []
+            for tid in tokens:
+                if tid in self.id_to_word:
+                    words.append(self.id_to_word[tid])
+                elif tid == self._unk_token_id:
+                    words.append("<unk>")
+                elif tid < self.initial_byte_vocab:
+                    words.append(f"<byte_{tid}>")
+                else:
+                    words.append(f"<id_{tid}>")
+            return " ".join(words)
+        # Byte mode
         byte_seq = bytearray()
         stack = list(tokens)
         while stack:

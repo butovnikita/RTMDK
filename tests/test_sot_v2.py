@@ -13,6 +13,40 @@ from rtmdk.memory.core import RTMDKField
 # ------------------------------------------------------------------
 # A: Warm-start
 # ------------------------------------------------------------------
+class TestSOTWordMode:
+    def test_word_mode_encode(self):
+        tok = SOTokenizer(latent_dim=64, token_dim=64, tokenization_mode="word")
+        tokens = tok.encode("Hello world hello")
+        assert len(tokens) == 3
+        assert tok.decode(tokens) == "hello world hello"
+
+    def test_word_mode_vocab_grows(self):
+        tok = SOTokenizer(latent_dim=64, token_dim=64, tokenization_mode="word")
+        tok.encode("the quick brown fox")
+        assert len(tok.word_to_id) == 4
+        tok.encode("the lazy dog")
+        assert len(tok.word_to_id) == 6  # 'lazy', 'dog' added
+
+    def test_word_mode_embed(self):
+        tok = SOTokenizer(latent_dim=64, token_dim=64, tokenization_mode="word")
+        tokens = tok.encode("hello world")
+        emb = tok.embed(tokens)
+        assert emb.shape == (64,)
+        assert np.isfinite(emb).all()
+
+    def test_word_mode_field_integration(self):
+        cfg = RTMDKConfig(latent_dim=64, sot_enabled=True, sot_tokenization_mode="word")
+        field = RTMDKField(cfg)
+        tok = field.sot_tokenizer
+        tokens = tok.encode("coffee is great")
+        emb = tok.embed(tokens)
+        field.add_node(emb, {'text': 'coffee is great'}, node_id='n1')
+        q = tok.encode("coffee")
+        qemb = tok.embed(q)
+        res = field.query(qemb, top_k=1)
+        assert len(res) == 1
+
+
 class TestSOTWarmStart:
     def test_warm_start_reduces_randomness(self):
         tok = SOTokenizer(latent_dim=64, token_dim=64, seed=42)
@@ -234,6 +268,7 @@ class TestSOTV2Integration:
             sot_skipgram_window=3,
             sot_warm_start_corpus=None,
             sot_bootstrap_projection=None,
+            sot_tokenization_mode="word",
         )
         assert cfg.sot_subword_seed is True
         assert cfg.sot_attention_pooling is True
@@ -241,6 +276,7 @@ class TestSOTV2Integration:
         assert cfg.sot_retrieval_feedback is True
         assert cfg.sot_skipgram_window == 3
         assert cfg.sot_bootstrap_projection is None
+        assert cfg.sot_tokenization_mode == "word"
 
     def test_field_initializes_with_v2_features(self):
         cfg = RTMDKConfig(
