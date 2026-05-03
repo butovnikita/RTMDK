@@ -623,6 +623,16 @@ class SOTokenizer:
             "merges": {f"{a},{b}": v for (a, b), v in self.merges.items()},
             "cooccurrence": {f"{a},{b}": v for (a, b), v in self.cooccurrence.items()},
             "projection": self.projection.tolist(),
+            "tokenization_mode": self.tokenization_mode,
+            "max_cooccurrence": self.max_cooccurrence,
+            "skipgram_window": self.skipgram_window,
+            "attention_pooling": self.attention_pooling,
+            "subword_seed": self.subword_seed,
+            "word_to_id": self.word_to_id,
+            "id_to_word": {str(k): v for k, v in self.id_to_word.items()},
+            "unk_token_id": self._unk_token_id,
+            "token_frequency": dict(self.token_frequency),
+            "token_idf": dict(self.token_idf),
         }
 
     def load_state(self, state: dict):
@@ -631,6 +641,11 @@ class SOTokenizer:
         self.max_vocab = state.get("max_vocab", self.max_vocab)
         self.initial_byte_vocab = state.get("initial_byte_vocab", self.initial_byte_vocab)
         self.next_token_id = state.get("next_token_id", self.initial_byte_vocab)
+        self.tokenization_mode = state.get("tokenization_mode", self.tokenization_mode)
+        self.max_cooccurrence = state.get("max_cooccurrence", self.max_cooccurrence)
+        self.skipgram_window = state.get("skipgram_window", self.skipgram_window)
+        self.attention_pooling = state.get("attention_pooling", self.attention_pooling)
+        self.subword_seed = state.get("subword_seed", self.subword_seed)
         self.token_embeddings = {
             int(k): np.array(v, dtype=np.float32)
             for k, v in state.get("token_embeddings", {}).items()
@@ -647,6 +662,11 @@ class SOTokenizer:
             self.projection = np.array(state["projection"], dtype=np.float32)
             assert self.projection.shape == (self.token_dim, self.latent_dim), \
                 f"Projection shape mismatch: {self.projection.shape} vs ({self.token_dim}, {self.latent_dim})"
+        self.word_to_id = state.get("word_to_id", {})
+        self.id_to_word = {int(k): v for k, v in state.get("id_to_word", {}).items()}
+        self._unk_token_id = state.get("unk_token_id", None)
+        self.token_frequency = defaultdict(float, state.get("token_frequency", {}))
+        self.token_idf = state.get("token_idf", {})
 
 
 class ContrastiveHebbian:

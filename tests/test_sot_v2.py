@@ -78,6 +78,20 @@ class TestSOTWordMode:
         assert emb.shape == (64,)
         assert np.isfinite(emb).all()
 
+    def test_word_mode_save_load(self):
+        tok = SOTokenizer(latent_dim=64, token_dim=64, tokenization_mode="word")
+        tok.encode("hello world hello")
+        state = tok.get_state()
+        assert state["tokenization_mode"] == "word"
+        assert state["word_to_id"]["hello"] == state["word_to_id"]["hello"]
+        assert "world" in state["word_to_id"]
+
+        tok2 = SOTokenizer(latent_dim=64, token_dim=64)
+        tok2.load_state(state)
+        assert tok2.tokenization_mode == "word"
+        assert tok2.word_to_id == tok.word_to_id
+        assert tok2.encode("hello world") == tok.encode("hello world")
+
     def test_word_mode_field_integration(self):
         cfg = RTMDKConfig(latent_dim=64, sot_enabled=True, sot_tokenization_mode="word")
         field = RTMDKField(cfg)
