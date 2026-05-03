@@ -454,6 +454,7 @@ rtmdk/
 | Kalman Filter | `test_kalman_filter.py` (15 тестов) | ✅ Pass |
 | Chunked Query | `test_chunked_query.py` (1 тест) | ✅ Pass |
 | SOT / Hebbian | `test_sot_*.py` (88 тестов) | ✅ Pass |
+| Memory Leak | `test_memory_leak.py` (6 тестов) | ✅ Pass |
 | Circuit Breaker | `test_circuit_breaker.py` (7 тестов) | ✅ Pass |
 | Observability | `test_observability.py` (4 тестов) | ✅ Pass |
 | Plugins | `test_plugins.py` (2 тестов) | ✅ Pass |
@@ -461,7 +462,7 @@ rtmdk/
 | Graph Index | `test_naive_graph_index.py` (4 тестов) | ✅ Pass |
 | Proxy | `test_proxy.py` (1 тест) | ✅ Pass |
 
-**Итого: 233 теста, все проходят (pytest, ~35 сек).**
+**Итого: 241 тест, все проходят (pytest, ~43 сек).**
 
 ## Mathematical Enhancements Track (P0–P2)
 
