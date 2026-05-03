@@ -13,7 +13,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy requirements first for better caching
 COPY requirements-prod.txt .
-RUN pip install --no-cache-dir -r requirements-prod.txt
+COPY requirements-sot.txt .
+RUN pip install --no-cache-dir -r requirements-prod.txt -r requirements-sot.txt
 
 # Copy the rtmdk package
 COPY rtmdk/ ./rtmdk/

@@ -1,0 +1,8 @@
+# RTMDK — SOT Optional Requirements
+# Heavy dependencies for SBERT bootstrap and advanced SOT features.
+# Install: pip install -r requirements-sot.txt
+
+sentence-transformers>=2.0.0
+torch>=2.0.0
+transformers>=4.30.0
+fasttext-wheel>=0.9.0
