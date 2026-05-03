@@ -281,6 +281,7 @@ _FIELD_GROUPS: Dict[str, str] = {
     "sot_subword_seed": "SOTConfig",
     "sot_bootstrap_projection": "SOTConfig",
     "sot_tokenization_mode": "SOTConfig",
+    "sot_max_cooccurrence": "SOTConfig",
     "sparse_routing": "RoutingConfig",
     "ssm_dynamics": "DynamicsConfig",
     "ssm_state_dim": "DynamicsConfig",
@@ -612,6 +613,7 @@ class SOTConfig:
         sot_subword_seed: bool = False  # Pre-seed with common byte n-grams
         sot_bootstrap_projection: Optional[str] = None  # Path to .npz bootstrap file
         sot_tokenization_mode: str = "byte"  # "byte" or "word"
+        sot_max_cooccurrence: int = 100_000  # Max co-occurrence entries before pruning
 
 
 @dataclass(init=False, repr=False, eq=False)

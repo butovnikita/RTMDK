@@ -274,11 +274,21 @@ where $\text{kdist}_i$ = distance to $k$-th nearest neighbor ($k=5$).
 ---
 
 ### SOT-C: Co-occurrence Dict Size Limit
-**Status:** 🔴 Not started | **Estimate:** 0.5 days
+**Status:** ✅ Done | **Impact:** OOM risk eliminated
 
 **Problem:** `cooccurrence` dict grows without bound. Long-running instances will OOM.
 
-**Solution:** LRU eviction with max 100K entries; periodic pruning of low-weight pairs.
+**Solution:** `CooccurrenceStore` class with configurable `max_size` (default 100K). When threshold exceeded, drops lowest-weight entries via sort + truncate.
+
+**Config:** `sot_max_cooccurrence: int = 100_000`
+
+**Usage:**
+```python
+tok = SOTokenizer(latent_dim=64, max_cooccurrence=50_000)
+tok.record_cooccurrence(tokens)  # auto-prunes when needed
+stats = tok.cooccurrence.get_stats()
+# {'size': 50000, 'max_size': 50000, 'total_inserts': 123456, 'total_prunes': 73456}
+```
 
 ---
 
@@ -373,9 +383,9 @@ RTMDKConfig(
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| SOT cold start ≈ 30% recall | Semantic retrieval weak | SBERT bootstrap (SOT-J) |
-| Byte-level tokenization | "not good" == "good not" | Attention pooling ✅ (partial) |
-| Co-occurrence unbounded growth | OOM after months | SOT-C |
+| SOT cold start ≈ 30% recall | Semantic retrieval weak | Word-level + SBERT bootstrap ✅ |
+| Byte-level tokenization | "not good" == "good not" | Word-level ✅ |
+| Co-occurrence unbounded growth | OOM after months | CooccurrenceStore ✅ (SOT-C) |
 
 ### 🟡 High
 

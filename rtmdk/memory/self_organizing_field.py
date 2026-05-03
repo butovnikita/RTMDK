@@ -21,6 +21,68 @@ from rtmdk.engines.ssm_dynamics import SSMDynamics
 logger = logging.getLogger(__name__)
 
 
+class CooccurrenceStore:
+    """Bounded co-occurrence dictionary with periodic pruning.
+    
+    Keeps up to `max_size` entries. When the threshold is exceeded,
+    drops the lowest-weight entries to free space.
+    """
+    def __init__(self, max_size: int = 100_000, prune_factor: float = 1.2):
+        self.max_size = max_size
+        self.prune_threshold = int(max_size * prune_factor)
+        self._data: Dict[Tuple[int, int], float] = {}
+        self._total_inserts = 0
+        self._total_prunes = 0
+    
+    def __getitem__(self, key: Tuple[int, int]) -> float:
+        return self._data.get(key, 0.0)
+    
+    def get(self, key: Tuple[int, int], default: float = 0.0) -> float:
+        return self._data.get(key, default)
+    
+    def __setitem__(self, key: Tuple[int, int], value: float):
+        self._data[key] = value
+        self._total_inserts += 1
+    
+    def __contains__(self, key: Tuple[int, int]) -> bool:
+        return key in self._data
+    
+    def items(self):
+        return self._data.items()
+    
+    def keys(self):
+        return self._data.keys()
+    
+    def __iter__(self):
+        return iter(self._data)
+    
+    def __len__(self) -> int:
+        return len(self._data)
+    
+    def __bool__(self) -> bool:
+        return bool(self._data)
+    
+    def prune_if_needed(self):
+        """Remove lowest-weight entries if over threshold."""
+        if len(self._data) <= self.prune_threshold:
+            return
+        # Sort by weight descending, keep top max_size
+        sorted_items = sorted(self._data.items(), key=lambda kv: kv[1], reverse=True)
+        kept = sorted_items[:self.max_size]
+        dropped = len(sorted_items) - len(kept)
+        self._data = dict(kept)
+        self._total_prunes += dropped
+        logger.info(f"CooccurrenceStore pruned: dropped {dropped} entries, kept {len(self._data)}")
+    
+    def get_stats(self) -> Dict[str, int]:
+        return {
+            "size": len(self._data),
+            "max_size": self.max_size,
+            "total_inserts": self._total_inserts,
+            "total_prunes": self._total_prunes,
+        }
+
+
 class SOTokenizer:
     """Self-organizing tokenizer: bytes -> subtokens, driven by field co-occurrence.
 
@@ -40,6 +102,7 @@ class SOTokenizer:
         attention_pooling: bool = False,
         skipgram_window: int = 1,
         tokenization_mode: str = "byte",
+        max_cooccurrence: int = 100_000,
     ):
         self.latent_dim = latent_dim
         self.token_dim = token_dim or latent_dim
@@ -51,10 +114,11 @@ class SOTokenizer:
         self.attention_pooling = attention_pooling
         self.skipgram_window = max(1, skipgram_window)
         self.tokenization_mode = tokenization_mode
+        self.max_cooccurrence = max_cooccurrence
 
         self.token_embeddings: Dict[int, np.ndarray] = {}
         self.merges: Dict[Tuple[int, int], int] = {}
-        self.cooccurrence: Dict[Tuple[int, int], float] = defaultdict(float)
+        self.cooccurrence = CooccurrenceStore(max_size=max_cooccurrence)
         self.token_frequency: Dict[int, float] = defaultdict(float)
         self.token_idf: Dict[int, float] = {}
 
@@ -475,6 +539,8 @@ class SOTokenizer:
                 if a != b:
                     self.cooccurrence[(b, a)] += weight / dist
         
+        self.cooccurrence.prune_if_needed()
+        
         # Update IDF cache if attention pooling enabled
         if self.attention_pooling and self.token_frequency:
             n_docs = sum(1 for _ in self.token_frequency.values())
@@ -573,7 +639,7 @@ class SOTokenizer:
         for k, v in state.get("merges", {}).items():
             a_str, b_str = k.split(",")
             self.merges[(int(a_str), int(b_str))] = int(v)
-        self.cooccurrence = defaultdict(float)
+        self.cooccurrence = CooccurrenceStore(max_size=self.max_cooccurrence)
         for k, v in state.get("cooccurrence", {}).items():
             a_str, b_str = k.split(",")
             self.cooccurrence[(int(a_str), int(b_str))] = float(v)

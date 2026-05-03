@@ -5,7 +5,7 @@ import tempfile
 import json
 import os
 
-from rtmdk.memory.self_organizing_field import SOTokenizer, ContrastiveHebbian
+from rtmdk.memory.self_organizing_field import SOTokenizer, ContrastiveHebbian, CooccurrenceStore
 from rtmdk.memory.config import RTMDKConfig
 from rtmdk.memory.core import RTMDKField
 
@@ -13,6 +13,50 @@ from rtmdk.memory.core import RTMDKField
 # ------------------------------------------------------------------
 # A: Warm-start
 # ------------------------------------------------------------------
+class TestCooccurrenceStore:
+    def test_prune_keeps_high_weights(self):
+        store = CooccurrenceStore(max_size=5)
+        for i in range(10):
+            store[(i, i + 1)] = float(i)
+        store.prune_if_needed()
+        assert len(store) <= 5
+        # Highest weights (9,8,7,6,5) should remain
+        assert (9, 10) in store
+        assert (8, 9) in store
+        assert (0, 1) not in store
+
+    def test_prune_drops_low_weights(self):
+        store = CooccurrenceStore(max_size=3, prune_factor=1.0)
+        store[(1, 2)] = 10.0
+        store[(3, 4)] = 5.0
+        store[(5, 6)] = 1.0
+        store.prune_if_needed()
+        assert len(store) == 3  # threshold = 3, no prune yet
+        store[(7, 8)] = 0.5
+        store.prune_if_needed()
+        assert len(store) <= 3
+        assert (1, 2) in store
+        assert (3, 4) in store
+        assert (7, 8) not in store or (5, 6) not in store
+
+    def test_stats_tracked(self):
+        store = CooccurrenceStore(max_size=2)
+        store[(1, 2)] = 1.0
+        store[(3, 4)] = 2.0
+        stats = store.get_stats()
+        assert stats["size"] == 2
+        assert stats["max_size"] == 2
+        assert stats["total_inserts"] == 2
+
+    def test_integration_with_tokenizer(self):
+        tok = SOTokenizer(latent_dim=16, token_dim=16, max_cooccurrence=10)
+        for i in range(50):
+            tok.record_cooccurrence(list(range(20)), weight=1.0)
+        assert len(tok.cooccurrence) <= 10
+        stats = tok.cooccurrence.get_stats()
+        assert stats["total_prunes"] > 0
+
+
 class TestSOTWordMode:
     def test_word_mode_encode(self):
         tok = SOTokenizer(latent_dim=64, token_dim=64, tokenization_mode="word")

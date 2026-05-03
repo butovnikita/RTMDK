@@ -1803,6 +1803,7 @@ class RTMDKField:
                 attention_pooling=config.sot_attention_pooling,
                 skipgram_window=config.sot_skipgram_window,
                 tokenization_mode=config.sot_tokenization_mode,
+                max_cooccurrence=config.sot_max_cooccurrence,
             )
             # Warm-start from corpus if path provided
             if config.sot_warm_start_corpus:
