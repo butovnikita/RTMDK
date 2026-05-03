@@ -78,6 +78,18 @@ class TestSOTWordMode:
         assert emb.shape == (64,)
         assert np.isfinite(emb).all()
 
+    def test_word_mode_prune_vocab(self):
+        tok = SOTokenizer(latent_dim=64, token_dim=64, tokenization_mode="word")
+        tok.encode("hello world hello")  # hello:2, world:1
+        tok.record_cooccurrence(tok.encode("hello world hello"))
+        tok.prune_vocab(min_freq=2.0)
+        # 'world' should be removed (freq=1)
+        assert "world" not in tok.word_to_id
+        assert "hello" in tok.word_to_id
+        # Encoding 'world' should return unk
+        world_id = tok.encode("world")[0]
+        assert world_id == tok._unk_token_id
+
     def test_word_mode_save_load(self):
         tok = SOTokenizer(latent_dim=64, token_dim=64, tokenization_mode="word")
         tok.encode("hello world hello")

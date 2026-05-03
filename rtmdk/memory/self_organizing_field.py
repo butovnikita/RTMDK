@@ -40,6 +40,9 @@ class CooccurrenceStore:
     def get(self, key: Tuple[int, int], default: float = 0.0) -> float:
         return self._data.get(key, default)
     
+    def pop(self, key: Tuple[int, int], default=None):
+        return self._data.pop(key, default)
+    
     def __setitem__(self, key: Tuple[int, int], value: float):
         self._data[key] = value
         self._total_inserts += 1
@@ -126,6 +129,7 @@ class SOTokenizer:
         self.word_to_id: Dict[str, int] = {}
         self.id_to_word: Dict[int, str] = {}
         self._unk_token_id: Optional[int] = None
+        self._pruned_words: Set[str] = set()
 
         # Learnable projection: token_dim -> latent_dim
         if self.token_dim == self.latent_dim:
@@ -405,6 +409,8 @@ class SOTokenizer:
         """Map a word to its token ID, expanding vocab if under limit."""
         if word in self.word_to_id:
             return self.word_to_id[word]
+        if word in self._pruned_words:
+            return self._unk_token_id or 0
         if self.next_token_id < self.max_vocab:
             wid = self.next_token_id
             self.next_token_id += 1
@@ -612,6 +618,46 @@ class SOTokenizer:
         norms = np.linalg.norm(self.projection, axis=0, keepdims=True)
         self.projection /= np.maximum(norms, 1e-8)
 
+    def prune_vocab(self, min_freq: float = 2.0):
+        """Remove rare tokens from vocabulary (word mode only).
+        
+        Tokens with frequency < min_freq are removed and mapped to unk.
+        This reduces memory footprint and speeds up retrieval.
+        """
+        if self.tokenization_mode != "word":
+            logger.warning("prune_vocab only meaningful in word mode")
+            return
+        to_remove = [tid for tid, freq in self.token_frequency.items()
+                     if freq < min_freq and tid >= self.initial_byte_vocab]
+        if not to_remove:
+            return
+        # Ensure unk token exists
+        if self._unk_token_id is None:
+            self._unk_token_id = self.next_token_id
+            self.next_token_id += 1
+            emb = self._rng.standard_normal(self.token_dim).astype(np.float32)
+            norm = np.linalg.norm(emb)
+            if norm > 0:
+                emb /= norm
+            self.token_embeddings[self._unk_token_id] = emb
+        for tid in to_remove:
+            # Remove from embeddings
+            self.token_embeddings.pop(tid, None)
+            # Remove from word maps
+            word = self.id_to_word.pop(tid, None)
+            if word:
+                self.word_to_id.pop(word, None)
+                self._pruned_words.add(word)
+            # Remove from frequency and idf
+            self.token_frequency.pop(tid, None)
+            self.token_idf.pop(tid, None)
+        # Clean cooccurrence pairs involving removed tokens
+        keys_to_remove = [k for k in self.cooccurrence.keys()
+                          if k[0] in to_remove or k[1] in to_remove]
+        for k in keys_to_remove:
+            self.cooccurrence.pop(k)
+        logger.info(f"prune_vocab: removed {len(to_remove)} rare tokens, vocab={len(self.token_embeddings)}")
+
     def get_state(self) -> dict:
         return {
             "latent_dim": self.latent_dim,
@@ -631,6 +677,7 @@ class SOTokenizer:
             "word_to_id": self.word_to_id,
             "id_to_word": {str(k): v for k, v in self.id_to_word.items()},
             "unk_token_id": self._unk_token_id,
+            "pruned_words": list(self._pruned_words),
             "token_frequency": dict(self.token_frequency),
             "token_idf": dict(self.token_idf),
         }
@@ -665,6 +712,7 @@ class SOTokenizer:
         self.word_to_id = state.get("word_to_id", {})
         self.id_to_word = {int(k): v for k, v in state.get("id_to_word", {}).items()}
         self._unk_token_id = state.get("unk_token_id", None)
+        self._pruned_words = set(state.get("pruned_words", []))
         self.token_frequency = defaultdict(float, state.get("token_frequency", {}))
         self.token_idf = state.get("token_idf", {})
 
