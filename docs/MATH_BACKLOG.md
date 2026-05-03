@@ -455,4 +455,4 @@ RTMDKConfig(
 1. Memory leak profiling under long-running load
 2. Cross-platform CI (Linux/macOS)
 3. Docker image with pre-built FastText model
-4. Benchmark automation script for CI
+4. ✅ Benchmark automation script (`benchmark.py`) — supports bm25, byte, word, word_fasttext, word_sbert
