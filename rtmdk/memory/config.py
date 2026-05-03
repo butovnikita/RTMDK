@@ -282,6 +282,7 @@ _FIELD_GROUPS: Dict[str, str] = {
     "sot_bootstrap_projection": "SOTConfig",
     "sot_bootstrap_corpus": "SOTConfig",
     "sot_bootstrap_model": "SOTConfig",
+    "sot_bootstrap_fasttext_model": "SOTConfig",
     "sot_tokenization_mode": "SOTConfig",
     "sot_max_cooccurrence": "SOTConfig",
     "sparse_routing": "RoutingConfig",
@@ -616,6 +617,7 @@ class SOTConfig:
         sot_bootstrap_projection: Optional[str] = None  # Path to .npz bootstrap file
         sot_bootstrap_corpus: Optional[str] = None  # Path to JSON corpus for auto-bootstrap
         sot_bootstrap_model: str = "all-MiniLM-L6-v2"  # Teacher model for auto-bootstrap
+        sot_bootstrap_fasttext_model: Optional[str] = None  # Path to gensim model for FastText bootstrap
         sot_tokenization_mode: str = "byte"  # "byte" or "word"
         sot_max_cooccurrence: int = 100_000  # Max co-occurrence entries before pruning
 

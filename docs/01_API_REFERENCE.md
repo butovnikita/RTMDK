@@ -513,7 +513,8 @@ print(ctx["rtmdk_context"])
 | `sot_skipgram_window` | 1 | Окно skip-gram для co-occurrence |
 | `sot_bootstrap_projection` | None | Путь к .npz файлу SBERT bootstrap |
 | `sot_bootstrap_corpus` | None | Путь к корпусу для автоматического bootstrap |
-| `sot_bootstrap_model` | "all-MiniLM-L6-v2" | Модель для auto-bootstrap |
+| `sot_bootstrap_model` | "all-MiniLM-L6-v2" | Модель для auto-bootstrap (SBERT) |
+| `sot_bootstrap_fasttext_model` | None | Путь к gensim модели для FastText bootstrap |
 | `sot_max_cooccurrence` | 100_000 | Лимит записей co-occurrence |
 
 **SOT Bootstrap (CLI):**

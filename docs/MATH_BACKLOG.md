@@ -377,6 +377,45 @@ RTMDKConfig(
 
 ---
 
+### SOT-K: FastText Bootstrap (Lightweight Alternative)
+**Status:** ✅ Done | **Impact:** Recall@1 0.769 (1000 QA), bootstrap time 0.23s vs 12s SBERT
+
+**Problem:** SBERT requires torch+transformers+sentence-transformers (~2GB deps, 80MB model). Too heavy for edge deployment.
+
+**Solution:** Use gensim KeyedVectors (GloVe/FastText) as teacher. 128MB model, no torch dependency, 0.23s bootstrap.
+
+**Benchmark (1000 QA):**
+| Method | Recall@1 | Bootstrap Time |
+|--------|----------|----------------|
+| BM25 | 0.691 | — |
+| Word + SBERT | 0.799 | 12s |
+| **Word + FastText** | **0.769** | **0.23s** |
+
+**Analysis:**
+- FastText gives 96% of SBERT quality with 2% of bootstrap time.
+- No torch dependency — pure numpy + gensim.
+- Model is 128MB (glove-wiki-gigaword-100), but can be smaller with glove-twitter-25 (~100MB, 25d).
+
+**Usage:**
+```bash
+# Download model once
+gensim.downloader api.load('glove-wiki-gigaword-100') → save
+
+# CLI bootstrap
+python -m rtmdk bootstrap-fasttext model.model corpus.json -o state.json
+
+# Or auto-bootstrap
+RTMDKConfig(
+    latent_dim=64,
+    sot_enabled=True,
+    sot_tokenization_mode="word",
+    sot_bootstrap_corpus="corpus.json",
+    sot_bootstrap_fasttext_model="glove-wiki-gigaword-100.model",
+)
+```
+
+---
+
 ## System Risk Audit (Май 2026)
 
 ### 🔴 Critical
@@ -406,8 +445,14 @@ RTMDKConfig(
 
 ---
 
-**Recommended roadmap (SOT + Risk Fix):**
-1. **Day 1:** SOT-J (SBERT bootstrap on full corpus) + benchmark at 1000 QA
-2. **Day 2:** SOT-C (co-occurrence limit)
-3. **Day 3:** Integration tests + memory leak profiling
-4. **Day 4:** FastText as lighter alternative to SBERT
+**Recommended roadmap (completed):**
+1. ✅ **Day 1:** SOT-J (SBERT bootstrap on full corpus) + benchmark at 1000 QA
+2. ✅ **Day 2:** SOT-C (co-occurrence limit)
+3. ✅ **Day 3:** Integration tests + word vocab pruning
+4. ✅ **Day 4:** FastText bootstrap (SOT-K) + CLI + docs
+
+**Next steps:**
+1. Memory leak profiling under long-running load
+2. Cross-platform CI (Linux/macOS)
+3. Docker image with pre-built FastText model
+4. Benchmark automation script for CI

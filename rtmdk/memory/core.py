@@ -1827,8 +1827,24 @@ class RTMDKField:
                     load_bootstrap(config.sot_bootstrap_projection, self.sot_tokenizer)
                 except Exception as e:
                     logger.warning(f"SOT bootstrap projection load failed: {e}")
-            # Auto-bootstrap from corpus if no projection file given
-            if config.sot_bootstrap_corpus and not config.sot_bootstrap_projection:
+            # Auto-bootstrap from FastText model (lightweight alternative)
+            if config.sot_bootstrap_fasttext_model and config.sot_bootstrap_corpus:
+                try:
+                    import json
+                    with open(config.sot_bootstrap_corpus, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    texts = []
+                    if isinstance(data, dict) and 'records' in data:
+                        texts = [r.get('context', '') + ' ' + r.get('answer', '')
+                                 for r in data['records']]
+                    elif isinstance(data, list):
+                        texts = [str(item) for item in data]
+                    from rtmdk.memory.bootstrap_fasttext import run_bootstrap
+                    run_bootstrap(self.sot_tokenizer, texts=texts, model_path=config.sot_bootstrap_fasttext_model)
+                except Exception as e:
+                    logger.warning(f"SOT FastText auto-bootstrap failed: {e}")
+            # Auto-bootstrap from corpus via SBERT if no FastText and no projection
+            elif config.sot_bootstrap_corpus and not config.sot_bootstrap_projection:
                 try:
                     import json
                     with open(config.sot_bootstrap_corpus, 'r', encoding='utf-8') as f:

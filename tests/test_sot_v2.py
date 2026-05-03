@@ -407,6 +407,22 @@ class TestSOTV2Integration:
         assert len(results) > 0
         # Feedback should have updated something
 
+    def test_fasttext_bootstrap_config(self):
+        cfg = RTMDKConfig(
+            latent_dim=64,
+            sot_enabled=True,
+            sot_bootstrap_fasttext_model="dummy.model",
+            sot_bootstrap_corpus=None,
+        )
+        assert cfg.sot_bootstrap_fasttext_model == "dummy.model"
+
+    def test_fasttext_bootstrap_skips_if_no_model(self):
+        from rtmdk.memory.bootstrap_fasttext import run_bootstrap
+        tok = SOTokenizer(latent_dim=64, tokenization_mode="word")
+        run_bootstrap(tok, texts=["hello world"], model_path="nonexistent.model")
+        # Should not crash, just warn
+        assert len(tok.token_embeddings) > 0
+
     def test_bootstrap_projection_load(self):
         import tempfile
         # Create a fake bootstrap .npz

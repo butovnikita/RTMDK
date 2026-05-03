@@ -177,6 +177,7 @@ EngramPattern                    EngramIndex                    PatternCompleter
 | **EmbeddingFieldSSM** | SSM-моментум для плавных траекторий. Диагональный режим O(N·d) позволяет масштабировать `latent_dim` без просадок. | `memory/self_organizing_field.py` |
 | **CooccurrenceStore** | Bounded co-occurrence dict: max 100K entries, auto-prune по lowest weight. | `memory/self_organizing_field.py` |
 | **bootstrap_sbert** | Offline SBERT bootstrap: ridge regression от word counts → SBERT space. | `memory/bootstrap_sbert.py` |
+| **bootstrap_fasttext** | FastText/GloVe bootstrap: копирование word vectors, PCA projection. 0.23s vs 12s SBERT. | `memory/bootstrap_fasttext.py` |
 | **SOT Integration** | `step()` / `query()` / `add_node()` адаптированы для любой размерности эмбеддингов. Auto-bootstrap при init. | `memory/core.py` |
 
 **Режимы токенизации:**

@@ -73,7 +73,7 @@ def cmd_recommend(nodes: int = 1000, ram: float = 256, latency: float = 100, use
     print(f"  memory = create_rtmdk('{result['preset']}', embedder=embedder)")
 
 
-def cmd_bootstrap(corpus_path: str, output: str, model_name: str = "all-MiniLM-L6-v2"):
+def cmd_bootstrap_sbert(corpus_path: str, output: str, model_name: str = "all-MiniLM-L6-v2"):
     """Generate SBERT bootstrap projection from corpus."""
     from rtmdk.memory.bootstrap_sbert import run_bootstrap
     
@@ -109,6 +109,51 @@ def cmd_bootstrap(corpus_path: str, output: str, model_name: str = "all-MiniLM-L
     print(f"Bootstrap projection saved to: {output}")
     print(f"Usage:")
     print(f"  RTMDKConfig(sot_enabled=True, sot_bootstrap_projection='{output}')")
+
+
+def cmd_bootstrap_fasttext(model_path: str, corpus_path: str, output: str):
+    """Generate FastText bootstrap state from gensim model and corpus."""
+    from rtmdk.memory.bootstrap_fasttext import run_bootstrap
+    from rtmdk.memory.self_organizing_field import SOTokenizer
+    import json
+    
+    print("RTMDK SOT FastText Bootstrap")
+    print("=" * 60)
+    
+    if not os.path.exists(model_path):
+        print(f"Error: model file not found: {model_path}")
+        sys.exit(1)
+    if not os.path.exists(corpus_path):
+        print(f"Error: corpus file not found: {corpus_path}")
+        sys.exit(1)
+    
+    with open(corpus_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    
+    if isinstance(data, dict) and "records" in data:
+        texts = [r.get("context", "") + " " + r.get("answer", "")
+                 for r in data["records"]]
+    elif isinstance(data, list):
+        texts = [str(item) for item in data]
+    else:
+        print("Error: corpus must be a list of strings or a dict with 'records'")
+        sys.exit(1)
+    
+    print(f"Model:  {model_path}")
+    print(f"Corpus: {corpus_path}")
+    print(f"Texts:  {len(texts)}")
+    print(f"Output: {output}")
+    print("-" * 60)
+    
+    tok = SOTokenizer(latent_dim=64, tokenization_mode="word")
+    run_bootstrap(tok, texts=texts, model_path=model_path)
+    state = tok.get_state()
+    with open(output, "w", encoding="utf-8") as f:
+        json.dump(state, f)
+    print(f"Bootstrap state saved to: {output}")
+    print(f"Usage:")
+    print(f"  RTMDKConfig(sot_enabled=True, sot_tokenization_mode='word')")
+    print(f"  # Then load state manually or integrate into your pipeline")
 
 
 def cmd_list_presets():
@@ -164,6 +209,12 @@ def main():
     b_parser.add_argument("--output", "-o", type=str, default="sot_bootstrap.npz")
     b_parser.add_argument("--model", "-m", type=str, default="all-MiniLM-L6-v2")
     
+    # bootstrap-fasttext
+    bf_parser = subparsers.add_parser("bootstrap-fasttext", help="Generate FastText bootstrap state")
+    bf_parser.add_argument("model_path", type=str, help="Path to gensim KeyedVectors model")
+    bf_parser.add_argument("corpus", type=str, help="Path to corpus JSON")
+    bf_parser.add_argument("--output", "-o", type=str, default="sot_fasttext.json")
+    
     args = parser.parse_args()
     
     if args.command == "status":
@@ -179,7 +230,9 @@ def main():
     elif args.command == "presets":
         cmd_list_presets()
     elif args.command == "bootstrap":
-        cmd_bootstrap(args.corpus, args.output, args.model)
+        cmd_bootstrap_sbert(args.corpus, args.output, args.model)
+    elif args.command == "bootstrap-fasttext":
+        cmd_bootstrap_fasttext(args.model_path, args.corpus, args.output)
     else:
         parser.print_help()
 

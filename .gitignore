@@ -55,3 +55,8 @@ archive/
 
 # GitHub mirror copy (maintained separately)
 rtmdk_github/
+
+# FastText/GloVe models
+*.model
+*.model.vectors.npy
+
