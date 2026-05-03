@@ -452,7 +452,8 @@ RTMDKConfig(
 4. ✅ **Day 4:** FastText bootstrap (SOT-K) + CLI + docs
 
 **Next steps:**
-1. Memory leak profiling under long-running load
-2. Cross-platform CI (Linux/macOS)
-3. Docker image with pre-built FastText model
-4. ✅ Benchmark automation script (`benchmark.py`) — supports bm25, byte, word, word_fasttext, word_sbert
+1. ✅ Memory leak profiling — `test_memory_leak.py` (6 tests)
+2. ✅ Cross-platform CI — `.github/workflows/ci.yml` (ubuntu, windows, macos)
+3. ✅ Config validation matrix — `scripts/validate_config_matrix.py` + `test_config_matrix.py` (20 tests)
+4. ✅ Benchmark automation script (`benchmark.py`)
+5. Docker image with pre-built FastText model
