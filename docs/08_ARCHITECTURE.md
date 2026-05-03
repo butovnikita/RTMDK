@@ -172,10 +172,21 @@ EngramPattern                    EngramIndex                    PatternCompleter
 
 | Компонент | Описание | Файл |
 |-----------|----------|------|
-| **SOTokenizer** | Байт → субтокен токенизатор, vocab растёт через co-retrieval merges. Поддерживает `token_dim != latent_dim` через learnable projection. | `memory/self_organizing_field.py` |
-| **ContrastiveHebbian** | Online contrastive learning: positives pull closer, negatives push apart | `memory/self_organizing_field.py` |
+| **SOTokenizer** | Байт → субтокен или word-level токенизатор. Vocab растёт через co-retrieval merges (byte mode) или накопление слов (word mode). Поддерживает `token_dim != latent_dim` через learnable projection. | `memory/self_organizing_field.py` |
+| **ContrastiveHebbian** | Online contrastive learning: positives pull closer, negatives push apart. Hard negatives: выбираются ближайшие non-positives. | `memory/self_organizing_field.py` |
 | **EmbeddingFieldSSM** | SSM-моментум для плавных траекторий. Диагональный режим O(N·d) позволяет масштабировать `latent_dim` без просадок. | `memory/self_organizing_field.py` |
-| **SOT Integration** | `step()` / `query()` / `add_node()` адаптированы для любой размерности эмбеддингов | `memory/core.py` |
+| **CooccurrenceStore** | Bounded co-occurrence dict: max 100K entries, auto-prune по lowest weight. | `memory/self_organizing_field.py` |
+| **bootstrap_sbert** | Offline SBERT bootstrap: ridge regression от word counts → SBERT space. | `memory/bootstrap_sbert.py` |
+| **SOT Integration** | `step()` / `query()` / `add_node()` адаптированы для любой размерности эмбеддингов. Auto-bootstrap при init. | `memory/core.py` |
+
+**Режимы токенизации:**
+- **Byte mode** (default): 256 байт + merges. Компактный, но семантически слепой ("earthquake" и "quake" не связаны).
+- **Word mode**: split по whitespace/punctuation. Vocab растёт до `max_vocab`. Требует bootstrap для cold-start.
+
+**SBERT Bootstrap pipeline:**
+1. `python -m rtmdk bootstrap corpus.json -o bootstrap.npz` — offline генерация projection
+2. `RTMDKConfig(sot_bootstrap_projection="bootstrap.npz")` — загрузка при старте
+3. Или `sot_bootstrap_corpus="corpus.json"` — auto-bootstrap при инициализации
 
 **Ключевые свойства:**
 - **Автономность**: нет зависимости от внешнего embedder API для query.
@@ -184,7 +195,7 @@ EngramPattern                    EngramIndex                    PatternCompleter
 - **Плавность**: SSM sync даёт инерцию обновлениям, предотвращая резкие скачки.
 - **Масштабируемость**: `token_dim=256` + `latent_dim=64` даёт высокую ёмкость токенов при быстром поле. Диагональный SSM убирает O(d²) bottleneck.
 
-**Флаги конфигурации:** `sot_enabled`, `sot_token_dim`, `sot_max_vocab`, `sot_contrastive_lr`, `sot_ssm_sync`, `sot_diagonal_ssm`, `sot_use_for_query`, `sot_merge_freq`, `sot_merge_threshold`.
+**Флаги конфигурации:** `sot_enabled`, `sot_token_dim`, `sot_max_vocab`, `sot_contrastive_lr`, `sot_ssm_sync`, `sot_diagonal_ssm`, `sot_use_for_query`, `sot_merge_freq`, `sot_merge_threshold`, `sot_tokenization_mode`, `sot_warm_start_corpus`, `sot_subword_seed`, `sot_attention_pooling`, `sot_hard_negatives`, `sot_retrieval_feedback`, `sot_skipgram_window`, `sot_bootstrap_projection`, `sot_bootstrap_corpus`, `sot_bootstrap_model`, `sot_max_cooccurrence`.
 
 ---
 ---
@@ -441,7 +452,7 @@ rtmdk/
 | Spectral Laplacian | `test_spectral_consolidation.py` (13 тестов) | ✅ Pass |
 | Kalman Filter | `test_kalman_filter.py` (15 тестов) | ✅ Pass |
 | Chunked Query | `test_chunked_query.py` (1 тест) | ✅ Pass |
-| SOT / Hebbian | `test_sot_*.py` (48 тестов) | ✅ Pass |
+| SOT / Hebbian | `test_sot_*.py` (88 тестов) | ✅ Pass |
 | Circuit Breaker | `test_circuit_breaker.py` (7 тестов) | ✅ Pass |
 | Observability | `test_observability.py` (4 тестов) | ✅ Pass |
 | Plugins | `test_plugins.py` (2 тестов) | ✅ Pass |
@@ -449,7 +460,7 @@ rtmdk/
 | Graph Index | `test_naive_graph_index.py` (4 тестов) | ✅ Pass |
 | Proxy | `test_proxy.py` (1 тест) | ✅ Pass |
 
-**Итого: 203 тестов, все проходят (pytest, ~35 сек).**
+**Итого: 233 теста, все проходят (pytest, ~35 сек).**
 
 ## Mathematical Enhancements Track (P0–P2)
 

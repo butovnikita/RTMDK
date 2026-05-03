@@ -504,6 +504,34 @@ print(ctx["rtmdk_context"])
 | `sot_merge_freq` | 100 | Шагов между merge-попытками |
 | `sot_min_cooccurrence` | 5 | Минимальная cooccurrence для merge |
 | `sot_use_for_query` | False | Использовать SOT эмбеддинги для query (без external API) |
+| `sot_tokenization_mode` | "byte" | Режим токенизации: "byte" или "word" |
+| `sot_warm_start_corpus` | None | Путь к JSON корпусу для warm-start PMI |
+| `sot_subword_seed` | False | Пресеять частые byte биграммы/триграммы |
+| `sot_attention_pooling` | False | IDF-взвешенное pooling с бонусом позиции |
+| `sot_hard_negatives` | False | Использовать ближайшие negatives |
+| `sot_retrieval_feedback` | False | Обновлять эмбеддинги от результатов query |
+| `sot_skipgram_window` | 1 | Окно skip-gram для co-occurrence |
+| `sot_bootstrap_projection` | None | Путь к .npz файлу SBERT bootstrap |
+| `sot_bootstrap_corpus` | None | Путь к корпусу для автоматического bootstrap |
+| `sot_bootstrap_model` | "all-MiniLM-L6-v2" | Модель для auto-bootstrap |
+| `sot_max_cooccurrence` | 100_000 | Лимит записей co-occurrence |
+
+**SOT Bootstrap (CLI):**
+```bash
+python -m rtmdk bootstrap corpus.json --output bootstrap.npz
+```
+
+**Word-mode + bootstrap (Python):**
+```python
+cfg = RTMDKConfig(
+    latent_dim=64,
+    sot_enabled=True,
+    sot_tokenization_mode="word",
+    sot_bootstrap_projection="bootstrap.npz",  # или sot_bootstrap_corpus="corpus.json"
+)
+field = RTMDKField(cfg)
+# field.sot_tokenizer.bootstrap_from_teacher(texts, teacher_fn)  # ручной вызов
+```
 
 #### Фаза 22: Mathematical Enhancements (P0–P2)
 

@@ -338,7 +338,10 @@ class TestSOTV2Integration:
             sot_skipgram_window=3,
             sot_warm_start_corpus=None,
             sot_bootstrap_projection=None,
+            sot_bootstrap_corpus=None,
+            sot_bootstrap_model="all-MiniLM-L6-v2",
             sot_tokenization_mode="word",
+            sot_max_cooccurrence=50_000,
         )
         assert cfg.sot_subword_seed is True
         assert cfg.sot_attention_pooling is True
@@ -346,7 +349,10 @@ class TestSOTV2Integration:
         assert cfg.sot_retrieval_feedback is True
         assert cfg.sot_skipgram_window == 3
         assert cfg.sot_bootstrap_projection is None
+        assert cfg.sot_bootstrap_corpus is None
+        assert cfg.sot_bootstrap_model == "all-MiniLM-L6-v2"
         assert cfg.sot_tokenization_mode == "word"
+        assert cfg.sot_max_cooccurrence == 50_000
 
     def test_field_initializes_with_v2_features(self):
         cfg = RTMDKConfig(

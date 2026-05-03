@@ -73,6 +73,44 @@ def cmd_recommend(nodes: int = 1000, ram: float = 256, latency: float = 100, use
     print(f"  memory = create_rtmdk('{result['preset']}', embedder=embedder)")
 
 
+def cmd_bootstrap(corpus_path: str, output: str, model_name: str = "all-MiniLM-L6-v2"):
+    """Generate SBERT bootstrap projection from corpus."""
+    from rtmdk.memory.bootstrap_sbert import run_bootstrap
+    
+    print("RTMDK SOT Bootstrap")
+    print("=" * 60)
+    
+    if not os.path.exists(corpus_path):
+        print(f"Error: corpus file not found: {corpus_path}")
+        sys.exit(1)
+    
+    with open(corpus_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    
+    # Support both list of strings and dict with 'records'
+    if isinstance(data, dict) and "records" in data:
+        texts = [
+            r.get("context", "") + " " + r.get("answer", "")
+            for r in data["records"]
+        ]
+    elif isinstance(data, list):
+        texts = [str(item) for item in data]
+    else:
+        print("Error: corpus must be a list of strings or a dict with 'records'")
+        sys.exit(1)
+    
+    print(f"Corpus: {corpus_path}")
+    print(f"Texts:  {len(texts)}")
+    print(f"Model:  {model_name}")
+    print(f"Output: {output}")
+    print("-" * 60)
+    
+    run_bootstrap(texts, output_path=output, model_name=model_name)
+    print(f"Bootstrap projection saved to: {output}")
+    print(f"Usage:")
+    print(f"  RTMDKConfig(sot_enabled=True, sot_bootstrap_projection='{output}')")
+
+
 def cmd_list_presets():
     """List all available presets."""
     from rtmdk import list_presets
@@ -120,6 +158,12 @@ def main():
     # presets
     subparsers.add_parser("presets", help="List available presets")
     
+    # bootstrap
+    b_parser = subparsers.add_parser("bootstrap", help="Generate SBERT bootstrap projection")
+    b_parser.add_argument("corpus", type=str, help="Path to corpus JSON")
+    b_parser.add_argument("--output", "-o", type=str, default="sot_bootstrap.npz")
+    b_parser.add_argument("--model", "-m", type=str, default="all-MiniLM-L6-v2")
+    
     args = parser.parse_args()
     
     if args.command == "status":
@@ -134,6 +178,8 @@ def main():
         cmd_recommend(args.nodes, args.ram, args.latency, args.use_case)
     elif args.command == "presets":
         cmd_list_presets()
+    elif args.command == "bootstrap":
+        cmd_bootstrap(args.corpus, args.output, args.model)
     else:
         parser.print_help()
 

@@ -1827,6 +1827,29 @@ class RTMDKField:
                     load_bootstrap(config.sot_bootstrap_projection, self.sot_tokenizer)
                 except Exception as e:
                     logger.warning(f"SOT bootstrap projection load failed: {e}")
+            # Auto-bootstrap from corpus if no projection file given
+            if config.sot_bootstrap_corpus and not config.sot_bootstrap_projection:
+                try:
+                    import json
+                    with open(config.sot_bootstrap_corpus, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    texts = []
+                    if isinstance(data, dict) and 'records' in data:
+                        texts = [r.get('context', '') + ' ' + r.get('answer', '')
+                                 for r in data['records']]
+                    elif isinstance(data, list):
+                        texts = [str(item) for item in data]
+                    from sentence_transformers import SentenceTransformer
+                    teacher = SentenceTransformer(config.sot_bootstrap_model)
+                    self.sot_tokenizer.bootstrap_from_teacher(
+                        texts,
+                        lambda t: teacher.encode(t, show_progress_bar=False),
+                        fit_projection_only=False,
+                        n_epochs=10,
+                        lr=0.05,
+                    )
+                except Exception as e:
+                    logger.warning(f"SOT auto-bootstrap failed: {e}")
             self.sot_hebbian = ContrastiveHebbian(
                 lr=config.sot_contrastive_lr,
             )
