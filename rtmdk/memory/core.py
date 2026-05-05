@@ -26,6 +26,8 @@ import threading
 import re
 import time
 import os
+from concurrent.futures import ThreadPoolExecutor
+import copy
 import hashlib
 from collections import deque, defaultdict
 from dataclasses import dataclass, field, asdict
@@ -1394,6 +1396,32 @@ def _locked(method):
     return wrapper
 
 
+def _copy_node(node):
+    """Shallow copy of a MemoryNode with copied mutable fields."""
+    n = copy.copy(node)
+    n.latent_pos = node.latent_pos.copy()
+    n.lineage = list(node.lineage)
+    n.content = dict(node.content)
+    n.causal_strength = dict(node.causal_strength)
+    n.causal_parents = list(node.causal_parents)
+    n.conflict_with = list(node.conflict_with)
+    if node.pre_consolidation_pos is not None:
+        n.pre_consolidation_pos = node.pre_consolidation_pos.copy()
+    if node.gradient_cache is not None:
+        n.gradient_cache = node.gradient_cache.copy()
+    if node.velocity is not None:
+        n.velocity = node.velocity.copy()
+    if node.acceleration is not None:
+        n.acceleration = node.acceleration.copy()
+    if node.modal_embedding is not None:
+        n.modal_embedding = node.modal_embedding.copy()
+    if node.covariance is not None:
+        n.covariance = node.covariance.copy()
+    n.do_interventions = {k: (v.copy() if isinstance(v, np.ndarray) else v)
+                          for k, v in node.do_interventions.items()}
+    return n
+
+
 class RTMDKField:
     def __init__(self, config: RTMDKConfig, projection_matrix: Optional[NDArray] = None,
                  wal_path: Optional[str] = None):
@@ -1559,6 +1587,8 @@ class RTMDKField:
         # Fix 3: Lifecycle & Throttling Controls
         self._workers: List[asyncio.Task] = []
         self._write_lock = threading.RLock()
+        self._consolidation_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="rtmdk_consolidate")
+        self._consolidation_future = None
         self._backpressure_events = 0
         self._heavy_modules_degraded = False  # Track if we've entered degraded mode
         self._last_successful_step = time.time()  # For recovery tracking
@@ -1582,7 +1612,7 @@ class RTMDKField:
 
         # B1: Tension caching
         self._tension_cache: Dict[str, Tuple[float, float]] = {}  # node_id -> (tension, step)
-        self._tension_cache_max_age = 5  # steps
+        self._tension_cache_max_age = 25  # steps — covers multiple consolidation cycles
         self._tension_cache_hits = 0
         self._tension_cache_misses = 0
 
@@ -1891,7 +1921,12 @@ class RTMDKField:
         elif self.projection_learner:
             latent = self.projection_learner.project(embedding)
         else:
-            latent = ((embedding - 0) @ self._raw_projection).astype(np.float32) if embedding.ndim == 1 else (embedding @ self._raw_projection).astype(np.float32)
+            # Normalize before random projection to preserve cosine relationships in L2 space
+            emb = embedding.astype(np.float32)
+            norm = np.linalg.norm(emb)
+            if norm > 1e-8:
+                emb = emb / norm
+            latent = (emb @ self._raw_projection).astype(np.float32)
         # Phase 11 Track 2: Hyperbolic projection into Poincare ball
         if self.cfg.hyperbolic:
             norm = np.linalg.norm(latent)
@@ -1928,7 +1963,7 @@ class RTMDKField:
         if self.learnable_kernel:
             resp = self.learnable_kernel.resonance_response(dist, phase_diff, node.amplitude, node.salience)
         else:
-            if self.cfg.resonance_kernel == "gaussian":
+            if self.cfg.resonance_kernel in ("gaussian", "gaussian_phase"):
                 spatial = math.exp(-dist ** 2 / (2 * bw ** 2))
             elif self.cfg.resonance_kernel == "cosine":
                 nq = np.linalg.norm(query_latent)
@@ -1981,7 +2016,10 @@ class RTMDKField:
         bw = np.maximum(bw, 1e-8)
         pc = self.meta_kernel.get_phase_coupling() if self.meta_kernel else self.cfg.phase_coupling
         # Broadcasting: per-node bw across queries
-        spatial = np.exp(-dists ** 2 / (2 * bw[np.newaxis, :] ** 2))
+        if np.ndim(bw) == 0:
+            spatial = np.exp(-dists ** 2 / (2 * bw ** 2))
+        else:
+            spatial = np.exp(-dists ** 2 / (2 * bw[np.newaxis, :] ** 2))
         phase_diff = query_phases[:, np.newaxis] - node_phases[np.newaxis, :]
         phase_align = 0.5 + 0.5 * np.cos(phase_diff)
         response = spatial * ((1 - pc) + pc * phase_align)
@@ -2013,7 +2051,10 @@ class RTMDKField:
 
     def _build_node_cache(self):
         """Build numpy arrays cache from nodes — called once when cache is dirty."""
-        n = len(self.node_index)
+        # Thread-safety: compact node_index to exclude nodes that may have been deleted
+        # by async consolidation while query() was running.
+        valid_entries = [(nid, self.nodes[nid]) for nid in self.node_index if nid in self.nodes]
+        n = len(valid_entries)
         if n == 0:
             self._cached_positions = np.empty((0, self.cfg.latent_dim), dtype=np.float32)
             self._cached_phases = np.empty(0, dtype=np.float32)
@@ -2024,9 +2065,10 @@ class RTMDKField:
             self._cached_causal_boost = np.empty(0, dtype=np.float32)
             self._cached_bw = None
             self._cache_dirty = False
+            self.node_index = []
             return
 
-        # Single pass through nodes — much faster than 5 separate list comprehensions
+        # Single pass through valid nodes — much faster than 5 separate list comprehensions
         positions = np.zeros((n, self.cfg.latent_dim), dtype=np.float32)
         phases = np.zeros(n, dtype=np.float32)
         amplitudes = np.zeros(n, dtype=np.float32)
@@ -2035,8 +2077,7 @@ class RTMDKField:
         gates = np.ones(n, dtype=np.float32)  # Default gate = 1.0
         causal_boost = np.zeros(n, dtype=np.float32)  # Default causal boost = 0
 
-        for i, nid in enumerate(self.node_index):
-            node = self.nodes[nid]
+        for i, (nid, node) in enumerate(valid_entries):
             positions[i] = node.latent_pos
             phases[i] = node.phase
             amplitudes[i] = node.amplitude
@@ -2069,6 +2110,7 @@ class RTMDKField:
         self._cached_gates = gates
         self._cached_causal_boost = causal_boost
         self._cache_dirty = False
+        self.node_index = [nid for nid, _ in valid_entries]
 
     def _compute_resonance_chunk(self, positions, phases, amplitudes, saliences,
                                   modal_weights, gates, causal_boost,
@@ -2281,10 +2323,29 @@ class RTMDKField:
         top_k = top_k or self.cfg.top_k
         query_latent = self._project(embedding)
 
-        # Fix 1: HNSW auto-intercept for large N (>500 nodes)
-        if self.cfg.use_hnsw and self.hnsw_index and len(self.hnsw_index.positions) > max(100, top_k * 2):
-            candidate_ids = self.hnsw_index.search(query_latent, top_k * 3)
-            search_nodes = [(nid, self.nodes[nid]) for nid in candidate_ids if nid in self.nodes]
+        # Fix 1: HNSW auto-intercept for large N (>5000 nodes).
+        # For small datasets, full vectorized scan is more accurate and still fast (SIMD).
+        if self.cfg.use_hnsw and self.hnsw_index and len(self.hnsw_index.positions) > 5000:
+            hnsw_k = min(len(self.hnsw_index.positions), max(top_k * 10, 200))
+            candidate_ids = self.hnsw_index.search(query_latent, hnsw_k)
+            candidate_ids = [nid for nid in candidate_ids if nid in self.nodes]
+            # Vectorized batch resonance on HNSW candidates (avoids slow Python loop)
+            if candidate_ids:
+                scores = self._batch_resonance(
+                    query_latent[np.newaxis, :],
+                    np.array([phase], dtype=np.float32),
+                    candidate_ids,
+                )[0]
+                results = []
+                for idx, nid in enumerate(candidate_ids):
+                    node = self.nodes[nid]
+                    resp = float(scores[idx]) * (1.3 if session_id and node.content.get("session") == session_id else 1.0)
+                    if resp >= self.cfg.min_response:
+                        results.append((nid, resp, node))
+                        node.last_resonated = time.time()
+                results.sort(key=lambda x: x[1], reverse=True)
+            else:
+                results = []
         elif self.cfg.sparse_routing and self.shard_centers is not None and len(self.nodes) > self.cfg.num_shards * 2:
             active_shards = self._route_query(query_latent, self.cfg.top_shards)
             candidate_ids = [nid for nid in self.node_index if self._get_node_shard(nid) in active_shards]
@@ -2296,7 +2357,7 @@ class RTMDKField:
 
         # Fallback loop path (should rarely reach here)
         if 'results' not in locals():
-            search_nodes = [(nid, self.nodes[nid]) for nid in self.node_index]
+            search_nodes = [(nid, self.nodes[nid]) for nid in self.node_index if nid in self.nodes]
             if self.cfg.sparse_routing:
                 self.stats["shard_misses"] += 1
 
@@ -2587,13 +2648,15 @@ class RTMDKField:
     def add_node(self, embedding: NDArray, content: Dict, phase: Optional[float] = None,
                  node_id: Optional[str] = None, session_id: Optional[str] = None, modality: str = "text",
                  skip_projection: bool = False) -> str:
-        # Rate limiting: max 100 nodes per second
-        now = time.time()
-        while self._add_node_timestamps and self._add_node_timestamps[0] < now - 1.0:
-            self._add_node_timestamps.popleft()
-        if len(self._add_node_timestamps) >= 100:
-            raise SecurityViolationError("Rate limit exceeded: max 100 nodes/second")
-        self._add_node_timestamps.append(now)
+        # Rate limiting: configurable via RTMDK_ADD_RATE_LIMIT env var (default 100/sec)
+        _rate_limit = int(os.environ.get("RTMDK_ADD_RATE_LIMIT", "100"))
+        if _rate_limit > 0:
+            now = time.time()
+            while self._add_node_timestamps and self._add_node_timestamps[0] < now - 1.0:
+                self._add_node_timestamps.popleft()
+            if len(self._add_node_timestamps) >= _rate_limit:
+                raise SecurityViolationError(f"Rate limit exceeded: max {_rate_limit} nodes/second")
+            self._add_node_timestamps.append(now)
 
         # Phase 14 Track 2: Security validation
         if self.security:
@@ -3760,9 +3823,24 @@ class RTMDKField:
                             except RuntimeError:
                                 break  # Max vocab reached
 
-        # Consolidation: periodic instead of probabilistic to avoid hot path spikes
-        if len(self.nodes) > 10 and self._step_counter % 20 == 0:
-            self._circuit_breakers["Consolidate"].call(self.consolidate)
+        # Consolidation: adaptive frequency based on field size.
+        # Small fields (<1K) consolidate rarely to avoid over-merge and recall loss.
+        n_nodes = len(self.nodes)
+        if n_nodes > 10:
+            if n_nodes < 1000:
+                consolidation_freq = 100
+            elif n_nodes < 10000:
+                consolidation_freq = 50
+            else:
+                consolidation_freq = 20
+            if self._step_counter % consolidation_freq == 0:
+                if self.cfg.consolidation_async:
+                    if self._consolidation_future is None or self._consolidation_future.done():
+                        self._consolidation_future = self._consolidation_executor.submit(
+                            self._circuit_breakers["Consolidate"].call, self.consolidate
+                        )
+                else:
+                    self._circuit_breakers["Consolidate"].call(self.consolidate)
 
         # Self-healing: every N steps
         if self.cfg.self_healing and self._step_counter % self.cfg.healing_check_freq == 0:
@@ -4635,6 +4713,15 @@ class RTMDKField:
             memory.field.node_index.append(node.id)
         memory.field.stats = data.get("stats", memory.field.stats)
         return memory
+
+    def shutdown(self):
+        """Graceful shutdown: wait for background consolidation to finish."""
+        if self._consolidation_future is not None and not self._consolidation_future.done():
+            try:
+                self._consolidation_future.result(timeout=120)
+            except Exception:
+                pass
+        self._consolidation_executor.shutdown(wait=False)
 
 
 # ============================================================================

@@ -243,6 +243,22 @@ config = RTMDKConfig.local()
 memory = RTMDKMemory(config=config, embedder=my_embedder)
 ```
 
+### Pre-commit hooks (форматирование)
+
+Установи хуки для автоматической проверки формата перед коммитом:
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+Настроены: `black`, `isort`, базовые проверки (`trailing-whitespace`, `check-yaml`).
+Запустить вручную на всех файлах:
+
+```bash
+pre-commit run --all-files
+```
+
 ### Частые проблемы
 
 | Проблема | Решение |

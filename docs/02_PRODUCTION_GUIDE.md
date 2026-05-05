@@ -1,21 +1,43 @@
 """
-PRODUCTION GUIDE: RTMDK for N > 100,000 and Distributed Architecture for N > 1M
+PRODUCTION GUIDE: RTMDK Scaling Roadmap
 ================================================================================
 
+> ⚠️ **IMPORTANT DISCLAIMER (2026-05-06):** This document describes a **roadmap**
+> and **planned architecture**, not implemented features. As of v8.1, the following
+> components do **NOT** exist in the codebase:
+> - Product Quantization (PQ-64)
+> - Distributed sharding with coordinator
+> - Raft consensus and replication
+> - Tiered routing or cold/hot separation
+>
+> Verified production capabilities (v8.1):
+> - Single-machine deployment up to ~10K nodes (tested)
+> - HNSW approximate search (optional, recommended for >5K nodes)
+> - Async consolidation (non-blocking)
+> - Query/embedding caching
+> - Prometheus metrics and health monitoring
+> - OpenAI-compatible API server
+>
+> The roadmap below is preserved for research planning and community contributions.
+
 This document explains:
-1. How to scale RTMDK from 100K to 10M+ nodes
-2. Distributed architecture for production deployment
-3. Performance tuning parameters
-4. Monitoring and alerting setup
+1. How to scale RTMDK from 100K to 10M+ nodes (planned)
+2. Distributed architecture for production deployment (planned)
+3. Performance tuning parameters (implemented)
+4. Monitoring and alerting setup (partially implemented)
 
 ================================================================================
 PART 1: SCALING TO 100K NODES (Single Machine)
 ================================================================================
 
-Current limits without optimization:
-- N=10,000: Works out of the box
-- N=100,000: Needs 6 optimizations (see below)
-- N=1,000,000: Requires distributed architecture
+Current limits (v8.1, tested on Windows 11, Python 3.10, Ryzen 5):
+- N=1,000: 95.6% R@1, <1ms P95 latency, ~16MB RAM
+- N=5,000: 100% R@1*, 1.4ms P95 latency, ~300MB RAM
+- N=10,000: 100% R@1*, 1.9ms P99 latency, ~333MB RAM
+- N=100,000: Needs 6 optimizations (see below) — not yet tested
+- N=1,000,000: Requires distributed architecture (roadmap)
+
+\* R@1 measured on synthetic semantic variants; real-world accuracy ~95%
 
 The 6 Critical Optimizations for N > 100K:
 ────────────────────────────────────────────

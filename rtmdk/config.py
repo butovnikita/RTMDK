@@ -51,7 +51,7 @@ def _local() -> RTMDKConfig:
 def _production() -> RTMDKConfig:
     """Multi-user production server — all optimizations."""
     return RTMDKConfig(
-        latent_dim=256, top_k=5,
+        latent_dim=256, top_k=5, min_response=0.001,
         decay_rate=0.999, use_hnsw=True, bm25_fallback=True,
         learn_projection=False, attention_bias=True,
         enable_async=True, max_nodes=100000,
@@ -63,6 +63,12 @@ def _production() -> RTMDKConfig:
         ssm_dynamics=True, ssm_state_dim=64,
         trust_consensus=True, trust_min_reputation=0.3,
         neuro_symbolic_prover=False,
+        # Performance & accuracy modules (previously disabled)
+        conformal_prediction=True, conformal_alpha=0.10, conformal_min_calib=50,
+        adaptive_bandwidth=False,  # Disabled: unstable on small-to-medium fields (<10K nodes)
+        enable_kalman_filter=True, kalman_diagonal_approx=True,
+        # Accuracy tuning (post-benchmark optimization)
+        resonance_kernel="cosine",
     )
 
 

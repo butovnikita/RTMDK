@@ -326,7 +326,7 @@ curl -X POST http://localhost:8080/api/config \
 **Примеры:**
 - 10K узлов → ~3 шарда
 - 100K узлов → ~10 шардов
-- 1M узлов → ~32 шарда
+- 1M узлов → ~32 шарда *(прогноз; распределённое шардирование не реализовано в v8.1)*
 
 ---
 
@@ -358,7 +358,7 @@ causal_max_hops=5
 
 ### RTMDKConfig.enterprise()
 ```python
-# Распределённая система
+# Распределённая система (roadmap, не реализовано в v8.1)
 # RAM: ~250MB/shard, Latency: ~15ms, Nodes: 500K+
 ssm_state_dim=128, sparse_routing=True, num_shards=32
 ```

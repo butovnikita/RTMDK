@@ -184,11 +184,15 @@ def run_benchmark(scale="small", dataset_path="datasets/qa_1000_en.json", result
     print("  Embedding done: %.1fs (%d vectors)" % (emb_time, len(ctx_embs) + len(q_embs)))
 
     print("\n[3] Initializing retrieval...")
-    memory = RTMDKMemory(
-        config=RTMDKConfig(embedding_dim=768, latent_dim=64, top_k=15, min_response=0.005,
-            decay_rate=0.999, use_hnsw=(target > 500), learn_projection=False,
-            bm25_fallback=False, enable_async=False, attention_bias=True, context_format="attention"),
-        embedder=embedder)
+    # Production preset benchmark
+    # Use production preset with benchmark-specific overrides
+    cfg = RTMDKConfig.production()
+    cfg.top_k = 15
+    cfg.use_hnsw = (target > 5000)
+    cfg.enable_async = False
+    cfg.phase_coupling = 0.0  # Disable phase noise for pure retrieval benchmarks
+    cfg.consolidation_async = True
+    memory = RTMDKMemory(config=cfg, embedder=embedder)
     print("  Populating RTMDK...")
     for i, (ctx, emb) in enumerate(zip([r["context"] for r in records], ctx_embs)):
         memory.field.add_node(emb, {"text": ctx, "topic": records[i].get("topic", "")})

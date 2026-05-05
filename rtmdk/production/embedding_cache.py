@@ -206,6 +206,11 @@ class EmbeddingCache:
                 return None
         return None
     
+    @property
+    def hit_rate(self) -> float:
+        total = self._hits + self._misses
+        return self._hits / max(total, 1)
+
     def _load_disk_index(self):
         """Load disk index (for stats)."""
         pass  # Index is loaded lazily when saving

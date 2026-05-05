@@ -7,6 +7,7 @@ Replaces static external embeddings with a dynamic field that:
 
 Architecture: token_dim != latent_dim supported via learnable projection.
 """
+
 from __future__ import annotations
 
 import logging
@@ -23,60 +24,64 @@ logger = logging.getLogger(__name__)
 
 class CooccurrenceStore:
     """Bounded co-occurrence dictionary with periodic pruning.
-    
+
     Keeps up to `max_size` entries. When the threshold is exceeded,
     drops the lowest-weight entries to free space.
     """
+
     def __init__(self, max_size: int = 100_000, prune_factor: float = 1.2):
         self.max_size = max_size
         self.prune_threshold = int(max_size * prune_factor)
         self._data: Dict[Tuple[int, int], float] = {}
         self._total_inserts = 0
         self._total_prunes = 0
-    
+
     def __getitem__(self, key: Tuple[int, int]) -> float:
         return self._data.get(key, 0.0)
-    
+
     def get(self, key: Tuple[int, int], default: float = 0.0) -> float:
         return self._data.get(key, default)
-    
+
     def pop(self, key: Tuple[int, int], default=None):
         return self._data.pop(key, default)
-    
+
     def __setitem__(self, key: Tuple[int, int], value: float):
         self._data[key] = value
         self._total_inserts += 1
-    
+
     def __contains__(self, key: Tuple[int, int]) -> bool:
         return key in self._data
-    
-    def items(self):
-        return self._data.items()
-    
-    def keys(self):
-        return self._data.keys()
-    
-    def __iter__(self):
-        return iter(self._data)
-    
+
     def __len__(self) -> int:
         return len(self._data)
-    
+
+    def items(self):
+        return self._data.items()
+
+    def keys(self):
+        return self._data.keys()
+
+    def __iter__(self):
+        return iter(self._data)
+
+    def __len__(self) -> int:
+        return len(self._data)
+
     def __bool__(self) -> bool:
         return bool(self._data)
-    
+
     def prune_if_needed(self):
         """Remove lowest-weight entries if over threshold."""
         if len(self._data) <= self.prune_threshold:
             return
         # Sort by weight descending, keep top max_size
         sorted_items = sorted(self._data.items(), key=lambda kv: kv[1], reverse=True)
-        kept = sorted_items[:self.max_size]
+        kept = sorted_items[: self.max_size]
         dropped = len(sorted_items) - len(kept)
         self._data = dict(kept)
         self._total_prunes += dropped
         logger.info(f"CooccurrenceStore pruned: dropped {dropped} entries, kept {len(self._data)}")
-    
+
     def get_stats(self) -> Dict[str, int]:
         return {
             "size": len(self._data),
@@ -135,13 +140,11 @@ class SOTokenizer:
         if self.token_dim == self.latent_dim:
             self.projection = np.eye(self.token_dim, dtype=np.float32)
         else:
-            self.projection = self._rng.standard_normal(
-                (self.token_dim, self.latent_dim)
-            ).astype(np.float32) * 0.1
+            self.projection = self._rng.standard_normal((self.token_dim, self.latent_dim)).astype(np.float32) * 0.1
             # Orthogonal initialization for better conditioning
             if self.token_dim >= self.latent_dim:
                 q, _ = np.linalg.qr(self.projection)
-                self.projection = q[:, :self.latent_dim].astype(np.float32)
+                self.projection = q[:, : self.latent_dim].astype(np.float32)
 
         if self.tokenization_mode == "byte":
             self._init_byte_embeddings()
@@ -169,28 +172,101 @@ class SOTokenizer:
         These are learned from a small static corpus (no runtime dependency)."""
         # Common byte bigrams in English text (from frequency analysis)
         common_bigrams = [
-            (101, 32), (116, 104), (105, 110), (115, 32), (32, 116),  # 'e ', 'th', 'in', 's ', ' t'
-            (32, 97), (32, 105), (111, 110), (101, 114), (114, 101),  # ' a', ' i', 'on', 'er', 're'
-            (97, 116), (101, 115), (32, 111), (114, 97), (110, 100),  # 'at', 'es', ' o', 'ra', 'nd'
-            (116, 111), (101, 110), (97, 110), (116, 105), (32, 115),  # 'to', 'en', 'an', 'ti', ' s'
-            (104, 97), (108, 121), (111, 117), (116, 101), (97, 114),  # 'ha', 'ly', 'ou', 'te', 'ar'
-            (105, 115), (115, 116), (110, 103), (104, 101), (100, 101),  # 'is', 'st', 'ng', 'he', 'de'
-            (116, 97), (32, 119), (105, 116), (101, 100), (101, 97),  # 'ta', ' w', 'it', 'ed', 'ea'
-            (111, 114), (111, 111), (101, 101), (117, 114), (115, 101),  # 'or', 'oo', 'ee', 'ur', 'se'
-            (32, 99), (32, 102), (32, 109), (32, 112), (32, 98),  # ' c', ' f', ' m', ' p', ' b'
-            (32, 104), (32, 100), (32, 114), (32, 108), (32, 110),  # ' h', ' d', ' r', ' l', ' n'
-            (105, 99), (97, 108), (97, 99), (111, 109), (97, 115),  # 'ic', 'al', 'ac', 'om', 'as'
-            (105, 111), (117, 115), (115, 105), (114, 116), (108, 105),  # 'io', 'us', 'si', 'rt', 'li'
+            (101, 32),
+            (116, 104),
+            (105, 110),
+            (115, 32),
+            (32, 116),  # 'e ', 'th', 'in', 's ', ' t'
+            (32, 97),
+            (32, 105),
+            (111, 110),
+            (101, 114),
+            (114, 101),  # ' a', ' i', 'on', 'er', 're'
+            (97, 116),
+            (101, 115),
+            (32, 111),
+            (114, 97),
+            (110, 100),  # 'at', 'es', ' o', 'ra', 'nd'
+            (116, 111),
+            (101, 110),
+            (97, 110),
+            (116, 105),
+            (32, 115),  # 'to', 'en', 'an', 'ti', ' s'
+            (104, 97),
+            (108, 121),
+            (111, 117),
+            (116, 101),
+            (97, 114),  # 'ha', 'ly', 'ou', 'te', 'ar'
+            (105, 115),
+            (115, 116),
+            (110, 103),
+            (104, 101),
+            (100, 101),  # 'is', 'st', 'ng', 'he', 'de'
+            (116, 97),
+            (32, 119),
+            (105, 116),
+            (101, 100),
+            (101, 97),  # 'ta', ' w', 'it', 'ed', 'ea'
+            (111, 114),
+            (111, 111),
+            (101, 101),
+            (117, 114),
+            (115, 101),  # 'or', 'oo', 'ee', 'ur', 'se'
+            (32, 99),
+            (32, 102),
+            (32, 109),
+            (32, 112),
+            (32, 98),  # ' c', ' f', ' m', ' p', ' b'
+            (32, 104),
+            (32, 100),
+            (32, 114),
+            (32, 108),
+            (32, 110),  # ' h', ' d', ' r', ' l', ' n'
+            (105, 99),
+            (97, 108),
+            (97, 99),
+            (111, 109),
+            (97, 115),  # 'ic', 'al', 'ac', 'om', 'as'
+            (105, 111),
+            (117, 115),
+            (115, 105),
+            (114, 116),
+            (108, 105),  # 'io', 'us', 'si', 'rt', 'li'
         ]
         common_trigrams = [
-            (116, 104, 101), (105, 110, 103), (116, 105, 111), (110, 116, 104),  # 'the', 'ing', 'tio', 'nth'
-            (97, 116, 105), (116, 104, 97), (115, 116, 104), (104, 97, 116),  # 'ati', 'tha', 'sth', 'hat'
-            (101, 114, 101), (111, 117, 116), (102, 111, 114), (104, 101, 114),  # 'ere', 'out', 'for', 'her'
-            (97, 116, 101), (119, 105, 116), (104, 32, 32), (105, 115, 32), (101, 115, 116),  # 'ate', 'wit', 'h  ', 'is ', 'est'
-            (97, 110, 100), (115, 116, 97), (111, 110, 32), (101, 110, 116),  # 'and', 'sta', 'on ', 'ent'
-            (104, 97, 116), (114, 101, 32), (97, 116, 32), (101, 114, 115),  # 'hat', 're ', 'at ', 'ers'
-            (97, 114, 101), (116, 104, 32), (105, 110, 32), (101, 114, 97),  # 'are', 'th ', 'in ', 'era'
-            (111, 110, 97), (115, 116, 32), (109, 101, 110), (97, 110, 32),  # 'ona', 'st ', 'men', 'an '
+            (116, 104, 101),
+            (105, 110, 103),
+            (116, 105, 111),
+            (110, 116, 104),  # 'the', 'ing', 'tio', 'nth'
+            (97, 116, 105),
+            (116, 104, 97),
+            (115, 116, 104),
+            (104, 97, 116),  # 'ati', 'tha', 'sth', 'hat'
+            (101, 114, 101),
+            (111, 117, 116),
+            (102, 111, 114),
+            (104, 101, 114),  # 'ere', 'out', 'for', 'her'
+            (97, 116, 101),
+            (119, 105, 116),
+            (104, 32, 32),
+            (105, 115, 32),
+            (101, 115, 116),  # 'ate', 'wit', 'h  ', 'is ', 'est'
+            (97, 110, 100),
+            (115, 116, 97),
+            (111, 110, 32),
+            (101, 110, 116),  # 'and', 'sta', 'on ', 'ent'
+            (104, 97, 116),
+            (114, 101, 32),
+            (97, 116, 32),
+            (101, 114, 115),  # 'hat', 're ', 'at ', 'ers'
+            (97, 114, 101),
+            (116, 104, 32),
+            (105, 110, 32),
+            (101, 114, 97),  # 'are', 'th ', 'in ', 'era'
+            (111, 110, 97),
+            (115, 116, 32),
+            (109, 101, 110),
+            (97, 110, 32),  # 'ona', 'st ', 'men', 'an '
         ]
         for pair in common_bigrams[:top_n_bigrams]:
             if len(self.token_embeddings) >= self.max_vocab:
@@ -231,14 +307,14 @@ class SOTokenizer:
         fit_projection_only: bool = True,
     ):
         """Bootstrap SOT embeddings from a teacher model (e.g. SBERT).
-        
+
         Two modes:
         - fit_projection_only=True (default): keeps token embeddings fixed,
           learns a projection matrix W such that mean(token_emb) @ W ≈ teacher_emb.
           This is more stable and preserves byte-level structure.
         - fit_projection_only=False: iteratively updates token embeddings toward
           teacher targets, then fine-tunes projection. May overfit.
-        
+
         Args:
             texts: List of texts to use for bootstrap.
             teacher_embed_fn: Callable(text) -> np.ndarray (teacher embedding).
@@ -264,10 +340,11 @@ class SOTokenizer:
             return
         teacher_matrix = np.stack(teacher_embs).astype(np.float32)
         teacher_dim = teacher_matrix.shape[1]
-        
+
         # Reduce teacher to latent_dim via PCA if needed
         if teacher_dim > self.latent_dim:
             from sklearn.decomposition import PCA
+
             pca = PCA(n_components=self.latent_dim)
             teacher_reduced = pca.fit_transform(teacher_matrix).astype(np.float32)
             # Normalize
@@ -281,9 +358,9 @@ class SOTokenizer:
                 teacher_reduced = np.concatenate([teacher_reduced, pad], axis=1)
             norms = np.linalg.norm(teacher_reduced, axis=1, keepdims=True)
             teacher_reduced /= np.maximum(norms, 1e-8)
-        
+
         logger.info(f"SOT bootstrap: teacher shape {teacher_matrix.shape}, reduced to {teacher_reduced.shape}")
-        
+
         if not fit_projection_only:
             # Build token → text indices mapping
             token_to_indices: Dict[int, List[int]] = defaultdict(list)
@@ -291,7 +368,7 @@ class SOTokenizer:
                 tokens = self.encode(text)
                 for t in set(tokens):
                     token_to_indices[t].append(idx)
-            
+
             # Iteratively update token embeddings toward teacher targets
             for epoch in range(n_epochs):
                 total_delta = 0.0
@@ -310,10 +387,10 @@ class SOTokenizer:
                     if norm > 0:
                         self.token_embeddings[token_id] /= norm
                     total_delta += np.linalg.norm(delta_token)
-                
+
                 if epoch % 10 == 0:
                     logger.info(f"SOT bootstrap epoch {epoch}: avg delta={total_delta / len(token_to_indices):.4f}")
-        
+
         # Fit projection matrix via Ridge regression
         logger.info("SOT bootstrap: fitting projection matrix...")
         X = []
@@ -340,12 +417,12 @@ class SOTokenizer:
                     logger.warning(f"SOT bootstrap: projection shape mismatch {W.shape} vs {self.projection.shape}")
             except np.linalg.LinAlgError:
                 logger.warning("SOT bootstrap: Ridge regression failed, keeping original projection")
-        
+
         logger.info(f"SOT bootstrap complete")
 
     def warm_start_from_corpus(self, corpus_texts: List[str]):
         """Pre-train token embeddings on a corpus using PMI-based initialization.
-        
+
         This gives semantically meaningful starting points for byte embeddings,
         dramatically improving cold-start recall.
         """
@@ -362,11 +439,11 @@ class SOTokenizer:
                 a, b = bytes_list[i], bytes_list[i + 1]
                 cooc[(a, b)] += 1.0
                 cooc[(b, a)] += 1.0  # symmetric
-        
+
         n_total = sum(totals.values())
         if n_total == 0:
             return
-        
+
         # Compute PMI and use it to nudge embeddings
         for (a, b), count in cooc.items():
             if a >= self.initial_byte_vocab or b >= self.initial_byte_vocab:
@@ -382,25 +459,28 @@ class SOTokenizer:
                         direction = self.token_embeddings[b] - self.token_embeddings[a]
                         self.token_embeddings[a] += 0.05 * pmi * direction
                         self.token_embeddings[b] += 0.05 * pmi * (-direction)
-        
+
         # Renormalize
         for i in range(self.initial_byte_vocab):
             if i in self.token_embeddings:
                 norm = np.linalg.norm(self.token_embeddings[i])
                 if norm > 0:
                     self.token_embeddings[i] /= norm
-        
+
         # Pre-compute IDF weights for attention pooling
         for b, count in totals.items():
             if b < self.initial_byte_vocab:
                 idf = math.log(len(corpus_texts) / (count + 1.0) + 1.0)
                 self.token_idf[b] = idf
-        logger.info(f"SOT warm-start: processed {len(corpus_texts)} texts, "
-                    f"{len(cooc)} co-occurrence pairs, IDF computed for {len(self.token_idf)} bytes")
+        logger.info(
+            f"SOT warm-start: processed {len(corpus_texts)} texts, "
+            f"{len(cooc)} co-occurrence pairs, IDF computed for {len(self.token_idf)} bytes"
+        )
 
     def _word_tokenize(self, text: str) -> List[str]:
         """Simple word tokenization: lowercase, strip punctuation, split on whitespace."""
         import re
+
         text = text.lower()
         words = re.findall(r"[a-z0-9']+", text)
         return words
@@ -517,10 +597,10 @@ class SOTokenizer:
                 weights.append(idf * pos_weight)
             else:
                 weights.append(1.0)
-        
+
         if not vecs:
             return np.zeros(self.latent_dim, dtype=np.float32)
-        
+
         weights = np.array(weights, dtype=np.float32)
         weights /= weights.sum() + 1e-8
         pooled = np.average(vecs, axis=0, weights=weights).astype(np.float32)
@@ -544,9 +624,9 @@ class SOTokenizer:
                 self.cooccurrence[(a, b)] += weight / dist
                 if a != b:
                     self.cooccurrence[(b, a)] += weight / dist
-        
+
         self.cooccurrence.prune_if_needed()
-        
+
         # Update IDF cache if attention pooling enabled
         if self.attention_pooling and self.token_frequency:
             n_docs = sum(1 for _ in self.token_frequency.values())
@@ -599,8 +679,8 @@ class SOTokenizer:
                 continue
             t_i = self.token_embeddings[i]  # (token_dim,)
             t_j = self.token_embeddings[j]  # (token_dim,)
-            p_i = t_i @ self.projection     # (latent_dim,)
-            p_j = t_j @ self.projection     # (latent_dim,)
+            p_i = t_i @ self.projection  # (latent_dim,)
+            p_j = t_j @ self.projection  # (latent_dim,)
             error = p_j - p_i
             # Gradient: d(loss)/dW = t_i^T * error
             delta += lr * np.outer(t_i, error)
@@ -620,15 +700,16 @@ class SOTokenizer:
 
     def prune_vocab(self, min_freq: float = 2.0):
         """Remove rare tokens from vocabulary (word mode only).
-        
+
         Tokens with frequency < min_freq are removed and mapped to unk.
         This reduces memory footprint and speeds up retrieval.
         """
         if self.tokenization_mode != "word":
             logger.warning("prune_vocab only meaningful in word mode")
             return
-        to_remove = [tid for tid, freq in self.token_frequency.items()
-                     if freq < min_freq and tid >= self.initial_byte_vocab]
+        to_remove = [
+            tid for tid, freq in self.token_frequency.items() if freq < min_freq and tid >= self.initial_byte_vocab
+        ]
         if not to_remove:
             return
         # Ensure unk token exists
@@ -652,8 +733,7 @@ class SOTokenizer:
             self.token_frequency.pop(tid, None)
             self.token_idf.pop(tid, None)
         # Clean cooccurrence pairs involving removed tokens
-        keys_to_remove = [k for k in self.cooccurrence.keys()
-                          if k[0] in to_remove or k[1] in to_remove]
+        keys_to_remove = [k for k in self.cooccurrence.keys() if k[0] in to_remove or k[1] in to_remove]
         for k in keys_to_remove:
             self.cooccurrence.pop(k)
         logger.info(f"prune_vocab: removed {len(to_remove)} rare tokens, vocab={len(self.token_embeddings)}")
@@ -694,8 +774,7 @@ class SOTokenizer:
         self.attention_pooling = state.get("attention_pooling", self.attention_pooling)
         self.subword_seed = state.get("subword_seed", self.subword_seed)
         self.token_embeddings = {
-            int(k): np.array(v, dtype=np.float32)
-            for k, v in state.get("token_embeddings", {}).items()
+            int(k): np.array(v, dtype=np.float32) for k, v in state.get("token_embeddings", {}).items()
         }
         self.merges = {}
         for k, v in state.get("merges", {}).items():
@@ -707,8 +786,10 @@ class SOTokenizer:
             self.cooccurrence[(int(a_str), int(b_str))] = float(v)
         if "projection" in state:
             self.projection = np.array(state["projection"], dtype=np.float32)
-            assert self.projection.shape == (self.token_dim, self.latent_dim), \
-                f"Projection shape mismatch: {self.projection.shape} vs ({self.token_dim}, {self.latent_dim})"
+            assert self.projection.shape == (
+                self.token_dim,
+                self.latent_dim,
+            ), f"Projection shape mismatch: {self.projection.shape} vs ({self.token_dim}, {self.latent_dim})"
         self.word_to_id = state.get("word_to_id", {})
         self.id_to_word = {int(k): v for k, v in state.get("id_to_word", {}).items()}
         self._unk_token_id = state.get("unk_token_id", None)
@@ -785,17 +866,17 @@ class ContrastiveHebbian:
         n_negatives: int = 5,
     ):
         """Contrastive update using hard negatives (closest non-positive embeddings).
-        
+
         This provides stronger gradient signal than random negatives.
         """
         if len(positives) < 2:
             return
         positive_set = set(positives)
         candidates = [c for c in all_candidates if c not in positive_set and c in embeddings]
-        
+
         if not candidates:
             return
-        
+
         # For each positive, find hardest negatives (highest similarity among non-positives)
         hard_negatives = set()
         for i in positives:
@@ -808,7 +889,7 @@ class ContrastiveHebbian:
             sims.sort(reverse=True)
             for _, c in sims[:n_negatives]:
                 hard_negatives.add(c)
-        
+
         self.update(embeddings, positives, list(hard_negatives))
 
     def field_update(

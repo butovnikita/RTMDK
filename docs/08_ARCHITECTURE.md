@@ -139,13 +139,13 @@ EngramPattern                    EngramIndex                    PatternCompleter
 | **Kalman Filter** | EKF неопределённости; score damping по tr(Σ) | outlier-resistant | ✅ |
 | **OfflineDreamer** | Фоновые циклы для TDA, кристаллизации, topology repair | −90% latency spikes | ✅ |
 | **CausalTraversal** | BFS по каузальному графу от top-K resonance узлов | +15-25% на "почему"-вопросах | ✅ |
-| **SSMDynamics** | State Space Models (Mamba): O(N) вместо O(N³) | Масштабирование до 1M+ узлов | ✅ |
+| **SSMDynamics** | State Space Models (Mamba): O(N) вместо O(N³) | Тестировано до 10K узлов; теоретическое масштабирование до 1M+ | ✅ |
 
 #### Фаза 2: Важные
 
 | Модуль | Описание | Влияние |
 |--------|----------|---------|
-| **TrustConsensus** | DAG доверия + репутационные веса | Byzantine fault tolerance |
+| **TrustConsensus** | DAG доверия + репутационные веса | Byzantine fault tolerance *(research prototype, not production-tested)* |
 | **NeuroSymbolicProver** | Z3/Prolog для разрешения противоречий | Логическая консистентность |
 
 #### Фаза 3: Исследовательские

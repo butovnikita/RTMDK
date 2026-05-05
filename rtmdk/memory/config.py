@@ -104,6 +104,7 @@ _FIELD_GROUPS: Dict[str, str] = {
     "compression_rank": "InferenceConfig",
     "consolidation_loss_weight": "LearningConfig",
     "consolidation_mode": "CoreConfig",
+    "consolidation_async": "CoreConfig",
     "context_format": "CoreConfig",
     "continuous_dynamics": "DynamicsConfig",
     "contradiction_detection": "InferenceConfig",
@@ -342,6 +343,7 @@ class CoreConfig:
         min_amplitude: float = 0.05
         tension_threshold: float = 0.15  # Matches server default — moderate consolidation
         consolidation_mode: ConsolidationMode = ConsolidationMode.DIALECTICAL
+        consolidation_async: bool = False
         max_nodes: Optional[int] = 5000
         top_k: int = 5
         min_response: float = 0.005  # OPTIMIZED: 20x lower → more results pass filter
@@ -753,6 +755,7 @@ class RTMDKConfig:
             ("RTMDK_TOP_K", "top_k", int),
             ("RTMDK_MAX_NODES", "max_nodes", lambda x: int(x) if x and x.lower() != "none" else None),
             ("RTMDK_CONSOLIDATION_MODE", "consolidation_mode", lambda x: ConsolidationMode(x)),
+            ("RTMDK_CONSOLIDATION_ASYNC", "consolidation_async", lambda x: x.lower() == "true"),
             ("RTMDK_PHASE_COUPLING", "phase_coupling", float),
             ("RTMDK_BANDWIDTH", "bandwidth", float),
             ("RTMDK_ADAPTIVE_BANDWIDTH", "adaptive_bandwidth", lambda x: x.lower() == "true"),

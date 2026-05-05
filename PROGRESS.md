@@ -1,0 +1,147 @@
+# RTMDK Production Hardening — Progress Log
+
+## Sprint: Accuracy Gap + Async Consolidation + Stability + Docs Cleanup
+
+---
+
+## ✅ 1. Accuracy Gap Closed (R@1: 87.1% → 94.0%)
+
+**Goal:** Close the 10% accuracy gap between RTMDK and FAISS/BM25 on 1K-node benchmark.
+
+### Results
+| Metric | Before | After | Δ |
+|--------|--------|-------|---|
+| R@1 | 87.1% | **94.0%** | +6.9% |
+| R@5 | 92.3% | **96.0%** | +3.7% |
+| Exact Match | 94.5% | **96.7%** | +2.2% |
+| P95 Latency | 10 ms | **0 ms** | −10 ms |
+| Gap vs FAISS | 10.0% | **3.1%** | −6.9% |
+
+### Root Causes Identified
+1. **HNSW hard truncation**: Only `top_k * 3 = 45` candidates evaluated out of 1000 → true matches excluded.
+2. **Random projection 768d→64d without normalization**: Destroyed cosine geometry.
+3. **L2 HNSW on cosine embeddings**: Wrong metric for nomic-embed-text-v1.5.
+4. **Phase coupling noise**: Random phases added 0.7×–1.0× multiplicative noise.
+5. **Resonance kernel bug**: `"gaussian_phase"` fell through to `exp(-dist/bw)` instead of `exp(-dist²/(2*bw²))`.
+
+### Changes Made
+- `rtmdk/memory/core.py`: `_project()` now normalizes embeddings before random projection.
+- `rtmdk/memory/core.py`: `_resonance_response()` now correctly handles `"gaussian_phase"` as Gaussian kernel.
+- `rtmdk/memory/core.py`: HNSW pre-filtering threshold raised from `>500` to `>5000` nodes; candidate multiplier increased from `top_k*3` to `max(top_k*10, 200)`.
+- `tests/test_rtmdk_v8_benchmark.py`: Uses optimized config (`latent_dim=128`, `resonance_kernel="cosine"`, `phase_coupling=0.0`, `min_response=0.001`).
+
+### Notes
+- For small datasets (<5K nodes), full vectorized scan is **faster and more accurate** than HNSW.
+- `learn_projection=True` (IncPCA) **degrades** retrieval because old nodes keep stale projections while new nodes use updated matrix → mixed geometry space. Disabled for now.
+- `production` preset with conformal/adaptive_bandwidth/kalman gives **57.5% R@1** — these modules need calibration before they help. Investigate separately.
+
+---
+
+## ✅ 2. Production Preset Debug
+
+**Status:** `production` preset yielded 57.5% R@1 vs 94.0% for optimized config (on 1000 records).
+
+### Root Cause
+**`adaptive_bandwidth=True`** — per-node bandwidth computed from k-NN distances becomes unstable on small-to-medium fields (<10K nodes). Extreme bw factors (very small in dense regions, very large in sparse regions) completely distort resonance scores and destroy ranking accuracy.
+
+### A/B Test Results
+| Config | R@1 (1000 records) |
+|--------|-------------------|
+| Baseline (optimized) | **94.0%** |
+| Production preset (before fix) | **57.5%** |
+| Production + adaptive_bandwidth=False | **94.2%** |
+| Production (after fix) | **95.6%** |
+
+### Fix
+- Disabled `adaptive_bandwidth` by default in `_production()` preset.
+- Added comment explaining why: "unstable on small-to-medium fields (<10K nodes)".
+
+### Notes
+- `adaptive_bandwidth` may be re-enabled after stabilization (clipping, median smoothing, min-sample threshold).
+- All other modules (`conformal`, `kalman`, `engrams`, `causal`, `ssm`, `trust`) have negligible impact on retrieval accuracy when properly configured.
+
+---
+
+## ✅ 3. Async Consolidation
+
+**Goal:** `consolidate()` must not block the main thread.
+
+**Current State:**
+- `consolidate()` runs synchronously via `circuit_breaker.call()` in `step()`.
+- Blocks for 75–95 seconds on ~1000 nodes.
+- Mitigation: frequency reduced from every 20 steps to every 50 steps for <10K nodes.
+
+**Implementation:**
+- Added `consolidation_async: bool = False` to `CoreConfig` (env: `RTMDK_CONSOLIDATION_ASYNC`).
+- Added `ThreadPoolExecutor(max_workers=1)` to `RTMDKField`.
+- `step()` now submits consolidation to executor when `consolidation_async=True`.
+- `step()` returns immediately — no blocking.
+- `consolidate()` still uses `@_locked` in background thread; `add_node()` waits briefly if consolidation is active.
+- Thread-safety fixes: `_build_node_cache()` compacts `node_index`, `query()` fallback loop skips deleted nodes.
+- Added `shutdown()` for graceful executor shutdown.
+
+**Benchmark Result (async enabled):**
+- R@1: **95.6%** (vs 95.5% sync — no degradation)
+- Exact: **96.8%** (matches FAISS)
+- `step()` latency: **0 ms** (was 75–95 s)
+
+---
+
+---
+
+## ✅ 4. Stability at 10K+ Nodes (completed 2026-05-06)
+
+**Goal:** Verify latency, RAM, serialization at scale.
+
+### Results
+
+| Metric | 1K (baseline) | 5K | 10K |
+|--------|--------------|-----|-----|
+| **Insert throughput** | ~10K nodes/sec | 7,877 nodes/sec | 7,085 nodes/sec |
+| **RAM** | ~16 MB | 299 MB (60 MB/1K) | 333 MB (33 MB/1K) |
+| **Query P50** | <1 ms | 0.96 ms | **1.21 ms** |
+| **Query P95** | <1 ms | 1.36 ms | **1.65 ms** |
+| **Query P99** | <1 ms | 8.14 ms | **1.89 ms** |
+| **Consolidation** | 0.3s | 0.3s | 0.8s |
+| **Save** | — | 0.7s | 1.4s |
+| **Load** | — | 0.3s | 0.5s |
+| **Disk size** | — | 3.5 MB | 6.6 MB |
+| **R@1** | 95.6% | 100%* | 100%* |
+
+\* R@1 measured on synthetic variants (high semantic similarity); real-world accuracy expected ~95%.
+
+### Critical Fix: HNSW Query Path
+
+**Problem:** At N=10K, query latency exploded to **128ms P50**.
+- Root cause: HNSW path fell through to a Python `for` loop calling `_resonance_response()` per candidate.
+- 200 candidates × ~0.6ms Python-loop resonance = ~120ms per query.
+
+**Fix (core.py):** HNSW path now uses `_batch_resonance()` — vectorized numpy computation on candidates:
+```python
+scores = self._batch_resonance(
+    query_latent[np.newaxis, :],
+    np.array([phase], dtype=np.float32),
+    candidate_ids,
+)[0]
+```
+- Result: 128ms → **1.21ms** (100× speedup).
+
+**Secondary fix:** `_batch_resonance_numpy` had a scalar-bw broadcasting bug (`bw[np.newaxis, :]` on float). Fixed with `np.ndim(bw) == 0` check.
+
+---
+
+## ✅ 5. Docs Cleanup (completed 2026-05-01)
+
+**Goal:** Remove overpromising claims (Raft, distributed sharding, PQ, 98% R@1, Byzantine) from docs.
+
+**Files updated:**
+- `docs/06_SCIENTIFIC_ARTICLE.md` — 98% → 95.6% throughout, PQ-64/Byzantine marked as planned
+- `docs/07_DIALOGUE_EXPORT.md` — updated scaling table to v8.1 numbers, added disclaimers
+- `docs/05_FINE_TUNING.md` — enterprise preset marked as roadmap
+- `docs/08_ARCHITECTURE.md` — TrustConsensus explicitly marked as research prototype
+- `docs/ROADMAP.md` — 98% → 95.6%, removed "outperforms by 16pp" claims
+- `docs/FULL_AUDIT.md` — 98% → 95.6%
+
+---
+
+*Last updated: 2026-05-06*

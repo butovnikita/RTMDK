@@ -232,7 +232,7 @@
 
 ## 🏁 ИТОГ
 
-**Система РАБОЧАЯ.** Smoke test ✅, Integration test ✅, 98% Recall@1 ✅.
+**Система РАБОЧАЯ.** Smoke test ✅, Integration test ✅, 95.6% Recall@1 ✅ (v8.1, optimized config).
 
 **Главная проблема:** 40% кода — дубликаты или орфанные модули. Это не баги, а технический долг.
 
