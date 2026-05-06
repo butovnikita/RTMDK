@@ -5,10 +5,11 @@ Previous version was broken: it added nodes with random dummy embeddings
 but queried with SOT embeddings, resulting in ~9% R@1 (different spaces).
 
 This version uses SOT embeddings for BOTH nodes and queries.
-Expected result: ~70-75% R@1 vs 100% for full SBERT (on 300 QA records).
+With default word-level tokenization, SOT achieves ~98-99% R@1,
+practically matching the SBERT baseline on this dataset.
 
 SOT is a lightweight fallback when no external embedder is available.
-It trades accuracy for zero external dependencies.
+With word-level tokenization it retains near-baseline accuracy.
 """
 
 import os
@@ -37,7 +38,7 @@ def test_sot_vs_sbert_baseline():
     from sentence_transformers import SentenceTransformer
     teacher = SentenceTransformer("all-MiniLM-L6-v2")
 
-    # ---- SOT field ----
+    # ---- SOT field (uses default word-level tokenization) ----
     cfg_sot = RTMDKConfig(
         latent_dim=384,
         top_k=5,
@@ -121,11 +122,10 @@ def test_sot_vs_sbert_baseline():
     base_r1 = base_hits / len(data)
     print(f"SBERT R@1: {base_r1:.1%}")
 
-    # SOT should achieve at least 60% of SBERT baseline
-    # (SBERT baseline is ~100% on this small dataset; SOT is ~70-75%)
+    # With word-level tokenization, SOT should achieve >80% of SBERT baseline
     assert base_r1 >= 0.95, f"SBERT baseline too low: {base_r1:.1%}"
-    assert sot_r1 >= 0.55, f"SOT R@1 too low: {sot_r1:.1%} (expected >=55%)"
-    assert sot_r1 >= base_r1 * 0.55, f"SOT degradation too large: {sot_r1:.1%} vs {base_r1:.1%}"
+    assert sot_r1 >= 0.80, f"SOT R@1 too low: {sot_r1:.1%} (expected >=80%)"
+    assert sot_r1 >= base_r1 * 0.80, f"SOT degradation too large: {sot_r1:.1%} vs {base_r1:.1%}"
 
 
 if __name__ == "__main__":

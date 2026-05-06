@@ -95,9 +95,9 @@ class TestMetaAdaptiveKurtosis:
     def test_low_kurtosis_widens_bandwidth(self):
         mk = _make_field(meta_adaptive=True).meta_kernel
         bw0 = mk.get_bandwidth()
-        # Flat distribution → low kurtosis (< 2.0)
-        for _ in range(50):
-            mk.record_response(0.5 + np.random.rand() * 0.01)
+        # U-shaped (beta(0.3,0.3)) → low kurtosis (< 1.5)
+        for val in np.random.beta(0.3, 0.3, 50):
+            mk.record_response(val)
         for _ in range(5):
             mk.adapt()
         bw1 = mk.get_bandwidth()

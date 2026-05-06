@@ -616,7 +616,7 @@ class SOTConfig:
         sot_bootstrap_corpus: Optional[str] = None  # Path to JSON corpus for auto-bootstrap
         sot_bootstrap_model: str = "all-MiniLM-L6-v2"  # Teacher model for auto-bootstrap
         sot_bootstrap_fasttext_model: Optional[str] = None  # Path to gensim model for FastText bootstrap
-        sot_tokenization_mode: str = "byte"  # "byte" or "word"
+        sot_tokenization_mode: str = "word"  # "byte" or "word"
         sot_max_cooccurrence: int = 100_000  # Max co-occurrence entries before pruning
 
 

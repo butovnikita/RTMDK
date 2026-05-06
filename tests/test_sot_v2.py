@@ -476,16 +476,20 @@ class TestSOTV2Integration:
             ("My work involves coding", "work"),
         ]
 
-        # v1: default SOT
-        cfg_v1 = RTMDKConfig(latent_dim=64, sot_enabled=True, sot_use_for_query=True)
+        # v1: default SOT (byte-level)
+        cfg_v1 = RTMDKConfig(
+            latent_dim=64, sot_enabled=True, sot_use_for_query=True,
+            sot_tokenization_mode="byte",
+        )
         field_v1 = RTMDKField(cfg_v1)
         for i, (text, _) in enumerate(docs):
             emb = make_emb(text)
             field_v1.add_node(emb, {'text': text, 'node_id': f'd{i}', 'topic': text}, skip_projection=True)
 
-        # v2: all features
+        # v2: all features (byte-level with subword seeds)
         cfg_v2 = RTMDKConfig(
             latent_dim=64, sot_enabled=True, sot_use_for_query=True,
+            sot_tokenization_mode="byte",
             sot_subword_seed=True,
             sot_attention_pooling=True,
             sot_skipgram_window=3,
