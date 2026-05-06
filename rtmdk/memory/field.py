@@ -2209,6 +2209,33 @@ class RTMDKField:
         if self.query_cache is not None:
             self.query_cache.clear()
 
+    def queue_add_nodes(
+        self,
+        embeddings: NDArray,
+        contents: List[Dict],
+        modalities: Optional[List[str]] = None,
+    ) -> None:
+        """Queue a batch for background ingestion.
+
+        If async_pipeline is enabled, the batch is placed on save_q and
+        processed by _worker_save.  Otherwise add_nodes_batch is called
+        synchronously.
+        """
+        if not self.cfg.async_pipeline or self.save_q is None:
+            self.add_nodes_batch(embeddings, contents, modalities=modalities)
+            return
+        payload = {
+            "embeddings": embeddings,
+            "contents": contents,
+            "modalities": modalities,
+        }
+        try:
+            self.save_q.put_nowait(payload)
+        except asyncio.QueueFull:
+            # Backpressure: fall back to synchronous path
+            logger.warning("save_q full — falling back to synchronous add_nodes_batch")
+            self.add_nodes_batch(embeddings, contents, modalities=modalities)
+
     def calibrate(self, query_embedding: NDArray, node_id: str, is_relevant: bool) -> None:
         """Add a labeled query-result pair to the conformal calibration set.
 
@@ -3790,12 +3817,27 @@ class RTMDKField:
             logger.info("Evolve worker cancelled cleanly.")
 
     async def _worker_save(self):
-        """Background worker for context saving."""
+        """Background worker for batch ingestion."""
         try:
             while True:
                 try:
                     payload = await asyncio.wait_for(self.save_q.get(), timeout=1.0)
-                    # Save is handled by add_node, just track depth
+                    embeddings = payload.get("embeddings")
+                    contents = payload.get("contents")
+                    modalities = payload.get("modalities")
+                    if embeddings is not None and contents is not None:
+                        loop = asyncio.get_event_loop()
+                        await loop.run_in_executor(
+                            None,
+                            self.add_nodes_batch,
+                            embeddings,
+                            contents,
+                            None,  # phases
+                            None,  # node_ids
+                            None,  # session_ids
+                            modalities,
+                            False,  # skip_projection
+                        )
                     self._track_queue_depth()
                     self.save_q.task_done()
                 except asyncio.TimeoutError:

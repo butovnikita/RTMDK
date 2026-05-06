@@ -596,6 +596,8 @@ field = RTMDKField(config)
 field.add_node(embedding, {"text": "hello"}, modality="text")
 # Batch ingestion (vectorized, single WAL write, single cache invalidation)
 field.add_nodes_batch(embeddings_array, contents_list, modalities=["text"]*len(contents_list))
+# Async background ingestion (returns immediately, worker processes in background)
+field.queue_add_nodes(embeddings_array, contents_list)
 results = field.query(embedding, phase=0.0, top_k=5)
 field.step()  # Продвинуть динамику на 1 шаг
 field.consolidate()  # Запустить консолидацию
