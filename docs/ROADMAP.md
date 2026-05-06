@@ -79,6 +79,7 @@
 | Batch Ingestion (Track 4) | ✅ | Vectorized `add_nodes_batch()` API, WAL batching |
 | WAL Replay & Durability (Track 5) | ✅ | Automatic recovery from WAL on restart, embedding persistence |
 | Async Save Worker (Track 6) | ✅ | Background batch ingestion via queue_add_nodes + _worker_save |
+| CI/CD + PyPI Hardening (Track 7) | ✅ | GitHub Actions CI, pytest-asyncio, local CI script, PyPI metadata |
 
 ## 2.2 ЧТО РЕАЛЬНО ОСТАЛОСЬ (Remaining)
 
