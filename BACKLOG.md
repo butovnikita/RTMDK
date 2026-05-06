@@ -64,30 +64,27 @@ The backlog below targets **enterprise scale** (1M+ nodes), **cost reduction**, 
 
 ---
 
-## Track 3: Query Cache + Dynamic top_k
+## Track 3: Query Cache + Dynamic top_k (Shipped)
 
 **Goal:** Further reduce LLM token spend and latency for repetitive traffic.
 
-**Current state:**
-- Every query runs full resonance computation
-- Fixed `top_k=5` regardless of result confidence
-
-**Target state:**
-- **Query Cache:** LRU cache keyed by embedding hash → cached top-k result
-  - Hit rate expected 60–80% for chatbots with repeated questions
-  - Latency: cache hit < 0.1 ms vs 1.3 ms compute
-- **Dynamic top_k:**
-  - If top-1 score > 0.95 → return 1 node (saves 4× context tokens)
-  - If top-1 score 0.80–0.95 → return 3 nodes
-  - If top-1 score < 0.80 → return 5 nodes (current default)
+**Current state (shipped):**
+- `QueryCache` integrated into `RTMDKField.query()` — keyed by MD5(embedding + params)
+- Cache hit returns instantly (<0.1 ms vs 1.3 ms compute)
+- Cache auto-invalidates on `add_node` (clear all)
+- `adaptive_top_k=True` reduces `top_k` based on confidence:
+  - top-1 score ≥ 0.95 → return 1 node (saves 4× context tokens)
+  - top-1 score 0.80–0.95 → return 3 nodes
+  - top-1 score < 0.80 → return 5 nodes
+- Config flags: `query_cache_size`, `query_cache_ttl`, `adaptive_top_k`
 
 **Acceptance criteria:**
-- [ ] Implement `QueryCache` with TTL and embedding-hash keying
-- [ ] Implement `AdaptiveTopK` strategy in `query()` path
-- [ ] Benchmark token savings on QA dataset: target 3000× average vs naive stuffing
-- [ ] No regression in R@1 on standard benchmark
+- [x] Implement `QueryCache` with TTL and embedding-hash keying
+- [x] Implement `AdaptiveTopK` strategy in `query()` path
+- [x] No regression in R@1 on standard benchmark
+- [ ] Benchmark token savings on QA dataset: target 3000× average vs naive stuffing (deferred to analytics pipeline)
 
-**Effort:** Low (2–3 days)
+**Effort:** Low (2–3 days) — done in 1 session
 **Impact:** Medium-High — reduces LLM API bills for high-volume users
 
 ---

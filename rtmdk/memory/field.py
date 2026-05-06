@@ -639,6 +639,12 @@ class RTMDKField:
         self._cached_causal_boost: Optional[NDArray] = None    # (N,) causal boost factor
         self._cache_dirty: bool = False
 
+        # Track 3: Query cache
+        self.query_cache: Optional[Any] = None
+        if config.query_cache_size > 0:
+            from rtmdk.production.query_cache import QueryCache
+            self.query_cache = QueryCache(max_size=config.query_cache_size, ttl_seconds=config.query_cache_ttl)
+
         # P1.1: Conformal prediction calibrator
         self.conformal_calibrator: Optional[ConformalCalibrator] = None
         if config.conformal_prediction:
@@ -1479,11 +1485,42 @@ class RTMDKField:
 
         return results
 
+    def _query_cache_key(self, query_latent: NDArray, phase: float, top_k: int, modality: str, session_id: Optional[str]) -> str:
+        """Hash embedding + query params for cache key."""
+        import hashlib
+        # Round to fp16 precision to tolerate tiny float noise
+        vec = query_latent.astype(np.float16).tobytes()
+        raw = vec + f"|{phase:.4f}|{top_k}|{modality}|{session_id or ''}".encode()
+        return hashlib.md5(raw).hexdigest()
+
+    def _apply_adaptive_top_k(self, results: List[Tuple[str, float, MemoryNode]]) -> List[Tuple[str, float, MemoryNode]]:
+        """Reduce top_k when top result is highly confident."""
+        if not results:
+            return results
+        top_score = results[0][1]
+        if top_score >= 0.95:
+            return results[:1]
+        elif top_score >= 0.80:
+            return results[:3]
+        else:
+            return results[:5]
+
     def query(self, embedding: NDArray, phase: float = 0.0, top_k: Optional[int] = None,
               modality: str = "text", session_id: Optional[str] = None) -> List[Tuple[str, float, MemoryNode]]:
         t0 = time.time()
         top_k = top_k or self.cfg.top_k
         query_latent = self._project(embedding)
+
+        # Track 3: Query cache check
+        if self.query_cache is not None:
+            cache_key = self._query_cache_key(query_latent, phase, top_k, modality, session_id)
+            cached = self.query_cache.get_raw(cache_key)
+            if cached is not None:
+                self.stats.setdefault("query_cache_hits", 0)
+                self.stats["query_cache_hits"] += 1
+                return cached
+            self.stats.setdefault("query_cache_misses", 0)
+            self.stats["query_cache_misses"] += 1
 
         # Fix 1: HNSW auto-intercept for large N (>5000 nodes).
         # For small datasets, full vectorized scan is more accurate and still fast (SIMD).
@@ -1655,7 +1692,18 @@ class RTMDKField:
         if self.cfg.sot_retrieval_feedback and self.sot_tokenizer and self.sot_hebbian and results:
             self._sot_retrieval_feedback(query_latent, results)
 
-        return results[:top_k]
+        # Track 3: Adaptive top_k based on confidence
+        if self.cfg.adaptive_top_k:
+            results = self._apply_adaptive_top_k(results)
+
+        final = results[:top_k]
+
+        # Track 3: Store in cache
+        if self.query_cache is not None:
+            cache_key = self._query_cache_key(query_latent, phase, top_k, modality, session_id)
+            self.query_cache.put_raw(cache_key, final)
+
+        return final
 
     def sot_bootstrap(self, texts: List[str], teacher_model: str = 'all-MiniLM-L6-v2'):
         """Bootstrap SOT embeddings from a sentence-transformer teacher model.
@@ -1942,6 +1990,10 @@ class RTMDKField:
 
         # B1: Invalidate tension cache for neighbors (new node affects topology)
         self._invalidate_tension_cache(nid)
+
+        # Track 3: Invalidate query cache (new node may change rankings)
+        if self.query_cache is not None:
+            self.query_cache.clear()
 
         # Phase 17: Update shard distribution stats
         if self.role_router:

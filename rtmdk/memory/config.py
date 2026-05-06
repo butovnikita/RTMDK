@@ -85,6 +85,9 @@ _FIELD_GROUPS: Dict[str, str] = {
     "kalman_init_variance": "CoreConfig",
     "bandwidth": "CoreConfig",
     "bias_temperature": "RetrievalConfig",
+    "query_cache_size": "RetrievalConfig",
+    "query_cache_ttl": "RetrievalConfig",
+    "adaptive_top_k": "RetrievalConfig",
     "bm25_b": "CoreConfig",
     "bm25_fallback": "CoreConfig",
     "bm25_k1": "CoreConfig",
@@ -387,6 +390,9 @@ class RetrievalConfig:
         tda_check_freq: int = 50
         attention_bias: bool = False
         bias_temperature: float = 1.0
+        query_cache_size: int = 0  # 0 = disabled
+        query_cache_ttl: int = 3600  # seconds
+        adaptive_top_k: bool = False
 
 
 @dataclass

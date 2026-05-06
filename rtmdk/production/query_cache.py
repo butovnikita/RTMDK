@@ -24,6 +24,10 @@ class QueryCache:
 
     def get(self, query: str) -> Optional[Any]:
         key = self._hash_query(query)
+        return self.get_raw(key)
+
+    def get_raw(self, key: str) -> Optional[Any]:
+        """Get by pre-computed key (e.g. embedding hash)."""
         if key not in self._cache:
             self._stats["misses"] += 1
             return None
@@ -42,6 +46,10 @@ class QueryCache:
 
     def put(self, query: str, result: Any):
         key = self._hash_query(query)
+        self.put_raw(key, result)
+
+    def put_raw(self, key: str, result: Any):
+        """Put by pre-computed key (e.g. embedding hash)."""
         if key in self._cache:
             self._cache.move_to_end(key)
         self._cache[key] = (result, time.time())
