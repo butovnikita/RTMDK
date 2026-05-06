@@ -24,6 +24,7 @@ def _make_field(n_nodes=10, dim=8, adaptive=True, bw=1.0, **kw):
         bandwidth=bw,
         adaptive_bandwidth=adaptive,
         adaptive_bandwidth_k=3,
+        adaptive_bandwidth_min_n=5,
         **kw
     )
     field = RTMDKField(cfg)
@@ -90,6 +91,7 @@ class TestAdaptiveBandwidthBasics:
             bandwidth=1.0,
             adaptive_bandwidth=True,
             adaptive_bandwidth_k=3,
+            adaptive_bandwidth_min_n=5,
         )
         field = RTMDKField(cfg)
         rng = np.random.default_rng(7)
@@ -137,6 +139,7 @@ class TestAdaptiveBandwidthQuery:
             bandwidth=1.0,
             adaptive_bandwidth=True,
             adaptive_bandwidth_k=3,
+            adaptive_bandwidth_min_n=5,
         )
         field = RTMDKField(cfg)
         rng = np.random.default_rng(5)
@@ -169,7 +172,7 @@ class TestAdaptiveBandwidthQuery:
 
     def test_resonance_differs_from_global(self):
         """With adaptive bw, resonance values should differ from global scalar bw."""
-        cfg = RTMDKConfig(latent_dim=4, bandwidth=1.0, adaptive_bandwidth=True, adaptive_bandwidth_k=3)
+        cfg = RTMDKConfig(latent_dim=4, bandwidth=1.0, adaptive_bandwidth=True, adaptive_bandwidth_k=3, adaptive_bandwidth_min_n=5)
         field = RTMDKField(cfg)
         # Deterministic positions: one cluster, one outlier
         for nid, pos in [

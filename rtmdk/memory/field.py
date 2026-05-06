@@ -1281,7 +1281,7 @@ class RTMDKField:
                 causal_boost[i] = 1.0 + 0.1 * cb
 
         # Phase P1.2: Local adaptive bandwidth — precompute k-NN distances
-        if self.cfg.adaptive_bandwidth and n > max(self.cfg.adaptive_bandwidth_k, 50):
+        if self.cfg.adaptive_bandwidth and n >= max(self.cfg.adaptive_bandwidth_k, self.cfg.adaptive_bandwidth_min_n):
             tree = cKDTree(positions)
             k = self.cfg.adaptive_bandwidth_k + 1  # +1 because query includes self
             distances, _ = tree.query(positions, k=k)
