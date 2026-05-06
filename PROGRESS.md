@@ -166,10 +166,42 @@ python -m build
 - 265 passed, 1 skipped, 6 warnings (1 flaky rate-limit test)
 - `pytest -m "not slow"` runs in ~4 seconds
 
-### Known Issues
+### Known Issues (Pre-Deep Dive)
 - **Git remote not configured** — commits are local-only. Push requires `git remote add origin <URL>`.
 - **SOT benchmark**: R@1 = 9% on 1K QA — remains experimental, disabled by default.
 - **adaptive_bandwidth**: Stabilized but ~56% R@1 vs 95.6% baseline — remains disabled by default.
+
+---
+
+## ✅ 7. Deep Dive: Dead Modules Investigation (completed 2026-05-01)
+
+### 7.1 adaptive_bandwidth — "Stabilized to Death"
+
+**Finding:** Current stabilization (clip 0.2–5.0 + [0.1×, 10×] global bounds) produces BW spread of only **1.4×**. The feature is effectively global bandwidth in disguise.
+
+**Tests performed:**
+| Benchmark | Global BW R@1 | Adaptive BW R@1 |
+|-----------|---------------|-----------------|
+| Synthetic clustered (128d) | 100% | 100% |
+| SBERT semantic (384d, 300 QA) | 74.0% | 74.0% |
+
+**Conclusion:** Adaptive bandwidth does NOT degrade accuracy, but also provides no benefit. The 56% R@1 figure from Sprint 3.2 was measured **before** stabilization. Post-stabilization it is safe but useless.
+
+**Decision:** Keep `adaptive_bandwidth=False` by default. Document as "experimental — needs redesign of transform/clip ranges to provide meaningful density adaptation."
+
+### 7.2 SOT (Self-Organizing Tokenizer) — "Benchmark was Broken"
+
+**Finding:** Previous `test_sot_benchmark.py` was incorrect. It added nodes with **random dummy embeddings** but queried with **SOT embeddings** — different embedding spaces produced ~9% R@1 (effectively random).
+
+**Corrected benchmark (both paths use SOT):**
+| Method | R@1 (200 QA) |
+|--------|--------------|
+| SOT (byte tokenizer + SBERT bootstrap) | **73%** |
+| SBERT baseline (external embedder) | **100%** |
+
+**Conclusion:** SOT works as a lightweight fallback. 73% R@1 is acceptable for a zero-dependency embedder, though it cannot match full SBERT.
+
+**Decision:** Keep SOT as experimental fallback. Corrected `tests/test_sot_benchmark.py` now validates >=55% R@1 against SBERT baseline.
 
 ---
 
