@@ -144,4 +144,33 @@ scores = self._batch_resonance(
 
 ---
 
-*Last updated: 2026-05-06*
+## ✅ 6. Sprint 4: CI/CD + PyPI Packaging (completed 2026-05-01)
+
+**Goal:** Make RTMDK installable from PyPI and add automated testing.
+
+### Changes Made
+- **`pyproject.toml`**: Added `[build-system]` (setuptools), package metadata (name=rtmdk, version=8.2.0), pytest markers (`slow`), black/isort config.
+- **`.github/workflows/ci.yml`**: Lint, type-check, test with multi-Python matrix (3.10/3.11/3.12).
+- **`.github/workflows/publish.yml`**: Automated PyPI publish on git tags.
+- **`rtmdk/memory/config.py`**: Added `adaptive_bandwidth_min_n` (default 50) — configurable minimum node count for adaptive bandwidth cache build.
+- **`rtmdk/memory/field.py`**: Changed adaptive bw condition from `n > max(k, 50)` to `n >= max(k, adaptive_bandwidth_min_n)`.
+- **`tests/test_local_bandwidth.py`**: Updated to use `adaptive_bandwidth_min_n=5` for small-N unit tests.
+
+### Build Verification
+```bash
+python -m build
+# Produced: rtmdk-8.2.0.tar.gz + rtmdk-8.2.0-py3-none-any.whl
+```
+
+### Test Results
+- 265 passed, 1 skipped, 6 warnings (1 flaky rate-limit test)
+- `pytest -m "not slow"` runs in ~4 seconds
+
+### Known Issues
+- **Git remote not configured** — commits are local-only. Push requires `git remote add origin <URL>`.
+- **SOT benchmark**: R@1 = 9% on 1K QA — remains experimental, disabled by default.
+- **adaptive_bandwidth**: Stabilized but ~56% R@1 vs 95.6% baseline — remains disabled by default.
+
+---
+
+*Last updated: 2026-05-01*
