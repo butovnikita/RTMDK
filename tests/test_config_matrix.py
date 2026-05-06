@@ -49,8 +49,8 @@ class TestConfigMatrix:
     def test_conformal_prediction(self):
         self._check(conformal_prediction=True)
 
-    def test_adaptive_bandwidth(self):
-        self._check(adaptive_bandwidth=True)
+    def test_meta_adaptive(self):
+        self._check(meta_adaptive=True)
 
     def test_spectral_consolidation(self):
         self._check(spectral_consolidation=True)
@@ -80,7 +80,7 @@ class TestConfigMatrix:
             sot_max_cooccurrence=50,
             hyperbolic=True,
             conformal_prediction=True,
-            adaptive_bandwidth=True,
+            meta_adaptive=True,
             spectral_consolidation=True,
             enable_kalman_filter=True,
             enable_engrams=True,

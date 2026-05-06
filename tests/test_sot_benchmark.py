@@ -49,7 +49,6 @@ def test_sot_vs_sbert_baseline():
         enable_async=False,
         resonance_kernel="cosine",
         phase_coupling=0.0,
-        adaptive_bandwidth=False,
         sot_enabled=True,
         sot_use_for_query=True,
         sot_subword_seed=True,
@@ -96,7 +95,6 @@ def test_sot_vs_sbert_baseline():
         enable_async=False,
         resonance_kernel="cosine",
         phase_coupling=0.0,
-        adaptive_bandwidth=False,
     )
     field_base = RTMDKField(cfg_base)
 

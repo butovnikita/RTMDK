@@ -179,15 +179,17 @@ python -m build
 
 **Finding:** Current stabilization (clip 0.2–5.0 + [0.1×, 10×] global bounds) produces BW spread of only **1.4×**. The feature is effectively global bandwidth in disguise.
 
+**Root cause (discovered in full research):** Curse of dimensionality. In 384d normalized embedding space, k-NN distances have CV < 0.5% and p99/p01 ratio ≈ 1.02×. Any transform of nearly-constant values produces nearly-constant bandwidth factors. Grid search of 252 configs confirmed: **no transform/clip/k combination produces meaningful adaptation without destroying accuracy**.
+
 **Tests performed:**
 | Benchmark | Global BW R@1 | Adaptive BW R@1 |
 |-----------|---------------|-----------------|
 | Synthetic clustered (128d) | 100% | 100% |
 | SBERT semantic (384d, 300 QA) | 74.0% | 74.0% |
 
-**Conclusion:** Adaptive bandwidth does NOT degrade accuracy, but also provides no benefit. The 56% R@1 figure from Sprint 3.2 was measured **before** stabilization. Post-stabilization it is safe but useless.
+**Conclusion:** P1.2 local adaptive bandwidth (k-NN distance based) is mathematically doomed in high-D normalized spaces. The 56% R@1 figure from Sprint 3.2 was measured **before** stabilization.
 
-**Decision:** Keep `adaptive_bandwidth=False` by default. Document as "experimental — needs redesign of transform/clip ranges to provide meaningful density adaptation."
+**Decision:** Remove P1.2 local adaptive bandwidth entirely. Replace with original v8 **MetaAdaptiveKernel** (global kurtosis-based adaptive bandwidth) which was already implemented but disabled.
 
 ### 7.2 SOT (Self-Organizing Tokenizer) — "Benchmark was Broken"
 
@@ -202,6 +204,32 @@ python -m build
 **Conclusion:** SOT works as a lightweight fallback. 73% R@1 is acceptable for a zero-dependency embedder, though it cannot match full SBERT.
 
 **Decision:** Keep SOT as experimental fallback. Corrected `tests/test_sot_benchmark.py` now validates >=55% R@1 against SBERT baseline.
+
+---
+
+## ✅ 8. Fix adaptive_bandwidth: Remove P1.2, Enable MetaAdaptiveKernel (completed 2026-05-01)
+
+**Problem:** Two different features shared the name "adaptive bandwidth":
+1. **P1.2 Local Adaptive BW** (`config.adaptive_bandwidth`) — k-NN distance based, broken in high-D
+2. **MetaAdaptiveKernel** (`config.meta_adaptive`) — global kurtosis-based, working but disabled
+
+**Changes Made:**
+- **Removed P1.2 completely:**
+  - Deleted `adaptive_bandwidth`, `adaptive_bandwidth_k`, `adaptive_bandwidth_min_n` from `CoreConfig`
+  - Removed `_cached_bw`, k-NN distance computation, and all P1.2 code from `field.py` (~50 lines removed)
+  - Deleted `tests/test_local_bandwidth.py`
+  - Removed `adaptive_bandwidth` references from `test_config_matrix.py` and `test_sot_benchmark.py`
+- **Enabled MetaAdaptiveKernel in production preset:** `meta_adaptive=True` in `_production()`
+- **Created `tests/test_meta_adaptive.py`** — validates kurtosis-driven bandwidth adaptation
+
+**MetaAdaptiveKernel verified:**
+| Config | Final BW | R@1 | Status |
+|--------|----------|-----|--------|
+| Global bw=1.0 | 1.000 | 74.0% | baseline |
+| MetaAdaptive (default) | 1.051 | 74.0% | ✅ safe |
+| MetaAdaptive (aggressive) | 1.219 | 74.0% | ✅ safe |
+
+**Test results:** 264 passed, 1 skipped, 6 warnings (1 flaky rate-limit test)
 
 ---
 

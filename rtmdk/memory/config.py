@@ -72,9 +72,6 @@ _FIELD_GROUPS: Dict[str, str] = {
     "auto_rollback_threshold": "ProductionConfig",
     "backend": "RetrievalConfig",
     "ball_radius": "MemorySystemConfig",
-    "adaptive_bandwidth": "CoreConfig",
-    "adaptive_bandwidth_k": "CoreConfig",
-    "adaptive_bandwidth_min_n": "CoreConfig",
     "conformal_prediction": "CoreConfig",
     "conformal_alpha": "CoreConfig",
     "conformal_min_calib": "CoreConfig",
@@ -325,9 +322,6 @@ class CoreConfig:
         resonance_kernel: str = "gaussian_phase"
         phase_coupling: float = 0.3
         bandwidth: float = 1.0
-        adaptive_bandwidth: bool = False
-        adaptive_bandwidth_k: int = 5
-        adaptive_bandwidth_min_n: int = 50
         conformal_prediction: bool = False
         conformal_alpha: float = 0.10
         conformal_min_calib: int = 50
@@ -760,9 +754,6 @@ class RTMDKConfig:
             ("RTMDK_CONSOLIDATION_ASYNC", "consolidation_async", lambda x: x.lower() == "true"),
             ("RTMDK_PHASE_COUPLING", "phase_coupling", float),
             ("RTMDK_BANDWIDTH", "bandwidth", float),
-            ("RTMDK_ADAPTIVE_BANDWIDTH", "adaptive_bandwidth", lambda x: x.lower() == "true"),
-            ("RTMDK_ADAPTIVE_BANDWIDTH_K", "adaptive_bandwidth_k", int),
-            ("RTMDK_ADAPTIVE_BANDWIDTH_MIN_N", "adaptive_bandwidth_min_n", int),
             ("RTMDK_CONFORMAL_PREDICTION", "conformal_prediction", lambda x: x.lower() == "true"),
             ("RTMDK_CONFORMAL_ALPHA", "conformal_alpha", float),
             ("RTMDK_CONFORMAL_MIN_CALIB", "conformal_min_calib", int),
