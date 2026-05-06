@@ -43,6 +43,10 @@ class NaiveGraphIndex:
                     if len(self.graph[nb]) > self.m * 2:
                         self.graph[nb] = self.graph[nb][-self.m:]
 
+    def insert_batch(self, node_ids: List[str], positions: NDArray):
+        for nid, pos in zip(node_ids, positions):
+            self.insert(nid, pos)
+
     def remove(self, node_id: str):
         self.graph.pop(node_id, None)
         self.positions.pop(node_id, None)

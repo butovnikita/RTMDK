@@ -55,6 +55,34 @@ if _HNSWLIB_AVAILABLE:
                 self._index.resize_index(new_max)
             self._index.add_items(vec, np.array([idx]))
 
+        def insert_batch(self, node_ids: List[Union[int, str]], positions: NDArray):
+            if positions.shape[0] != len(node_ids):
+                raise ValueError(f"positions count {positions.shape[0]} != node_ids count {len(node_ids)}")
+            new_ids = []
+            new_vecs = []
+            for nid, pos in zip(node_ids, positions):
+                if nid in self._id_to_int:
+                    continue
+                vec = np.asarray(pos, dtype=np.float32).reshape(1, -1)
+                if vec.shape[1] != self.dim:
+                    raise ValueError(f"Expected dim {self.dim}, got {vec.shape[1]}")
+                idx = self._next_int
+                self._next_int += 1
+                self._id_to_int[nid] = idx
+                self._int_to_id[idx] = nid
+                self.positions[nid] = vec[0]
+                new_ids.append(idx)
+                new_vecs.append(vec[0])
+            if not new_ids:
+                return
+            vecs = np.array(new_vecs, dtype=np.float32)
+            current_max = self._index.max_elements
+            max_idx = max(new_ids)
+            if max_idx >= current_max:
+                new_max = max(current_max * 2, 100_000, max_idx + 1)
+                self._index.resize_index(new_max)
+            self._index.add_items(vecs, np.array(new_ids, dtype=np.int64))
+
         def remove(self, node_id: Union[int, str]):
             idx = self._id_to_int.pop(node_id, None)
             if idx is not None:

@@ -669,6 +669,21 @@ class RTMDKMemory(BaseModel):
         """Add a node to the memory field. Delegates to RTMDKField.add_node."""
         return self.field.add_node(embedding, content, **kwargs)
 
+    def add_nodes_batch(
+        self,
+        embeddings: NDArray,
+        contents: List[Dict],
+        phases: Optional[NDArray] = None,
+        node_ids: Optional[List[str]] = None,
+        session_ids: Optional[List[str]] = None,
+        modalities: Optional[List[str]] = None,
+        skip_projection: bool = False,
+    ) -> List[str]:
+        """Batch add nodes. Delegates to RTMDKField.add_nodes_batch."""
+        return self.field.add_nodes_batch(
+            embeddings, contents, phases, node_ids, session_ids, modalities, skip_projection
+        )
+
     def _get_phase(self, session_id: Optional[str] = None, embedding: Optional[NDArray] = None) -> float:
         if session_id and session_id in self.session_phases:
             return self.session_phases[session_id]

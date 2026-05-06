@@ -73,6 +73,10 @@
 | Бенчмарки | ✅ | 95.6% Recall@1 подтверждено (v8.1) |
 | Интеграция с LM Studio | ✅ | Полный цикл: память → прокси → LLM |
 | Документация | ✅ | 8+ файлов в docs/ |
+| fp16 Quantization (Track 1) | ✅ | 2× RAM reduction, exact R@1 preservation |
+| SOT Adaptive LR | ✅ | Auto-scaled contrastive LR for 512–1536d tokens |
+| Query Cache + Adaptive top_k (Track 3) | ✅ | LRU cache with TTL, adaptive recall |
+| Batch Ingestion (Track 4) | ✅ | Vectorized `add_nodes_batch()` API, WAL batching |
 
 ## 2.2 ЧТО РЕАЛЬНО ОСТАЛОСЬ (Remaining)
 

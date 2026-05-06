@@ -1132,6 +1132,21 @@ class RTMDKField:
                 latent = latent * (self.cfg.ball_radius - 1e-6) / max(norm, 1e-8)
         return latent
 
+    def _project_batch(self, embeddings: NDArray) -> NDArray:
+        """Vectorized projection for batch inserts."""
+        n, d = embeddings.shape
+        if d == self.cfg.latent_dim:
+            return embeddings.astype(np.float32)
+        if self.projection_learner:
+            # Sequential fallback for stateful projection learner
+            return np.array([self.projection_learner.project(e) for e in embeddings])
+        # Vectorized random projection
+        embs = embeddings.astype(np.float32)
+        norms = np.linalg.norm(embs, axis=1, keepdims=True)
+        norms = np.maximum(norms, 1e-8)
+        embs = embs / norms
+        return embs @ self._raw_projection
+
     def _get_phase(self, session_id: Optional[str] = None, embedding: Optional[NDArray] = None,
                    modality: str = "text") -> float:
         base = (time.time() * 0.01) % (2 * np.pi)
@@ -2022,6 +2037,153 @@ class RTMDKField:
         self.wal.append_add_node(nid, content, modality)
         self._dirty = True
         return nid
+
+    def add_nodes_batch(
+        self,
+        embeddings: NDArray,
+        contents: List[Dict],
+        phases: Optional[NDArray] = None,
+        node_ids: Optional[List[str]] = None,
+        session_ids: Optional[List[str]] = None,
+        modalities: Optional[List[str]] = None,
+        skip_projection: bool = False,
+    ) -> List[str]:
+        """Batch add nodes with vectorized projection, cache, and index updates.
+
+        This is significantly faster than calling add_node() in a loop because:
+        - Projection is a single matrix multiply
+        - Normalization / hyperbolic clamp are vectorized
+        - Cache append is a single vstack instead of N incremental appends
+        - HNSW receives a batch add_items call
+        - Query cache is invalidated once, not N times
+        - WAL receives a single append
+        """
+        if len(embeddings) != len(contents):
+            raise ValueError(f"embeddings length {len(embeddings)} != contents length {len(contents)}")
+        n = len(embeddings)
+        if n == 0:
+            return []
+
+        # --- Vectorized projection ---
+        if skip_projection:
+            if embeddings.shape[1] != self.cfg.latent_dim:
+                raise ValueError(
+                    f"skip_projection=True but embedding dim {embeddings.shape[1]} != "
+                    f"latent_dim {self.cfg.latent_dim}"
+                )
+            latents = embeddings.astype(np.float32)
+        elif embeddings.shape[1] == self.cfg.latent_dim:
+            latents = embeddings.astype(np.float32)
+        else:
+            latents = self._project_batch(embeddings)
+
+        # Vectorized normalization
+        norms = np.linalg.norm(latents, axis=1, keepdims=True)
+        latents = latents / np.maximum(norms, 1e-8)
+
+        # Vectorized hyperbolic clamp
+        if self.cfg.hyperbolic:
+            norms = np.linalg.norm(latents, axis=1, keepdims=True)
+            mask = norms.flatten() >= self.cfg.ball_radius
+            if np.any(mask):
+                latents[mask] = latents[mask] * (self.cfg.ball_radius - 1e-6) / np.maximum(norms[mask], 1e-8)
+
+        # Track 1: Quantize (loop — quantizer may not be vectorizable)
+        latents = np.array([self._quant.quantize(l) for l in latents])
+
+        # --- Vectorized phase / amplitude / salience ---
+        if phases is None:
+            base = (time.time() * 0.01) % (2 * np.pi)
+            if modalities:
+                if self.cfg.cross_modal:
+                    phases = np.array([
+                        (base + self.cfg.modal_phase_offsets.get(m, 0.0)) % (2 * np.pi)
+                        for m in modalities
+                    ], dtype=np.float32)
+                elif self.cfg.multimodal:
+                    phases = np.array([
+                        (base + self.cfg.modality_phase_shifts.get(m, 0.0)) % (2 * np.pi)
+                        for m in modalities
+                    ], dtype=np.float32)
+                else:
+                    phases = np.full(n, base, dtype=np.float32)
+            else:
+                phases = np.full(n, base, dtype=np.float32)
+        else:
+            phases = np.asarray(phases, dtype=np.float32)
+
+        emb_norms = np.linalg.norm(embeddings, axis=1)
+        saliences = np.clip(emb_norms / 20.0, 0.3, 1.0).astype(np.float32)
+        amplitudes = np.clip(emb_norms / 15.0, 0.5, 1.0).astype(np.float32)
+
+        # --- Create nodes ---
+        now = time.time()
+        base_idx = len(self.nodes)
+        batch_nids: List[str] = []
+        for i in range(n):
+            nid = node_ids[i] if node_ids else f"n_{base_idx + i}_{int(now * 1000)}_{i}"
+            batch_nids.append(nid)
+            node = MemoryNode(
+                id=nid,
+                latent_pos=latents[i],
+                phase=float(phases[i]),
+                amplitude=float(amplitudes[i]),
+                salience=float(saliences[i]),
+                content=contents[i],
+                lineage=[],
+                modality=modalities[i] if modalities else "text",
+            )
+            if self.cfg.cross_modal:
+                node.modal_embedding = embeddings[i].copy()
+            self.nodes[nid] = node
+            if nid not in self.node_index:
+                self.node_index.append(nid)
+            self.stats["total_adds"] += 1
+
+        # --- Vectorized cache append ---
+        if self._cached_positions is not None:
+            self._cached_positions = np.vstack([self._cached_positions, latents])
+            self._cached_phases = np.append(self._cached_phases, phases)
+            self._cached_amplitudes = np.append(self._cached_amplitudes, amplitudes)
+            self._cached_saliences = np.append(self._cached_saliences, saliences)
+            self._cached_modal_weights = np.append(
+                self._cached_modal_weights, np.ones(n, dtype=np.float32)
+            )
+            self._cached_gates = np.append(
+                self._cached_gates, np.ones(n, dtype=np.float32)
+            )
+            self._cached_causal_boost = np.append(
+                self._cached_causal_boost, np.ones(n, dtype=np.float32)
+            )
+        else:
+            self._cache_dirty = True
+
+        # --- Batch HNSW insert ---
+        if self.cfg.use_hnsw and self.hnsw_index:
+            if hasattr(self.hnsw_index, "insert_batch"):
+                self.hnsw_index.insert_batch(batch_nids, latents)
+            else:
+                for nid, latent in zip(batch_nids, latents):
+                    self.hnsw_index.insert(nid, latent)
+
+        # --- Batch BM25 insert ---
+        if self.cfg.bm25_fallback and self.bm25_index:
+            for i, nid in enumerate(batch_nids):
+                text = contents[i].get("text", "")
+                if not text:
+                    input_t = contents[i].get("input_text", "")
+                    output_t = contents[i].get("output_text", "")
+                    text = f"{input_t} {output_t}".strip()
+                if text:
+                    self.bm25_index.add_document(nid, text)
+
+        # Track 3: Invalidate query cache once
+        if self.query_cache is not None:
+            self.query_cache.clear()
+
+        self.wal.append("add_nodes_batch", {"count": n, "node_ids": batch_nids})
+        self._dirty = True
+        return batch_nids
 
     def calibrate(self, query_embedding: NDArray, node_id: str, is_relevant: bool) -> None:
         """Add a labeled query-result pair to the conformal calibration set.
