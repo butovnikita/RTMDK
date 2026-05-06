@@ -1281,14 +1281,18 @@ class RTMDKField:
                 causal_boost[i] = 1.0 + 0.1 * cb
 
         # Phase P1.2: Local adaptive bandwidth — precompute k-NN distances
-        if self.cfg.adaptive_bandwidth and n > self.cfg.adaptive_bandwidth_k:
+        if self.cfg.adaptive_bandwidth and n > max(self.cfg.adaptive_bandwidth_k, 50):
             tree = cKDTree(positions)
             k = self.cfg.adaptive_bandwidth_k + 1  # +1 because query includes self
             distances, _ = tree.query(positions, k=k)
             kdist = distances[:, -1].astype(np.float32)
             median_kdist = float(np.median(kdist))
             bw_factors = np.sqrt(kdist / max(median_kdist, 1e-8))
-            self._cached_bw = (self.cfg.bandwidth * bw_factors).astype(np.float32)
+            # Stabilization: clip factors to prevent extreme bandwidth collapse/expansion
+            bw_factors = np.clip(bw_factors, 0.2, 5.0)
+            raw_bw = self.cfg.bandwidth * bw_factors
+            global_bw = self.cfg.bandwidth
+            self._cached_bw = np.clip(raw_bw, global_bw * 0.1, global_bw * 10.0).astype(np.float32)
         else:
             self._cached_bw = None
 
