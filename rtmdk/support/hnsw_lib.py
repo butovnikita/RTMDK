@@ -27,7 +27,7 @@ if _HNSWLIB_AVAILABLE:
     class HNSWLibIndex:
         """HNSW index backed by hnswlib. API-compatible with NaiveGraphIndex."""
 
-        def __init__(self, dim: int = 64, m: int = 16, ef_construction: int = 200, space: str = "l2"):
+        def __init__(self, dim: int = 64, m: int = 16, ef_construction: int = 200, space: str = "cosine"):
             self.dim = dim
             self._index = hnswlib.Index(space=space, dim=dim)
             self._index.init_index(max_elements=100_000, ef_construction=ef_construction, M=m)
@@ -65,8 +65,12 @@ if _HNSWLIB_AVAILABLE:
         def search(self, query_pos: NDArray, top_k: int = 10) -> List[Union[int, str]]:
             if not self._id_to_int:
                 return []
+            # Adaptive ef for high recall at scale
+            n = len(self._id_to_int)
+            ef = max(200, min(n // 20, 2000), top_k * 2)
+            self._index.set_ef(ef)
             vec = np.asarray(query_pos, dtype=np.float32).reshape(1, -1)
-            labels, _ = self._index.knn_query(vec, k=min(top_k, len(self._id_to_int)))
+            labels, _ = self._index.knn_query(vec, k=min(top_k, n))
             result = []
             for idx in labels[0]:
                 nid = self._int_to_id.get(int(idx))

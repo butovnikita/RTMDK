@@ -1485,7 +1485,8 @@ class RTMDKField:
         # Fix 1: HNSW auto-intercept for large N (>5000 nodes).
         # For small datasets, full vectorized scan is more accurate and still fast (SIMD).
         if self.cfg.use_hnsw and self.hnsw_index and len(self.hnsw_index.positions) > 20000:
-            hnsw_k = min(len(self.hnsw_index.positions), max(top_k * 10, 200))
+            n_pos = len(self.hnsw_index.positions)
+            hnsw_k = min(n_pos, max(top_k * 20, min(n_pos // 20, 2000)))
             candidate_ids = self.hnsw_index.search(query_latent, hnsw_k)
             candidate_ids = [nid for nid in candidate_ids if nid in self.nodes]
             # Vectorized batch resonance on HNSW candidates (avoids slow Python loop)
@@ -1680,6 +1681,25 @@ class RTMDKField:
         except Exception as e:
             logger.error(f"SOT bootstrap failed: {e}")
             raise
+
+    def sot_contrastive_step(
+        self,
+        query_text: str,
+        positive_text: str,
+        negative_texts = None,
+        lr: float = 0.01,
+    ):
+        """Online contrastive learning step for SOT token embeddings.
+
+        Pulls query tokens toward positive text tokens and pushes them
+        away from negative text tokens. This reduces dependence on the
+        teacher model after bootstrap.
+        """
+        if not self.sot_tokenizer:
+            raise RuntimeError("SOT not enabled in config")
+        if negative_texts is None:
+            negative_texts = []
+        self.sot_tokenizer.contrastive_step(query_text, positive_text, negative_texts, lr=lr)
 
     def _sot_retrieval_feedback(self, query_latent: np.ndarray, results: List[Tuple[str, float, MemoryNode]]):
         """Update SOT embeddings based on retrieval results.

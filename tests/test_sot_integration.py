@@ -206,6 +206,30 @@ class TestSOTStatePersistence:
         assert len(field2.sot_tokenizer.token_embeddings) == len(field_sot.sot_tokenizer.token_embeddings)
 
 
+class TestSOTContrastiveField:
+    def test_field_contrastive_step_changes_embeddings(self, field_sot):
+        field_sot.sot_contrastive_step(
+            query_text="query text",
+            positive_text="positive match",
+            negative_texts=["negative random"],
+            lr=0.05,
+        )
+        # After contrastive step, embeddings should still be valid
+        emb = field_sot.sot_tokenizer.embed(field_sot.sot_tokenizer.encode("query text"))
+        assert emb.shape == (LATENT_DIM,)
+        assert np.linalg.norm(emb) > 0.9
+
+    def test_field_contrastive_step_multiple_negatives(self, field_sot):
+        field_sot.sot_contrastive_step(
+            query_text="hello world",
+            positive_text="hello there",
+            negative_texts=["foo bar", "baz qux"],
+            lr=0.05,
+        )
+        emb = field_sot.sot_tokenizer.embed(field_sot.sot_tokenizer.encode("hello world"))
+        assert emb.shape == (LATENT_DIM,)
+
+
 class TestSOTBackwardCompatibility:
     def test_baseline_field_works_without_sot(self, field_baseline):
         emb = np.random.randn(EMBEDDING_DIM).astype(np.float32)

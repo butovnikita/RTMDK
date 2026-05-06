@@ -15,6 +15,7 @@ import logging.handlers
 import os
 import sys
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -23,7 +24,7 @@ import numpy as np
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # RTMDK package imports
 from rtmdk.memory.core import RTMDKConfig, RTMDKMemory
@@ -157,10 +158,66 @@ logger = logging.getLogger("rtmdk_production")
 # APP INITIALIZATION
 # ============================================================================
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global memory, lm_studio_available
+    global query_cache, embedding_cache, context_optimizer, health_monitor
+    logger.info("Starting RTMDK Production API v8.0.0")
+    logger.info(f"Memory file: {MEMORY_FILE}")
+    logger.info(f"LM Studio URL: {LM_STUDIO_URL}")
+
+    if ENABLE_LM_STUDIO:
+        lm_studio_available = await check_lm_studio()
+
+    memory = init_memory()
+    global _memory_ref
+    _memory_ref = memory
+
+    # Initialize production performance modules
+    query_cache = QueryCache(max_size=10000, ttl_seconds=3600)
+    embedding_cache = EmbeddingCache(
+        cache_dir=os.path.join(os.path.expanduser("~"), ".rtmdk", "embedding_cache"),
+        max_size=100000,
+        ttl_seconds=86400,
+        memory_cache_size=4096,
+    )
+    context_optimizer = ContextOptimizer(model="default", min_tokens=50, max_tokens=300)
+    health_monitor = HealthMonitor(memory=memory, check_interval=60)
+    asyncio.create_task(_health_check_loop())
+    asyncio.create_task(_auto_save_loop())
+
+    logger.info(f"Server ready on {SERVER_HOST}:{SERVER_PORT}")
+    logger.info(f"Memory nodes: {len(memory.field.nodes)}")
+    logger.info("Production modules: QueryCache, EmbeddingCache, ContextOptimizer, HealthMonitor enabled")
+
+    yield
+
+    logger.info("RTMDK server shutting down...")
+    if memory:
+        # Gracefully stop background workers
+        for task in memory.field._workers:
+            if not task.done():
+                task.cancel()
+                try:
+                    await asyncio.wait_for(task, timeout=10.0)
+                except (asyncio.CancelledError, asyncio.TimeoutError):
+                    pass
+        memory.field._workers.clear()
+
+        try:
+            save_path = _get_save_path(MEMORY_FILE)
+            os.makedirs(os.path.dirname(save_path), exist_ok=True)
+            await run_sync(memory.export_field, save_path)
+            logger.info(f"Memory saved to {save_path} ({len(memory.field.nodes)} nodes)")
+        except Exception:
+            logger.exception("Failed to save memory on shutdown")
+
+
 app = FastAPI(
     title="RTMDK Production API",
     description="OpenAI-compatible API with Resonance-Topological Memory (No SillyTavern)",
     version="8.0.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -248,6 +305,19 @@ class ChatMessage(BaseModel):
 
 
 class ChatCompletionRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "model": "rtmdk",
+                "messages": [{"role": "user", "content": "What do I know about coffee?"}],
+                "temperature": 0.7,
+                "max_tokens": 1024,
+                "stream": False,
+                "session_id": "default",
+            }
+        }
+    )
+
     model: str = "rtmdk"
     messages: List[ChatMessage]
     temperature: float = 0.7
@@ -258,30 +328,19 @@ class ChatCompletionRequest(BaseModel):
     presence_penalty: float = 0.0
     session_id: str = "default"
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "model": "rtmdk",
-                "messages": [{"role": "user", "content": "What do I know about coffee?"}],
-                "temperature": 0.7,
-                "max_tokens": 1024,
-                "stream": False,
-                "session_id": "default",
-            }
-        }
-
 
 class EmbeddingRequest(BaseModel):
-    model: str = "rtmdk-embed"
-    input: str | List[str]
-
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "model": "rtmdk-embed",
                 "input": "The quick brown fox jumps over the lazy dog.",
             }
         }
+    )
+
+    model: str = "rtmdk-embed"
+    input: str | List[str]
 
 
 # ============================================================================
@@ -516,84 +575,6 @@ embedding_cache: Optional[EmbeddingCache] = None
 context_optimizer: Optional[ContextOptimizer] = None
 health_monitor: Optional[HealthMonitor] = None
 
-
-@app.on_event("startup")
-async def startup():
-    global memory, lm_studio_available
-    global query_cache, embedding_cache, context_optimizer, health_monitor
-    logger.info("Starting RTMDK Production API v8.0.0")
-    logger.info(f"Memory file: {MEMORY_FILE}")
-    logger.info(f"LM Studio URL: {LM_STUDIO_URL}")
-
-    if ENABLE_LM_STUDIO:
-        lm_studio_available = await check_lm_studio()
-
-    memory = init_memory()
-    global _memory_ref
-    _memory_ref = memory
-
-    # Initialize production performance modules
-    query_cache = QueryCache(max_size=10000, ttl_seconds=3600)
-    embedding_cache = EmbeddingCache(
-        cache_dir=os.path.join(os.path.expanduser("~"), ".rtmdk", "embedding_cache"),
-        max_size=100000,
-        ttl_seconds=86400,
-        memory_cache_size=4096,
-    )
-    context_optimizer = ContextOptimizer(model="default", min_tokens=50, max_tokens=300)
-    health_monitor = HealthMonitor(memory=memory, check_interval=60)
-    asyncio.create_task(_health_check_loop())
-
-    asyncio.create_task(_auto_save_loop())
-
-    logger.info(f"Server ready on {SERVER_HOST}:{SERVER_PORT}")
-    logger.info(f"Memory nodes: {len(memory.field.nodes)}")
-    logger.info("Production modules: QueryCache, EmbeddingCache, ContextOptimizer, HealthMonitor enabled")
-
-
-async def _health_check_loop():
-    """Background task that runs periodic health checks."""
-    while True:
-        await asyncio.sleep(60)
-        if health_monitor:
-            try:
-                health = health_monitor.check_health()
-                logger.debug(f"Health check: nodes={health.get('node_count')}, "
-                             f"ram_mb={health.get('ram_mb')}, "
-                             f"avg_latency_ms={health.get('avg_latency_ms')}")
-            except Exception:
-                logger.exception("Health check failed")
-
-
-async def _auto_save_loop():
-    """Background task that auto-saves memory periodically."""
-    interval = int(os.getenv("RTMDK_AUTO_SAVE_INTERVAL", "60"))
-    while True:
-        await asyncio.sleep(interval)
-        await run_sync(auto_save)
-
-
-@app.on_event("shutdown")
-async def shutdown():
-    logger.info("RTMDK server shutting down...")
-    if memory:
-        # Gracefully stop background workers
-        for task in memory.field._workers:
-            if not task.done():
-                task.cancel()
-                try:
-                    await asyncio.wait_for(task, timeout=10.0)
-                except (asyncio.CancelledError, asyncio.TimeoutError):
-                    pass
-        memory.field._workers.clear()
-
-        try:
-            save_path = _get_save_path(MEMORY_FILE)
-            os.makedirs(os.path.dirname(save_path), exist_ok=True)
-            await run_sync(memory.export_field, save_path)
-            logger.info(f"Memory saved to {save_path} ({len(memory.field.nodes)} nodes)")
-        except Exception:
-            logger.exception("Failed to save memory on shutdown")
 
 
 # ============================================================================

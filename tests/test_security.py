@@ -47,7 +47,8 @@ class TestPathSanitization:
 
 
 class TestRateLimiting:
-    def test_add_node_rate_limit(self):
+    def test_add_node_rate_limit(self, monkeypatch):
+        monkeypatch.setenv("RTMDK_ADD_RATE_LIMIT", "100")
         config = RTMDKConfig.local()
         config.max_nodes = 10000
 

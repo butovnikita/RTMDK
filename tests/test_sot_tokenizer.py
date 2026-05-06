@@ -217,3 +217,69 @@ class TestSOTokenizerGreedyEncoding:
         tok.merge((ab_id, c))
         tokens = tok.encode("abc")
         assert len(tokens) <= 2
+
+
+class TestSOTokenizerMultilingual:
+    def test_cyrillic_tokenization(self):
+        tok = SOTokenizer(latent_dim=LATENT_DIM, tokenization_mode="word")
+        tokens = tok.encode("Привет мир")
+        decoded = tok.decode(tokens)
+        assert decoded == "привет мир"
+
+    def test_cjk_character_tokenization(self):
+        tok = SOTokenizer(latent_dim=LATENT_DIM, tokenization_mode="word")
+        tokens = tok.encode("你好世界")
+        decoded = tok.decode(tokens)
+        assert decoded == "你 好 世 界"
+
+    def test_mixed_scripts(self):
+        tok = SOTokenizer(latent_dim=LATENT_DIM, tokenization_mode="word")
+        tokens = tok.encode("Hello привет 你好")
+        decoded = tok.decode(tokens)
+        assert decoded == "hello привет 你 好"
+
+    def test_arabic_tokenization(self):
+        tok = SOTokenizer(latent_dim=LATENT_DIM, tokenization_mode="word")
+        tokens = tok.encode("مرحبا بالعالم")
+        decoded = tok.decode(tokens)
+        assert decoded == "مرحبا بالعالم"
+
+    def test_numbers_preserved(self):
+        tok = SOTokenizer(latent_dim=LATENT_DIM, tokenization_mode="word")
+        tokens = tok.encode("Test 123 numbers")
+        decoded = tok.decode(tokens)
+        assert decoded == "test 123 numbers"
+
+
+class TestSOTokenizerContrastive:
+    def test_contrastive_step_pulls_query_to_positive(self):
+        tok = SOTokenizer(latent_dim=LATENT_DIM, tokenization_mode="word")
+        # Bootstrap with initial texts so tokens exist
+        tok.encode("query text here")
+        tok.encode("positive match")
+        tok.encode("negative random")
+
+        q_emb_before = tok.embed(tok.encode("query text here"))
+        p_emb_before = tok.embed(tok.encode("positive match"))
+        n_emb_before = tok.embed(tok.encode("negative random"))
+
+        # Run contrastive step
+        for _ in range(20):
+            tok.contrastive_step(
+                query_text="query text here",
+                positive_text="positive match",
+                negative_texts=["negative random"],
+                lr=0.05,
+            )
+
+        q_emb_after = tok.embed(tok.encode("query text here"))
+        p_emb_after = tok.embed(tok.encode("positive match"))
+        n_emb_after = tok.embed(tok.encode("negative random"))
+
+        sim_qp_before = float(np.dot(q_emb_before, p_emb_before))
+        sim_qp_after = float(np.dot(q_emb_after, p_emb_after))
+        sim_qn_before = float(np.dot(q_emb_before, n_emb_before))
+        sim_qn_after = float(np.dot(q_emb_after, n_emb_after))
+
+        assert sim_qp_after > sim_qp_before, f"Query-positive similarity should increase: {sim_qp_after:.3f} vs {sim_qp_before:.3f}"
+        assert sim_qn_after < sim_qn_before, f"Query-negative similarity should decrease: {sim_qn_after:.3f} vs {sim_qn_before:.3f}"

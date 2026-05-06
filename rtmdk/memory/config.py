@@ -378,8 +378,8 @@ class RetrievalConfig:
         modalities: List[str] = field(default_factory=lambda: ["text"])
         modality_phase_shifts: Dict[str, float] = field(default_factory=dict)
         use_hnsw: bool = True  # OPTIMIZED: fast approximate nearest neighbor
-        hnsw_m: int = 16
-        hnsw_ef_construction: int = 200
+        hnsw_m: int = 32
+        hnsw_ef_construction: int = 400
         tda_monitoring: bool = False
         tda_check_freq: int = 50
         attention_bias: bool = False

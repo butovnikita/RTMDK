@@ -478,12 +478,44 @@ class SOTokenizer:
         )
 
     def _word_tokenize(self, text: str) -> List[str]:
-        """Simple word tokenization: lowercase, strip punctuation, split on whitespace."""
-        import re
+        """Unicode-aware word tokenization.
+
+        Supports Latin, Cyrillic, Arabic, Devanagari, and other scripts.
+        CJK (Chinese, Japanese, Korean) characters are tokenized individually
+        since they are not whitespace-delimited.
+        """
+        import unicodedata
 
         text = text.lower()
-        words = re.findall(r"[a-z0-9']+", text)
-        return words
+        tokens = []
+        current = []
+
+        for ch in text:
+            # CJK characters are individual semantic units regardless of category
+            is_cjk = (
+                "\u4e00" <= ch <= "\u9fff"  # CJK Unified Ideographs
+                or "\u3040" <= ch <= "\u309f"  # Hiragana
+                or "\u30a0" <= ch <= "\u30ff"  # Katakana
+                or "\uac00" <= ch <= "\ud7af"  # Hangul Syllables
+            )
+            if is_cjk:
+                if current:
+                    tokens.append("".join(current))
+                    current = []
+                tokens.append(ch)
+                continue
+
+            cat = unicodedata.category(ch)
+            if cat.startswith("L") or cat.startswith("N"):
+                current.append(ch)
+            else:
+                if current:
+                    tokens.append("".join(current))
+                    current = []
+
+        if current:
+            tokens.append("".join(current))
+        return tokens
 
     def _get_word_id(self, word: str) -> int:
         """Map a word to its token ID, expanding vocab if under limit."""
@@ -697,6 +729,66 @@ class SOTokenizer:
         # Normalize columns to prevent explosion
         norms = np.linalg.norm(self.projection, axis=0, keepdims=True)
         self.projection /= np.maximum(norms, 1e-8)
+
+    def contrastive_step(
+        self,
+        query_text: str,
+        positive_text: str,
+        negative_texts,
+        lr: float = 0.01,
+    ):
+        """Online contrastive learning step for SOT token embeddings.
+
+        Pulls query tokens toward the mean positive embedding and pushes
+        them away from the mean negative embeddings. Also updates positive
+        tokens toward the mean query embedding for symmetry.
+        """
+        from typing import List
+
+        if isinstance(negative_texts, str):
+            negative_texts = [negative_texts]
+
+        q_tokens = self.encode(query_text)
+        p_tokens = self.encode(positive_text)
+        if not q_tokens or not p_tokens:
+            return
+
+        q_ids = [t for t in q_tokens if t in self.token_embeddings]
+        p_ids = [t for t in p_tokens if t in self.token_embeddings]
+        if not q_ids or not p_ids:
+            return
+
+        pos_mean = np.mean([self.token_embeddings[t] for t in p_ids], axis=0)
+
+        neg_means = []
+        for neg_text in negative_texts:
+            n_tokens = self.encode(neg_text)
+            n_ids = [t for t in n_tokens if t in self.token_embeddings]
+            if n_ids:
+                neg_means.append(np.mean([self.token_embeddings[t] for t in n_ids], axis=0))
+
+        # Update query tokens
+        for tid in q_ids:
+            emb = self.token_embeddings[tid]
+            delta = lr * (pos_mean - emb)
+            for neg_mean in neg_means:
+                delta -= lr * 0.1 * (neg_mean - emb)
+            emb = emb + delta
+            norm = np.linalg.norm(emb)
+            if norm > 0:
+                emb = emb / norm
+            self.token_embeddings[tid] = emb.astype(np.float32)
+
+        # Update positive tokens toward query mean
+        q_mean = np.mean([self.token_embeddings[t] for t in q_ids], axis=0)
+        for tid in p_ids:
+            emb = self.token_embeddings[tid]
+            delta = lr * 0.5 * (q_mean - emb)
+            emb = emb + delta
+            norm = np.linalg.norm(emb)
+            if norm > 0:
+                emb = emb / norm
+            self.token_embeddings[tid] = emb.astype(np.float32)
 
     def prune_vocab(self, min_freq: float = 2.0):
         """Remove rare tokens from vocabulary (word mode only).
