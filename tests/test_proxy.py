@@ -7,12 +7,14 @@ Usage:
     3. Run this test: python tests/test_proxy.py
 """
 
+import pytest
 import requests
 import json
 
 PROXY_URL = "http://127.0.0.1:5000"
 RTMDK_URL = "http://127.0.0.1:8080"
 
+@pytest.mark.slow
 def test_proxy():
     print("=" * 60)
     print("RTMDK SillyTavern Proxy Test")

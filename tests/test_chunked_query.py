@@ -24,6 +24,7 @@ def _make_field(n_nodes: int, batch_size: int):
     return field
 
 
+@pytest.mark.slow
 def test_chunked_query_matches_non_chunked():
     """Query with chunking should return same top-k as without chunking."""
     n_nodes = 1000

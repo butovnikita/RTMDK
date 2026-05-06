@@ -50,6 +50,7 @@ class TestVocabBounded:
 
 
 class TestMemoryPressure:
+    @pytest.mark.slow
     def test_field_under_load_cooccurrence_bounded(self):
         cfg = RTMDKConfig(
             latent_dim=32,

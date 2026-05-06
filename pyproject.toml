@@ -18,3 +18,8 @@ extend-exclude = '''
 profile = "black"
 line_length = 120
 skip = ["myenv", "rtmdk_github", "archive"]
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
