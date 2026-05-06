@@ -204,6 +204,7 @@ from rtmdk.memory.config import (
     ConsolidationMode, Backend, ContextFormat, FieldHealth, EvalMode,
     RTMDKConfig,
 )
+from rtmdk.memory.quantization import QuantizationHelper
 from rtmdk.memory.geometry import (
     poincare_dist, exp_map_poincare, log_map_poincare, mobius_add,
     poincare_midpoint,
@@ -616,6 +617,7 @@ class RTMDKField:
     def __init__(self, config: RTMDKConfig, projection_matrix: Optional[NDArray] = None,
                  wal_path: Optional[str] = None):
         self.cfg = config
+        self._quant = QuantizationHelper(config.quantization)
         self._rng = np.random.default_rng(config.seed)
         self.nodes: Dict[str, MemoryNode] = {}
         self.node_index: List[str] = []
@@ -1236,7 +1238,7 @@ class RTMDKField:
         valid_entries = [(nid, self.nodes[nid]) for nid in self.node_index if nid in self.nodes]
         n = len(valid_entries)
         if n == 0:
-            self._cached_positions = np.empty((0, self.cfg.latent_dim), dtype=np.float32)
+            self._cached_positions = np.empty((0, self.cfg.latent_dim), dtype=self._quant.dtype)
             self._cached_phases = np.empty(0, dtype=np.float32)
             self._cached_amplitudes = np.empty(0, dtype=np.float32)
             self._cached_saliences = np.empty(0, dtype=np.float32)
@@ -1248,7 +1250,7 @@ class RTMDKField:
             return
 
         # Single pass through valid nodes — much faster than 5 separate list comprehensions
-        positions = np.zeros((n, self.cfg.latent_dim), dtype=np.float32)
+        positions = np.zeros((n, self.cfg.latent_dim), dtype=self._quant.dtype)
         phases = np.zeros(n, dtype=np.float32)
         amplitudes = np.zeros(n, dtype=np.float32)
         saliences = np.zeros(n, dtype=np.float32)
@@ -1874,6 +1876,9 @@ class RTMDKField:
             norm = np.linalg.norm(latent)
             if norm >= self.cfg.ball_radius:
                 latent = latent * (self.cfg.ball_radius - 1e-6) / max(norm, 1e-8)
+
+        # Track 1: Quantize latent position to reduce RAM usage
+        latent = self._quant.quantize(latent)
 
         if phase is None:
             phase = self._get_phase(session_id, embedding, modality)

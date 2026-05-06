@@ -172,6 +172,7 @@ _FIELD_GROUPS: Dict[str, str] = {
     "hnsw_ef_construction": "RetrievalConfig",
     "hnsw_m": "RetrievalConfig",
     "hybrid_alpha": "CoreConfig",
+    "quantization": "CoreConfig",
     "hyperbolic": "MemorySystemConfig",
     "hyperconvergence_threshold": "LearningConfig",
     "hypothesis_verification": "InferenceConfig",
@@ -358,6 +359,7 @@ class CoreConfig:
         bm25_k1: float = 1.5
         bm25_b: float = 0.75
         hybrid_alpha: float = 1.0  # 1.0 = pure RTMDK, 0.0 = pure BM25, 0.7 = 70/30 blend
+        quantization: str = "none"  # "none" | "fp16"
 
 
 @dataclass
