@@ -80,6 +80,7 @@
 | WAL Replay & Durability (Track 5) | ✅ | Automatic recovery from WAL on restart, embedding persistence |
 | Async Save Worker (Track 6) | ✅ | Background batch ingestion via queue_add_nodes + _worker_save |
 | CI/CD + PyPI Hardening (Track 7) | ✅ | GitHub Actions CI, pytest-asyncio, local CI script, PyPI metadata |
+| MCP Server (Track 8) | ✅ | FastMCP stdio/SSE server: 5 tools, 3 resources, 1 prompt, CLI entry point |
 
 ## 2.2 ЧТО РЕАЛЬНО ОСТАЛОСЬ (Remaining)
 

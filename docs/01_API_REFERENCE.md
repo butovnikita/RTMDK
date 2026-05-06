@@ -607,6 +607,25 @@ integrity = field._check_field_integrity()  # Проверка NaN/inf
 # Embeddings are persisted in WAL for exact recovery; fallback to embedder if missing
 ```
 
+### MCP Server (Model Context Protocol)
+
+```python
+# Stdio mode (Claude Desktop, Cursor, Windsurf)
+python -m rtmdk.mcp
+
+# SSE mode (remote clients)
+python -m rtmdk.mcp --transport sse --port 8080
+
+# CLI entry point
+rtmdk-mcp
+```
+
+**Tools:** `add_memory`, `query_memory`, `delete_memory`, `consolidate_memory`, `get_memory_stats`
+
+**Resources:** `memory://stats`, `memory://nodes`, `memory://node/{id}`
+
+**Prompts:** `memory://prompts/context` — system prompt enriched with top-k relevant memories
+
 ---
 
 ## 6. Утилиты
