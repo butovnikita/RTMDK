@@ -636,6 +636,8 @@ class RTMDKMemory(BaseModel):
     def model_post_init(self, __context):
         if self.field is None:
             object.__setattr__(self, "field", RTMDKField(self.config, wal_path=self.wal_path))
+        # Track 5: Replay WAL mutations for durability
+        self._replay_wal()
         # Fix 4: Auto-start async workers if async_pipeline is enabled
         if self.config.async_pipeline and not self.field._workers_started:
             try:
@@ -683,6 +685,88 @@ class RTMDKMemory(BaseModel):
         return self.field.add_nodes_batch(
             embeddings, contents, phases, node_ids, session_ids, modalities, skip_projection
         )
+
+    def _replay_wal(self) -> None:
+        """Replay WAL mutations to recover durability after restart.
+
+        Reads all records from WAL and re-applies them:
+        - add_node / add_nodes_batch: re-embed text and insert
+        - delete: remove nodes
+        - consolidate: skipped (snapshot already contains consolidated state)
+        """
+        if not self.field.wal.enabled:
+            return
+        records = self.field.wal.replay()
+        if not records:
+            return
+        # Disable WAL during replay to avoid writing replayed ops back to WAL
+        was_enabled = self.field.wal.enabled
+        self.field.wal.enabled = False
+        logger.info(f"WAL replay: {len(records)} records")
+        replayed = 0
+        try:
+            for rec in records:
+                op = rec.get("op")
+                payload = rec.get("payload", {})
+                try:
+                    if op == "add_node":
+                        content = payload.get("content", {})
+                        modality = payload.get("modality", "text")
+                        node_id = payload.get("node_id")
+                        # Use stored embedding if available (Track 5), else re-embed
+                        emb_list = payload.get("embedding")
+                        if emb_list is not None:
+                            embedding = np.array(emb_list, dtype=np.float32)
+                        else:
+                            text = content.get("text", "")
+                            if not text:
+                                text = content.get("input_text", "")
+                            if not text:
+                                logger.warning(f"WAL replay add_node: no text for {node_id}")
+                                continue
+                            embedding = self.embedder(text)
+                        phase = self._get_phase(payload.get("session_id"), embedding)
+                        self.field.add_node(
+                            embedding, content, phase=phase,
+                            node_id=node_id, modality=modality,
+                        )
+                        replayed += 1
+                    elif op == "add_nodes_batch":
+                        contents = payload.get("contents", [])
+                        modalities = payload.get("modalities")
+                        node_ids = payload.get("node_ids")
+                        embeddings_list = payload.get("embeddings")
+                        if embeddings_list is not None:
+                            embeddings = np.array(embeddings_list, dtype=np.float32)
+                        else:
+                            # Fallback: re-embed each content
+                            texts = []
+                            for c in contents:
+                                t = c.get("text", "")
+                                if not t:
+                                    t = c.get("input_text", "")
+                                texts.append(t)
+                            embeddings = np.array([self.embedder(t) for t in texts], dtype=np.float32)
+                        if len(embeddings) == len(contents):
+                            self.field.add_nodes_batch(
+                                embeddings, contents,
+                                node_ids=node_ids, modalities=modalities,
+                            )
+                            replayed += len(contents)
+                    elif op == "delete":
+                        node_ids = payload.get("node_ids", [])
+                        if node_ids:
+                            self.field.delete_nodes(node_ids)
+                            replayed += len(node_ids)
+                    elif op == "consolidate":
+                        # Skip: snapshot already contains consolidated state;
+                        # re-running consolidate would be non-deterministic.
+                        pass
+                except Exception:
+                    logger.warning(f"WAL replay failed for {op}: {payload}", exc_info=True)
+        finally:
+            self.field.wal.enabled = was_enabled
+        logger.info(f"WAL replay complete: {replayed} items recovered")
 
     def _get_phase(self, session_id: Optional[str] = None, embedding: Optional[NDArray] = None) -> float:
         if session_id and session_id in self.session_phases:

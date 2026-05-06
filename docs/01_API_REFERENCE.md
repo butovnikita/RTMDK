@@ -600,6 +600,9 @@ results = field.query(embedding, phase=0.0, top_k=5)
 field.step()  # Продвинуть динамику на 1 шаг
 field.consolidate()  # Запустить консолидацию
 integrity = field._check_field_integrity()  # Проверка NaN/inf
+
+# WAL replay (automatic on RTMDKMemory startup when wal_path is set)
+# Embeddings are persisted in WAL for exact recovery; fallback to embedder if missing
 ```
 
 ---

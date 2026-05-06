@@ -77,6 +77,7 @@
 | SOT Adaptive LR | ✅ | Auto-scaled contrastive LR for 512–1536d tokens |
 | Query Cache + Adaptive top_k (Track 3) | ✅ | LRU cache with TTL, adaptive recall |
 | Batch Ingestion (Track 4) | ✅ | Vectorized `add_nodes_batch()` API, WAL batching |
+| WAL Replay & Durability (Track 5) | ✅ | Automatic recovery from WAL on restart, embedding persistence |
 
 ## 2.2 ЧТО РЕАЛЬНО ОСТАЛОСЬ (Remaining)
 

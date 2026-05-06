@@ -2034,7 +2034,8 @@ class RTMDKField:
         if self.event_scheduler:
             self.event_scheduler.enqueue("node_added", {"node_id": nid, "modality": modality})
 
-        self.wal.append_add_node(nid, content, modality)
+        # Track 5: Store embedding in WAL for durable replay
+        self.wal.append_add_node(nid, content, modality, embedding=latent.tolist())
         self._dirty = True
         return nid
 
@@ -2181,9 +2182,32 @@ class RTMDKField:
         if self.query_cache is not None:
             self.query_cache.clear()
 
-        self.wal.append("add_nodes_batch", {"count": n, "node_ids": batch_nids})
+        self.wal.append("add_nodes_batch", {
+            "count": n,
+            "node_ids": batch_nids,
+            "contents": contents,
+            "embeddings": [l.tolist() for l in latents],
+            "modalities": modalities if modalities else ["text"] * n,
+        })
         self._dirty = True
         return batch_nids
+
+    def delete_nodes(self, node_ids: List[str]) -> None:
+        """Remove nodes by ID. Used by WAL replay and consolidation."""
+        for nid in node_ids:
+            if nid in self.nodes:
+                del self.nodes[nid]
+        # Rebuild node_index (remove deleted, preserve order)
+        self.node_index = [nid for nid in self.node_index if nid in self.nodes]
+        if self.cfg.use_hnsw and self.hnsw_index:
+            for nid in node_ids:
+                self.hnsw_index.remove(nid)
+        # Track 5: WAL durability for explicit deletions
+        self.wal.append_delete(node_ids)
+        # Invalidate caches
+        self._cache_dirty = True
+        if self.query_cache is not None:
+            self.query_cache.clear()
 
     def calibrate(self, query_embedding: NDArray, node_id: str, is_relevant: bool) -> None:
         """Add a labeled query-result pair to the conformal calibration set.
