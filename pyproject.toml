@@ -46,10 +46,14 @@ mcp = [
     "mcp>=1.27",
     "sentence-transformers>=2.2",
 ]
+langchain = [
+    "langchain-core>=0.1",
+]
 dev = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21",
     "pytest-cov>=4.0",
+    "langchain-core>=0.1",
 ]
 
 [project.scripts]

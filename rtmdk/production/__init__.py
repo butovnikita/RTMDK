@@ -24,6 +24,10 @@ _advanced_retrieval = None
 def __getattr__(name):
     global _advanced_retrieval
     _lazy_map = {
+        "RTMDKRetriever": "langchain_adapter",
+        "RTMDKChatMessageHistory": "langchain_adapter",
+        "RTMDKVectorStore": "langchain_adapter",
+        "RTMDKDocument": "langchain_adapter",
         "HybridRetriever": "advanced_retrieval",
         "ConfidenceAwareFallback": "advanced_retrieval",
         "QueryExpander": "advanced_retrieval",
@@ -71,4 +75,6 @@ __all__ = [
     "OfflineDreamer", "MultiTenantRouter", "ABTesting",
     "CircuitBreaker", "OnboardingWizard", "ConversationReplay",
     "MemoryDiff", "LLMEvaluator",
+    # LangChain integration (lazy to avoid hard dependency)
+    "RTMDKRetriever", "RTMDKChatMessageHistory", "RTMDKVectorStore", "RTMDKDocument",
 ]

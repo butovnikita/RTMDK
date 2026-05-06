@@ -23,6 +23,9 @@ optuna>=3.4.0
 # Scikit-learn (optional — for IncPCA with sklearn backend)
 scikit-learn>=1.3.0
 
+# LangChain integration testing
+langchain-core>=0.1
+
 # Linting / type checking (optional)
 mypy>=1.6.0
 ruff>=0.1.0
