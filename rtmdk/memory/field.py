@@ -1,0 +1,3920 @@
+"""
+rtmdk/memory/core.py
+Resonance-Topological Memory - Version 8.1+
+
+Phase 11 Features:
+Track 1: Multi-level memory stratification (Episodic / Semantic / Procedural)
+Track 2: Hyperbolic geometry (Poincare ball model)
+Track 3: Predictive coding / Active inference
+Track 4: Counterfactual imagination & scenario planning
+Track 5: Differential privacy & secure federation
+
+All v7 components preserved:
+MetaAdaptiveKernel, TopologyHealer, CausalInferenceEngine, NeuralODEDynamics,
+IncPCAProjection, BM25Index, HNSWIndex, TorchBackend, LearnableKernel,
+DifferentiableConsolidation, AgentPlanner, HypothesisVerifier, ToolRouter,
+ShadowModeEvaluator, RAGASPlusEvaluator, AutoRollbackManager, MetaController,
+KuramotoSync, FederatedRTMDK, FederatedNode, detect_modality, cross_modal_resonance
+"""
+
+from __future__ import annotations
+import asyncio
+import functools
+import json
+import math
+import threading
+import re
+import time
+import os
+from concurrent.futures import ThreadPoolExecutor
+import copy
+import hashlib
+from collections import deque, defaultdict
+from dataclasses import dataclass, field, asdict
+from typing import List, Dict, Optional, Tuple, Union, Callable, Any, Set, FrozenSet
+from enum import Enum
+import numpy as np
+from numpy.typing import NDArray
+from scipy.spatial.distance import cdist, pdist, squareform
+from scipy.spatial import cKDTree
+from scipy.integrate import odeint, solve_ivp
+from scipy import stats as scipy_stats
+from pydantic import BaseModel, Field, ConfigDict, model_validator
+import logging
+
+# Extracted engine classes (kept in sync with rtmdk/support/ modules)
+from rtmdk.support.kuramoto import KuramotoSync, FederatedRTMDK
+from rtmdk.support.hnsw import NaiveGraphIndex, HNSWIndex
+try:
+    from rtmdk.support.hnsw_lib import HNSWLibIndex
+    _HNSWLIB_AVAILABLE = True
+except ImportError:
+    _HNSWLIB_AVAILABLE = False
+from rtmdk.support.bm25 import BM25Index
+from rtmdk.memory.conformal import ConformalCalibrator
+from rtmdk.memory.spectral import spectral_cluster_nodes
+from rtmdk.memory.kalman import KalmanFilter
+from rtmdk.engines.counterfactual import ScenarioPlanner
+from rtmdk.support.goal_tracker import GoalTracker
+from rtmdk.support.rl_feedback import RLFeedbackLoop
+from rtmdk.support.event_driven import LowRankCompressor, EventDrivenScheduler
+from rtmdk.support.meta_memory import MetaMemoryEvaluator
+from rtmdk.support.security import SecurityValidator
+from rtmdk.support.swarm import SwarmConsensusProtocol
+from rtmdk.support.threshold import AdaptiveThreshold
+from rtmdk.support.tda import TDAMonitor
+from rtmdk.memory.utils import SecurityViolationError, detect_modality, cross_modal_resonance
+
+logger = logging.getLogger(__name__)
+
+# Phase 5: dataclass nodes extracted to rtmdk.nodes
+from rtmdk.nodes import (
+    MemoryNode, CausalEdge, ContradictionRecord, CounterfactualResult,
+    AgentPlan, ToolCall, Hypothesis, EvalResult, GoalNode, FederatedNode,
+)
+
+# Phase 15: New modules
+try:
+    from rtmdk.support.version_control import VersionControl, NodeDelta, Version, DiffResult
+    VC_AVAILABLE = True
+except ImportError:
+    VC_AVAILABLE = False
+
+try:
+    from rtmdk.support.entropy_controller import EntropyController
+    ENTROPY_AVAILABLE = True
+except ImportError:
+    ENTROPY_AVAILABLE = False
+
+try:
+    from rtmdk.support.triton_backend import GPUBackend, TritonBackend, TRITON_AVAILABLE
+except ImportError:
+    GPUBackend = None  # type: ignore
+    TritonBackend = None  # type: ignore
+    TRITON_AVAILABLE = False
+
+# Phase 16: New modules
+try:
+    from rtmdk.support.symbolic_overlay import SymbolicOverlay, SymbolicRule, SymbolicInference
+    SYMBOLIC_AVAILABLE = True
+except ImportError:
+    SYMBOLIC_AVAILABLE = False
+
+try:
+    from rtmdk.support.safety_certifier import SafetyCertifier, LyapunovFunction
+    SAFETY_AVAILABLE = True
+except ImportError:
+    SAFETY_AVAILABLE = False
+
+try:
+    from rtmdk.support.ump import UniversalMemoryProtocol, UMP_VERSION, UMP_SCHEMA
+    UMP_AVAILABLE = True
+except ImportError:
+    UMP_AVAILABLE = False
+
+# Phase 17: RoleShardRouter
+try:
+    from rtmdk.support.role_shard_router import RoleShardRouter, RoleShard, RoleDetector, DEFAULT_ROLE
+    ROLE_SHARD_AVAILABLE = True
+except ImportError:
+    ROLE_SHARD_AVAILABLE = False
+    DEFAULT_ROLE = "default"  # Fallback
+
+# Torch availability check
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    torch = None
+    TORCH_AVAILABLE = False
+
+
+# ============================================================================
+# CONSTANTS: Named constants for magic numbers
+# ============================================================================
+
+# Statistical constants
+CHI_SQUARED_CRITICAL_DF1 = 3.84  # Chi-squared critical value (df=1, p=0.05)
+CHI_SQUARED_CRITICAL_DF2 = 5.99  # Chi-squared critical value (df=2, p=0.05)
+
+# Consolidation constants
+CONSOLIDATION_DISTANCE_THRESHOLD = 2.5
+CONSOLIDATION_PROBABILITY = 0.15
+CRYSTALLIZATION_SIMILARITY_HIGH = 0.75
+CRYSTALLIZATION_SIMILARITY_LOW = 0.6
+
+# Session retrieval boost
+SESSION_BOOST_FACTOR = 1.3  # 30% boost for session-matching nodes
+
+# Performance limits
+MAX_TENSION_SCAN = 200
+CACHE_INVALID_HASH_MODULUS = 5
+
+# File limits
+MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024  # 100MB
+MAX_NODE_TEXT_LENGTH = 10000
+SECURE_FILE_PERMISSIONS = 0o600
+
+# Frequency constants (steps)
+SELF_SUPERVISION_FREQ = 20
+ODE_SMOOTHNESS_FREQ = 10
+TENSION_CHECK_FREQ = 100
+HEALING_CHECK_FREQ = 50
+SYMBOLIC_OVERLAY_FREQ = 50
+META_KERNEL_ADAPT_FREQ = 5
+MAX_NODES_PRUNE_CHECK_FREQ = 10
+
+
+# ============================================================================
+# SECURITY UTILITIES
+# ============================================================================
+
+def _sanitize_path(path: str) -> str:
+    """Sanitize file path to prevent directory traversal attacks.
+    
+    Rejects paths containing '..' (path traversal).
+    Returns normalized path.
+    """
+    import os
+    # Reject parent directory references BEFORE normalization
+    # (normpath collapses 'a/../b' to 'b', which would hide the attack)
+    if ".." in path.replace("\\", "/").split("/"):
+        raise SecurityViolationError(f"Path traversal detected: {path}")
+    # Normalize to catch unicode tricks and mixed separators
+    normalized = os.path.normpath(path)
+    return normalized
+
+
+def _safe_json_load(path: str) -> Dict:
+    """Load JSON with size limit to prevent memory exhaustion."""
+    file_size = os.path.getsize(path)
+    if file_size > MAX_FILE_SIZE_BYTES:
+        raise ValueError(f"File too large: {file_size / (1024*1024):.1f}MB (max {MAX_FILE_SIZE_BYTES / (1024*1024):.0f}MB)")
+    with open(path, "r", encoding="utf-8") as f:
+        raw = f.read()
+    if len(raw.encode("utf-8")) > MAX_FILE_SIZE_BYTES:
+        raise ValueError("File exceeds maximum allowed size after encoding check")
+    return json.loads(raw)
+
+
+# ============================================================================
+# CONFIGURATION v7 — extracted to rtmdk/memory/config.py (P0 refactor)
+# ============================================================================
+from rtmdk.memory.config import (
+    ConsolidationMode, Backend, ContextFormat, FieldHealth, EvalMode,
+    RTMDKConfig,
+)
+from rtmdk.memory.geometry import (
+    poincare_dist, exp_map_poincare, log_map_poincare, mobius_add,
+    poincare_midpoint,
+)
+# Extracted engine classes (P0 refactor � imported from canonical modules)
+from rtmdk.engines.predictive import PredictiveCodingModel
+from rtmdk.engines.privacy import DifferentialPrivacy
+from rtmdk.engines.neural_ode import NeuralODEDynamics
+from rtmdk.engines.causal import CausalInferenceEngine
+from rtmdk.support.meta_adaptive import MetaAdaptiveKernel
+from rtmdk.support.healer import TopologyHealer
+from rtmdk.support.agents import AgentPlanner, HypothesisVerifier, ToolRouter
+from rtmdk.support.production import ShadowModeEvaluator, RAGASPlusEvaluator, AutoRollbackManager
+from rtmdk.support.projection import IncPCAProjection
+from rtmdk.support.torch_backend import TorchBackend
+from rtmdk.support.learnable import LearnableKernel, DifferentiableConsolidation
+from rtmdk.support.meta_controller import MetaController
+from rtmdk.support.circuit_breaker import CircuitBreaker
+
+
+
+# ============================================================================
+# PHASE 11 TRACK 1: MEMORY STRATIFICATION
+# ============================================================================
+
+def _enum_value(val, default):
+    """Safely extract enum value for serialization."""
+    return val.value if isinstance(val, Enum) else (val if val is not None else default)
+
+
+def detect_tier(text: str, context: Optional[Dict] = None) -> str:
+    """Auto-detect memory tier from content."""
+    context = context or {}
+    text_lower = text.lower()
+    # Procedural: how-to, tool usage
+    if context.get("tool_used"):
+        return "procedural"
+    if any(p in text_lower for p in ["how to", "how do", "how can", "steps to", "tutorial", "guide"]):
+        return "procedural"
+    # Episodic: dates, temporal markers
+    if re.search(r"\d{4}-\d{2}-\d{2}|\d{2}/\d{2}/\d{4}", text):
+        return "episodic"
+    if any(p in text_lower for p in ["yesterday", "last week", "last month", "ago", "вчера", "на прошлой", "неделю назад"]):
+        return "episodic"
+    return "semantic"
+
+
+# ============================================================================
+# PHASE 11 TRACK 4: COUNTERFACTUAL IMAGINATION
+# ============================================================================
+
+# ============================================================================
+# PHASE 13 TRACK 1: TELEOLOGICAL LAYER (Goal/Intent Tracking)
+# ============================================================================
+# ============================================================================
+# PHASE 13 TRACK 2: COGNITIVE ATTENTION BIAS
+# ============================================================================
+
+def apply_attention_bias(results: List[Tuple[str, float, MemoryNode]],
+                         temperature: float = 1.0) -> List[Tuple[str, float, MemoryNode]]:
+    """
+    Transform raw resonance scores into attention-biased scores.
+    Incorporates causal_strength, tension, salience as structural signals.
+    """
+    if not results:
+        return results
+
+    # Extract raw scores
+    raw_scores = np.array([r for _, r, _ in results])
+    if len(raw_scores) < 2:
+        return results
+
+    # Compute attention weights
+    weights = []
+    for nid, resp, node in results:
+        # Base resonance
+        score = resp
+        # Causal boost
+        causal_boost = sum(node.causal_strength.values()) if hasattr(node, 'causal_strength') else 0
+        score *= (1.0 + 0.2 * min(1.0, causal_boost))
+        # Tension penalty (high tension = less reliable)
+        score *= max(0.5, 1.0 - node.tension)
+        # Goal relevance boost (Phase 13 Track 1)
+        goal_rel = getattr(node, 'goal_relevance', 0.0)
+        score *= (1.0 + 0.3 * goal_rel)
+        weights.append(score)
+
+    weights = np.array(weights)
+    # Softmax with temperature
+    if temperature > 0:
+        exp_weights = np.exp(weights / temperature)
+        normalized = exp_weights / (exp_weights.sum() + 1e-8)
+    else:
+        normalized = weights / (weights.sum() + 1e-8)
+
+    # Re-rank by attention-biased scores
+    biased_results = []
+    for i, (nid, resp, node) in enumerate(results):
+        biased_results.append((nid, float(normalized[i]), node))
+
+    biased_results.sort(key=lambda x: x[1], reverse=True)
+    return biased_results
+
+
+def format_cognitive_context(results: List[Tuple[str, float, MemoryNode]],
+                             bias_applied: bool = False) -> str:
+    """Format memory results with structural attention signals for LLM.
+    
+    Handles both structured nodes (v2: input_text, output_text, emotion, tags)
+    and legacy nodes (v1: text).
+    """
+    if not results:
+        return "### COGNITIVE_CONTEXT\nNo relevant structures."
+
+    lines = ["### COGNITIVE_CONTEXT"]
+    for nid, score, node in results:
+        content = node.content
+        
+        # Check for structured node (v2)
+        if content.get("version") == "2.0":
+            input_text = content.get("input_text", "")
+            output_text = content.get("output_text", "")
+            emotion = content.get("emotion", "neutral")
+            tags = content.get("tags", [])
+            session = content.get("session", "")
+            
+            # Format structured context
+            text_parts = []
+            if input_text:
+                text_parts.append(f"User: {input_text[:80]}")
+            if output_text:
+                text_parts.append(f"AI: {output_text[:80]}")
+            text = " | ".join(text_parts) if text_parts else content.get("text", "unknown")[:80]
+            
+            tier = content.get("tier", getattr(node, 'tier', 'semantic'))
+            tokens = f"[SCORE:{score:.3f}]"
+            tokens += f"[TIER:{tier[0].upper()}]"
+            if emotion != "neutral":
+                tokens += f"[EMO:{emotion[:4]}]"
+            if tags:
+                tokens += f"[TAGS:{','.join(tags[:3])}]"
+            if session:
+                tokens += f"[SESS:{session[:10]}]"
+        else:
+            # Legacy node (v1)
+            text = content.get("text", "unknown")[:80]
+            tier = content.get("tier", getattr(node, 'tier', 'semantic'))
+            tokens = f"[SCORE:{score:.3f}]"
+            tokens += f"[TIER:{tier[0].upper()}]"
+
+        causal = len(node.causal_strength) if hasattr(node, 'causal_strength') else 0
+        tension = node.tension
+        lineage = len(node.lineage) if node.lineage else 0
+        
+        if causal > 0:
+            tokens += f"[CAUSAL:{causal}]"
+        if tension > 0.3:
+            tokens += f"[TENSION:{tension:.2f}]"
+        if lineage > 0:
+            tokens += f"[LINEAGE:{lineage}]"
+
+        lines.append(f"{tokens} {text}")
+
+    return "\n".join(lines)
+
+
+# ============================================================================
+# PHASE 13 TRACK 3: CLOSED-LOOP RL FROM LLM FEEDBACK
+# ============================================================================
+
+# ============================================================================
+# PHASE 13 TRACK 4: EVENT-DRIVEN + LOW-RANK COMPRESSION
+# ============================================================================
+
+# ============================================================================
+# PHASE 14 TRACK 1: INTROSPECTIVE META-MEMORY
+# ============================================================================
+
+# ============================================================================
+# PHASE 14 TRACK 2: FORMAL SECURITY
+# ============================================================================
+
+# ============================================================================
+# PHASE 14 TRACK 5: SWARM MEMORY
+# ============================================================================
+
+# ============================================================================
+# SUPPORTING COMPONENTS
+# ============================================================================
+
+
+
+
+
+
+
+
+
+# ============================================================================
+# CONTEXT FORMATTING
+# ============================================================================
+
+SYSTEM_PROMPT_TEMPLATES = {
+    ContextFormat.PLAIN: (
+        "You are a helpful assistant with long-term memory.\n"
+        "Below are relevant memories from previous conversations. "
+        "Use them to provide accurate, context-aware answers. "
+        "Higher resonance (R) means more relevant memory.\n\n"
+        "Relevant memories:\n{context}"
+    ),
+    ContextFormat.JSON: (
+        "You are a helpful assistant with long-term memory.\n"
+        "Below are relevant memories in JSON format. Each entry has:\n"
+        "- resonance: how well it matches the current query (higher = more relevant)\n"
+        "- salience: overall importance in the memory field\n"
+        "- text: the actual memory content\n"
+        "- lineage: history of how this memory was formed through consolidation\n"
+        "Use these memories to provide accurate, context-aware answers.\n\n"
+        "Relevant memories:\n{context}"
+    ),
+    ContextFormat.YAML: (
+        "You are a helpful assistant with long-term memory.\n"
+        "Below are relevant memories in YAML format with resonance and salience scores. "
+        "Higher scores indicate more relevant/important memories. Use them for context-aware answers.\n\n"
+        "Relevant memories:\n{context}"
+    ),
+    ContextFormat.ATTENTION: (
+        "You are a helpful assistant with long-term memory.\n"
+        "Below are relevant memories with attention-weighted tokens. "
+        "Each memory starts with tokens like [ATTN:x.xxxx][SAL:x.xxxx][TIER:X].\n"
+        "- ATTN: attention weight — how relevant this memory is to the current query (higher = more relevant)\n"
+        "- SAL: salience — overall importance in the memory field\n"
+        "- TIER: memory tier (E=episodic, S=semantic, P=procedural)\n"
+        "- CAUSAL: number of causal connections (if present)\n"
+        "- GOAL: goal relevance score (if present)\n"
+        "Use the ATTN weights to focus your attention on the most relevant memories.\n\n"
+        "Relevant memories:\n{context}"
+    ),
+}
+
+
+def format_context(results: List[Tuple[str, float, MemoryNode]], fmt: ContextFormat) -> str:
+    if fmt == ContextFormat.JSON:
+        items = []
+        for nid, resp, node in results:
+            content = node.content
+            
+            # Check for structured node (v2)
+            if content.get("version") == "2.0":
+                item = {
+                    "resonance": round(resp, 4),
+                    "salience": round(node.salience, 4),
+                    "input_text": content.get("input_text", ""),
+                    "output_text": content.get("output_text", ""),
+                    "role": content.get("role", ""),
+                    "session": content.get("session", ""),
+                    "emotion": content.get("emotion", ""),
+                    "tags": content.get("tags", []),
+                    "tier": content.get("tier", ""),
+                    "timestamp": content.get("timestamp", 0),
+                    "lineage": node.lineage,
+                    "modality": node.modality,
+                }
+            else:
+                # Legacy node (v1)
+                item = {
+                    "resonance": round(resp, 4),
+                    "salience": round(node.salience, 4),
+                    "text": content.get("text", ""),
+                    "lineage": node.lineage,
+                    "modality": node.modality,
+                    "self_sup_score": round(node.self_sup_score, 4),
+                    "cross_modal_score": round(node.cross_modal_score, 4),
+                }
+                meta = {k: v for k, v in content.items() if k != "text"}
+                if meta:
+                    item["metadata"] = meta
+            items.append(item)
+        return json.dumps(items, ensure_ascii=False, indent=2) if items else "[]"
+    
+    elif fmt == ContextFormat.YAML:
+        lines = []
+        for nid, resp, node in results:
+            content = node.content
+            if content.get("version") == "2.0":
+                lines.extend([
+                    f"- resonance: {resp:.4f}",
+                    f"  salience: {node.salience:.4f}",
+                    f"  input: \"{content.get('input_text', '')}\"",
+                    f"  output: \"{content.get('output_text', '')}\"",
+                    f"  role: {content.get('role', '')}",
+                    f"  emotion: {content.get('emotion', '')}",
+                    f"  tier: {content.get('tier', '')}",
+                ])
+            else:
+                lines.extend([
+                    f"- resonance: {resp:.4f}",
+                    f"  salience: {node.salience:.4f}",
+                    f"  text: \"{content.get('text', '')}\"",
+                    f"  lineage: {node.lineage}",
+                    f"  modality: {node.modality}",
+                    f"  cross_modal_score: {node.cross_modal_score:.4f}",
+                ])
+        return "\n".join(lines) if lines else "No relevant memory."
+    
+    elif fmt == ContextFormat.ATTENTION:
+        lines = ["### ATTENTION_CONTEXT"]
+        for nid, resp, node in results:
+            content = node.content
+            causal = len(node.causal_strength) if hasattr(node, 'causal_strength') else 0
+            goal_rel = getattr(node, 'goal_relevance', 0.0)
+            tokens = (f"[ATTN:{resp:.3f}][SAL:{node.salience:.3f}]"
+                      f"[TIER:{content.get('tier', getattr(node, 'tier', 'semantic'))[0].upper()}]")
+            # Phase 20: Domain & State tokens
+            domain = getattr(node, 'domain', 'general')
+            if domain and domain != 'general':
+                tokens += f"[DOM:{domain.upper()[:3]}]"
+            state = getattr(node, 'state', '')
+            if state and state != 'stable':
+                tokens += f"[STATE:{state[0].upper()}]"
+            if causal > 0:
+                tokens += f"[CAUSAL:{causal}]"
+            if goal_rel > 0.3:
+                tokens += f"[GOAL:{goal_rel:.2f}]"
+            
+            # Extract text from structured or legacy node
+            if content.get("version") == "2.0":
+                input_t = content.get("input_text", "")[:60]
+                output_t = content.get("output_text", "")[:60]
+                if input_t and output_t:
+                    text = f"U:{input_t} | AI:{output_t}"
+                elif input_t:
+                    text = f"U:{input_t}"
+                elif output_t:
+                    text = f"AI:{output_t}"
+                else:
+                    text = content.get("text", "unknown")[:100]
+                # Add emotion/tag if present
+                emotion = content.get("emotion", "")
+                tags = content.get("tags", [])
+                if emotion != "neutral":
+                    text += f" [{emotion}]"
+                if tags:
+                    text += f" #{','.join(tags[:2])}"
+            else:
+                text = node.content.get("text", "unknown")[:100]
+            
+            lines.append(f"{tokens} {text}")
+        return "\n".join(lines) if len(lines) > 1 else "No relevant memory."
+    else:
+        parts = []
+        for _, r, n in results:
+            content = n.content
+            if content.get("version") == "2.0":
+                input_t = content.get("input_text", "")[:50]
+                output_t = content.get("output_text", "")[:50]
+                text = f"U:{input_t} | AI:{output_t}" if input_t and output_t else (input_t or output_t or "unknown")
+            else:
+                text = n.content.get('text', '')
+            parts.append(f"[R:{r:.2f}|S:{n.salience:.2f}|CM:{n.cross_modal_score:.2f}] {text}")
+        return "\n".join(parts) if parts else "No relevant memory."
+
+
+def build_system_prompt(context: str, fmt: ContextFormat, use_structured: bool) -> str:
+    if not use_structured or not context or context in ("No relevant memory.", "[]"):
+        return "You are a helpful assistant with long-term memory."
+    return SYSTEM_PROMPT_TEMPLATES.get(fmt, SYSTEM_PROMPT_TEMPLATES[ContextFormat.PLAIN]).format(context=context)
+
+
+# ============================================================================
+# CORE: RTmdKField v7
+# ============================================================================
+
+def _locked(method):
+    """Decorator that wraps method in self._write_lock RLock."""
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with self._write_lock:
+            return method(self, *args, **kwargs)
+    return wrapper
+
+
+def _copy_node(node):
+    """Shallow copy of a MemoryNode with copied mutable fields."""
+    n = copy.copy(node)
+    n.latent_pos = node.latent_pos.copy()
+    n.lineage = list(node.lineage)
+    n.content = dict(node.content)
+    n.causal_strength = dict(node.causal_strength)
+    n.causal_parents = list(node.causal_parents)
+    n.conflict_with = list(node.conflict_with)
+    if node.pre_consolidation_pos is not None:
+        n.pre_consolidation_pos = node.pre_consolidation_pos.copy()
+    if node.gradient_cache is not None:
+        n.gradient_cache = node.gradient_cache.copy()
+    if node.velocity is not None:
+        n.velocity = node.velocity.copy()
+    if node.acceleration is not None:
+        n.acceleration = node.acceleration.copy()
+    if node.modal_embedding is not None:
+        n.modal_embedding = node.modal_embedding.copy()
+    if node.covariance is not None:
+        n.covariance = node.covariance.copy()
+    n.do_interventions = {k: (v.copy() if isinstance(v, np.ndarray) else v)
+                          for k, v in node.do_interventions.items()}
+    return n
+
+
+class RTMDKField:
+    def __init__(self, config: RTMDKConfig, projection_matrix: Optional[NDArray] = None,
+                 wal_path: Optional[str] = None):
+        self.cfg = config
+        self._rng = np.random.default_rng(config.seed)
+        self.nodes: Dict[str, MemoryNode] = {}
+        self.node_index: List[str] = []
+
+        # WAL for durability
+        from rtmdk.memory.wal import WAL
+        self.wal = WAL(wal_path, enabled=wal_path is not None)
+
+        # Phase 3d: Dirty flag for auto-save — only save if state changed
+        self._dirty = False
+
+        # P0: Cached numpy arrays for vectorized query — avoids O(N) Python loop on every query
+        self._cached_positions: Optional[NDArray] = None       # (N, latent_dim)
+        self._cached_phases: Optional[NDArray] = None          # (N,)
+        self._cached_amplitudes: Optional[NDArray] = None      # (N,)
+        self._cached_saliences: Optional[NDArray] = None       # (N,)
+        self._cached_modal_weights: Optional[NDArray] = None   # (N,)
+        self._cached_gates: Optional[NDArray] = None           # (N,) soft_gate values
+        self._cached_causal_boost: Optional[NDArray] = None    # (N,) causal boost factor
+        self._cached_bw: Optional[NDArray] = None              # (N,) per-node bandwidth (P1.2)
+        self._cache_dirty: bool = False
+
+        # P1.1: Conformal prediction calibrator
+        self.conformal_calibrator: Optional[ConformalCalibrator] = None
+        if config.conformal_prediction:
+            self.conformal_calibrator = ConformalCalibrator(alpha=config.conformal_alpha)
+
+        # P2.2: Kalman filter for position uncertainty
+        self.kalman_filter: Optional[KalmanFilter] = None
+        if config.enable_kalman_filter:
+            self.kalman_filter = KalmanFilter(
+                latent_dim=config.latent_dim,
+                process_noise=config.kalman_process_noise,
+                measurement_noise=config.kalman_measurement_noise,
+                init_variance=config.kalman_init_variance,
+                diagonal_approx=config.kalman_diagonal_approx,
+                hyperbolic=config.hyperbolic,
+                ball_radius=config.ball_radius,
+            )
+
+        if config.learn_projection:
+            self.projection_learner = IncPCAProjection(
+                config.embedding_dim, config.pca_n_components or config.latent_dim,
+                config.projection_lr, config.projection_update_freq, config.l2_regularization)
+            if projection_matrix is not None:
+                self.projection_learner.set_matrix(projection_matrix)
+        else:
+            self.projection_learner = None
+            self._raw_projection = (projection_matrix.astype(np.float32) if projection_matrix is not None
+                                    else self._rng.standard_normal((config.embedding_dim, config.latent_dim)).astype(np.float32) * 0.1)
+
+        self.adaptive_threshold = AdaptiveThreshold(config.adaptive_window, config.tension_threshold) if config.adaptive_threshold else None
+        self.bm25_index = BM25Index(config.bm25_k1, config.bm25_b) if config.bm25_fallback else None
+        self.tda_monitor = TDAMonitor() if config.tda_monitoring else None
+        self.gpu_backend = TorchBackend() if config.backend == Backend.TORCH else None
+        if self.gpu_backend and not self.gpu_backend.available:
+            self.gpu_backend = None
+        if config.use_hnsw:
+            if _HNSWLIB_AVAILABLE:
+                self.hnsw_index = HNSWLibIndex(dim=config.latent_dim, m=config.hnsw_m,
+                                               ef_construction=config.hnsw_ef_construction)
+            else:
+                self.hnsw_index = NaiveGraphIndex(config.hnsw_m, config.hnsw_ef_construction)
+        else:
+            self.hnsw_index = None
+
+        # Pre-select batch resonance backend to avoid branching in hot path
+        if self.gpu_backend and self.gpu_backend.available:
+            self._batch_resonance_fn = self._batch_resonance_torch
+        else:
+            self._batch_resonance_fn = self._batch_resonance_numpy
+
+        self.learnable_kernel: Optional[LearnableKernel] = None
+        self.diff_consolidation: Optional[DifferentiableConsolidation] = None
+        if config.differentiable:
+            self.learnable_kernel = LearnableKernel(config.bandwidth, config.phase_coupling, config.decay_rate, config.gradient_clip)
+            self.diff_consolidation = DifferentiableConsolidation(config.consolidation_loss_weight)
+
+        self.monitor: Optional[Any] = None
+
+        self.meta_kernel: Optional[MetaAdaptiveKernel] = None
+        if config.meta_adaptive:
+            self.meta_kernel = MetaAdaptiveKernel(config.bandwidth, config.phase_coupling, config.meta_adaptation_lr,
+                                                  config.kurtosis_target_min, config.kurtosis_target_max)
+
+        self.healer: Optional[TopologyHealer] = None
+        if config.self_healing:
+            self.healer = TopologyHealer(config.dead_zone_threshold, config.hyperconvergence_threshold,
+                                        config.fragmentation_threshold, config.healing_strength, config.max_healing_nodes_per_step)
+
+        # B2: Lazy module initialization — store flags but don't instantiate yet
+        self._causal_engine: Optional[CausalInferenceEngine] = None
+        self._causal_engine_initialized = config.causal_topological
+
+        self._ode_dynamics: Optional[NeuralODEDynamics] = None
+        self._ode_dynamics_initialized = config.continuous_dynamics
+
+        # Track 10.2: Meta-controller — B2 lazy init
+        self._meta_controller: Optional[MetaController] = None
+        self._meta_controller_initialized = config.meta_controller
+
+        self.agent_planner: Optional[AgentPlanner] = None
+        self.hypothesis_verifier: Optional[HypothesisVerifier] = None
+        self.tool_router: Optional[ToolRouter] = None
+        if config.agent_orchestration:
+            self.agent_planner = AgentPlanner(config.max_plan_depth, config.max_tool_calls, config.tool_timeout)
+            self.hypothesis_verifier = HypothesisVerifier(config.verification_confidence_threshold)
+            self.tool_router = ToolRouter(config.tool_timeout)
+
+        self.shadow_evaluator: Optional[ShadowModeEvaluator] = None
+        self.ragas_evaluator: Optional[RAGASPlusEvaluator] = None
+        self.rollback_manager: Optional[AutoRollbackManager] = None
+        if config.production_mode:
+            if config.shadow_mode:
+                self.shadow_evaluator = ShadowModeEvaluator(config.shadow_fallback_threshold)
+            if config.ragas_enabled:
+                self.ragas_evaluator = RAGASPlusEvaluator()
+            if config.auto_rollback:
+                self.rollback_manager = AutoRollbackManager(config.auto_rollback_threshold)
+
+        # Track 10.3: Federated
+        self.federated: Optional[FederatedRTMDK] = None
+        if config.federated:
+            self.federated = FederatedRTMDK(
+                node_id=config.node_id,
+                sync_lr=config.federated_sync_lr,
+                sync_freq=config.federated_sync_freq,
+                min_resonance=config.federated_min_resonance,
+            )
+
+        # Phase 11 Track 3: Predictive coding
+        self.predictor: Optional[PredictiveCodingModel] = None
+        if config.predictive_coding:
+            self.predictor = PredictiveCodingModel(config.latent_dim, lr=config.pc_lr)
+        self._state_history: deque = deque(maxlen=100)
+
+        # Phase 11 Track 4: Counterfactual imagination
+        self.scenario_planner: Optional[ScenarioPlanner] = None
+        if config.counterfactual_imagination:
+            self.scenario_planner = ScenarioPlanner(self, max_scenarios=config.max_scenarios)
+
+        # Phase 11 Track 5: Differential privacy
+        self.dp: Optional[DifferentialPrivacy] = None
+        if config.differential_privacy:
+            self.dp = DifferentialPrivacy(config.dp_epsilon, config.dp_delta, config.dp_max_norm)
+
+        # Phase 12 Track 1: Sparse resonant routing (MoE-memory)
+        self.shard_centers: Optional[NDArray] = None
+        self.shard_router: Optional[NDArray] = None
+        self._node_shard_map: Dict[str, int] = {}
+        if config.sparse_routing:
+            self.shard_centers = self._rng.standard_normal((config.num_shards, config.latent_dim)).astype(np.float32)
+            self.shard_router = np.zeros(config.num_shards, dtype=np.float32)
+
+        # Phase 12 Track 3: Crystallization
+        self._crystallization_counter = 0
+        self._crystallized_nodes: Set[str] = set()
+
+        # Fix 3: Lifecycle & Throttling Controls
+        self._workers: List[asyncio.Task] = []
+        self._write_lock = threading.RLock()
+        self._consolidation_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="rtmdk_consolidate")
+        self._consolidation_future = None
+        self._backpressure_events = 0
+        self._heavy_modules_degraded = False  # Track if we've entered degraded mode
+        self._last_successful_step = time.time()  # For recovery tracking
+
+        # P1: Per-subsystem circuit breakers (replaces _safe_run catch-all)
+        self._circuit_breakers: Dict[str, CircuitBreaker] = {
+            "ODEEvolve": CircuitBreaker("ODEEvolve", default=0),
+            "Consolidate": CircuitBreaker("Consolidate", default=[]),
+            "SelfHeal": CircuitBreaker("SelfHeal"),
+            "PredictorFreeEnergy": CircuitBreaker("PredictorFreeEnergy", default=0.0),
+            "PredictorUpdate": CircuitBreaker("PredictorUpdate"),
+            "SelfSupervise": CircuitBreaker("SelfSupervise"),
+            "TDA": CircuitBreaker("TDA"),
+            "MetaKernelAdapt": CircuitBreaker("MetaKernelAdapt"),
+            "MetaControllerOptimize": CircuitBreaker("MetaControllerOptimize", default={}),
+            "MetaControllerApply": CircuitBreaker("MetaControllerApply"),
+            "FederatedSync": CircuitBreaker("FederatedSync"),
+            "ODESmoothness": CircuitBreaker("ODESmoothness", default=1.0),
+            "ShardUpdate": CircuitBreaker("ShardUpdate"),
+        }
+
+        # B1: Tension caching
+        self._tension_cache: Dict[str, Tuple[float, float]] = {}  # node_id -> (tension, step)
+        self._tension_cache_max_age = 25  # steps — covers multiple consolidation cycles
+        self._tension_cache_hits = 0
+        self._tension_cache_misses = 0
+
+        # Phase 12 Track 4: Async pipeline queues
+        self.query_q: Optional[asyncio.Queue] = None
+        self.save_q: Optional[asyncio.Queue] = None
+        self.evolve_q: Optional[asyncio.Queue] = None
+        self._workers_started = False
+        if config.async_pipeline:
+            self.query_q = asyncio.Queue(maxsize=config.query_queue_size)
+            self.save_q = asyncio.Queue(maxsize=config.save_queue_size)
+            self.evolve_q = asyncio.Queue(maxsize=config.evolve_queue_size)
+
+        # Phase 13 Track 1: Teleological layer
+        self.goal_tracker: Optional[GoalTracker] = None
+        if config.goal_tracking:
+            self.goal_tracker = GoalTracker(
+                config.max_goals, config.goal_decay, config.goal_completion_threshold
+            )
+
+        # Phase 13 Track 3: RL feedback loop
+        self.rl_feedback_loop: Optional[RLFeedbackLoop] = None
+        if config.rl_feedback:
+            self.rl_feedback_loop = RLFeedbackLoop(
+                config.rl_learning_rate, config.rl_reward_window
+            )
+
+        # Phase 13 Track 4: Event-driven + Low-Rank
+        self.event_scheduler: Optional[EventDrivenScheduler] = None
+        self.low_rank_compressor: Optional[LowRankCompressor] = None
+        if config.event_driven:
+            self.event_scheduler = EventDrivenScheduler()
+        if config.low_rank_compression:
+            self.low_rank_compressor = LowRankCompressor(config.compression_rank)
+
+        # Phase 18: Engram Manager (Fix 4: ensure attribute always exists even when disabled)
+        self.engram_manager: Optional[Any] = None
+        if config.enable_engrams:
+            try:
+                from rtmdk.engrams import EngramManager
+                self.engram_manager = EngramManager(
+                    min_nodes=config.engram_min_nodes,
+                    max_nodes=config.engram_max_nodes,
+                    creation_threshold=config.engram_creation_threshold,
+                    decay_rate=config.engram_decay_rate,
+                    pattern_completion=config.engram_pattern_completion,
+                    overlap_threshold=config.engram_overlap_threshold,
+                )
+            except Exception:
+                logger.warning("Engram manager initialization failed in RTMDKField, disabling", exc_info=True)
+                self.engram_manager = None
+
+        # Phase 14 Track 1: Meta-Memory
+        self.meta_memory_eval: Optional[MetaMemoryEvaluator] = None
+        if config.meta_memory:
+            self.meta_memory_eval = MetaMemoryEvaluator(
+                config.recall_accuracy_threshold, config.memory_age_factor,
+                config.self_reflection_freq
+            )
+
+        # Phase 14 Track 2: Security
+        self.security: Optional[SecurityValidator] = None
+        if config.security_enabled:
+            self.security = SecurityValidator(
+                config.max_node_text_length, config.tension_spike_threshold,
+                config.prompt_injection_patterns
+            )
+
+        # Phase 14 Track 5: Swarm Memory
+        self.swarm: Optional[SwarmConsensusProtocol] = None
+        if config.swarm_memory:
+            self.swarm = SwarmConsensusProtocol(
+                config.swarm_consensus_threshold, config.swarm_max_agents,
+                config.swarm_vote_weight
+            )
+
+        # Phase 15 Track 1: Version Control (Memory Git)
+        self.version_control: Optional["VersionControl"] = None
+        if config.version_control and VC_AVAILABLE:
+            self.version_control = VersionControl(max_versions=config.max_versions)
+        elif config.version_control and not VC_AVAILABLE:
+            logger.error("version_control enabled but rtmdk.support.version_control not available — feature disabled")
+            self.stats.setdefault("startup_warnings", []).append("version_control unavailable")
+
+        # Phase 15 Track 4: Entropy Control
+        self.entropy_ctrl: Optional["EntropyController"] = None
+        if config.entropy_management and ENTROPY_AVAILABLE:
+            self.entropy_ctrl = EntropyController(
+                high_entropy_threshold=config.entropy_high_threshold,
+                low_entropy_threshold=config.entropy_low_threshold,
+            )
+        elif config.entropy_management and not ENTROPY_AVAILABLE:
+            logger.error("entropy_management enabled but rtmdk.support.entropy_controller not available — feature disabled")
+            self.stats.setdefault("startup_warnings", []).append("entropy_controller unavailable")
+
+        # Phase 15 Track 5: Triton Backend
+        self.triton_backend: Optional[Any] = None
+        if config.triton_backend and GPUBackend is not None:
+            self.triton_backend = GPUBackend(min_nodes_for_gpu=config.min_nodes_for_gpu)
+
+        # Phase 16 Track 1: SymbolicOverlay
+        self.symbolic_overlay: Optional["SymbolicOverlay"] = None
+        if config.symbolic_overlay and SYMBOLIC_AVAILABLE:
+            self.symbolic_overlay = SymbolicOverlay(
+                min_self_sup=config.symbolic_min_self_sup,
+                max_tension=config.symbolic_max_tension,
+                confidence_threshold=config.symbolic_confidence_threshold,
+            )
+        elif config.symbolic_overlay and not SYMBOLIC_AVAILABLE:
+            logger.error("symbolic_overlay enabled but rtmdk.support.symbolic_overlay not available — feature disabled")
+            self.stats.setdefault("startup_warnings", []).append("symbolic_overlay unavailable")
+
+        # Phase 16 Track 2: SafetyCertifier
+        self.safety_certifier: Optional["SafetyCertifier"] = None
+        if config.safety_certifier and SAFETY_AVAILABLE:
+            self.safety_certifier = SafetyCertifier(
+                mode=config.safety_mode,
+                lyapunov_threshold=config.lyapunov_threshold,
+                alpha=config.lyapunov_alpha,
+                beta=config.lyapunov_beta,
+                gamma=config.lyapunov_gamma,
+            )
+        elif config.safety_certifier and not SAFETY_AVAILABLE:
+            logger.error("safety_certifier enabled but rtmdk.support.safety_certifier not available — feature disabled")
+            self.stats.setdefault("startup_warnings", []).append("safety_certifier unavailable")
+
+        # Phase 17: RoleShardRouter
+        self.role_router: Optional["RoleShardRouter"] = None
+        if config.role_sharding and ROLE_SHARD_AVAILABLE:
+            self.role_router = RoleShardRouter(
+                shards=config.role_shards,
+                cross_shard_threshold=config.cross_shard_threshold,
+                auto_role_detection=config.auto_role_detection,
+            )
+        elif config.role_sharding and not ROLE_SHARD_AVAILABLE:
+            logger.error("role_sharding enabled but rtmdk.support.role_shard_router not available — feature disabled")
+            self.stats.setdefault("startup_warnings", []).append("role_shard_router unavailable")
+
+        self.stats = {
+            "total_adds": 0, "total_queries": 0, "consolidations": 0,
+            "avg_response": 0.0, "active_nodes": 0,
+            "projection_updates": 0, "self_sup_checks": 0, "tda_checks": 0,
+            "bm25_fallbacks": 0, "adaptive_threshold_value": config.tension_threshold,
+            "false_merges": 0, "field_stability": 1.0,
+            "causal_edges": 0, "contradictions": 0, "counterfactual_queries": 0,
+            "consolidation_validations": 0, "blocked_consolidations": 0,
+            "meta_kurtosis": 3.0, "meta_bandwidth": config.bandwidth,
+            "meta_phase_coupling": config.phase_coupling,
+            "field_health": "stable", "healing_events": 0, "healing_history": [],
+            "ode_steps": 0, "response_smoothness": 1.0,
+            "plans_created": 0, "hypotheses_verified": 0, "tool_calls": 0, "tool_misuse_rate": 0.0,
+            "evaluations": 0, "shadow_comparisons": 0, "rollbacks": 0,
+            "ragas_overall": 0.0,
+            "cross_modal_queries": 0, "cross_modal_recall": 0.0,
+            "meta_optimizations": 0, "meta_best_params": {},
+            "federated_syncs": 0, "federated_order_parameter": 0.0,
+            # Phase 11
+            "tier_distribution": {}, "tier_coherence": 0.0,
+            "hyperbolic_enabled": config.hyperbolic, "avg_hyperbolic_dist": 0.0,
+            "free_energy": 0.0, "prediction_error": 0.0, "surprise_level": 0.0,
+            "scenarios_generated": 0, "avg_scenario_confidence": 0.0,
+            "privacy_budget_spent": 0.0, "noise_std": 0.0, "updates_clipped": 0,
+            # Phase 12
+            "shard_hits": 0, "shard_misses": 0, "avg_shard_query_time_ms": 0.0,
+            "context_tokens_saved": 0, "cognitive_compressions": 0,
+            "crystallizations": 0, "crystallized_clusters": 0,
+            "async_queue_depth": 0, "async_backpressure_events": 0,
+            # Phase 13
+            "active_goals": 0, "completed_goals": 0,
+            "avg_rl_reward": 0.5, "reward_trend": 0.0,
+            "attention_bias_applied": 0,
+            "compression_ratio": 1.0, "compression_updates": 0,
+            "events_processed": 0, "event_queue_depth": 0,
+            # Phase 14
+            "recall_accuracy": 1.0, "meta_reflections": 0,
+            "security_violations": 0, "tension_spikes_blocked": 0,
+            "swarm_agents": 0, "swarm_consensus_events": 0,
+            # Phase 15
+            "current_version": 0, "n_versions": 0,
+            "clarifications_generated": 0,
+            "entropy": 0.0, "entropy_state": "normal",
+            "triton_backend_used": False, "gpu_acceleration": False,
+            # Phase 16
+            "n_symbolic_rules": 0, "n_symbolic_inferences": 0, "n_symbolic_conflicts": 0,
+            "lyapunov_V": 0.0, "lyapunov_dV_dt": 0.0, "safety_regulation_factor": 1.0,
+            "safety_mode": "monitor_only",
+            # Phase 17
+            "n_shards": 0, "shard_distribution": {},
+            "cross_shard_exchanges": 0, "role_router_enabled": False,
+            # Phase 18: Engrams
+            "engram_retrievals": 0, "engrams_created": 0, "engrams_merged": 0,
+            "field_integrity_issues": 0,
+            "backpressure_degraded_mode": 0, "last_backpressure_recovery": 0.0,
+            # Fix 10: Track startup warnings for missing optional dependencies
+            "startup_warnings": [],
+            # B1: Tension cache stats
+            "tension_cache_hits": 0, "tension_cache_misses": 0,
+            "tension_cache_hit_rate": 0.0,
+            # P1.1: Conformal prediction stats
+            "conformal_threshold": 0.0,
+            "conformal_confidence": 0.0,
+            "conformal_prediction_set_size": 0,
+        }
+        # Phase 21: Self-Organizing Tokenizer + Embedding Field
+        self.sot_tokenizer: Optional[Any] = None
+        self.sot_hebbian: Optional[Any] = None
+        self.sot_ssm: Optional[Any] = None
+        self._sot_field_ema: Optional[NDArray] = None
+        if config.sot_enabled:
+            from rtmdk.memory.self_organizing_field import SOTokenizer, ContrastiveHebbian, EmbeddingFieldSSM
+            token_dim = config.sot_token_dim or config.latent_dim
+            self.sot_tokenizer = SOTokenizer(
+                latent_dim=config.latent_dim,
+                token_dim=token_dim,
+                max_vocab=config.sot_max_vocab,
+                seed=config.seed,
+                subword_seed=config.sot_subword_seed,
+                attention_pooling=config.sot_attention_pooling,
+                skipgram_window=config.sot_skipgram_window,
+                tokenization_mode=config.sot_tokenization_mode,
+                max_cooccurrence=config.sot_max_cooccurrence,
+            )
+            # Warm-start from corpus if path provided
+            if config.sot_warm_start_corpus:
+                try:
+                    import json
+                    with open(config.sot_warm_start_corpus, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    texts = []
+                    if isinstance(data, dict) and 'records' in data:
+                        texts = [r.get('context', '') + ' ' + r.get('answer', '') + ' ' + r.get('query', '')
+                                 for r in data['records']]
+                    elif isinstance(data, list):
+                        texts = [str(item) for item in data]
+                    self.sot_tokenizer.warm_start_from_corpus(texts)
+                except Exception as e:
+                    logger.warning(f"SOT warm-start failed: {e}")
+            # Load external bootstrap projection (e.g. SBERT)
+            if config.sot_bootstrap_projection:
+                try:
+                    from rtmdk.memory.bootstrap_sbert import load_bootstrap
+                    load_bootstrap(config.sot_bootstrap_projection, self.sot_tokenizer)
+                except Exception as e:
+                    logger.warning(f"SOT bootstrap projection load failed: {e}")
+            # Auto-bootstrap from FastText model (lightweight alternative)
+            if config.sot_bootstrap_fasttext_model and config.sot_bootstrap_corpus:
+                try:
+                    import json
+                    with open(config.sot_bootstrap_corpus, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    texts = []
+                    if isinstance(data, dict) and 'records' in data:
+                        texts = [r.get('context', '') + ' ' + r.get('answer', '')
+                                 for r in data['records']]
+                    elif isinstance(data, list):
+                        texts = [str(item) for item in data]
+                    from rtmdk.memory.bootstrap_fasttext import run_bootstrap
+                    run_bootstrap(self.sot_tokenizer, texts=texts, model_path=config.sot_bootstrap_fasttext_model)
+                except Exception as e:
+                    logger.warning(f"SOT FastText auto-bootstrap failed: {e}")
+            # Auto-bootstrap from corpus via SBERT if no FastText and no projection
+            elif config.sot_bootstrap_corpus and not config.sot_bootstrap_projection:
+                try:
+                    import json
+                    with open(config.sot_bootstrap_corpus, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    texts = []
+                    if isinstance(data, dict) and 'records' in data:
+                        texts = [r.get('context', '') + ' ' + r.get('answer', '')
+                                 for r in data['records']]
+                    elif isinstance(data, list):
+                        texts = [str(item) for item in data]
+                    from sentence_transformers import SentenceTransformer
+                    teacher = SentenceTransformer(config.sot_bootstrap_model)
+                    self.sot_tokenizer.bootstrap_from_teacher(
+                        texts,
+                        lambda t: teacher.encode(t, show_progress_bar=False),
+                        fit_projection_only=False,
+                        n_epochs=10,
+                        lr=0.05,
+                    )
+                except Exception as e:
+                    logger.warning(f"SOT auto-bootstrap failed: {e}")
+            self.sot_hebbian = ContrastiveHebbian(
+                lr=config.sot_contrastive_lr,
+            )
+            if config.sot_ssm_sync:
+                self.sot_ssm = EmbeddingFieldSSM(
+                    latent_dim=config.latent_dim,
+                    tokenizer=self.sot_tokenizer,
+                    diagonal=config.sot_diagonal_ssm,
+                )
+            self._sot_field_ema = np.zeros(config.latent_dim, dtype=np.float32)
+
+        self._step_counter = 0
+        # Rate limiting: track add_node timestamps (max 100 nodes/sec)
+        self._add_node_timestamps: deque = deque(maxlen=1000)
+        self._rollback_history: deque = deque(maxlen=config.max_rollback_history)
+        self._stability_buffer: deque = deque(maxlen=config.field_stability_window)
+        self._active_node_history: deque = deque(maxlen=50)
+
+    def _project(self, embedding: NDArray) -> NDArray:
+        # Phase 21: If embedding is already latent_dim, use directly
+        if len(embedding) == self.cfg.latent_dim:
+            latent = embedding.astype(np.float32)
+        elif self.projection_learner:
+            latent = self.projection_learner.project(embedding)
+        else:
+            # Normalize before random projection to preserve cosine relationships in L2 space
+            emb = embedding.astype(np.float32)
+            norm = np.linalg.norm(emb)
+            if norm > 1e-8:
+                emb = emb / norm
+            latent = (emb @ self._raw_projection).astype(np.float32)
+        # Phase 11 Track 2: Hyperbolic projection into Poincare ball
+        if self.cfg.hyperbolic:
+            norm = np.linalg.norm(latent)
+            if norm >= self.cfg.ball_radius:
+                latent = latent * (self.cfg.ball_radius - 1e-6) / max(norm, 1e-8)
+        return latent
+
+    def _get_phase(self, session_id: Optional[str] = None, embedding: Optional[NDArray] = None,
+                   modality: str = "text") -> float:
+        base = (time.time() * 0.01) % (2 * np.pi)
+        if self.cfg.cross_modal and modality in self.cfg.modal_phase_offsets:
+            base += self.cfg.modal_phase_offsets[modality]
+        elif self.cfg.multimodal and modality in self.cfg.modality_phase_shifts:
+            base += self.cfg.modality_phase_shifts[modality]
+        return base % (2 * np.pi)
+
+    def _resonance_response(self, query_latent: NDArray, query_phase: float, node: MemoryNode,
+                            query_modality: str = "text") -> float:
+        # Fix 1: Torch backend auto-switch for batch resonance
+        # (Single-node response always uses numpy for simplicity;
+        #  batch queries use TorchBackend.batch_resonance via query())
+
+        # Phase 11 Track 2: Hyperbolic distance
+        if self.cfg.hyperbolic:
+            dist = poincare_dist(query_latent, node.latent_pos, self.cfg.ball_radius)
+            self.stats["avg_hyperbolic_dist"] = 0.99 * self.stats["avg_hyperbolic_dist"] + 0.01 * dist
+        else:
+            dist = np.linalg.norm(query_latent - node.latent_pos)
+        phase_diff = node.phase - query_phase
+        bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self.cfg.bandwidth
+        bw = max(bw, 1e-8)
+        pc = self.meta_kernel.get_phase_coupling() if self.meta_kernel else self.cfg.phase_coupling
+
+        if self.learnable_kernel:
+            resp = self.learnable_kernel.resonance_response(dist, phase_diff, node.amplitude, node.salience)
+        else:
+            if self.cfg.resonance_kernel in ("gaussian", "gaussian_phase"):
+                spatial = math.exp(-dist ** 2 / (2 * bw ** 2))
+            elif self.cfg.resonance_kernel == "cosine":
+                nq = np.linalg.norm(query_latent)
+                nn = np.linalg.norm(node.latent_pos)
+                spatial = 0.5 + 0.5 * np.dot(query_latent, node.latent_pos) / (nq * nn + 1e-8) if nq > 1e-8 and nn > 1e-8 else 0.5
+            else:
+                spatial = math.exp(-dist / bw)
+            phase_align = 0.5 + 0.5 * math.cos(phase_diff)
+            resp = spatial * ((1 - pc) + pc * phase_align) * node.amplitude * node.salience
+
+        gate = node.soft_gate if self.cfg.soft_gates else 1.0
+        if self.causal_engine and node.causal_parents:
+            causal_boost = sum(node.causal_strength.get(p, 0) for p in node.causal_parents)
+            resp *= (1.0 + 0.1 * causal_boost)
+
+        if self.cfg.cross_modal:
+            resp = cross_modal_resonance(
+                query_modality, node.modality, resp,
+                self.cfg.modal_phase_offsets, self.cfg.cross_modal_kernel_weight
+            )
+            base_val = spatial * node.amplitude * node.salience
+            node.cross_modal_score = resp / base_val if base_val > 1e-8 else 0.0
+
+        return resp * gate * node.modal_weight
+
+    def _batch_resonance(self, query_latents: NDArray, query_phases: NDArray,
+                         node_ids: List[str]) -> NDArray:
+        """Batch resonance computation. Pre-selected backend avoids hot-path branching."""
+        return self._batch_resonance_fn(query_latents, query_phases, node_ids)
+
+    def _batch_resonance_numpy(self, query_latents: NDArray, query_phases: NDArray,
+                               node_ids: List[str]) -> NDArray:
+        """Pure numpy batch resonance — no branching, no torch overhead."""
+        if not node_ids:
+            return np.empty((len(query_latents), 0), dtype=np.float32)
+
+        node_positions = np.array([self.nodes[nid].latent_pos for nid in node_ids])
+        node_phases = np.array([self.nodes[nid].phase for nid in node_ids])
+        node_amplitudes = np.array([self.nodes[nid].amplitude for nid in node_ids])
+        node_saliences = np.array([self.nodes[nid].salience for nid in node_ids])
+
+        dists = cdist(query_latents, node_positions)
+        # Gaussian kernel: exp(-d^2/(2*bw^2)) — use meta_kernel if available (Fix 2: consistency with single-node path)
+        if self.cfg.adaptive_bandwidth and self._cached_bw is not None and len(self.node_index) > 0:
+            nid_to_idx = {nid: i for i, nid in enumerate(self.node_index)}
+            idxs = np.array([nid_to_idx[nid] for nid in node_ids], dtype=np.int64)
+            bw = self._cached_bw[idxs]
+        else:
+            bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self.cfg.bandwidth
+        bw = np.maximum(bw, 1e-8)
+        pc = self.meta_kernel.get_phase_coupling() if self.meta_kernel else self.cfg.phase_coupling
+        # Broadcasting: per-node bw across queries
+        if np.ndim(bw) == 0:
+            spatial = np.exp(-dists ** 2 / (2 * bw ** 2))
+        else:
+            spatial = np.exp(-dists ** 2 / (2 * bw[np.newaxis, :] ** 2))
+        phase_diff = query_phases[:, np.newaxis] - node_phases[np.newaxis, :]
+        phase_align = 0.5 + 0.5 * np.cos(phase_diff)
+        response = spatial * ((1 - pc) + pc * phase_align)
+        return response * node_amplitudes[np.newaxis, :] * node_saliences[np.newaxis, :]
+
+    def _batch_resonance_torch(self, query_latents: NDArray, query_phases: NDArray,
+                               node_ids: List[str]) -> NDArray:
+        """Torch batch resonance — GPU accelerated."""
+        if not node_ids:
+            return np.empty((len(query_latents), 0), dtype=np.float32)
+
+        # P1.2 fallback: TorchBackend expects scalar bw; adaptive bw needs per-node vector
+        if self.cfg.adaptive_bandwidth:
+            return self._batch_resonance_numpy(query_latents, query_phases, node_ids)
+
+        node_positions = np.array([self.nodes[nid].latent_pos for nid in node_ids])
+        node_phases = np.array([self.nodes[nid].phase for nid in node_ids])
+        node_amplitudes = np.array([self.nodes[nid].amplitude for nid in node_ids])
+        node_saliences = np.array([self.nodes[nid].salience for nid in node_ids])
+
+        # Use meta_kernel if available (Fix 2: consistency with single-node path)
+        bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self.cfg.bandwidth
+        pc = self.meta_kernel.get_phase_coupling() if self.meta_kernel else self.cfg.phase_coupling
+        return self.gpu_backend.batch_resonance(
+            query_latents, query_phases, node_positions, node_phases,
+            node_amplitudes, node_saliences,
+            bw, pc
+        )
+
+    def _build_node_cache(self):
+        """Build numpy arrays cache from nodes — called once when cache is dirty."""
+        # Thread-safety: compact node_index to exclude nodes that may have been deleted
+        # by async consolidation while query() was running.
+        valid_entries = [(nid, self.nodes[nid]) for nid in self.node_index if nid in self.nodes]
+        n = len(valid_entries)
+        if n == 0:
+            self._cached_positions = np.empty((0, self.cfg.latent_dim), dtype=np.float32)
+            self._cached_phases = np.empty(0, dtype=np.float32)
+            self._cached_amplitudes = np.empty(0, dtype=np.float32)
+            self._cached_saliences = np.empty(0, dtype=np.float32)
+            self._cached_modal_weights = np.empty(0, dtype=np.float32)
+            self._cached_gates = np.empty(0, dtype=np.float32)
+            self._cached_causal_boost = np.empty(0, dtype=np.float32)
+            self._cached_bw = None
+            self._cache_dirty = False
+            self.node_index = []
+            return
+
+        # Single pass through valid nodes — much faster than 5 separate list comprehensions
+        positions = np.zeros((n, self.cfg.latent_dim), dtype=np.float32)
+        phases = np.zeros(n, dtype=np.float32)
+        amplitudes = np.zeros(n, dtype=np.float32)
+        saliences = np.zeros(n, dtype=np.float32)
+        modal_weights = np.zeros(n, dtype=np.float32)
+        gates = np.ones(n, dtype=np.float32)  # Default gate = 1.0
+        causal_boost = np.zeros(n, dtype=np.float32)  # Default causal boost = 0
+
+        for i, (nid, node) in enumerate(valid_entries):
+            positions[i] = node.latent_pos
+            phases[i] = node.phase
+            amplitudes[i] = node.amplitude
+            saliences[i] = node.salience
+            modal_weights[i] = node.modal_weight
+            if self.cfg.soft_gates and hasattr(node, 'soft_gate'):
+                gates[i] = node.soft_gate
+            # Pre-compute causal boost factor: 1.0 + 0.1 * sum(causal_strength)
+            if self.causal_engine and hasattr(node, 'causal_parents') and node.causal_parents:
+                cb = sum(node.causal_strength.get(p, 0) for p in node.causal_parents)
+                causal_boost[i] = 1.0 + 0.1 * cb
+
+        # Phase P1.2: Local adaptive bandwidth — precompute k-NN distances
+        if self.cfg.adaptive_bandwidth and n > self.cfg.adaptive_bandwidth_k:
+            tree = cKDTree(positions)
+            k = self.cfg.adaptive_bandwidth_k + 1  # +1 because query includes self
+            distances, _ = tree.query(positions, k=k)
+            kdist = distances[:, -1].astype(np.float32)
+            median_kdist = float(np.median(kdist))
+            bw_factors = np.sqrt(kdist / max(median_kdist, 1e-8))
+            self._cached_bw = (self.cfg.bandwidth * bw_factors).astype(np.float32)
+        else:
+            self._cached_bw = None
+
+        self._cached_positions = positions
+        self._cached_phases = phases
+        self._cached_amplitudes = amplitudes
+        self._cached_saliences = saliences
+        self._cached_modal_weights = modal_weights
+        self._cached_gates = gates
+        self._cached_causal_boost = causal_boost
+        self._cache_dirty = False
+        self.node_index = [nid for nid, _ in valid_entries]
+
+    def _compute_resonance_chunk(self, positions, phases, amplitudes, saliences,
+                                  modal_weights, gates, causal_boost,
+                                  query_latent, query_phase, bw=None):
+        """Compute resonance response for a chunk of nodes.
+
+        Args:
+            bw: Optional per-node bandwidth vector (same length as positions).
+                If None, uses global bandwidth from config or meta_kernel.
+        """
+        dists = np.linalg.norm(positions - query_latent, axis=1)
+        if bw is not None:
+            local_bw = np.asarray(bw)
+        else:
+            local_bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self.cfg.bandwidth
+        local_bw = np.maximum(local_bw, 1e-8)
+        spatial = np.exp(-dists ** 2 / (2 * local_bw ** 2))
+        pc = self.meta_kernel.get_phase_coupling() if self.meta_kernel else self.cfg.phase_coupling
+        phase_align = 0.5 + 0.5 * np.cos(phases - query_phase)
+        resp = spatial * ((1 - pc) + pc * phase_align) * amplitudes * saliences * modal_weights
+        if self.cfg.soft_gates:
+            resp = resp * gates
+        if self.causal_engine:
+            resp = resp * causal_boost
+        return resp
+
+    def _query_vectorized(self, query_latent: NDArray, query_phase: float,
+                          top_k: int, modality: str, session_id: Optional[str],
+                          t0: float) -> List[Tuple[str, float, MemoryNode]]:
+        """Vectorized query using cached numpy arrays — O(N) but vectorized.
+
+        Mathematical model:
+        - dist_i = ||q - n_i|| for all i → vectorized norm
+        - spatial_i = exp(-dist_i² / 2bw²) → vectorized exp
+        - phase_align_i = 0.5 + 0.5*cos(phase_i - query_phase) → vectorized cos
+        - resp_i = spatial_i × ((1-pc) + pc × phase_align_i) × amp_i × sal_i
+        - Session boost: resp_i × 1.5 if session matches
+        - Filter: resp_i >= min_response
+        - Sort and return top_k
+
+        Complexity: O(N×d) with SIMD vectorization (~200x faster than Python loop)
+        Cached arrays avoid O(N) Python loop on every query.
+        """
+        n_nodes = len(self.node_index)
+        if n_nodes == 0:
+            return []
+
+        # Build cache if dirty (single pass through nodes)
+        if self._cache_dirty:
+            self._build_node_cache()
+
+        # P1: Session pre-filtering — build mask once, apply to all arrays
+        session_mask = None
+        if session_id and session_id != "default":
+            session_mask = np.array([
+                self.nodes[nid].content.get("session") == session_id
+                for nid in self.node_index
+            ], dtype=bool)
+            # If very few session nodes, use them directly
+            n_session = session_mask.sum()
+            if 0 < n_session < n_nodes * 0.3:
+                # Session has < 30% of nodes — filter arrays
+                positions = self._cached_positions[session_mask]
+                phases = self._cached_phases[session_mask]
+                amplitudes = self._cached_amplitudes[session_mask]
+                saliences = self._cached_saliences[session_mask]
+                modal_weights = self._cached_modal_weights[session_mask]
+                gates = self._cached_gates[session_mask]
+                causal_boost = self._cached_causal_boost[session_mask]
+                session_indices = np.where(session_mask)[0]
+            else:
+                # Session has many nodes — use full arrays with boost
+                positions = self._cached_positions
+                phases = self._cached_phases
+                amplitudes = self._cached_amplitudes
+                saliences = self._cached_saliences
+                modal_weights = self._cached_modal_weights
+                gates = self._cached_gates
+                causal_boost = self._cached_causal_boost
+                session_indices = None
+        else:
+            positions = self._cached_positions
+            phases = self._cached_phases
+            amplitudes = self._cached_amplitudes
+            saliences = self._cached_saliences
+            modal_weights = self._cached_modal_weights
+            gates = self._cached_gates
+            causal_boost = self._cached_causal_boost
+            session_indices = None
+
+        # P1.2: Adaptive bandwidth vector — must match filtered positions length
+        if self._cached_bw is not None and session_mask is not None and 0 < n_session < n_nodes * 0.3:
+            bw = self._cached_bw[session_mask]
+        else:
+            bw = self._cached_bw
+
+        # Phase 3c: Chunked batch computation — prevents OOM and improves cache locality
+        batch_size = self.cfg.gpu_batch_size
+        n = len(positions)
+
+        if n <= batch_size:
+            # Single chunk — old fast path
+            resp = self._compute_resonance_chunk(
+                positions, phases, amplitudes, saliences,
+                modal_weights, gates, causal_boost,
+                query_latent, query_phase,
+                bw=bw,
+            )
+            if session_id and session_id != "default" and session_mask is not None and session_indices is None:
+                resp = resp * (1.0 + 0.5 * session_mask.astype(np.float32))
+            above_threshold = resp >= self.cfg.min_response
+            indices = np.where(above_threshold)[0]
+            if len(indices) == 0:
+                self.stats["total_queries"] += 1
+                return []
+            if session_indices is not None:
+                indices = session_indices[indices]
+            scores = resp[indices] if session_indices is None else resp[np.where(above_threshold)[0]]
+            n_results = min(len(indices), top_k * 2)
+            if len(indices) > top_k * 3:
+                if n_results < len(scores):
+                    partition_idx = np.argpartition(scores, -n_results)[-n_results:]
+                    top_local = partition_idx[np.argsort(scores[partition_idx])[::-1][:top_k]]
+                else:
+                    top_local = np.argsort(scores)[::-1][:top_k]
+                top_indices = indices[top_local]
+                top_scores = scores[top_local]
+            else:
+                sorted_order = np.argsort(scores)[::-1][:top_k]
+                top_indices = indices[sorted_order]
+                top_scores = scores[sorted_order]
+        else:
+            # Multi-chunk path — accumulate local top_k then global sort
+            candidates: List[Tuple[int, float]] = []
+            for start in range(0, n, batch_size):
+                end = min(start + batch_size, n)
+                resp = self._compute_resonance_chunk(
+                    positions[start:end], phases[start:end], amplitudes[start:end],
+                    saliences[start:end], modal_weights[start:end], gates[start:end],
+                    causal_boost[start:end], query_latent, query_phase,
+                    bw=bw[start:end] if bw is not None else None,
+                )
+                if session_id and session_id != "default" and session_mask is not None and session_indices is None:
+                    resp = resp * (1.0 + 0.5 * session_mask[start:end].astype(np.float32))
+                above = resp >= self.cfg.min_response
+                local_idx = np.where(above)[0]
+                if len(local_idx) == 0:
+                    continue
+                scores = resp[local_idx]
+                local_idx += start
+                chunk_n = min(len(local_idx), top_k * 2)
+                if len(local_idx) > top_k * 3:
+                    if chunk_n < len(scores):
+                        part_idx = np.argpartition(scores, -chunk_n)[-chunk_n:]
+                        top_local = part_idx[np.argsort(scores[part_idx])[::-1][:top_k]]
+                    else:
+                        top_local = np.argsort(scores)[::-1][:top_k]
+                else:
+                    top_local = np.argsort(scores)[::-1][:top_k]
+                for li in top_local:
+                    candidates.append((int(local_idx[li]), float(scores[li])))
+            if not candidates:
+                self.stats["total_queries"] += 1
+                return []
+            candidates.sort(key=lambda x: x[1], reverse=True)
+            top_candidates = candidates[:top_k]
+            if session_indices is not None:
+                top_indices = np.array([session_indices[idx] for idx, _ in top_candidates], dtype=np.int64)
+            else:
+                top_indices = np.array([idx for idx, _ in top_candidates], dtype=np.int64)
+            top_scores = np.array([score for _, score in top_candidates], dtype=np.float32)
+
+        # Build result list
+        results = []
+        for i in range(len(top_indices)):
+            idx = top_indices[i]
+            nid = self.node_index[idx]
+            node = self.nodes[nid]
+            node.last_resonated = time.time()
+            results.append((nid, float(top_scores[i]), node))
+
+        # Update stats
+        self.stats["total_queries"] += 1
+        if results:
+            self.stats["avg_response"] = 0.9 * self.stats["avg_response"] + 0.1 * results[0][1]
+            if self.ode_dynamics:
+                self.ode_dynamics.record_response(results[0][1])
+            if self.entropy_ctrl:
+                self.entropy_ctrl.record_response(results[0][1], results[0][2].salience)
+            if self.goal_tracker:
+                for nid, resp_val, node in results:
+                    node.goal_relevance = self.goal_tracker.get_goal_relevance(nid)
+            if self.cfg.attention_bias:
+                from rtmdk.memory.core import apply_attention_bias
+                results = apply_attention_bias(results, self.cfg.bias_temperature)
+                self.stats["attention_bias_applied"] += 1
+
+        # Track timing
+        elapsed_ms = (time.time() - t0) * 1000
+        if self.cfg.sparse_routing:
+            self.stats["avg_shard_query_time_ms"] = (
+                0.95 * self.stats["avg_shard_query_time_ms"] + 0.05 * elapsed_ms
+            )
+
+        return results
+
+    def query(self, embedding: NDArray, phase: float = 0.0, top_k: Optional[int] = None,
+              modality: str = "text", session_id: Optional[str] = None) -> List[Tuple[str, float, MemoryNode]]:
+        t0 = time.time()
+        top_k = top_k or self.cfg.top_k
+        query_latent = self._project(embedding)
+
+        # Fix 1: HNSW auto-intercept for large N (>5000 nodes).
+        # For small datasets, full vectorized scan is more accurate and still fast (SIMD).
+        if self.cfg.use_hnsw and self.hnsw_index and len(self.hnsw_index.positions) > 20000:
+            hnsw_k = min(len(self.hnsw_index.positions), max(top_k * 10, 200))
+            candidate_ids = self.hnsw_index.search(query_latent, hnsw_k)
+            candidate_ids = [nid for nid in candidate_ids if nid in self.nodes]
+            # Vectorized batch resonance on HNSW candidates (avoids slow Python loop)
+            if candidate_ids:
+                scores = self._batch_resonance(
+                    query_latent[np.newaxis, :],
+                    np.array([phase], dtype=np.float32),
+                    candidate_ids,
+                )[0]
+                results = []
+                for idx, nid in enumerate(candidate_ids):
+                    node = self.nodes[nid]
+                    resp = float(scores[idx]) * (1.3 if session_id and node.content.get("session") == session_id else 1.0)
+                    if resp >= self.cfg.min_response:
+                        results.append((nid, resp, node))
+                        node.last_resonated = time.time()
+                results.sort(key=lambda x: x[1], reverse=True)
+            else:
+                results = []
+        elif self.cfg.sparse_routing and self.shard_centers is not None and len(self.nodes) > self.cfg.num_shards * 2:
+            active_shards = self._route_query(query_latent, self.cfg.top_shards)
+            candidate_ids = [nid for nid in self.node_index if self._get_node_shard(nid) in active_shards]
+            search_nodes = [(nid, self.nodes[nid]) for nid in candidate_ids if nid in self.nodes]
+            self.stats["shard_hits"] += len(candidate_ids)
+        else:
+            # Always use vectorized batch resonance (removes Python-loop overhead)
+            results = self._query_vectorized(query_latent, phase, top_k, modality, session_id, t0)
+
+        # Fallback loop path (should rarely reach here)
+        if 'results' not in locals():
+            search_nodes = [(nid, self.nodes[nid]) for nid in self.node_index if nid in self.nodes]
+            if self.cfg.sparse_routing:
+                self.stats["shard_misses"] += 1
+
+            # Fix 3: Hyperbolic pre-filtering for candidate selection
+            if self.cfg.hyperbolic and len(search_nodes) > top_k * 5:
+                query_norm = np.linalg.norm(query_latent)
+                if query_norm >= self.cfg.ball_radius:
+                    query_latent = query_latent * (self.cfg.ball_radius - 1e-6) / max(query_norm, 1e-8)
+                prefiltered = []
+                for nid, node in search_nodes:
+                    # FIX: Never mutate node.latent_pos — use a local copy for projection
+                    node_norm = np.linalg.norm(node.latent_pos)
+                    node_pos = node.latent_pos
+                    if node_norm >= self.cfg.ball_radius:
+                        node_pos = node.latent_pos * (self.cfg.ball_radius - 1e-6) / max(node_norm, 1e-8)
+                    hdist = poincare_dist(query_latent, node_pos, self.cfg.ball_radius)
+                    if hdist < 3.0:
+                        prefiltered.append((nid, node))
+                if len(prefiltered) > 0:
+                    search_nodes = prefiltered
+
+            results = []
+            for nid, node in search_nodes:
+                resp = self._resonance_response(query_latent, phase, node, query_modality=modality)
+                # Session priority bonus: boost nodes matching the queried session
+                if session_id and node.content.get("session") == session_id:
+                    resp *= 1.3  # 30% boost for session-matching nodes
+                if resp >= self.cfg.min_response:
+                    results.append((nid, resp, node))
+                    node.last_resonated = time.time()
+
+            results.sort(key=lambda x: x[1], reverse=True)
+        self.stats["total_queries"] += 1
+
+        # Track shard query time
+        if self.cfg.sparse_routing:
+            elapsed_ms = (time.time() - t0) * 1000
+            self.stats["avg_shard_query_time_ms"] = (
+                0.95 * self.stats["avg_shard_query_time_ms"] + 0.05 * elapsed_ms
+            )
+
+        if self.cfg.cross_modal:
+            self.stats["cross_modal_queries"] += 1
+            if results:
+                cm_scores = [n.cross_modal_score for _, _, n in results]
+                self.stats["cross_modal_recall"] = 0.9 * self.stats["cross_modal_recall"] + 0.1 * float(np.mean(cm_scores))
+
+        if len(results) == 0 and self.cfg.bm25_fallback and self.bm25_index:
+            # Handle both v1 (text) and v2 (input_text + output_text) nodes
+            texts = []
+            for nid in self.node_index[:100]:
+                content = self.nodes[nid].content
+                t = content.get("text", "")
+                if not t:
+                    t = f"{content.get('input_text', '')} {content.get('output_text', '')}".strip()
+                if t:
+                    texts.append(t)
+            query_text = " ".join(texts)
+            if query_text:
+                for doc_id, score in self.bm25_index.search(query_text, top_k):
+                    if doc_id in self.nodes:
+                        results.append((doc_id, score * 0.1, self.nodes[doc_id]))
+                self.stats["bm25_fallbacks"] += 1
+
+        if results:
+            self.stats["avg_response"] = 0.9 * self.stats["avg_response"] + 0.1 * results[0][1]
+            if self.ode_dynamics:
+                self.ode_dynamics.record_response(results[0][1])
+
+            # Phase 15 Track 4: Record resonance for entropy
+            if self.entropy_ctrl:
+                self.entropy_ctrl.record_response(results[0][1], results[0][2].salience)
+
+        # P2.2: Weight retrieval scores by uncertainty (lower uncertainty → higher score)
+        if self.kalman_filter is not None and results:
+            weighted = []
+            for nid, score, node in results:
+                if node.covariance is not None:
+                    w = self.kalman_filter.uncertainty_weight(node.covariance)
+                    score = score * w
+                weighted.append((nid, score, node))
+            results = weighted
+
+        # Phase 13 Track 1: Goal relevance scoring
+        if self.goal_tracker and results:
+            for nid, resp, node in results:
+                node.goal_relevance = self.goal_tracker.get_goal_relevance(nid)
+
+        # Phase 13 Track 2: Cognitive attention bias
+        if self.cfg.attention_bias and results:
+            results = apply_attention_bias(results, self.cfg.bias_temperature)
+            self.stats["attention_bias_applied"] += 1
+
+        # Phase 13 Track 4: Event-driven trigger for queries
+        if self.event_scheduler and results:
+            self.event_scheduler.enqueue("query", {"top_score": results[0][1] if results else 0})
+
+        if self.meta_kernel:
+            self.meta_kernel.record_response(results[0][1] if results else 0.0)
+            if len(results) >= 2:
+                positions = np.array([n.latent_pos for _, _, n in results])
+                valid = pdist(positions)
+                density = 1.0 / (1.0 + np.mean(valid)) if len(valid) > 0 else 0.0
+                self.meta_kernel.record_semantic_density(float(density))
+            if len(results) >= 2:
+                responses = np.array([r for _, r, _ in results])
+                normalized = responses / (np.sum(responses) + 1e-8)
+                entropy = -np.sum(normalized * np.log(normalized + 1e-8))
+                self.meta_kernel.record_uncertainty(float(entropy))
+
+        # Phase 16 Track 2: Store results for SafetyCertifier
+        self._last_query_results = results
+
+        if self.causal_engine and len(results) >= 2:
+            self.causal_engine.record_cooccurrence(results[0][0], results[1][0])
+            active = [nid for nid, resp, _ in results if resp > self.cfg.min_response * 0.5]
+            if active:
+                self.causal_engine.record_observation(active)
+                self._active_node_history.append(active)
+
+        # Phase 14 Track 1: Meta-memory recall tracking
+        if self.meta_memory_eval and results:
+            top_score = results[0][1]
+            avg_age = np.mean([time.time() - n.created_at for _, _, n in results])
+            self.meta_memory_eval.record_recall("", top_score, node_age=avg_age)
+            self.stats["recall_accuracy"] = self.meta_memory_eval.evaluate_recall_accuracy()
+
+        # P1.1: Conformal prediction filtering
+        results = self._apply_conformal_filter(results)
+
+        # E: Retrieval-aware feedback for SOT
+        if self.cfg.sot_retrieval_feedback and self.sot_tokenizer and self.sot_hebbian and results:
+            self._sot_retrieval_feedback(query_latent, results)
+
+        return results[:top_k]
+
+    def sot_bootstrap(self, texts: List[str], teacher_model: str = 'all-MiniLM-L6-v2'):
+        """Bootstrap SOT embeddings from a sentence-transformer teacher model.
+        
+        This dramatically improves cold-start quality by initializing byte/token
+        embeddings with semantic structure from a pre-trained model.
+        
+        Args:
+            texts: Corpus texts to use for bootstrap (e.g. from dataset).
+            teacher_model: Sentence-transformer model name.
+        """
+        if not self.sot_tokenizer:
+            raise RuntimeError("SOT not enabled in config")
+        try:
+            from sentence_transformers import SentenceTransformer
+            teacher = SentenceTransformer(teacher_model)
+            logger.info(f"SOT bootstrap: loading teacher model {teacher_model}")
+            
+            def embed_fn(text):
+                return teacher.encode(text, show_progress_bar=False)
+            
+            self.sot_tokenizer.bootstrap_from_teacher(texts, embed_fn)
+        except ImportError:
+            logger.error("sentence-transformers not installed, cannot bootstrap SOT")
+            raise
+        except Exception as e:
+            logger.error(f"SOT bootstrap failed: {e}")
+            raise
+
+    def _sot_retrieval_feedback(self, query_latent: np.ndarray, results: List[Tuple[str, float, MemoryNode]]):
+        """Update SOT embeddings based on retrieval results.
+        Pull query-relevant tokens closer to top results, push away from low-scoring results."""
+        if not self.sot_tokenizer or not self.sot_hebbian:
+            return
+        # Use top result as positive anchor, bottom result as negative anchor
+        top_nid, top_score, top_node = results[0]
+        bottom_nid, bottom_score, bottom_node = results[-1] if len(results) > 1 else (None, 0.0, None)
+        
+        if top_score < 0.1:
+            return  # Too uncertain, skip feedback
+        
+        # Get query tokens (re-encode from the node's query context if available)
+        # Since we don't have original query text here, we use a heuristic:
+        # update token embeddings of top result toward query latent, away from bottom
+        top_text = top_node.content.get('text', '')
+        bottom_text = bottom_node.content.get('text', '') if bottom_node else ''
+        
+        top_tokens = self.sot_tokenizer.encode(top_text)
+        if bottom_text:
+            bottom_tokens = self.sot_tokenizer.encode(bottom_text)
+        else:
+            bottom_tokens = []
+        
+        # Pull top result tokens toward query direction
+        # (approximate: treat query_latent as target for top tokens)
+        if top_tokens and len(top_tokens) > 1:
+            self.sot_hebbian.update(
+                self.sot_tokenizer.token_embeddings,
+                top_tokens,
+                [t for t in bottom_tokens if t not in top_tokens][:self.cfg.sot_negatives_per_query],
+            )
+        
+        # Update projection matrix if token_dim != latent_dim
+        if self.sot_tokenizer.token_dim != self.sot_tokenizer.latent_dim and top_tokens:
+            # Simple gradient: push projection so that top text embeds closer to query
+            top_emb = self.sot_tokenizer.embed(top_tokens)
+            error = query_latent - top_emb
+            # Gradient clipping (SOT-D)
+            error_norm = np.linalg.norm(error)
+            if error_norm > 1.0:
+                error = error / error_norm
+            for t in top_tokens:
+                if t in self.sot_tokenizer.token_embeddings:
+                    token_vec = self.sot_tokenizer.token_embeddings[t]
+                    delta = 0.001 * np.outer(token_vec, error)
+                    self.sot_tokenizer.projection += delta
+            # NaN guard (SOT-D)
+            if np.isnan(self.sot_tokenizer.projection).any() or np.isinf(self.sot_tokenizer.projection).any():
+                logger.warning("SOT projection NaN/Inf detected, skipping update")
+                return
+            # Renormalize columns
+            norms = np.linalg.norm(self.sot_tokenizer.projection, axis=0, keepdims=True)
+            self.sot_tokenizer.projection /= np.maximum(norms, 1e-8)
+
+    def query_by_text(self, text: str, top_k: Optional[int] = None,
+                      session_id: Optional[str] = None) -> List[Tuple[str, float, MemoryNode]]:
+        """Query field using SOT tokenizer (no external embedder required).
+
+        Args:
+            text: Raw query text.
+            top_k: Number of results.
+            session_id: Optional session filter.
+
+        Returns:
+            List of (node_id, resonance_score, node) tuples.
+        """
+        top_k = top_k or self.cfg.top_k
+        if self.sot_tokenizer and self.cfg.sot_use_for_query:
+            tokens = self.sot_tokenizer.encode(text)
+            query_latent = self.sot_tokenizer.embed(tokens)
+            return self.query(query_latent, phase=0.0, top_k=top_k,
+                              modality="text", session_id=session_id)
+        # Fallback: use standard query path if SOT not enabled for queries
+        return []
+
+    # B2: Lazy property for causal engine
+    @property
+    def causal_engine(self) -> Optional["CausalInferenceEngine"]:
+        if self._causal_engine_initialized and self._causal_engine is None:
+            self._causal_engine = CausalInferenceEngine(
+                min_samples=self.cfg.causal_discovery_min_samples,
+                p_threshold=self.cfg.causal_p_threshold,
+                adjustment_sets_enabled=self.cfg.causal_adjustment_sets)
+        return self._causal_engine
+
+    @causal_engine.setter
+    def causal_engine(self, value: Optional["CausalInferenceEngine"]):
+        self._causal_engine = value
+        self._causal_engine_initialized = value is not None
+
+    # B2: Lazy property for ODE dynamics
+    @property
+    def ode_dynamics(self) -> Optional["NeuralODEDynamics"]:
+        if self._ode_dynamics_initialized and self._ode_dynamics is None:
+            self._ode_dynamics = NeuralODEDynamics(
+                self.cfg.latent_dim, self.cfg.sde_noise_level, self.cfg.ode_time_horizon,
+                self.cfg.ode_n_steps, self.cfg.ode_chunk_size, self.cfg.ode_solver,
+                self.cfg.ode_atol, self.cfg.ode_rtol)
+        return self._ode_dynamics
+
+    @ode_dynamics.setter
+    def ode_dynamics(self, value: Optional["NeuralODEDynamics"]):
+        self._ode_dynamics = value
+        self._ode_dynamics_initialized = value is not None
+
+    # B2: Lazy property for meta-controller
+    @property
+    def meta_controller(self) -> Optional["MetaController"]:
+        if self._meta_controller_initialized and self._meta_controller is None:
+            self._meta_controller = MetaController(
+                n_trials=self.cfg.meta_n_trials,
+                optimize_params=self.cfg.meta_optimize_params,
+                optimization_freq=self.cfg.meta_optimization_freq,
+            )
+        return self._meta_controller
+
+    @meta_controller.setter
+    def meta_controller(self, value: Optional["MetaController"]):
+        self._meta_controller = value
+        self._meta_controller_initialized = value is not None
+
+    @_locked
+    def add_node(self, embedding: NDArray, content: Dict, phase: Optional[float] = None,
+                 node_id: Optional[str] = None, session_id: Optional[str] = None, modality: str = "text",
+                 skip_projection: bool = False) -> str:
+        # Rate limiting: configurable via RTMDK_ADD_RATE_LIMIT env var (default 100/sec)
+        _rate_limit = int(os.environ.get("RTMDK_ADD_RATE_LIMIT", "100"))
+        if _rate_limit > 0:
+            now = time.time()
+            while self._add_node_timestamps and self._add_node_timestamps[0] < now - 1.0:
+                self._add_node_timestamps.popleft()
+            if len(self._add_node_timestamps) >= _rate_limit:
+                raise SecurityViolationError(f"Rate limit exceeded: max {_rate_limit} nodes/second")
+            self._add_node_timestamps.append(now)
+
+        # Phase 14 Track 2: Security validation
+        if self.security:
+            # Check ALL text fields for prompt injection, not just 'text'
+            text = content.get("text", "")
+            input_text = content.get("input_text", "")
+            output_text = content.get("output_text", "")
+            for field_text in [text, input_text, output_text]:
+                if field_text:
+                    validation = self.security.validate_node_content(field_text)
+                    if not validation["is_safe"]:
+                        self.stats["security_violations"] += 1
+                        logger.warning(f"Security violation in add_node: {validation['violations']}")
+                        # Fix 7: Raise instead of returning "" — caller must handle
+                        raise SecurityViolationError(f"Security violation: {validation['violations']}")
+
+        nid = node_id or f"n_{len(self.nodes)}_{int(time.time() * 1000)}"
+        if skip_projection:
+            # Input is already in latent space (e.g., crystallization)
+            if len(embedding) != self.cfg.latent_dim:
+                raise ValueError(
+                    f"skip_projection=True but embedding dim {len(embedding)} != "
+                    f"latent_dim {self.cfg.latent_dim}"
+                )
+            latent = embedding
+        elif len(embedding) == self.cfg.latent_dim:
+            # Phase 21: SOT embeddings are already latent_dim — use directly
+            latent = embedding.astype(np.float32)
+        elif self.projection_learner:
+            latent = self.projection_learner.update(embedding)
+            self.stats["projection_updates"] += 1
+        else:
+            latent = self._project(embedding)
+        # Phase 11 Track 2: Ensure all nodes live inside Poincaré ball
+        if self.cfg.hyperbolic:
+            norm = np.linalg.norm(latent)
+            if norm >= self.cfg.ball_radius:
+                latent = latent * (self.cfg.ball_radius - 1e-6) / max(norm, 1e-8)
+
+        if phase is None:
+            phase = self._get_phase(session_id, embedding, modality)
+
+        # OPTIMIZED: Initialize amplitude/salience based on embedding quality
+        # Higher norm embeddings → more informative content → higher initial salience
+        emb_norm = float(np.linalg.norm(embedding))
+        # Typical emb_norm range: 5-30 for real embeddings, 2-10 for synthetic
+        # Normalize to [0.5, 1.0] range for salience
+        salience = min(1.0, max(0.3, emb_norm / 20.0))
+        amplitude = min(1.0, max(0.5, emb_norm / 15.0))
+
+        node = MemoryNode(id=nid, latent_pos=latent, phase=phase,
+                          amplitude=amplitude, salience=salience, content=content,
+                          lineage=[], modality=modality)
+
+        # P2.2: Initialize uncertainty covariance
+        if self.kalman_filter is not None:
+            node.covariance = self.kalman_filter.init_covariance()
+
+        if self.cfg.cross_modal:
+            node.modal_embedding = embedding.copy()
+
+        # Phase 17: Role assignment
+        role = DEFAULT_ROLE
+        if self.role_router:
+            text = content.get("text", "")
+            # Check if content has explicit role tag
+            explicit_role = content.get("role") or content.get("tier_role")
+            role = self.role_router.add_node(nid, text, role=explicit_role)
+            node.role = role  # Set role attribute on node
+
+        self.nodes[nid] = node
+        # H1: Prevent duplicate node_id in node_index
+        if nid not in self.node_index:
+            self.node_index.append(nid)
+        self.stats["total_adds"] += 1
+
+        # P0: Invalidate cached arrays (will be rebuilt on next query)
+        # For single node additions, use incremental append if cache exists
+        if self._cached_positions is not None:
+            # Incremental append to avoid full rebuild
+            try:
+                self._cached_positions = np.vstack([self._cached_positions, latent.reshape(1, -1)])
+                self._cached_phases = np.append(self._cached_phases, phase if phase is not None else self._get_phase(session_id, embedding))
+                self._cached_amplitudes = np.append(self._cached_amplitudes, amplitude)
+                self._cached_saliences = np.append(self._cached_saliences, salience)
+                self._cached_modal_weights = np.append(self._cached_modal_weights, 1.0)
+                self._cached_gates = np.append(self._cached_gates, 1.0)
+                self._cached_causal_boost = np.append(self._cached_causal_boost, 1.0)
+            except Exception:
+                logger.warning("Incremental cache append failed, falling back to full rebuild", exc_info=True)
+                # Fallback: mark dirty for full rebuild
+                self._cache_dirty = True
+        else:
+            self._cache_dirty = True
+
+        # P1.2: Adaptive bandwidth requires full rebuild (k-NN distances change for all nodes)
+        if self.cfg.adaptive_bandwidth:
+            self._cache_dirty = True
+            self._cached_bw = None
+
+        # B1: Invalidate tension cache for neighbors (new node affects topology)
+        self._invalidate_tension_cache(nid)
+
+        # Phase 17: Update shard distribution stats
+        if self.role_router:
+            self.stats["n_shards"] = len(self.role_router.shards)
+            self.stats["shard_distribution"] = {
+                r: len(s.node_ids) for r, s in self.role_router.shards.items()
+            }
+            self.stats["role_router_enabled"] = True
+
+        if self.cfg.use_hnsw and self.hnsw_index:
+            self.hnsw_index.insert(nid, latent)
+        if self.cfg.bm25_fallback and self.bm25_index:
+            # Handle both v1 (text) and v2 (input_text + output_text) nodes
+            text = content.get("text", "")
+            if not text:
+                input_t = content.get("input_text", "")
+                output_t = content.get("output_text", "")
+                text = f"{input_t} {output_t}".strip()
+            if text:
+                self.bm25_index.add_document(nid, text)
+
+        # Phase 13 Track 1: Event-driven trigger for node added
+        if self.event_scheduler:
+            self.event_scheduler.enqueue("node_added", {"node_id": nid, "modality": modality})
+
+        self.wal.append_add_node(nid, content, modality)
+        self._dirty = True
+        return nid
+
+    def calibrate(self, query_embedding: NDArray, node_id: str, is_relevant: bool) -> None:
+        """Add a labeled query-result pair to the conformal calibration set.
+
+        Args:
+            query_embedding: the query embedding used for retrieval
+            node_id: the retrieved node id
+            is_relevant: whether this node was judged relevant for the query
+        """
+        if not self.cfg.conformal_prediction or self.conformal_calibrator is None:
+            return
+        if not is_relevant or node_id not in self.nodes:
+            return
+        node = self.nodes[node_id]
+        query_latent = self._project(query_embedding)
+        score = self._resonance_response(query_latent, node.phase, node)
+        self.conformal_calibrator.add_sample(score)
+
+    def _apply_conformal_filter(self, results: List[Tuple[str, float, MemoryNode]]) -> List[Tuple[str, float, MemoryNode]]:
+        """Filter query results through conformal prediction threshold.
+
+        Returns only results whose score lies in the conformal prediction set.
+        Records threshold and confidence in stats.
+        """
+        if not self.cfg.conformal_prediction or self.conformal_calibrator is None:
+            return results
+        if self.conformal_calibrator.n_calibrated < self.cfg.conformal_min_calib:
+            return results
+        scores = [score for _, score, _ in results]
+        nids = [nid for nid, _, _ in results]
+        pred_set, confidence, threshold = self.conformal_calibrator.predict(scores, nids)
+        self.stats["conformal_threshold"] = threshold
+        self.stats["conformal_confidence"] = confidence
+        self.stats["conformal_prediction_set_size"] = len(pred_set)
+        pred_set_lookup = set(pred_set)
+        return [(nid, score, node) for nid, score, node in results if nid in pred_set_lookup]
+
+    def _invalidate_tension_cache(self, node_id: Optional[str] = None):
+        """B1: Invalidate tension cache. If node_id given, invalidate that node and neighbors.
+        Otherwise, invalidate entire cache. Also cleans entries for deleted nodes."""
+        # H8: Clean up entries for deleted nodes on every call
+        dead_keys = [k for k in self._tension_cache if k not in self.nodes]
+        for k in dead_keys:
+            self._tension_cache.pop(k, None)
+
+        if node_id is not None:
+            # Remove specific node and mark neighbors for refresh
+            self._tension_cache.pop(node_id, None)
+            # Invalidate cache for nodes near the changed one
+            node = self.nodes.get(node_id)
+            if node:
+                for nid in list(self._tension_cache.keys()):
+                    if nid == node_id:
+                        continue
+                    # Simple proximity check: invalidate ~20% of cache
+                    if hash(nid) % 5 == 0:
+                        self._tension_cache.pop(nid, None)
+        else:
+            # Full invalidation
+            self._tension_cache.clear()
+
+    def _sweep_tension_cache(self):
+        """Remove stale tension cache entries for live nodes (Fix 3: prevent unbounded cache growth)."""
+        if not self._tension_cache:
+            return
+        # Only sweep if cache is large (more than 2x number of nodes)
+        if len(self._tension_cache) <= len(self.nodes) * 2:
+            return
+        current_step = self._step_counter
+        keys_to_remove = [
+            k for k, (tension, step) in self._tension_cache.items()
+            if current_step - step > self._tension_cache_max_age * 3
+            and k in self.nodes  # Only remove for live nodes
+        ]
+        for k in keys_to_remove:
+            self._tension_cache.pop(k, None)
+
+    def _compute_tension(self, node_id: str, neighborhood_radius: float = 2.0) -> float:
+        # B1: Tension cache check
+        if node_id in self._tension_cache:
+            cached_tension, cached_step = self._tension_cache[node_id]
+            if self._step_counter - cached_step < self._tension_cache_max_age:
+                self._tension_cache_hits += 1
+                return cached_tension
+
+        self._tension_cache_misses += 1
+
+        node = self.nodes[node_id]
+
+        # Use HNSW for fast k-NN, else fallback to deterministic k-NN via cdist
+        k_neighbors = 10
+        neighbor_ids = []
+
+        if self.cfg.use_hnsw and self.hnsw_index and len(self.hnsw_index.positions) > k_neighbors:
+            candidate_ids = self.hnsw_index.search(node.latent_pos, top_k=k_neighbors + 1)
+            neighbor_ids = [nid for nid in candidate_ids if nid != node_id and nid in self.nodes]
+        else:
+            # Deterministic fallback: compute distances to a limited window
+            ids_to_check = self.node_index
+            max_scan = 200  # Limit scan for performance
+            if len(ids_to_check) > max_scan:
+                # Use reservoir-style sample with deterministic seed based on node_id
+                rng = np.random.RandomState(int(hashlib.md5(node_id.encode()).hexdigest(), 16) % 2**32)
+                ids_to_check = list(rng.choice(ids_to_check, size=max_scan, replace=False))
+
+            if len(ids_to_check) < 2:
+                return 0.0
+
+            # Compute distances and select k nearest within radius
+            others = [(oid, self.nodes[oid]) for oid in ids_to_check if oid != node_id and oid in self.nodes]
+            if not others:
+                return 0.0
+
+            other_positions = np.array([n.latent_pos for _, n in others])
+            other_ids = [oid for oid, _ in others]
+            dists = np.linalg.norm(other_positions - node.latent_pos, axis=1)
+
+            # Filter by radius and select k nearest
+            within_radius = dists < neighborhood_radius
+            if not np.any(within_radius):
+                # Fallback: take k nearest regardless of radius
+                k = min(k_neighbors, len(dists))
+                nearest_idx = np.argsort(dists)[:k]
+                neighbor_ids = [other_ids[i] for i in nearest_idx]
+            else:
+                radius_dists = [(other_ids[i], dists[i]) for i in range(len(dists)) if within_radius[i]]
+                radius_dists.sort(key=lambda x: x[1])
+                neighbor_ids = [oid for oid, _ in radius_dists[:k_neighbors]]
+
+        if len(neighbor_ids) < 2:
+            tension = 0.0
+        else:
+            neighbors = [self.nodes[oid] for oid in neighbor_ids]
+            phases = np.array([n.phase for n in neighbors])
+            saliences = np.array([n.salience for n in neighbors])
+            tension = 0.6 * (np.std(np.cos(phases)) + np.std(np.sin(phases))) + 0.4 * np.std(saliences)
+
+        # Phase 14 Track 2: Security - detect tension spikes
+        if self.security and not self.security.validate_tension_spike(float(tension)):
+            self.stats["tension_spikes_blocked"] += 1
+
+        # B1: Cache the computed tension
+        result = float(tension)
+        self._tension_cache[node_id] = (result, self._step_counter)
+        return result
+
+    def _soft_gate(self, tension: float) -> float:
+        if not self.cfg.soft_gates:
+            return 1.0
+        eff = self.adaptive_threshold.get_threshold() if self.adaptive_threshold else self.cfg.tension_threshold
+        return float(1 / (1 + math.exp(-(tension - eff) / self.cfg.gate_temperature)))
+
+    def get_effective_threshold(self) -> float:
+        return self.adaptive_threshold.get_threshold() if self.adaptive_threshold else self.cfg.tension_threshold
+
+    def _spectral_merge_clusters(self, high_tension: List[str], mode: ConsolidationMode,
+                                  updated: List[str], pending_deletions: List[str],
+                                  processed: Set[str], pre_state: Dict) -> bool:
+        """P2.1: Spectral Graph Laplacian clustering for consolidation.
+
+        Groups high-tension nodes into clusters using spectral embedding,
+        then performs greedy pairwise merge within each cluster.
+        Returns True if any merge happened, False otherwise.
+        """
+        if len(high_tension) < 3:
+            return False
+
+        # Gather positions and phases for high-tension nodes
+        positions = []
+        phases = []
+        valid_nids = []
+        for nid in high_tension:
+            if nid in self.nodes and nid not in processed:
+                node = self.nodes[nid]
+                positions.append(node.latent_pos)
+                phases.append(node.phase)
+                valid_nids.append(nid)
+
+        if len(valid_nids) < 3:
+            return False
+
+        positions_arr = np.array(positions, dtype=np.float32)
+        phases_arr = np.array(phases, dtype=np.float32)
+
+        clusters = spectral_cluster_nodes(
+            positions_arr, phases_arr,
+            max_clusters=self.cfg.spectral_max_clusters,
+            sigma=self.cfg.spectral_sigma,
+            timeout_ms=500.0,
+            rng=self._rng,
+        )
+        if clusters is None:
+            return False
+
+        merged_any = False
+        for cluster_indices in clusters.values():
+            if len(cluster_indices) < 2:
+                continue
+            # Map local indices to node IDs
+            cluster_nids = [valid_nids[i] for i in cluster_indices]
+            # Greedy pairwise merge within cluster (closest pair first)
+            while len(cluster_nids) >= 2:
+                best_pair = None
+                best_dist = float('inf')
+                cluster_positions = {nid: self.nodes[nid].latent_pos for nid in cluster_nids if nid in self.nodes}
+                if len(cluster_positions) < 2:
+                    break
+                nids_list = list(cluster_positions.keys())
+                for i in range(len(nids_list)):
+                    for j in range(i + 1, len(nids_list)):
+                        nid_i, nid_j = nids_list[i], nids_list[j]
+                        d = np.linalg.norm(cluster_positions[nid_i] - cluster_positions[nid_j])
+                        if d < best_dist:
+                            best_dist = d
+                            best_pair = (nid_i, nid_j)
+                if best_pair is None:
+                    break
+                nid, pid = best_pair
+                if nid not in self.nodes or pid not in self.nodes or nid in processed or pid in processed:
+                    break
+                if self._do_merge(nid, pid, mode, updated, pending_deletions, processed, pre_state):
+                    merged_any = True
+                    # Remove pid from cluster, keep nid as merged survivor
+                    cluster_nids = [n for n in cluster_nids if n != pid and n in self.nodes]
+                else:
+                    break
+        return merged_any
+
+    def _do_merge(self, nid: str, pid: str, mode: ConsolidationMode,
+                  updated: List[str], pending_deletions: List[str],
+                  processed: Set[str], pre_state: Dict) -> bool:
+        """Execute a single merge of nid with pid. Returns True if merge succeeded."""
+        node = self.nodes[nid]
+        partner = self.nodes[pid]
+
+        if self.cfg.do_calculus_validation and self.causal_engine:
+            validation = self.causal_engine.validate_consolidation(nid, pid)
+            self.stats["consolidation_validations"] += 1
+            if not validation["safe"]:
+                self.stats["blocked_consolidations"] += 1
+                processed.add(nid)
+                processed.add(pid)
+                return False
+
+        if self.cfg.domain_consolidation_guard and node.domain != partner.domain:
+            if partner.id not in node.conflict_with:
+                node.conflict_with.append(partner.id)
+            if node.id not in partner.conflict_with:
+                partner.conflict_with.append(node.id)
+            processed.add(nid)
+            processed.add(pid)
+            return False
+
+        gate = self._soft_gate(max(node.tension, partner.tension))
+
+        if self.cfg.enable_rollback:
+            node.pre_consolidation_pos = node.latent_pos.copy()
+
+        if self.diff_consolidation and mode == ConsolidationMode.DIALECTICAL:
+            synth = self.diff_consolidation.compute_synthesis(node, partner, gate)
+            if self.cfg.hyperbolic:
+                node.latent_pos = exp_map_poincare(
+                    log_map_poincare(synth["latent_pos"], node.latent_pos, self.cfg.ball_radius),
+                    node.latent_pos,
+                    self.cfg.ball_radius,
+                )
+            else:
+                node.latent_pos = synth["latent_pos"]
+            node.phase = synth["phase"]
+            node.amplitude = synth["amplitude"]
+            node.salience = synth["salience"]
+        elif mode == ConsolidationMode.DIALECTICAL:
+            if self.cfg.hyperbolic:
+                node.latent_pos = poincare_midpoint(
+                    node.latent_pos, partner.latent_pos, self.cfg.ball_radius
+                )
+            else:
+                node.latent_pos = 0.5 * (node.latent_pos + partner.latent_pos)
+            node.phase = np.arctan2(0.5*(np.sin(node.phase)+np.sin(partner.phase)),
+                                    0.5*(np.cos(node.phase)+np.cos(partner.phase))) % (2*np.pi)
+            node.amplitude = min(1.0, 0.8*(node.amplitude+partner.amplitude))
+            node.salience = min(1.0, 0.7*(node.salience+partner.salience))
+        else:
+            if self.cfg.hyperbolic:
+                node.latent_pos = poincare_midpoint(
+                    node.latent_pos, partner.latent_pos, self.cfg.ball_radius
+                )
+            else:
+                node.latent_pos = 0.5 * (node.latent_pos + partner.latent_pos)
+            node.phase = np.arctan2(0.5*(np.sin(node.phase)+np.sin(partner.phase)),
+                                    0.5*(np.cos(node.phase)+np.cos(partner.phase))) % (2*np.pi)
+
+        # P2.2: Kalman filter prediction + update on merge
+        if self.kalman_filter is not None:
+            if node.covariance is not None:
+                node.covariance = self.kalman_filter.predict(node.covariance)
+            # Treat partner position as measurement
+            if node.covariance is not None and partner.covariance is not None:
+                _, node.covariance = self.kalman_filter.update(
+                    node.latent_pos, partner.latent_pos, node.covariance
+                )
+                node.covariance = self.kalman_filter.merge_covariance(node.covariance, partner.covariance)
+            elif partner.covariance is not None:
+                node.covariance = partner.covariance.copy()
+
+        node.tension = 0.0
+        node.soft_gate = 1.0
+        node.lineage = [f"{node.id}+{pid}"] + node.lineage + partner.lineage
+        node.content["synthesis_note"] = f"Consolidated with {pid} at t={time.time():.0f}"
+        if "merged_content" not in node.content:
+            node.content["merged_content"] = []
+        node.content["merged_content"].append(partner.content.get("text", "") or partner.content.get("input_text", ""))
+
+        if self.causal_engine:
+            for parent, strength in partner.causal_strength.items():
+                if parent not in node.causal_strength:
+                    node.causal_strength[parent] = strength
+                else:
+                    node.causal_strength[parent] = max(node.causal_strength[parent], strength)
+
+        if self.cfg.use_hnsw and self.hnsw_index:
+            self.hnsw_index.remove(pid)
+            self.hnsw_index.insert(nid, node.latent_pos)
+        if self.cfg.bm25_fallback and self.bm25_index:
+            self.bm25_index.remove_document(pid)
+
+        pending_deletions.append(pid)
+        processed.add(pid)
+        updated.append(nid)
+        self.stats["consolidations"] += 1
+        processed.add(nid)
+        return True
+
+    @_locked
+    def consolidate(self, mode: Optional[ConsolidationMode] = None) -> List[str]:
+        mode = mode or self.cfg.consolidation_mode
+        updated = []
+        eff_threshold = self.get_effective_threshold()
+
+        pre_state = {}
+        if self.cfg.enable_rollback or self.cfg.self_sup_verify_after_consolidate:
+            for nid in self.node_index:
+                n = self.nodes[nid]
+                # H3: Save full state for complete rollback — not just position/phase
+                pre_state[nid] = {
+                    "latent_pos": n.latent_pos.copy(),
+                    "phase": n.phase,
+                    "amplitude": n.amplitude,
+                    "salience": n.salience,
+                    "tension": n.tension,
+                    "soft_gate": n.soft_gate,
+                    "content": dict(n.content),  # shallow copy — synthesis_note gets added
+                    "lineage": list(n.lineage),
+                    "causal_strength": dict(n.causal_strength),
+                    "causal_parents": list(n.causal_parents),
+                }
+
+        # Fix 2: Safe iteration — snapshot node_index to avoid mutation issues
+        node_index_snapshot = list(self.node_index)
+        for nid in node_index_snapshot:
+            if nid not in self.nodes:
+                continue
+            tension = self._compute_tension(nid)
+            self.nodes[nid].tension = tension
+            self.nodes[nid].soft_gate = self._soft_gate(tension)
+            if self.adaptive_threshold:
+                self.adaptive_threshold.record_tension(tension)
+                self.stats["adaptive_threshold_value"] = self.adaptive_threshold.get_threshold()
+
+        high_tension = [nid for nid in node_index_snapshot if nid in self.nodes and self.nodes[nid].tension > eff_threshold]
+        processed = set()
+        pending_deletions = []
+        # Fix: Snapshot node_index ONCE before outer loop (was O(N²) due to repeated copies)
+        node_index_snapshot = list(self.node_index)
+        n_snap = len(node_index_snapshot)
+
+        # P2.1: Spectral Graph Laplacian clustering (optional, opt-in)
+        if self.cfg.spectral_consolidation and len(high_tension) >= 3:
+            spectral_merged = self._spectral_merge_clusters(
+                high_tension, mode, updated, pending_deletions, processed, pre_state
+            )
+            if spectral_merged:
+                # Recompute high_tension excluding already processed nodes
+                high_tension = [nid for nid in high_tension if nid not in processed and nid in self.nodes]
+
+        # FIX: Precompute positions for vectorized distance computation
+        if self.cfg.use_hnsw and self.hnsw_index and n_snap > 50:
+            # Use HNSW for candidate search — O(N log N)
+            # Fix 10: Track HNSW bypass when node count <= 50
+            if n_snap <= 50:
+                self.stats["hnsw_bypassed"] = self.stats.get("hnsw_bypassed", 0) + 1
+            for nid in high_tension:
+                if nid in processed or nid not in self.nodes:
+                    continue
+                node = self.nodes[nid]
+                # HNSW search for neighbors within distance 2.5
+                candidate_ids = self.hnsw_index.search(node.latent_pos, top_k=min(50, n_snap))
+                candidates = []
+                for oid in candidate_ids:
+                    if oid == nid or oid in processed or oid not in self.nodes:
+                        continue
+                    other = self.nodes[oid]
+                    dist = np.linalg.norm(node.latent_pos - other.latent_pos)
+                    if dist >= 2.5:
+                        continue
+                    pd = min(abs(node.phase - other.phase), 2 * np.pi - abs(node.phase - other.phase))
+                    if pd > 1.0:
+                        candidates.append((oid, dist, pd))
+                if not candidates:
+                    continue
+                candidates.sort(key=lambda x: x[1])
+                pid = candidates[0][0]
+                if pid not in self.nodes:
+                    continue
+                partner = self.nodes[pid]
+
+                if self.cfg.do_calculus_validation and self.causal_engine:
+                    validation = self.causal_engine.validate_consolidation(nid, pid)
+                    self.stats["consolidation_validations"] += 1
+                    if not validation["safe"]:
+                        self.stats["blocked_consolidations"] += 1
+                        processed.add(nid)
+                        processed.add(pid)
+                        continue
+
+                # Phase 20: Domain consolidation guard — don't merge nodes from different domains
+                if self.cfg.domain_consolidation_guard and node.domain != partner.domain:
+                    if partner.id not in node.conflict_with:
+                        node.conflict_with.append(partner.id)
+                    if node.id not in partner.conflict_with:
+                        partner.conflict_with.append(node.id)
+                    processed.add(nid)
+                    processed.add(pid)
+                    continue
+
+                gate = self._soft_gate(max(node.tension, partner.tension))
+
+                if self.cfg.enable_rollback:
+                    node.pre_consolidation_pos = node.latent_pos.copy()
+
+                if self.diff_consolidation and mode == ConsolidationMode.DIALECTICAL:
+                    synth = self.diff_consolidation.compute_synthesis(node, partner, gate)
+                    if self.cfg.hyperbolic:
+                        node.latent_pos = exp_map_poincare(
+                            log_map_poincare(synth["latent_pos"], node.latent_pos, self.cfg.ball_radius),
+                            node.latent_pos,
+                            self.cfg.ball_radius,
+                        )
+                    else:
+                        node.latent_pos = synth["latent_pos"]
+                    node.phase = synth["phase"]
+                    node.amplitude = synth["amplitude"]
+                    node.salience = synth["salience"]
+                elif mode == ConsolidationMode.DIALECTICAL:
+                    if self.cfg.hyperbolic:
+                        node.latent_pos = poincare_midpoint(
+                            node.latent_pos, partner.latent_pos, self.cfg.ball_radius
+                        )
+                    else:
+                        node.latent_pos = 0.5 * (node.latent_pos + partner.latent_pos)
+                    node.phase = np.arctan2(0.5*(np.sin(node.phase)+np.sin(partner.phase)),
+                                            0.5*(np.cos(node.phase)+np.cos(partner.phase))) % (2*np.pi)
+                    node.amplitude = min(1.0, 0.8*(node.amplitude+partner.amplitude))
+                    node.salience = min(1.0, 0.7*(node.salience+partner.salience))
+                else:
+                    # MERGE and PRUNE modes: same spatial merge, keep amplitude/salience from survivor
+                    if self.cfg.hyperbolic:
+                        node.latent_pos = poincare_midpoint(
+                            node.latent_pos, partner.latent_pos, self.cfg.ball_radius
+                        )
+                    else:
+                        node.latent_pos = 0.5 * (node.latent_pos + partner.latent_pos)
+                    node.phase = np.arctan2(0.5*(np.sin(node.phase)+np.sin(partner.phase)),
+                                            0.5*(np.cos(node.phase)+np.cos(partner.phase))) % (2*np.pi)
+
+                node.tension = 0.0
+                node.soft_gate = 1.0
+                node.lineage = [f"{node.id}+{pid}"] + node.lineage + partner.lineage
+                # Preserve partner content for traceability
+                node.content["synthesis_note"] = f"Consolidated with {pid} at t={time.time():.0f}"
+                if "merged_content" not in node.content:
+                    node.content["merged_content"] = []
+                node.content["merged_content"].append(partner.content.get("text", "") or partner.content.get("input_text", ""))
+
+                if self.causal_engine:
+                    for parent, strength in partner.causal_strength.items():
+                        if parent not in node.causal_strength:
+                            node.causal_strength[parent] = strength
+                        else:
+                            node.causal_strength[parent] = max(node.causal_strength[parent], strength)
+
+                if self.cfg.use_hnsw and self.hnsw_index:
+                    self.hnsw_index.remove(pid)
+                    self.hnsw_index.insert(nid, node.latent_pos)
+                if self.cfg.bm25_fallback and self.bm25_index:
+                    self.bm25_index.remove_document(pid)
+
+                pending_deletions.append(pid)
+                processed.add(pid)
+                updated.append(nid)
+                self.stats["consolidations"] += 1
+                processed.add(nid)
+        else:
+            # Fallback: vectorized candidate search without HNSW — O(N) per node via vectorized ops
+            # Precompute all positions once (not O(N²) — done once outside loop)
+            snap_positions = np.array([self.nodes[oid].latent_pos for oid in node_index_snapshot if oid in self.nodes])
+            snap_ids = [oid for oid in node_index_snapshot if oid in self.nodes]
+            snap_phases = np.array([self.nodes[oid].phase for oid in snap_ids])
+            
+            # O(1) lookup instead of O(N) index search
+            snap_id_to_idx = {nid: idx for idx, nid in enumerate(snap_ids)}
+
+            for nid in high_tension:
+                if nid in processed or nid not in self.nodes:
+                    continue
+                node = self.nodes[nid]
+                # Find node index in snapshot — O(1) dict lookup
+                node_idx = snap_id_to_idx.get(nid)
+                if node_idx is None:
+                    continue
+                node_pos = snap_positions[node_idx]
+
+                # Vectorized distance computation
+                dists = np.linalg.norm(snap_positions - node_pos, axis=1)
+                phase_diffs = np.minimum(
+                    np.abs(snap_phases - node.phase),
+                    2 * np.pi - np.abs(snap_phases - node.phase)
+                )
+
+                # Filter candidates
+                mask = (dists < 2.5) & (phase_diffs > 1.0)
+                candidate_indices = np.where(mask)[0]
+                if len(candidate_indices) == 0:
+                    continue
+
+                # Sort by distance and pick nearest
+                sorted_indices = candidate_indices[np.argsort(dists[candidate_indices])]
+                pid = snap_ids[sorted_indices[0]]
+                if pid not in self.nodes or pid in processed:
+                    continue
+                partner = self.nodes[pid]
+
+                if self.cfg.do_calculus_validation and self.causal_engine:
+                    validation = self.causal_engine.validate_consolidation(nid, pid)
+                    self.stats["consolidation_validations"] += 1
+                    if not validation["safe"]:
+                        self.stats["blocked_consolidations"] += 1
+                        processed.add(nid)
+                        processed.add(pid)
+                        continue
+
+                # Phase 20: Domain consolidation guard — don't merge nodes from different domains
+                if self.cfg.domain_consolidation_guard and node.domain != partner.domain:
+                    if partner.id not in node.conflict_with:
+                        node.conflict_with.append(partner.id)
+                    if node.id not in partner.conflict_with:
+                        partner.conflict_with.append(node.id)
+                    processed.add(nid)
+                    processed.add(pid)
+                    continue
+
+                gate = self._soft_gate(max(node.tension, partner.tension))
+
+                if self.cfg.enable_rollback:
+                    node.pre_consolidation_pos = node.latent_pos.copy()
+
+                if self.diff_consolidation and mode == ConsolidationMode.DIALECTICAL:
+                    synth = self.diff_consolidation.compute_synthesis(node, partner, gate)
+                    if self.cfg.hyperbolic:
+                        node.latent_pos = exp_map_poincare(
+                            log_map_poincare(synth["latent_pos"], node.latent_pos, self.cfg.ball_radius),
+                            node.latent_pos,
+                            self.cfg.ball_radius,
+                        )
+                    else:
+                        node.latent_pos = synth["latent_pos"]
+                    node.phase = synth["phase"]
+                    node.amplitude = synth["amplitude"]
+                    node.salience = synth["salience"]
+                elif mode == ConsolidationMode.DIALECTICAL:
+                    if self.cfg.hyperbolic:
+                        node.latent_pos = poincare_midpoint(
+                            node.latent_pos, partner.latent_pos, self.cfg.ball_radius
+                        )
+                    else:
+                        node.latent_pos = 0.5 * (node.latent_pos + partner.latent_pos)
+                    node.phase = np.arctan2(0.5*(np.sin(node.phase)+np.sin(partner.phase)),
+                                            0.5*(np.cos(node.phase)+np.cos(partner.phase))) % (2*np.pi)
+                    node.amplitude = min(1.0, 0.8*(node.amplitude+partner.amplitude))
+                    node.salience = min(1.0, 0.7*(node.salience+partner.salience))
+
+                node.tension = 0.0
+                node.soft_gate = 1.0
+                node.lineage = [f"{node.id}+{pid}"] + node.lineage + partner.lineage
+                node.content["synthesis_note"] = f"Consolidated with {pid} at t={time.time():.0f}"
+
+                if self.causal_engine:
+                    for parent, strength in partner.causal_strength.items():
+                        if parent not in node.causal_strength:
+                            node.causal_strength[parent] = strength
+                        else:
+                            node.causal_strength[parent] = max(node.causal_strength[parent], strength)
+
+                if self.cfg.use_hnsw and self.hnsw_index:
+                    self.hnsw_index.remove(pid)
+                    self.hnsw_index.insert(nid, node.latent_pos)
+                if self.cfg.bm25_fallback and self.bm25_index:
+                    self.bm25_index.remove_document(pid)
+
+                pending_deletions.append(pid)
+                processed.add(pid)
+                updated.append(nid)
+                self.stats["consolidations"] += 1
+                processed.add(nid)
+
+        # Fix 2: Apply all deletions after iteration — rebuild node_index once (O(N) instead of O(M×N))
+        if pending_deletions:
+            self.wal.append_delete(pending_deletions)
+        for pid in pending_deletions:
+            if pid in self.nodes:
+                del self.nodes[pid]
+        # B1: Invalidate cache on consolidation (nodes removed/merged)
+        if pending_deletions:
+            self._invalidate_tension_cache()
+        # Fix 3: Sweep tension cache to remove stale live entries
+        self._sweep_tension_cache()
+        # Rebuild node_index in one pass
+        self.node_index = [nid for nid in self.node_index if nid in self.nodes]
+        # P2.1: Invalidate position cache before verification queries
+        if pending_deletions or updated:
+            self._cache_dirty = True
+
+        if updated:
+            # FIX: Limit verification to first 10 nodes to avoid O(K×N) blowup
+            verify_limit = min(10, len(updated))
+            self._verify_consistency(updated[:verify_limit], pre_state)
+
+        self._prune_dead_nodes()
+        self.stats["active_nodes"] = len(self.nodes)
+
+        if pre_state and updated:
+            scores = []
+            for nid in updated:
+                if nid in self.nodes and nid in pre_state:
+                    o, n = pre_state[nid]["latent_pos"], self.nodes[nid].latent_pos
+                    scores.append(max(0, np.dot(o, n) / (np.linalg.norm(o)*np.linalg.norm(n)+1e-8)))
+            if scores:
+                self._stability_buffer.append(np.mean(scores))
+                self.stats["field_stability"] = float(np.mean(self._stability_buffer))
+
+        if self.cfg.enable_rollback and pre_state:
+            self._rollback_history.append({"timestamp": time.time(), "pre_state": pre_state, "updated": updated})
+            if len(self._rollback_history) > self.cfg.max_rollback_history:
+                self._rollback_history.pop(0)
+
+        # Phase 15 Track 1: Version Control — record deltas
+        if self.version_control and updated:
+            deltas = []
+            for nid in updated:
+                if nid in self.nodes:
+                    deltas.append(NodeDelta(
+                        node_id=nid, action="merged",
+                        old_state=pre_state.get(nid),
+                        new_state=self.nodes[nid].to_dict()
+                    ))
+            for pid in pending_deletions:
+                if pid in pre_state:
+                    deltas.append(NodeDelta(
+                        node_id=pid, action="deleted",
+                        old_state=pre_state.get(pid)
+                    ))
+            if deltas:
+                self.version_control.create_version(deltas, message=f"consolidation: {len(updated)} merged, {len(pending_deletions)} deleted")
+                self.stats["current_version"] = self.version_control.current_version
+                self.stats["n_versions"] = self.version_control.n_versions
+
+        # Phase 17: Update shard consolidation stats
+        if self.role_router and updated:
+            # Update consolidation count for affected shards
+            affected_roles = set()
+            for nid in updated:
+                role = self.role_router.get_node_role(nid)
+                if role in self.role_router.shards:
+                    self.role_router.shards[role].n_consolidations += 1
+                    affected_roles.add(role)
+
+        # P0: Invalidate cache after consolidation (nodes changed)
+        if updated:
+            self._cache_dirty = True
+
+        self.wal.append_consolidate(updated)
+        self._dirty = True
+        return updated
+
+    def _verify_consistency(self, updated_nodes: List[str], pre_state: Optional[Dict] = None):
+        """Fix: Use local probe (latent+noise) instead of global zero to preserve semantic meaning."""
+        from collections import deque
+        # Ensure buffer limits
+        if not isinstance(self._stability_buffer, deque):
+            self._stability_buffer = deque(self._stability_buffer, maxlen=100)
+            
+        for nid in updated_nodes:
+            if nid not in self.nodes:
+                continue
+            node = self.nodes[nid]
+            # FIX: Probe around the node's actual position, not np.zeros
+            probe = node.latent_pos + self._rng.normal(0, 0.05, node.latent_pos.shape)
+            results = self.query(probe, phase=node.phase, top_k=1)
+            if results and results[0][0] == nid:
+                node.self_sup_score = max(0.5, results[0][1])
+            else:
+                node.self_sup_score *= 0.9
+
+    def _self_supervise(self):
+        """Fix: Use local probe instead of np.zeros to prevent false decay of peripheral nodes."""
+        if not self.cfg.self_supervision:
+            return
+        self.stats["self_sup_checks"] += 1
+        for nid in list(self.node_index):
+            if nid not in self.nodes or not self.nodes[nid].lineage:
+                continue
+            node = self.nodes[nid]
+            # FIX: Probe around the node's actual position
+            probe = node.latent_pos + self._rng.normal(0, 0.05, node.latent_pos.shape)
+            results = self.query(probe, phase=node.phase, top_k=1)
+            if results and results[0][0] == nid:
+                node.self_sup_score = max(0.5, results[0][1])
+            else:
+                node.self_sup_score *= 0.9
+
+    def _check_tda(self):
+        if not self.cfg.tda_monitoring or not self.tda_monitor:
+            return
+        self.stats["tda_checks"] += 1
+        r = self.tda_monitor.compute_persistence(self.nodes)
+        self.stats["tda_H0"] = r["H0"]
+        self.stats["tda_H1"] = r["H1"]
+        if self.tda_monitor.get_trend() == "growing_contradictions":
+            self.consolidate()
+
+    # Phase 11 Track 3: Predictive coding
+    def _encode_field_state(self) -> NDArray:
+        """Encode field state into a flat vector for predictive coding."""
+        if not self.nodes:
+            return np.zeros(self.cfg.latent_dim * 4, dtype=np.float32)
+        # Aggregate: mean pos, mean phase, mean amp, mean sal
+        positions = np.array([n.latent_pos for n in self.nodes.values()])
+        phases = np.array([n.phase for n in self.nodes.values()])
+        amps = np.array([n.amplitude for n in self.nodes.values()])
+        sals = np.array([n.salience for n in self.nodes.values()])
+        mean_pos = np.mean(positions, axis=0)
+        mean_phase = np.mean(phases)
+        mean_amp = np.mean(amps)
+        mean_sal = np.mean(sals)
+        # Encode into latent_dim * 4
+        state = np.zeros(self.cfg.latent_dim * 4, dtype=np.float32)
+        pos_dim = min(len(mean_pos), self.cfg.latent_dim)
+        state[:pos_dim] = mean_pos[:pos_dim]
+        state[self.cfg.latent_dim] = mean_phase
+        state[self.cfg.latent_dim * 2] = mean_amp
+        state[self.cfg.latent_dim * 3] = mean_sal
+        return state
+
+    # Phase 11 Track 4: Counterfactual imagination
+    def imagine_counterfactual(self, base_query: NDArray,
+                                intervention: Dict[str, float]) -> List[Dict]:
+        """Generate hypothetical trajectories via do-interventions."""
+        if not self.scenario_planner:
+            return []
+        return self.scenario_planner.imagine_counterfactual(base_query, intervention)
+
+    def _prune_dead_nodes(self):
+        to_remove = [nid for nid in self.node_index
+                     if self.nodes[nid].amplitude < self.cfg.min_amplitude
+                     or self.nodes[nid].salience < self.cfg.min_amplitude * 0.5]
+        if to_remove:
+            self.wal.append_delete(to_remove)
+        for nid in to_remove:
+            if self.cfg.use_hnsw and self.hnsw_index:
+                self.hnsw_index.remove(nid)
+            if self.cfg.bm25_fallback and self.bm25_index:
+                self.bm25_index.remove_document(nid)
+            del self.nodes[nid]
+        # B1: Invalidate cache on node pruning
+        if to_remove:
+            self._invalidate_tension_cache()
+            self._cache_dirty = True
+        # FIX: Rebuild node_index once instead of O(N) remove per node
+        self.node_index = [nid for nid in self.node_index if nid in self.nodes]
+
+    def _check_field_integrity(self) -> Dict[str, Any]:
+        """Check for NaN/inf in nodes, report issues, and heal them (Fix 11)."""
+        issues = []
+        n_nan = 0
+        n_inf = 0
+        healed = []
+        for nid, node in self.nodes.items():
+            needs_heal = False
+            if np.any(np.isnan(node.latent_pos)):
+                n_nan += 1
+                issues.append(f"NaN in {nid} — will heal")
+                needs_heal = True
+            if np.any(np.isinf(node.latent_pos)):
+                n_inf += 1
+                issues.append(f"Inf in {nid} — will heal")
+                needs_heal = True
+            if np.isnan(node.phase) or np.isinf(node.phase):
+                issues.append(f"Invalid phase in {nid} — will heal")
+                needs_heal = True
+                node.phase = 0.0
+            if np.isnan(node.amplitude) or node.amplitude < 0:
+                issues.append(f"Invalid amplitude in {nid} — will heal")
+                needs_heal = True
+                node.amplitude = self.cfg.min_amplitude
+            # Fix 11: Actually heal NaN positions by resetting to small random values
+            if needs_heal:
+                node.latent_pos = self._rng.standard_normal(self.cfg.latent_dim).astype(np.float32) * 0.01
+                healed.append(nid)
+                self.stats["field_integrity_issues"] = self.stats.get("field_integrity_issues", 0) + 1
+        return {
+            "n_issues": len(issues),
+            "n_nan": n_nan,
+            "n_inf": n_inf,
+            "healed": healed,
+            "issues": issues[:20],
+        }
+
+    def evolve_continuous(self, inputs: Optional[List[Dict]] = None, use_sde: bool = False) -> NDArray:
+        if not self.ode_dynamics or not self.nodes:
+            return np.array([])
+        # Fix 2: Deterministic node order via node_index
+        ordered_nodes = [self.nodes[nid] for nid in self.node_index if nid in self.nodes]
+        initial_state = np.array([n.latent_pos for n in ordered_nodes]).flatten()
+        input_signal = None
+        if inputs:
+            input_signal = np.array([self._project(inp["embedding"]) for inp in inputs]).flatten()
+            # Validate input_signal length matches node count to prevent ODE reshape crash
+            expected_len = len(ordered_nodes) * self.cfg.latent_dim
+            if len(input_signal) != expected_len:
+                logger.warning(f"ODE input_signal length {len(input_signal)} != expected {expected_len} (nodes={len(ordered_nodes)}). Falling back to no input signal.")
+                input_signal = None
+        topo_grad = self.ode_dynamics.compute_topology_gradient(self.nodes)
+        if use_sde:
+            trajectory = self.ode_dynamics.evolve_with_noise(initial_state, input_signal, topo_grad)
+        else:
+            trajectory = self.ode_dynamics.evolve(initial_state, input_signal, topo_grad)
+        self.stats["ode_steps"] += 1
+        # H2: Validate trajectory size before reshape to prevent silent corruption
+        expected_size = len(ordered_nodes) * self.cfg.latent_dim
+        if trajectory[-1].size != expected_size:
+            logger.warning(f"ODE trajectory size {trajectory[-1].size} != expected {expected_size}. Skipping update.")
+            return trajectory
+        final_state = trajectory[-1].reshape(len(ordered_nodes), self.cfg.latent_dim)
+        for i, nid in enumerate(self.node_index):
+            if nid in self.nodes and i < len(final_state):
+                old_pos = self.nodes[nid].latent_pos.copy()
+                self.nodes[nid].latent_pos = final_state[i].astype(np.float32)
+                self.nodes[nid].velocity = (self.nodes[nid].latent_pos - old_pos).astype(np.float32)
+        return trajectory
+
+    def create_plan(self, goal: str, available_tools: List[str], context: Optional[Dict] = None) -> AgentPlan:
+        if not self.agent_planner:
+            return AgentPlan(goal=goal, subtasks=[], tools_needed=[],
+                           estimated_steps=0, confidence=0.0, reasoning="Agent orchestration not enabled")
+        self.stats["plans_created"] += 1
+        ctx = context or {}
+        ctx["hypothesis_verification"] = self.cfg.hypothesis_verification
+        return self.agent_planner.create_plan(goal, available_tools, ctx)
+
+    def verify_hypothesis(self, hypothesis: str, active_nodes: Optional[List[str]] = None) -> Hypothesis:
+        if not self.hypothesis_verifier or not self.causal_engine:
+            return Hypothesis(statement=hypothesis, confidence=0.5, evidence_nodes=[],
+                            causal_path=[], verified=False, verification_score=0.5)
+        self.stats["hypotheses_verified"] += 1
+        nodes = active_nodes or self.node_index
+        return self.hypothesis_verifier.verify(hypothesis, self.causal_engine, nodes)
+
+    def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> ToolCall:
+        if not self.tool_router:
+            return ToolCall(tool_name=tool_name, arguments=arguments, error="Tool router not enabled")
+        if self.agent_planner and not self.agent_planner.can_call_tool(tool_name):
+            return ToolCall(tool_name=tool_name, arguments=arguments, error="Tool call limit reached")
+        self.stats["tool_calls"] += 1
+        if self.agent_planner:
+            self.agent_planner.record_tool_call(tool_name)
+        result = self.tool_router.execute(tool_name, arguments)
+        if result.success:
+            self.stats["tool_misuse_rate"] = self.tool_router.get_misuse_rate()
+        return result
+
+    def register_tool(self, name: str, func: Callable):
+        if self.tool_router:
+            self.tool_router.register_tool(name, func)
+
+    def evaluate_response(self, question: str, answer: str, contexts: List[str],
+                          ground_truth: Optional[str] = None) -> EvalResult:
+        if not self.ragas_evaluator:
+            return EvalResult()
+        self.stats["evaluations"] += 1
+        causal_edges = None
+        if self.causal_engine:
+            causal_edges = [(k[0], k[1], v.strength) for k, v in self.causal_engine.causal_effects.items()]
+        result = self.ragas_evaluator.evaluate(question, answer, contexts, ground_truth, causal_edges)
+        self.stats["ragas_overall"] = result.overall_score
+        if self.rollback_manager:
+            needs_rollback = self.rollback_manager.record_score(result.overall_score)
+            if needs_rollback:
+                self.stats["rollbacks"] += 1
+        return result
+
+    def compare_shadow(self, shadow_score: float, production_score: float) -> Dict[str, Any]:
+        if not self.shadow_evaluator:
+            return {}
+        self.stats["shadow_comparisons"] += 1
+        return self.shadow_evaluator.compare(shadow_score, production_score)
+
+    def step(self, inputs: Optional[List[Dict]] = None):
+        self._step_counter += 1
+        
+        # Throttle: Skip non-critical heavy tasks if backpressure is high
+        backpressure_ok = self._backpressure_events < 3 and not self._heavy_modules_degraded
+        
+        if self.cfg.continuous_dynamics and self.ode_dynamics:
+            # Fix: Safe run for ODE to prevent crashes
+            self._circuit_breakers["ODEEvolve"].call(self.evolve_continuous, inputs, use_sde=self.cfg.sde_noise_level > 0)
+            return
+            
+        if inputs:
+            for inp in inputs:
+                emb = inp["embedding"]
+                phase = inp.get("phase", 0.0)
+                content = inp.get("content", {})
+                session_id = inp.get("session_id")
+                modality = inp.get("modality", "text")
+                text = content.get("text", "")
+
+                # Phase 21: SOT tokenization and optional query-by-text
+                sot_tokens = None
+                if self.sot_tokenizer and text:
+                    sot_tokens = self.sot_tokenizer.encode(text)
+                    self.sot_tokenizer.record_cooccurrence(sot_tokens)
+
+                # Validate embedding dimension — allow both embedding_dim and latent_dim
+                emb_dim = len(emb)
+                if emb_dim not in (self.cfg.embedding_dim, self.cfg.latent_dim):
+                    logger.warning(f"Embedding dimension mismatch in step(): expected {self.cfg.embedding_dim} or {self.cfg.latent_dim}, got {emb_dim}. Skipping.")
+                    continue
+
+                results = self.query(emb, phase, top_k=max(1, self.cfg.sot_negatives_per_query + 1), modality=modality)
+                if results and results[0][1] > 0.3:
+                    nid, _, node = results[0]
+                    target = emb if emb_dim == self.cfg.latent_dim else self._project(emb)
+                    if self.cfg.hyperbolic:
+                        # Riemannian SGD: gradient is scaled by conformal factor 1/λ²
+                        grad_e = target - node.latent_pos
+                        norm_sq = np.sum(node.latent_pos ** 2)
+                        conformal = (1.0 - norm_sq / (self.cfg.ball_radius ** 2)) ** 2 / 4.0
+                        grad_r = conformal * grad_e
+                        node.latent_pos = exp_map_poincare(
+                            -self.cfg.attraction_lr * grad_r,
+                            node.latent_pos,
+                            self.cfg.ball_radius,
+                        )
+                    else:
+                        node.latent_pos += self.cfg.attraction_lr * (target - node.latent_pos)
+                    pd = (phase - node.phase + np.pi) % (2*np.pi) - np.pi
+                    node.phase = (node.phase + self.cfg.phase_sync_lr * pd) % (2 * np.pi)
+                    node.amplitude = min(1.0, node.amplitude + 0.05)
+                    node.salience = min(1.0, node.salience + 0.03)
+                else:
+                    self.add_node(emb, content, phase, session_id=session_id, modality=modality)
+
+                # Phase 21: Contrastive Hebbian update on field nodes
+                if self.sot_hebbian and results and len(self.node_index) > 1:
+                    snap_id_to_idx = {nid: idx for idx, nid in enumerate(self.node_index)}
+                    pos_indices = []
+                    for nid, _, _ in results:
+                        idx = snap_id_to_idx.get(nid)
+                        if idx is not None:
+                            pos_indices.append(idx)
+                    n_neg = min(self.cfg.sot_negatives_per_query, len(self.node_index) - len(pos_indices))
+                    neg_indices = []
+                    if n_neg > 0:
+                        all_idx = set(range(len(self.node_index)))
+                        available = list(all_idx - set(pos_indices))
+                        if available:
+                            neg_indices = self._rng.choice(available, size=min(n_neg, len(available)), replace=False).tolist()
+                    if pos_indices:
+                        positions = np.array([self.nodes[self.node_index[i]].latent_pos for i in range(len(self.node_index))], dtype=np.float32)
+                        self.sot_hebbian.field_update(positions, pos_indices, neg_indices)
+                        # Write back
+                        for i in range(len(self.node_index)):
+                            self.nodes[self.node_index[i]].latent_pos = positions[i]
+
+                # Phase 21: Contrastive Hebbian update on token embeddings
+                if self.sot_hebbian and self.sot_tokenizer and sot_tokens and len(sot_tokens) > 1:
+                    vocab_ids = list(self.sot_tokenizer.token_embeddings.keys())
+                    n_neg = min(self.cfg.sot_negatives_per_query, len(vocab_ids) - len(sot_tokens))
+                    if self.cfg.sot_hard_negatives and n_neg > 0:
+                        # Use hard negative mining: closest non-positive embeddings
+                        self.sot_hebbian.update_with_hard_negatives(
+                            self.sot_tokenizer.token_embeddings,
+                            sot_tokens,
+                            vocab_ids,
+                            n_negatives=n_neg,
+                        )
+                    else:
+                        negatives = []
+                        if n_neg > 0:
+                            available = [v for v in vocab_ids if v not in sot_tokens]
+                            if available:
+                                negatives = self._rng.choice(available, size=min(n_neg, len(available)), replace=False).tolist()
+                        self.sot_hebbian.update(self.sot_tokenizer.token_embeddings, sot_tokens, negatives)
+
+                # Phase 21: SSM sync — smooth momentum for token embeddings
+                if self.sot_ssm and self.sot_tokenizer and sot_tokens and self._sot_field_ema is not None:
+                    if len(self.nodes) > 0:
+                        active_positions = np.array([n.latent_pos for n in self.nodes.values()], dtype=np.float32)
+                        field_mean = np.mean(active_positions, axis=0)
+                    else:
+                        field_mean = np.zeros(self.cfg.latent_dim, dtype=np.float32)
+                    self._sot_field_ema = 0.9 * self._sot_field_ema + 0.1 * field_mean
+                    momentum = self.sot_ssm.step(sot_tokens, self._sot_field_ema)
+                    self.sot_ssm.sync_embeddings(sot_tokens, momentum)
+
+                # Phase 21: Periodic merge
+                if self.sot_tokenizer and self._step_counter % self.cfg.sot_merge_freq == 0 and self._step_counter > 0:
+                    candidates = self.sot_tokenizer.propose_merges(5)
+                    for pair in candidates:
+                        score = self.sot_tokenizer.cooccurrence.get(pair, 0.0)
+                        if score >= self.cfg.sot_merge_threshold and score >= self.cfg.sot_min_cooccurrence:
+                            try:
+                                self.sot_tokenizer.merge(pair)
+                            except RuntimeError:
+                                break  # Max vocab reached
+
+        # Consolidation: adaptive frequency based on field size.
+        # Small fields (<1K) consolidate rarely to avoid over-merge and recall loss.
+        n_nodes = len(self.nodes)
+        if n_nodes > 10:
+            if n_nodes < 1000:
+                consolidation_freq = 100
+            elif n_nodes < 10000:
+                consolidation_freq = 50
+            else:
+                consolidation_freq = 20
+            if self._step_counter % consolidation_freq == 0:
+                if self.cfg.consolidation_async:
+                    if self._consolidation_future is None or self._consolidation_future.done():
+                        self._consolidation_future = self._consolidation_executor.submit(
+                            self._circuit_breakers["Consolidate"].call, self.consolidate
+                        )
+                else:
+                    self._circuit_breakers["Consolidate"].call(self.consolidate)
+
+        # Self-healing: every N steps
+        if self.cfg.self_healing and self._step_counter % self.cfg.healing_check_freq == 0:
+            self._circuit_breakers["SelfHeal"].call(self._self_heal)
+
+        # Tier-specific decay: every step (cheap)
+        tier_counts = defaultdict(int)
+        tier_amplitudes = defaultdict(list)
+        for node in self.nodes.values():
+            tier = getattr(node, 'tier', 'semantic')
+            tier_counts[tier] += 1
+            dk = self.cfg.tier_decay.get(tier, self.cfg.decay_rate)
+            if self.learnable_kernel:
+                dk = max(dk, self.learnable_kernel.decay_rate)
+            node.amplitude *= dk
+            node.salience *= dk
+            node.amplitude = np.clip(node.amplitude, self.cfg.min_amplitude, 1.0)
+            node.salience = np.clip(node.salience, self.cfg.min_amplitude * 0.5, 1.0)
+            tier_amplitudes[tier].append(node.amplitude)
+        self.stats["tier_distribution"] = dict(tier_counts)
+        if tier_amplitudes:
+            coherences = []
+            for tier, amps in tier_amplitudes.items():
+                if len(amps) > 1:
+                    coherences.append(1.0 - np.std(amps))
+                else:
+                    coherences.append(1.0)
+            self.stats["tier_coherence"] = float(np.mean(coherences)) if coherences else 0.0
+
+        # Predictive coding: every 5 steps
+        if self.predictor and len(self.nodes) > 0 and self._step_counter % 5 == 0:
+            state = self._encode_field_state()
+            self._state_history.append(state)
+            if len(self._state_history) >= 2:
+                fe = self._circuit_breakers["PredictorFreeEnergy"].call(self.predictor.compute_free_energy, self._state_history[-2], self._state_history[-1])
+                self.stats["free_energy"] = fe
+                self.stats["prediction_error"] = float(np.mean((self.predictor.predict(self._state_history[-2]) - self._state_history[-1]) ** 2))
+                self.stats["surprise_level"] = float(np.clip(fe, 0, 1))
+                if fe > 0.3 and len(self.nodes) > 10:
+                    self._circuit_breakers["Consolidate"].call(self.consolidate)
+                if fe > 0.01:
+                    self._circuit_breakers["PredictorUpdate"].call(self.predictor.update, self._state_history[-2], self._state_history[-1], lr=self.cfg.pc_lr)
+
+        # Max nodes pruning: every 10 steps
+        if self.cfg.max_nodes and len(self.nodes) > self.cfg.max_nodes and self._step_counter % 10 == 0:
+            sorted_nodes = sorted(self.node_index, key=lambda nid: self.nodes[nid].salience * self.nodes[nid].amplitude)
+            n_pruned = len(self.nodes) - self.cfg.max_nodes
+            pruned_ids = set(sorted_nodes[:n_pruned])
+            if pruned_ids:
+                self.wal.append_delete(list(pruned_ids))
+            for nid in pruned_ids:
+                if self.cfg.use_hnsw and self.hnsw_index:
+                    self.hnsw_index.remove(nid)
+                if self.cfg.bm25_fallback and self.bm25_index:
+                    self.bm25_index.remove_document(nid)
+                del self.nodes[nid]
+            # Rebuild index in O(N) instead of O(N²) list.remove calls
+            self.node_index = [nid for nid in self.node_index if nid not in pruned_ids]
+            # B1: Invalidate cache on max_nodes pruning
+            if n_pruned > 0:
+                self._invalidate_tension_cache()
+
+        # Self-supervision: every 20 steps
+        if self.cfg.self_supervision and self._step_counter % 20 == 0:
+            self._circuit_breakers["SelfSupervise"].call(self._self_supervise)
+
+        # TDA: every N steps (Throttled)
+        if backpressure_ok and self.cfg.tda_monitoring and self._step_counter % self.cfg.tda_check_freq == 0:
+            self._circuit_breakers["TDA"].call(self._check_tda)
+
+        # Meta-kernel adaptation: every 5 steps
+        if self.meta_kernel and self._step_counter % 5 == 0:
+            self._circuit_breakers["MetaKernelAdapt"].call(self.meta_kernel.adapt)
+            self.stats["meta_kurtosis"] = self.meta_kernel.compute_resonance_kurtosis()
+            self.stats["meta_bandwidth"] = self.meta_kernel.get_bandwidth()
+            self.stats["meta_phase_coupling"] = self.meta_kernel.get_phase_coupling()
+
+        # Meta-controller optimization: every N steps (Throttled)
+        if backpressure_ok and self.meta_controller and self.meta_controller.should_optimize() and self._step_counter % self.cfg.meta_opt_freq == 0:
+            best_params = self._circuit_breakers["MetaControllerOptimize"].call(self.meta_controller.optimize, self)
+            if best_params:
+                self._circuit_breakers["MetaControllerApply"].call(self.meta_controller.apply_params, self, best_params)
+                self.stats["meta_optimizations"] += 1
+                self.stats["meta_best_params"] = best_params
+
+        # Federated sync: every N steps
+        if self.federated and self._step_counter > 0 and self._step_counter % self.cfg.federated_sync_freq == 0:
+            local_phases = {nid: n.phase for nid, n in self.nodes.items()}
+            local_params = {
+                "decay_rate": self.cfg.decay_rate, "tension_threshold": self.cfg.tension_threshold,
+                "phase_coupling": self.cfg.phase_coupling, "bandwidth": self.cfg.bandwidth,
+            }
+            self._circuit_breakers["FederatedSync"].call(self.federated.sync_with_peers, local_phases, local_params)
+
+        # ODE smoothness: every 10 steps (Throttled)
+        if backpressure_ok and self.ode_dynamics and self._step_counter % 10 == 0:
+            self.stats["response_smoothness"] = self._circuit_breakers["ODESmoothness"].call(self.ode_dynamics.compute_response_smoothness)
+
+        # Shard center updates: every 100 steps
+        if self.cfg.sparse_routing and self._step_counter % 100 == 0 and len(self.nodes) > self.cfg.num_shards * 2:
+            self._circuit_breakers["ShardUpdate"].call(self._update_shard_centers)
+            self.stats["avg_rl_reward"] = self.rl_feedback_loop.get_average_reward()
+
+        # Event-driven processing: every 10 steps
+        if self.event_scheduler and self._step_counter % 10 == 0:
+            processed = self.event_scheduler.process_pending(self, max_events=5)
+            self.stats["events_processed"] += processed
+            self.stats["event_queue_depth"] = len(self.event_scheduler._event_queue)
+
+        # Low-rank compression: every N steps
+        if self.low_rank_compressor and self._step_counter % self.cfg.compression_freq == 0:
+            self._compress_field()
+
+        # Learnable kernel step: every 5 steps
+        if self.learnable_kernel and self._step_counter % 5 == 0:
+            self.learnable_kernel.step()
+
+        # Causal discovery: every N steps
+        causal_freq = getattr(self.cfg, "causal_discovery_freq", 50)
+        if self.causal_engine and self._step_counter % max(causal_freq, 1) == 0:
+            self.causal_engine.discover_causal_structure()
+            for (cause, effect), edge in self.causal_engine.causal_effects.items():
+                if effect in self.nodes:
+                    # FIX: Prevent unbounded growth of causal_parents list
+                    if cause not in self.nodes[effect].causal_parents:
+                        self.nodes[effect].causal_parents.append(cause)
+                    self.nodes[effect].causal_strength[cause] = edge.strength
+                if cause in self.nodes:
+                    self.nodes[cause].causal_effects[effect] = edge.strength
+            self.stats["causal_edges"] = len(self.causal_engine.causal_effects)
+            if self.cfg.contradiction_detection:
+                self.causal_engine.detect_contradictions(self.cfg.contradiction_threshold)
+                self.stats["contradictions"] = len(self.causal_engine.contradictions)
+
+        # Phase 14 Track 2: Causal graph integrity check
+        if self.security and self.cfg.causal_graph_integrity_check and self._step_counter % 100 == 0:
+            integrity = self.security.validate_causal_graph_integrity(self.causal_engine)
+            if not integrity["is_valid"]:
+                self.stats["security_violations"] += len(integrity["issues"])
+
+        # Phase 14 Track 1: Meta-memory self-reflection
+        if self.meta_memory_eval and self.meta_memory_eval.should_reflect():
+            reflection = self.meta_memory_eval.self_reflect(self)
+            self.stats["meta_reflections"] += 1
+            # Apply adaptive params
+            adaptive = self.meta_memory_eval.get_adaptive_params()
+            if adaptive["consolidation_multiplier"] != 1.0:
+                # Adjust tension threshold based on recall accuracy
+                self.cfg.tension_threshold *= adaptive["consolidation_multiplier"]
+                self.cfg.tension_threshold = max(0.05, min(0.5, self.cfg.tension_threshold))
+
+        # Phase 14 Track 5: Swarm memory status
+        if self.swarm:
+            self.stats["swarm_agents"] = len(self.swarm.agents)
+            self.stats["swarm_consensus_events"] = len(self.swarm._consensus_log)
+
+        # Phase 14 Track 2: Security violation stats
+        if self.security:
+            self.stats["security_violations"] = len(self.security._violation_log)
+
+        # Phase 15 Track 4: Entropy Control
+        if self.entropy_ctrl:
+            # Record resonance responses for entropy computation
+            # (done via query() hook — see query method)
+            state = self.entropy_ctrl.get_state()
+            self.stats["entropy"] = state["entropy"]
+            self.stats["entropy_state"] = state["state"]
+            # Auto-trigger consolidation if noisy
+            if state["should_consolidate"] and len(self.nodes) > 10:
+                self.consolidate()
+            # Adjust decay rate if stagnant
+            if state["should_explore"]:
+                # Temporarily increase decay to clear space
+                pass  # Decay is applied in _prune_dead_nodes()
+
+        # Phase 15 Track 1: Version Control stats
+        if self.version_control:
+            self.stats["current_version"] = self.version_control.current_version
+            self.stats["n_versions"] = self.version_control.n_versions
+
+        # Phase 16 Track 1: SymbolicOverlay — extract rules periodically
+        if self.symbolic_overlay and self._step_counter % 50 == 0:
+            causal_edges = None
+            if self.causal_engine:
+                causal_edges = self.causal_engine.causal_effects
+            self.symbolic_overlay.extract_rules_from_field(self.nodes, causal_edges)
+            self.stats["n_symbolic_rules"] = len(self.symbolic_overlay.rules)
+
+        # Phase 16 Track 2: SafetyCertifier — check stability
+        if self.safety_certifier and self._step_counter % 10 == 0:
+            resonance_scores = []
+            if hasattr(self, '_last_query_results') and self._last_query_results:
+                resonance_scores = [r[1] for r in self._last_query_results]
+            n_contradictions = len(self.causal_engine.contradictions) if self.causal_engine else 0
+            cert_result = self.safety_certifier.check_and_regulate(
+                self.nodes, resonance_scores, n_contradictions
+            )
+            self.stats["lyapunov_V"] = cert_result["V"]
+            self.stats["lyapunov_dV_dt"] = cert_result["dV_dt"]
+            self.stats["safety_regulation_factor"] = cert_result["regulation_factor"]
+            self.stats["safety_mode"] = self.safety_certifier.mode
+
+        # Phase 17: RoleShardRouter — Kuramoto sync within each shard
+        if self.role_router and self._step_counter % 5 == 0:
+            self.role_router.update_kuramoto_phases(self.nodes)
+            self.stats["n_shards"] = len(self.role_router.shards)
+            self.stats["shard_distribution"] = {
+                r: len(s.node_ids) for r, s in self.role_router.shards.items()
+            }
+            self.stats["role_router_enabled"] = True
+            # Cross-shard exchange stats
+            total_exchanges = sum(s.n_cross_shard_exchanges for s in self.role_router.shards.values())
+            self.stats["cross_shard_exchanges"] = total_exchanges
+
+        # Field integrity check every 100 steps — detect NaN/inf
+        if self._step_counter % 100 == 0:
+            integrity = self._check_field_integrity()
+            if integrity["n_issues"] > 0:
+                logger.warning(f"Field integrity issues at step {self._step_counter}: {integrity['n_issues']} issues")
+                self.stats["field_integrity_issues"] = integrity["n_issues"]
+
+        # B1: Update tension cache stats every 50 steps
+        if self._step_counter % 50 == 0:
+            total = self._tension_cache_hits + self._tension_cache_misses
+            self.stats["tension_cache_hits"] = self._tension_cache_hits
+            self.stats["tension_cache_misses"] = self._tension_cache_misses
+            self.stats["tension_cache_hit_rate"] = (self._tension_cache_hits / total) if total > 0 else 0.0
+
+    def _self_heal(self) -> List[Dict]:
+        if not self.healer or len(self.nodes) < 3:
+            return []
+        health, diagnostics = self.healer.compute_field_health(self.nodes)
+        self.stats["field_health"] = health.value
+        healed = []
+        if health == FieldHealth.STABLE:
+            for nid in self.node_index:
+                self.nodes[nid].is_healing = False
+                self.nodes[nid].healing_origin = None
+            return []
+        self.stats["field_health"] = FieldHealth.HEALING.value
+        if diagnostics.get("dead_zones", 0) > 0:
+            healed.extend(self.healer.heal_dead_zones(self.nodes, diagnostics["dead_zone_nodes"]))
+        if diagnostics.get("hyperconvergence", False):
+            healed.extend(self.healer.heal_hyperconvergence(self.nodes))
+        if diagnostics.get("fragmentation", 0) > self.cfg.fragmentation_threshold:
+            if len(self.nodes) >= 2:
+                positions = np.array([n.latent_pos for n in self.nodes.values()])
+                tree = cKDTree(positions)
+                neighbors = tree.query_ball_point(positions, 2.0)
+                isolated = [self.node_index[i] for i in range(len(self.node_index)) if len(neighbors[i]) <= 1]
+                if isolated:
+                    healed.extend(self.healer.heal_fragmentation(self.nodes, isolated))
+        if healed:
+            self.stats["healing_events"] += len(healed)
+            self.stats["healing_history"].extend(healed)
+            # Fix 3: Trim on every overflow, not just when exceeding 1000 — prevents unbounded growth
+            if len(self.stats["healing_history"]) > 1000:
+                self.stats["healing_history"] = self.stats["healing_history"][-500:]
+        return healed
+
+    def rollback_consolidation(self, n_steps: int = 1) -> bool:
+        if not self._rollback_history or n_steps > len(self._rollback_history):
+            return False
+        snapshot = self._rollback_history[-n_steps]
+        for nid, state in snapshot["pre_state"].items():
+            if nid in self.nodes:
+                node = self.nodes[nid]
+                node.latent_pos = state["latent_pos"].copy()
+                node.phase = state["phase"]
+                node.amplitude = state["amplitude"]
+                node.salience = state["salience"]
+                # H3: Restore full state for consistent rollback
+                node.tension = state.get("tension", 0.0)
+                node.soft_gate = state.get("soft_gate", 1.0)
+                if "content" in state:
+                    node.content = dict(state["content"])
+                if "lineage" in state:
+                    node.lineage = list(state["lineage"])
+                if "causal_strength" in state:
+                    node.causal_strength = dict(state["causal_strength"])
+                if "causal_parents" in state:
+                    node.causal_parents = list(state["causal_parents"])
+                node.pre_consolidation_pos = None
+        self._rollback_history = self._rollback_history[:-n_steps]
+        # H8: Clean tension cache after rollback (nodes changed)
+        self._tension_cache.clear()
+        return True
+
+    def do_intervention(self, node_id: str, new_embedding: NDArray):
+        if node_id not in self.nodes:
+            return
+        new_pos = self._project(new_embedding)
+        if self.causal_engine:
+            self.causal_engine.do_intervention(node_id, new_pos)
+        self.nodes[node_id].latent_pos = new_pos
+
+    def clear_interventions(self):
+        if self.causal_engine:
+            self.causal_engine.clear_interventions()
+
+    def get_field_health(self) -> Dict:
+        if self.healer:
+            health, diagnostics = self.healer.compute_field_health(self.nodes)
+            diagnostics["kurtosis"] = self.stats.get("meta_kurtosis", 3.0)
+            return diagnostics
+        return {"health": "unknown", "kurtosis": 3.0}
+
+    def counterfactual_query(self, intervention: Dict[str, Any], query_nodes: List[str],
+                             evidence: Optional[Dict[str, Any]] = None) -> CounterfactualResult:
+        if not self.causal_engine:
+            return CounterfactualResult(query=str(intervention), intervention=intervention,
+                predicted_outcomes=[], confidence=0.0, reasoning_path=["Causal engine not enabled"], assumptions=[])
+        self.stats["counterfactual_queries"] += 1
+        return self.causal_engine.counterfactual_query(intervention, query_nodes, evidence, self.cfg.counterfactual_max_depth)
+
+    def get_causal_summary(self) -> Dict:
+        if not self.causal_engine:
+            return {"enabled": False}
+        return {
+            "enabled": True,
+            "causal_edges": len(self.causal_engine.causal_effects),
+            "contradictions": len([c for c in self.causal_engine.contradictions.values() if not c.resolved]),
+            "nodes_with_effects": len(set(k[0] for k in self.causal_engine.causal_effects)),
+            "nodes_affected": len(set(k[1] for k in self.causal_engine.causal_effects)),
+            "top_effects": sorted([(f"{k[0]}->{k[1]}", v.strength) for k, v in self.causal_engine.causal_effects.items()],
+                                 key=lambda x: x[1], reverse=True)[:10],
+        }
+
+    # Track 10: Cross-modal, Meta-controller, Federated stats
+    def get_cross_modal_stats(self) -> Dict:
+        return {
+            "cross_modal_enabled": self.cfg.cross_modal,
+            "cross_modal_queries": self.stats.get("cross_modal_queries", 0),
+            "cross_modal_recall": self.stats.get("cross_modal_recall", 0.0),
+            "kernel_weight": self.cfg.cross_modal_kernel_weight,
+            "modal_phase_offsets": self.cfg.modal_phase_offsets,
+        }
+
+    def get_meta_controller_state(self) -> Dict:
+        if self.meta_controller:
+            return self.meta_controller.get_state()
+        return {"enabled": False}
+
+    def get_federated_status(self) -> Dict:
+        if self.federated:
+            return self.federated.get_sync_status()
+        return {"enabled": False}
+
+    # ========================================================================
+    # PHASE 12 TRACK 1: SPARSE RESONANT ROUTING (MoE-memory)
+    # ========================================================================
+
+    def _get_node_shard(self, node_id: str) -> int:
+        """Get shard assignment for a node."""
+        if node_id in self._node_shard_map:
+            return self._node_shard_map[node_id]
+        if node_id in self.nodes:
+            pos = self.nodes[node_id].latent_pos
+            dists = np.linalg.norm(self.shard_centers - pos, axis=1)
+            shard = int(np.argmin(dists))
+            self._node_shard_map[node_id] = shard
+            return shard
+        return 0
+
+    def _route_query(self, query_latent: NDArray, top_shards: int = 3) -> List[int]:
+        """Route query to top_k most relevant shards (softmax-free)."""
+        if self.shard_centers is None:
+            return list(range(self.cfg.num_shards))
+        dists = np.linalg.norm(self.shard_centers - query_latent, axis=1)
+        self.shard_router = 1.0 / (1.0 + dists)
+        return list(np.argsort(self.shard_router)[-top_shards:])
+
+    def _update_shard_centers(self):
+        """Update shard centers based on current node distribution."""
+        if self.shard_centers is None or len(self.nodes) < self.cfg.num_shards:
+            return
+        from sklearn.cluster import KMeans
+        positions = np.array([n.latent_pos for n in self.nodes.values()])
+        if len(positions) < self.cfg.num_shards:
+            return
+        kmeans = KMeans(n_clusters=self.cfg.num_shards, n_init=3, random_state=42)
+        labels = kmeans.fit_predict(positions)
+        self.shard_centers = kmeans.cluster_centers_.astype(np.float32)
+        # Update node-shard map
+        self._node_shard_map.clear()
+        for i, nid in enumerate(self.node_index):
+            self._node_shard_map[nid] = int(labels[i])
+
+    # ========================================================================
+    # PHASE 12 TRACK 2: COGNITIVE CONTEXT COMPRESSION
+    # ========================================================================
+
+    def _cognitive_compress(self, results: List[Tuple[str, float, MemoryNode]]) -> str:
+        """Compress raw memory results into a structured cognitive dump for LLM."""
+        if not results:
+            return "### COGNITIVE_CONTEXT\nNo relevant structures."
+
+        high_res = [(nid, r, n) for nid, r, n in results if r > self.cfg.high_resonance_threshold]
+        contradictions = [n for _, _, n in results if n.content.get("causal_flag") == "incompatible"]
+        procedural = [n for _, _, n in results if getattr(n, 'tier', 'semantic') == "procedural"]
+
+        lines = ["### COGNITIVE_CONTEXT"]
+        if high_res:
+            summaries = []
+            for nid, r, n in high_res:
+                text = n.content.get("text", "unknown")[:60]
+                summaries.append(f"[{text}...](R:{r:.2f},S:{n.salience:.2f})")
+            lines.append(f"• High resonance ({len(high_res)} nodes): " + " | ".join(summaries))
+        if contradictions:
+            texts = [n.content.get("text", "unknown")[:40] for n in contradictions[:3]]
+            lines.append(f"[WARN] Conflicting nodes: " + " | ".join(texts))
+        if procedural:
+            lines.append("[TOOL] Procedural patterns available (how-to)")
+
+        # Add lineage summary for complex nodes
+        lineage_nodes = [(nid, n) for nid, r, n in results if n.lineage]
+        if lineage_nodes:
+            lines.append(f"[STATS] Consolidated memories: {len(lineage_nodes)} nodes with synthesis history")
+
+        return "\n".join(lines)
+
+    # ========================================================================
+    # PHASE 12 TRACK 3: CRYSTALLIZATION (episodic → semantic/procedural)
+    # ========================================================================
+
+    def _crystallize_recurring(self, window: int = 100, similarity_thresh: float = 0.75):
+        """Detect recurring episodic patterns and crystallize into semantic nodes."""
+        recent_ids = self.node_index[-window:]
+        recent = [self.nodes[nid] for nid in recent_ids
+                  if nid in self.nodes and getattr(self.nodes[nid], 'tier', 'semantic') == "episodic"
+                  and nid not in self._crystallized_nodes]
+        if len(recent) < 5:
+            return
+
+        try:
+            from sklearn.cluster import DBSCAN
+        except ImportError:
+            return
+
+        pos = np.array([n.latent_pos for n in recent])
+        labels = DBSCAN(eps=0.4, min_samples=self.cfg.crystallization_min_cluster).fit_predict(pos)
+
+        crystallized_count = 0
+        for cluster_id in set(labels):
+            if cluster_id == -1:
+                continue
+            members = [recent[i] for i, l in enumerate(labels) if l == cluster_id]
+            if len(members) >= self.cfg.crystallization_min_cluster:
+                new_pos = np.mean([m.latent_pos for m in members], axis=0).astype(np.float32)
+                # Circular mean for phases: arctan2(mean(sin), mean(cos))
+                phases = np.array([m.phase for m in members])
+                new_phase = float(np.arctan2(np.mean(np.sin(phases)), np.mean(np.cos(phases)))) % (2 * np.pi)
+                combined_text = " ".join([m.content.get("text", "")[:30] for m in members[:3]])
+                new_content = {
+                    "text": f"Crystallized: {combined_text}...",
+                    "tier": "semantic",
+                    "crystallized_from": [m.id for m in members],
+                    "crystallized_at": time.time(),
+                }
+                new_id = self.add_node(new_pos, new_content, phase=float(new_phase % (2 * np.pi)), skip_projection=True)
+                self.nodes[new_id].tier = "semantic"
+                # Mark originals as archived
+                for m in members:
+                    m.content["archived"] = True
+                    self._crystallized_nodes.add(m.id)
+                crystallized_count += 1
+
+        if crystallized_count > 0:
+            self.stats["crystallizations"] += crystallized_count
+            self.stats["crystallized_clusters"] += crystallized_count
+
+    # ========================================================================
+    # PHASE 12 TRACK 4: ASYNC MULTI-THREADED EVOLUTION PIPELINE
+    # ========================================================================
+
+    async def _start_workers(self):
+        """Start background worker tasks for async pipeline with lifecycle tracking."""
+        if self._workers_started:
+            return
+        self._workers_started = True
+        # Fix 3: Track tasks for cancellation in clear()
+        t_evolve = asyncio.create_task(self._worker_evolve())
+        t_save = asyncio.create_task(self._worker_save())
+        self._workers.extend([t_evolve, t_save])
+
+    async def _worker_evolve(self):
+        """Background worker for field evolution with throttling."""
+        try:
+            while True:
+                try:
+                    payload = await asyncio.wait_for(self.evolve_q.get(), timeout=1.0)
+                    inputs = payload.get("inputs", {})
+                    
+                    # Throttling: Skip heavy meta-ops if backpressure high
+                    backpressure_ok = self._backpressure_events < 3
+                    
+                    loop = asyncio.get_event_loop()
+                    await loop.run_in_executor(None, self.step, inputs)
+
+                    # Fix 10: Track recovery and update last successful step
+                    self._last_successful_step = time.time()
+
+                    if backpressure_ok and self.meta_controller:
+                        # Safe execution for optimization
+                        if self.meta_controller.should_optimize():
+                            self._circuit_breakers["MetaControllerOptimize"].call(self.meta_controller.optimize, self)
+
+                    # Decay backpressure on success — also check if we can recover from degraded mode
+                    if self._backpressure_events > 0:
+                        self._backpressure_events = max(0, self._backpressure_events - 1)
+                        # Fix 10: Recover from degraded mode if backpressure has fully decayed
+                        if self._backpressure_events == 0 and self._heavy_modules_degraded:
+                            self._heavy_modules_degraded = False
+                            self.stats["backpressure_degraded_mode"] = self.stats.get("backpressure_degraded_mode", 0) + 1
+                            logger.info("Backpressure recovered — heavy modules re-enabled")
+                        if self._backpressure_events == 0:
+                            self.stats["last_backpressure_recovery"] = time.time()
+                        
+                    self.evolve_q.task_done()
+                except asyncio.TimeoutError:
+                    continue
+                except Exception:
+                    self._backpressure_events += 1
+                    logger.exception("Evolve worker error")
+        except asyncio.CancelledError:
+            logger.info("Evolve worker cancelled cleanly.")
+
+    async def _worker_save(self):
+        """Background worker for context saving."""
+        try:
+            while True:
+                try:
+                    payload = await asyncio.wait_for(self.save_q.get(), timeout=1.0)
+                    # Save is handled by add_node, just track depth
+                    self._track_queue_depth()
+                    self.save_q.task_done()
+                except asyncio.TimeoutError:
+                    continue
+                except Exception:
+                    logger.exception("Save worker error")
+        except asyncio.CancelledError:
+            logger.info("Save worker cancelled cleanly.")
+    def _track_queue_depth(self):
+        """Track async queue depths for monitoring."""
+        if self.cfg.async_pipeline and self.evolve_q:
+            self.stats["async_queue_depth"] = (
+                self.evolve_q.qsize() +
+                (self.save_q.qsize() if self.save_q else 0) +
+                (self.query_q.qsize() if self.query_q else 0)
+            )
+
+    # ========================================================================
+    # PHASE 13 TRACK 4: LOW-RANK COMPRESSION
+    # ========================================================================
+
+    def _compress_field(self):
+        """Compress node latent positions via incremental SVD."""
+        if not self.low_rank_compressor or len(self.nodes) < 10:
+            return
+        positions = np.array([n.latent_pos for n in self.nodes.values()])
+        compressed, reconstructed = self.low_rank_compressor.compress(positions)
+        ratio = self.low_rank_compressor.get_compression_ratio(positions.shape)
+        self.stats["compression_ratio"] = ratio
+        self.stats["compression_updates"] = self.low_rank_compressor._update_count
+        # Update node positions with reconstructed (lossy but preserves resonance)
+        for i, nid in enumerate(self.node_index):
+            if i < len(reconstructed) and nid in self.nodes:
+                self.nodes[nid].latent_pos = reconstructed[i].astype(np.float32)
+
+    # ========================================================================
+    # PHASE 13 TRACK 1: GOAL MANAGEMENT
+    # ========================================================================
+
+    def add_goal(self, description: str, goal_id: Optional[str] = None,
+                 subgoals: Optional[List[str]] = None,
+                 priority: float = 1.0) -> str:
+        """Add a goal to the teleological layer."""
+        if not self.goal_tracker:
+            self.goal_tracker = GoalTracker(
+                self.cfg.max_goals, self.cfg.goal_decay,
+                self.cfg.goal_completion_threshold
+            )
+        return self.goal_tracker.add_goal(description, goal_id, subgoals, priority)
+
+    def update_goal_completion(self, goal_id: str, completion: float,
+                                related_nodes: Optional[List[str]] = None):
+        """Update goal completion progress."""
+        if self.goal_tracker:
+            self.goal_tracker.update_completion(goal_id, completion, related_nodes)
+
+    def get_active_goals(self) -> List[Dict]:
+        """Get current active goals."""
+        if not self.goal_tracker:
+            return []
+        return [g.to_dict() for g in self.goal_tracker.get_active_goals()]
+
+    # ========================================================================
+    # PHASE 13 TRACK 3: RL FEEDBACK
+    # ========================================================================
+
+    def apply_rl_feedback(self, response: str, context_node_ids: List[str]) -> float:
+        """Apply RL feedback from LLM response."""
+        if not self.rl_feedback_loop:
+            self.rl_feedback_loop = RLFeedbackLoop(
+                self.cfg.rl_learning_rate, self.cfg.rl_reward_window
+            )
+        reward = self.rl_feedback_loop.extract_reward_from_response(response, context_node_ids)
+        self.rl_feedback_loop.apply_field_updates(self)
+        self.stats["avg_rl_reward"] = self.rl_feedback_loop.get_average_reward()
+        return reward
+
+    @_locked
+    def export_field(self, path: str, fmt: Optional[str] = None):
+        """Export field state to file.
+
+        Args:
+            path: Output file path
+            fmt: "msgpack" (default if available) or "json" (fallback)
+        """
+        if fmt is None:
+            try:
+                import msgpack
+                fmt = "msgpack"
+            except ImportError:
+                fmt = "json"
+        path = _sanitize_path(path)
+        # Safety check: prevent overwriting non-empty file with empty memory
+        n_nodes = len(self.nodes)
+        if n_nodes == 0 and os.path.exists(path):
+            try:
+                existing_size = os.path.getsize(path)
+                if existing_size > 1000:  # File has content (>1KB)
+                    logger.warning(f"export_field blocked: refusing to overwrite {path} ({existing_size/1024:.0f}KB) with empty memory (0 nodes). "
+                                   f"This prevents accidental data loss.")
+                    return  # Silently skip export to protect existing data
+            except OSError:
+                pass  # If we can't check, proceed with export
+
+        logger.info(f"export_field: exporting {n_nodes} nodes to {path}")
+        from rtmdk.memory.serialization import FieldSerializer
+        FieldSerializer.field_to_file(self, path, fmt)
+        self._dirty = False
+        self.wal.truncate()
+
+    def get_state(self) -> Dict[str, Any]:
+        """Get lightweight state dict for SOT persistence."""
+        state: Dict[str, Any] = {
+            "step_counter": self._step_counter,
+        }
+        if self.sot_tokenizer:
+            state["sot_tokenizer"] = self.sot_tokenizer.get_state()
+        if self.sot_hebbian:
+            state["sot_hebbian"] = {"lr": self.sot_hebbian.lr}
+        if self.sot_ssm:
+            state["sot_ssm"] = {"latent_dim": self.sot_ssm.latent_dim}
+        if self._sot_field_ema is not None:
+            state["sot_field_ema"] = self._sot_field_ema.tolist()
+        return state
+
+    def load_state(self, state: Dict[str, Any]):
+        """Load lightweight state dict for SOT persistence."""
+        self._step_counter = state.get("step_counter", self._step_counter)
+        if self.sot_tokenizer and "sot_tokenizer" in state:
+            self.sot_tokenizer.load_state(state["sot_tokenizer"])
+        if self._sot_field_ema is not None and "sot_field_ema" in state:
+            self._sot_field_ema = np.array(state["sot_field_ema"], dtype=np.float32)
+
+    @classmethod
+    def import_field(cls, path: str, embedder: Callable,
+                     wal_path: Optional[str] = None) -> "RTMDKMemory":
+        path = _sanitize_path(path)
+        from rtmdk.memory.serialization import FieldSerializer
+        return FieldSerializer.field_from_file(path, embedder, wal_path=wal_path)
+
+    def export_to_dict(self) -> Dict:
+        """Export field state to a dict (for UMP and other protocols)."""
+        cd = self.config.asdict() if hasattr(self, 'config') else self.cfg.asdict()
+        cd["consolidation_mode"] = _enum_value(cd.get("consolidation_mode"), "dialectical")
+        cd["backend"] = _enum_value(cd.get("backend"), "numpy")
+        cd["context_format"] = _enum_value(cd.get("context_format"), "plain")
+        cd["eval_mode"] = _enum_value(cd.get("eval_mode"), "production")
+        if "memory_tiers" in cd and isinstance(cd["memory_tiers"], set):
+            cd["memory_tiers"] = list(cd["memory_tiers"])
+        data = {"_schema_version": "1.0", "config": cd, "nodes": [n.to_dict() for n in self.nodes.values()], "stats": self.stats}
+        if self.projection_learner:
+            data["projection_state"] = self.projection_learner.get_state()
+        else:
+            data["projection"] = self._raw_projection.tolist()
+        if self.learnable_kernel:
+            data["learnable_kernel"] = self.learnable_kernel.get_state()
+        if self.meta_kernel:
+            data["meta_kernel"] = self.meta_kernel.get_state()
+        if self.healer:
+            data["healer"] = self.healer.get_state()
+        if self.causal_engine:
+            data["causal_engine"] = self.causal_engine.get_state()
+        if self.ode_dynamics:
+            data["ode_dynamics"] = self.ode_dynamics.get_state()
+        if self.meta_controller:
+            data["meta_controller"] = self.meta_controller.get_state()
+        if self.federated:
+            data["federated"] = self.federated.export_state()
+        if self.meta_memory_eval:
+            data["meta_memory_eval"] = self.meta_memory_eval.get_state()
+        if self.security:
+            data["security"] = self.security.get_state()
+        if self.swarm:
+            data["swarm"] = self.swarm.get_state()
+        if self.version_control:
+            data["version_control"] = self.version_control.export_state()
+        if self.entropy_ctrl:
+            data["entropy_ctrl"] = self.entropy_ctrl.get_state_dict()
+        if self.symbolic_overlay:
+            data["symbolic_overlay"] = self.symbolic_overlay.get_state()
+        if self.safety_certifier:
+            data["safety_certifier"] = self.safety_certifier.get_state()
+        # Fix 4: Save missing subsystems
+        if self.event_scheduler:
+            data["event_scheduler"] = self.event_scheduler.get_state()
+        if self.low_rank_compressor:
+            data["low_rank_compressor"] = self.low_rank_compressor.get_state()
+        if self.triton_backend:
+            data["triton_backend"] = self.triton_backend.get_state()
+        if self.goal_tracker:
+            data["goal_tracker"] = self.goal_tracker.get_state()
+        if self.rl_feedback_loop:
+            data["rl_feedback_loop"] = self.rl_feedback_loop.get_state()
+        if self.predictor:
+            data["predictor"] = self.predictor.get_state()
+        if self.scenario_planner:
+            data["scenario_planner"] = self.scenario_planner.get_state()
+        if self.engram_manager:
+            data["engram_manager"] = self.engram_manager.get_state()
+        # Phase 21: SOT state
+        if self.sot_tokenizer:
+            data["sot_tokenizer"] = self.sot_tokenizer.get_state()
+        if self._sot_field_ema is not None:
+            data["sot_field_ema"] = self._sot_field_ema.tolist()
+        return data
+
+    @classmethod
+    def import_from_dict(cls, data: Dict, embedder: Callable) -> "RTMDKMemory":
+        """Import field state from a dict (for UMP and other protocols)."""
+        cd = data["config"]
+        if isinstance(cd.get("consolidation_mode"), str):
+            cd["consolidation_mode"] = ConsolidationMode(cd["consolidation_mode"])
+        if isinstance(cd.get("backend"), str):
+            cd["backend"] = Backend(cd["backend"])
+        if isinstance(cd.get("context_format"), str):
+            cd["context_format"] = ContextFormat(cd["context_format"])
+        if isinstance(cd.get("eval_mode"), str):
+            cd["eval_mode"] = EvalMode(cd["eval_mode"])
+        if "memory_tiers" in cd and isinstance(cd["memory_tiers"], list):
+            cd["memory_tiers"] = set(cd["memory_tiers"])
+        if "causal_modeling" in cd and "causal_topological" not in cd:
+            cd["causal_topological"] = cd.pop("causal_modeling")
+        elif "causal_modeling" in cd:
+            cd.pop("causal_modeling")
+        valid_fields = set(f.name for f in RTMDKConfig.__dataclass_fields__.values())
+        cd = {k: v for k, v in cd.items() if k in valid_fields}
+        config = RTMDKConfig(**cd)
+        memory = RTMDKMemory(config=config, embedder=embedder)
+
+        if config.learn_projection and "projection_state" in data:
+            memory.field.projection_learner.load_state(data["projection_state"])
+        elif "projection" in data:
+            memory.field._raw_projection = np.array(data["projection"], dtype=np.float32)
+        if config.differentiable and "learnable_kernel" in data:
+            memory.field.learnable_kernel.load_state(data["learnable_kernel"])
+        if config.meta_adaptive and "meta_kernel" in data:
+            memory.field.meta_kernel.load_state(data["meta_kernel"])
+        if config.self_healing and "healer" in data:
+            memory.field.healer.load_state(data["healer"])
+        if config.causal_topological and "causal_engine" in data:
+            memory.field.causal_engine.load_state(data["causal_engine"])
+        if config.continuous_dynamics and "ode_dynamics" in data:
+            ode_state = data["ode_dynamics"]
+            memory.field.ode_dynamics.alpha = ode_state.get("alpha", 0.1)
+            memory.field.ode_dynamics.beta = ode_state.get("beta", 0.05)
+            memory.field.ode_dynamics.gamma = ode_state.get("gamma", 0.02)
+            if "W" in ode_state:
+                memory.field.ode_dynamics.W = np.array(ode_state["W"], dtype=np.float32)
+            memory.field.ode_dynamics.noise_level = ode_state.get("noise_level", 0.01)
+        if config.meta_controller and "meta_controller" in data:
+            memory.field.meta_controller.load_state(data["meta_controller"])
+        if config.federated and "federated" in data:
+            memory.field.federated.import_state(data["federated"])
+        if config.meta_memory and "meta_memory_eval" in data:
+            memory.field.meta_memory_eval.load_state(data["meta_memory_eval"])
+        if config.security_enabled and "security" in data:
+            memory.field.security.load_state(data["security"])
+        if config.swarm_memory and "swarm" in data:
+            memory.field.swarm.load_state(data["swarm"])
+        if config.version_control and "version_control" in data:
+            memory.field.version_control.import_state(data["version_control"])
+        if config.entropy_management and "entropy_ctrl" in data:
+            memory.field.entropy_ctrl.load_state_dict(data["entropy_ctrl"])
+        if config.symbolic_overlay and "symbolic_overlay" in data:
+            memory.field.symbolic_overlay.load_state(data["symbolic_overlay"])
+        if config.safety_certifier and "safety_certifier" in data:
+            memory.field.safety_certifier.load_state(data["safety_certifier"])
+        # Fix 4: Load missing subsystems and reset historical stats
+        if "event_scheduler" in data and memory.field.event_scheduler:
+            memory.field.event_scheduler.load_state(data["event_scheduler"])
+        if "low_rank_compressor" in data and memory.field.low_rank_compressor:
+            memory.field.low_rank_compressor.load_state(data["low_rank_compressor"])
+        if "goal_tracker" in data and memory.field.goal_tracker:
+            memory.field.goal_tracker.load_state(data["goal_tracker"])
+        if "rl_feedback_loop" in data and memory.field.rl_feedback_loop:
+            memory.field.rl_feedback_loop.load_state(data["rl_feedback_loop"])
+        if "predictor" in data and memory.field.predictor:
+            memory.field.predictor.load_state(data["predictor"])
+        if "scenario_planner" in data and memory.field.scenario_planner:
+            memory.field.scenario_planner.load_state(data["scenario_planner"])
+        if "engram_manager" in data and memory.field.engram_manager:
+            memory.field.engram_manager.load_state(data["engram_manager"])
+
+        # Reset historical metrics to avoid stale accumulated state (matches import_field behavior)
+        reset_keys = [
+            "projection_updates", "self_sup_checks", "total_queries",
+            "consolidations", "consolidation_validations", "blocked_consolidations",
+            "healing_events", "healing_history", "field_stability",
+            "tension_cache_hits", "tension_cache_misses", "tension_cache_hit_rate",
+            "engram_retrievals", "engrams_created", "engrams_merged",
+            "cross_modal_queries", "cross_modal_recall",
+            "meta_optimizations", "meta_best_params",
+            "federated_syncs", "federated_order_parameter",
+            "crystallizations", "crystallized_clusters",
+            "evaluations", "shadow_comparisons", "rollbacks",
+            "ode_steps", "response_smoothness",
+            "free_energy", "prediction_error", "surprise_level",
+            "scenarios_generated", "avg_scenario_confidence",
+            "privacy_budget_spent", "noise_std", "updates_clipped",
+            "shard_hits", "shard_misses", "avg_shard_query_time_ms",
+            "context_tokens_saved", "cognitive_compressions",
+            "async_queue_depth", "async_backpressure_events",
+            "active_goals", "completed_goals",
+            "avg_rl_reward", "reward_trend",
+            "attention_bias_applied", "compression_ratio", "compression_updates",
+            "events_processed", "event_queue_depth",
+            "recall_accuracy", "meta_reflections",
+            "security_violations", "tension_spikes_blocked",
+            "swarm_agents", "swarm_consensus_events",
+            "current_version", "n_versions",
+            "clarifications_generated",
+            "entropy", "entropy_state",
+            "triton_backend_used", "gpu_acceleration",
+            "n_symbolic_rules", "n_symbolic_inferences", "n_symbolic_conflicts",
+            "lyapunov_V", "lyapunov_dV_dt", "safety_regulation_factor", "safety_mode",
+            "n_shards", "shard_distribution", "cross_shard_exchanges",
+            "role_router_enabled",
+            "field_integrity_issues",
+            "plans_created", "hypotheses_verified", "tool_calls", "tool_misuse_rate",
+            "ragas_overall",
+            "tier_coherence",
+        ]
+        for key in reset_keys:
+            if key in memory.field.stats:
+                val = memory.field.stats[key]
+                if isinstance(val, (int, float)):
+                    memory.field.stats[key] = 0
+                elif isinstance(val, dict):
+                    memory.field.stats[key] = {}
+                elif isinstance(val, list):
+                    memory.field.stats[key] = []
+
+        for nd in data["nodes"]:
+            node = MemoryNode.from_dict(nd)
+            memory.field.nodes[node.id] = node
+            memory.field.node_index.append(node.id)
+        memory.field.stats = data.get("stats", memory.field.stats)
+        return memory
+
+    def shutdown(self):
+        """Graceful shutdown: wait for background consolidation to finish."""
+        if self._consolidation_future is not None and not self._consolidation_future.done():
+            try:
+                self._consolidation_future.result(timeout=120)
+            except Exception:
+                pass
+        self._consolidation_executor.shutdown(wait=False)
+
+
+# ============================================================================
+# RTMDKMemory v7
+# ============================================================================
+
