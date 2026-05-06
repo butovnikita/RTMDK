@@ -263,6 +263,7 @@ _FIELD_GROUPS: Dict[str, str] = {
     "shadow_mode": "ProductionConfig",
     "soft_gates": "RetrievalConfig",
     "sot_contrastive_lr": "SOTConfig",
+    "sot_adaptive_lr": "SOTConfig",
     "sot_diagonal_ssm": "SOTConfig",
     "sot_enabled": "SOTConfig",
     "sot_max_vocab": "SOTConfig",
@@ -602,6 +603,7 @@ class SOTConfig:
         sot_max_vocab: int = 4096
         sot_merge_threshold: float = 0.7
         sot_contrastive_lr: float = 0.01
+        sot_adaptive_lr: bool = True  # Scale lr by sqrt(token_dim / latent_dim)
         sot_negatives_per_query: int = 5
         sot_ssm_sync: bool = False
         sot_diagonal_ssm: bool = True  # O(N*d) instead of O(N*d^2)

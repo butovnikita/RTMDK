@@ -1025,6 +1025,7 @@ class RTMDKField:
                 skipgram_window=config.sot_skipgram_window,
                 tokenization_mode=config.sot_tokenization_mode,
                 max_cooccurrence=config.sot_max_cooccurrence,
+                adaptive_lr=config.sot_adaptive_lr,
             )
             # Warm-start from corpus if path provided
             if config.sot_warm_start_corpus:
@@ -1701,7 +1702,10 @@ class RTMDKField:
             raise RuntimeError("SOT not enabled in config")
         if negative_texts is None:
             negative_texts = []
-        self.sot_tokenizer.contrastive_step(query_text, positive_text, negative_texts, lr=lr)
+        self.sot_tokenizer.contrastive_step(
+            query_text, positive_text, negative_texts, lr=lr,
+            adaptive_lr=self.cfg.sot_adaptive_lr,
+        )
 
     def _sot_retrieval_feedback(self, query_latent: np.ndarray, results: List[Tuple[str, float, MemoryNode]]):
         """Update SOT embeddings based on retrieval results.

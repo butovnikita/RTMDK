@@ -111,9 +111,11 @@ class SOTokenizer:
         skipgram_window: int = 1,
         tokenization_mode: str = "byte",
         max_cooccurrence: int = 100_000,
+        adaptive_lr: bool = True,
     ):
         self.latent_dim = latent_dim
         self.token_dim = token_dim or latent_dim
+        self.adaptive_lr = adaptive_lr
         self.max_vocab = max_vocab
         self.initial_byte_vocab = initial_byte_vocab
         self.next_token_id = initial_byte_vocab
@@ -736,17 +738,30 @@ class SOTokenizer:
         positive_text: str,
         negative_texts,
         lr: float = 0.01,
+        adaptive_lr: Optional[bool] = None,
     ):
         """Online contrastive learning step for SOT token embeddings.
 
         Pulls query tokens toward the mean positive embedding and pushes
         them away from the mean negative embeddings. Also updates positive
         tokens toward the mean query embedding for symmetry.
+
+        Args:
+            adaptive_lr: If True, scales lr by sqrt(token_dim / latent_dim)
+                so that the effective update strength stays constant across
+                different token dimensionalities. Defaults to self.adaptive_lr.
         """
         from typing import List
 
+        if adaptive_lr is None:
+            adaptive_lr = self.adaptive_lr
+
         if isinstance(negative_texts, str):
             negative_texts = [negative_texts]
+
+        effective_lr = lr
+        if adaptive_lr and self.token_dim > self.latent_dim:
+            effective_lr = lr * np.sqrt(self.token_dim / self.latent_dim)
 
         q_tokens = self.encode(query_text)
         p_tokens = self.encode(positive_text)
@@ -770,9 +785,9 @@ class SOTokenizer:
         # Update query tokens
         for tid in q_ids:
             emb = self.token_embeddings[tid]
-            delta = lr * (pos_mean - emb)
+            delta = effective_lr * (pos_mean - emb)
             for neg_mean in neg_means:
-                delta -= lr * 0.1 * (neg_mean - emb)
+                delta -= effective_lr * 0.1 * (neg_mean - emb)
             emb = emb + delta
             norm = np.linalg.norm(emb)
             if norm > 0:
@@ -783,7 +798,7 @@ class SOTokenizer:
         q_mean = np.mean([self.token_embeddings[t] for t in q_ids], axis=0)
         for tid in p_ids:
             emb = self.token_embeddings[tid]
-            delta = lr * 0.5 * (q_mean - emb)
+            delta = effective_lr * 0.5 * (q_mean - emb)
             emb = emb + delta
             norm = np.linalg.norm(emb)
             if norm > 0:
