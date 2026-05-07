@@ -131,6 +131,24 @@ _active_requests = 0
 _shutdown_event = asyncio.Event()
 
 
+async def _sot_bootstrap_from_memory():
+    """Bootstrap SOT tokenizer from existing memory nodes in background."""
+    await asyncio.sleep(2)  # Let server finish startup
+    if memory is None or memory.field is None or memory.field.sot_tokenizer is None:
+        return
+    try:
+        texts = []
+        for node in memory.field.nodes.values():
+            text = node.content.get("text", "") if isinstance(node.content, dict) else str(node.content)
+            if text:
+                texts.append(text)
+        if len(texts) >= 10:
+            memory.field.sot_tokenizer.warm_start_from_corpus(texts)
+            logger.info(f"SOT bootstrapped from {len(texts)} memory nodes")
+    except Exception:
+        logger.debug("SOT background bootstrap failed", exc_info=True)
+
+
 async def _drain_active_requests(timeout: float = 30.0):
     """Wait for active requests to complete before shutdown."""
     t0 = time.time()
@@ -295,6 +313,10 @@ async def lifespan(app: FastAPI):
     telemetry_manager = TelemetryManager()
     if telemetry_manager.enabled:
         logger.info("OpenTelemetry tracing enabled")
+
+    # Async SOT bootstrap from existing memory nodes
+    if memory and memory.field and memory.field.sot_tokenizer:
+        asyncio.create_task(_sot_bootstrap_from_memory())
 
     asyncio.create_task(_health_check_loop())
     asyncio.create_task(_auto_save_loop())
@@ -666,13 +688,24 @@ async def _get_embedding_cached(text: str, model: str = None) -> np.ndarray:
 
 
 async def get_embedding(text: str, model: str = None) -> np.ndarray:
-    """Get embedding from LM Studio or cache."""
+    """Get embedding from SOT (primary), LM Studio (fallback), or cache."""
     cached = embedder_cache.get(text)
     if cached is not None:
         return cached
 
-    embedder_model = model or EMBED_MODEL
+    # Phase 21: SOT primary embedder — works out-of-the-box without LM Studio
+    if memory and memory.field and memory.field.sot_tokenizer:
+        try:
+            sot = memory.field.sot_tokenizer
+            tokens = sot.encode(text)
+            emb = sot.embed(tokens)
+            embedder_cache.set(text, emb)
+            return emb
+        except Exception:
+            logger.debug("SOT embedding failed for: %s...", text[:50])
 
+    # Fallback to LM Studio / external embedder
+    embedder_model = model or EMBED_MODEL
     embedding = await llm_embed_circuit.call(_fetch_embedding, text, embedder_model)
     if embedding is None:
         if _PROMETHEUS_AVAILABLE:
@@ -1740,6 +1773,55 @@ async def telemetry_status(request: Request):
     if telemetry_manager is None:
         raise HTTPException(status_code=503, detail="Telemetry manager not available")
     return {"enabled": telemetry_manager.enabled}
+
+
+# ============================================================================
+# SOT ENDPOINTS
+# ============================================================================
+
+
+@app.get("/v1/sot/status")
+async def sot_status():
+    """Get SOT (Self-Organizing Tokenizer) status."""
+    if memory is None or memory.field is None:
+        raise HTTPException(status_code=503, detail="Memory not initialized")
+    sot = memory.field.sot_tokenizer
+    if sot is None:
+        return {"enabled": False}
+    return {
+        "enabled": True,
+        "vocab_size": len(sot.token_embeddings),
+        "max_vocab": sot.max_vocab,
+        "tokenization_mode": getattr(sot, "tokenization_mode", "unknown"),
+        "cooccurrence_size": len(sot.cooccurrence) if hasattr(sot, "cooccurrence") else 0,
+    }
+
+
+@app.post("/v1/sot/bootstrap")
+async def sot_bootstrap(req: dict):
+    """Bootstrap SOT from a corpus of texts.
+
+    Body: {"texts": ["text1", "text2", ...], "teacher_model": "all-MiniLM-L6-v2"}
+    """
+    if memory is None or memory.field is None:
+        raise HTTPException(status_code=503, detail="Memory not initialized")
+    sot = memory.field.sot_tokenizer
+    if sot is None:
+        raise HTTPException(status_code=503, detail="SOT not enabled")
+    texts = req.get("texts", [])
+    teacher = req.get("teacher_model")
+    if not texts:
+        raise HTTPException(status_code=400, detail="texts required")
+    try:
+        if teacher:
+            memory.field.sot_bootstrap(texts, teacher_model=teacher)
+        else:
+            # Warm-start without teacher
+            sot.warm_start_from_corpus(texts)
+        return {"status": "bootstrapped", "vocab_size": len(sot.token_embeddings)}
+    except Exception as exc:
+        logger.exception("SOT bootstrap failed")
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 # ============================================================================

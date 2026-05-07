@@ -66,6 +66,19 @@ def _production() -> RTMDKConfig:
         enable_kalman_filter=True, kalman_diagonal_approx=True,
         # Accuracy tuning (post-benchmark optimization)
         resonance_kernel="cosine",
+        # Phase 21: SOT enabled by default for out-of-the-box autonomy
+        sot_enabled=True,
+        sot_use_for_query=True,
+        sot_tokenization_mode="word",
+        sot_attention_pooling=True,
+        sot_subword_seed=True,
+        sot_max_vocab=4096,
+        sot_contrastive_lr=0.01,
+        sot_ssm_sync=True,
+        sot_diagonal_ssm=True,
+        sot_retrieval_feedback=True,
+        sot_hard_negatives=True,
+        sot_merge_freq=100,
     )
 
 
