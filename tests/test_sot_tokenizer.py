@@ -172,8 +172,9 @@ class TestSOTokenizerCooccurrence:
             max_vocab=257)
         tok.merge((0, 1))
         assert len(tok.token_embeddings) == 257
-        with pytest.raises(RuntimeError):
-            tok.merge((2, 3))
+        # Graceful degradation: LRU eviction instead of RuntimeError
+        tok.merge((2, 3))
+        assert len(tok.token_embeddings) == 257  # vocab size capped
 
     def test_merge_adds_to_merge_table(self):
         tok = SOTokenizer(

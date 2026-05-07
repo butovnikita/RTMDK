@@ -92,6 +92,7 @@ class FieldSerializer:
         ("entropy_ctrl", "entropy_ctrl", "entropy_management"),
         ("symbolic_overlay", "symbolic_overlay", "symbolic_overlay"),
         ("safety_certifier", "safety_certifier", "safety_certifier"),
+        ("sot_tokenizer", "sot_tokenizer", "sot_enabled"),
     ]
 
     @staticmethod
@@ -332,6 +333,9 @@ class FieldSerializer:
             memory.field.security.load_state(data["security"])
         if config.swarm_memory and "swarm" in data:
             memory.field.swarm.load_state(data["swarm"])
+        if config.sot_enabled and "sot_tokenizer" in data:
+            if memory.field.sot_tokenizer is not None:
+                memory.field.sot_tokenizer.load_state(data["sot_tokenizer"])
 
         # Load nodes
         logger.info(f"import_field: loading {len(data['nodes'])} nodes")

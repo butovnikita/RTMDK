@@ -1,0 +1,177 @@
+"""Tests for RTMDK GraphQL endpoints."""
+
+import importlib
+
+import numpy as np
+import pytest
+from fastapi.testclient import TestClient
+
+from rtmdk.memory.config import RTMDKConfig
+from rtmdk.memory.core import RTMDKField, RTMDKMemory
+
+app_mod = importlib.import_module("rtmdk.server.app")
+
+
+@pytest.fixture(scope="module")
+def client():
+    app_mod.ENABLE_API_AUTH = False
+    return TestClient(app_mod.app)
+
+
+@pytest.fixture(autouse=True)
+def reset_memory():
+    old = app_mod.memory
+    app_mod.memory = None
+    yield
+    app_mod.memory = old
+
+
+class TestGraphQLHealth:
+    def test_health_when_no_memory(self, client):
+        resp = client.post("/graphql", json={
+            "query": "{ health { status version memoryNodes } }"
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "errors" not in data
+        health = data["data"]["health"]
+        assert health["status"] == "ok"
+        assert health["memoryNodes"] == 0
+
+    def test_health_with_memory(self, client):
+        cfg = RTMDKConfig(latent_dim=16, use_hnsw=False)
+        field = RTMDKField(cfg)
+        field.add_node(
+            embedding=np.array([0.0] * 16),
+            content={"content": "hello"},
+            node_id="n0")
+        mem = RTMDKMemory(config=cfg, embedder=lambda x: np.array([0.0] * 16))
+        mem.field = field
+        app_mod.memory = mem
+
+        try:
+            resp = client.post("/graphql", json={
+                "query": "{ health { status version memoryNodes } }"
+            })
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["data"]["health"]["memoryNodes"] == 1
+        finally:
+            app_mod.memory = None
+
+
+class TestGraphQLNodeQueries:
+    def test_node_returns_null_when_not_found(self, client):
+        resp = client.post("/graphql", json={
+            "query": '{ node(id: "nonexistent") { id content salience } }'
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["data"]["node"] is None
+
+    def test_node_returns_node(self, client):
+        cfg = RTMDKConfig(latent_dim=16, use_hnsw=False)
+        field = RTMDKField(cfg)
+        field.add_node(
+            embedding=np.array([0.0] * 16),
+            content={"text": "hello world"},
+            node_id="n0")
+        mem = RTMDKMemory(config=cfg, embedder=lambda x: np.array([0.0] * 16))
+        mem.field = field
+        app_mod.memory = mem
+
+        try:
+            resp = client.post("/graphql", json={
+                "query": '{ node(id: "n0") { id content salience phase amplitude } }'
+            })
+            assert resp.status_code == 200
+            data = resp.json()
+            node = data["data"]["node"]
+            assert node["id"] == "n0"
+            assert node["content"] == "hello world"
+        finally:
+            app_mod.memory = None
+
+    def test_nodes_pagination(self, client):
+        cfg = RTMDKConfig(latent_dim=16, use_hnsw=False)
+        field = RTMDKField(cfg)
+        for i in range(5):
+            field.add_node(
+                embedding=np.array([0.0] * 16),
+                content={"content": f"node {i}"},
+                node_id=f"n{i}")
+        mem = RTMDKMemory(config=cfg, embedder=lambda x: np.array([0.0] * 16))
+        mem.field = field
+        app_mod.memory = mem
+
+        try:
+            resp = client.post("/graphql", json={
+                "query": '{ nodes(limit: 3, offset: 0) { id content } }'
+            })
+            assert resp.status_code == 200
+            data = resp.json()
+            assert len(data["data"]["nodes"]) == 3
+        finally:
+            app_mod.memory = None
+
+
+class TestGraphQLMutations:
+    def test_create_node(self, client):
+        cfg = RTMDKConfig(latent_dim=16, use_hnsw=False)
+        field = RTMDKField(cfg)
+        mem = RTMDKMemory(config=cfg, embedder=lambda x: np.array([0.0] * 16))
+        mem.field = field
+        app_mod.memory = mem
+
+        try:
+            resp = client.post("/graphql", json={
+                "query": 'mutation { createNode(content: "new node", salience: 0.8) { id content salience } }'
+            })
+            assert resp.status_code == 200
+            data = resp.json()
+            assert "errors" not in data
+            node = data["data"]["createNode"]
+            assert node["content"] == "new node"
+            assert node["salience"] == 0.8
+            assert node["id"] in field.nodes
+        finally:
+            app_mod.memory = None
+
+    def test_delete_node(self, client):
+        cfg = RTMDKConfig(latent_dim=16, use_hnsw=False)
+        field = RTMDKField(cfg)
+        field.add_node(
+            embedding=np.array([0.0] * 16),
+            content={"content": "to delete"},
+            node_id="ndel")
+        mem = RTMDKMemory(config=cfg, embedder=lambda x: np.array([0.0] * 16))
+        mem.field = field
+        app_mod.memory = mem
+
+        try:
+            resp = client.post("/graphql", json={
+                "query": 'mutation { deleteNode(id: "ndel") }'
+            })
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["data"]["deleteNode"] is True
+            assert "ndel" not in field.nodes
+        finally:
+            app_mod.memory = None
+
+    def test_delete_node_not_found(self, client):
+        cfg = RTMDKConfig(latent_dim=16, use_hnsw=False)
+        field = RTMDKField(cfg)
+        mem = RTMDKMemory(config=cfg, embedder=lambda x: np.array([0.0] * 16))
+        mem.field = field
+        app_mod.memory = mem
+
+        try:
+            resp = client.post("/graphql", json={
+                "query": 'mutation { deleteNode(id: "missing") }'
+            })
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["data"]["deleteNode"] is False
+        finally:
+            app_mod.memory = None

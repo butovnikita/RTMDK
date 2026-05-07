@@ -165,6 +165,7 @@ class SOTokenizer:
                 if norm > 0:
                     emb /= norm
                 self.token_embeddings[i] = emb
+                self.token_frequency[i] = 1.0
 
     def _init_byte_embeddings(self):
         for i in range(self.initial_byte_vocab):
@@ -173,6 +174,7 @@ class SOTokenizer:
             if norm > 0:
                 emb /= norm
             self.token_embeddings[i] = emb
+            self.token_frequency[i] = 1.0
 
     def _seed_subword_tokens(
             self,
@@ -562,6 +564,18 @@ class SOTokenizer:
                 emb /= norm
             self.token_embeddings[wid] = emb
             return wid
+        # Graceful degradation: LRU eviction
+        evicted = self._lru_evict_token()
+        if evicted is not None:
+            wid = evicted
+            self.word_to_id[word] = wid
+            self.id_to_word[wid] = word
+            emb = self._rng.standard_normal(self.token_dim).astype(np.float32)
+            norm = np.linalg.norm(emb)
+            if norm > 0:
+                emb /= norm
+            self.token_embeddings[wid] = emb
+            return wid
         # Fallback to unk
         if self._unk_token_id is None:
             self._unk_token_id = self.next_token_id
@@ -706,11 +720,24 @@ class SOTokenizer:
             reverse=True)
         return [pair for pair, _ in sorted_pairs[:n]]
 
+    def _lru_evict_token(self) -> Optional[int]:
+        """Evict least frequently used token to make room."""
+        if not self.token_frequency:
+            return None
+        min_tid = min(self.token_frequency, key=lambda k: self.token_frequency[k])
+        self.token_embeddings.pop(min_tid, None)
+        self.token_frequency.pop(min_tid, None)
+        self.token_idf.pop(min_tid, None)
+        if min_tid in self.id_to_word:
+            word = self.id_to_word.pop(min_tid, None)
+            if word:
+                self.word_to_id.pop(word, None)
+        return min_tid
+
     def merge(self, pair: Tuple[int, int]):
         """Execute a merge: create new token embedding as weighted average."""
         if len(self.token_embeddings) >= self.max_vocab:
-            raise RuntimeError(
-                f"Max vocab size {self.max_vocab} reached, cannot merge")
+            self._lru_evict_token()
         a, b = pair
         if a not in self.token_embeddings or b not in self.token_embeddings:
             raise ValueError(f"Invalid pair {pair}: missing embeddings")

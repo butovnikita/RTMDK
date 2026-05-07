@@ -63,3 +63,7 @@ rtmdk_github/
 
 # Track 2: Tiered Storage cold batches
 rtmdk_cold_storage/
+
+# React admin panel
+admin/node_modules/
+admin/dist/

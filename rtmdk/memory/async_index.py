@@ -6,8 +6,7 @@ This removes the index-update bottleneck from the hot ingestion path.
 """
 
 import threading
-import time
-from typing import List, Tuple, Optional, Any
+from typing import List, Tuple, Any
 
 import numpy as np
 from numpy.typing import NDArray

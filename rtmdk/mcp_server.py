@@ -174,7 +174,6 @@ def add_memory(
     return f"Memory added: {text[:80]}..."
 
 
-
 @mcp.tool()
 def query_memory(
         query: str,

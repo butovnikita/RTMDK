@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import time
 from collections import defaultdict, deque
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
 import numpy as np
 from numpy.typing import NDArray

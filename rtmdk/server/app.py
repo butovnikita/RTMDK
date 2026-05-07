@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 import numpy as np
-from fastapi import APIRouter, FastAPI, HTTPException, Query, Request
+from fastapi import APIRouter, FastAPI, HTTPException, Query, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
@@ -45,7 +45,19 @@ from rtmdk.production.redis_cache import RedisQueryCache, RedisEmbeddingCache
 from rtmdk.production.encryption import EncryptionManager
 from rtmdk.production.telemetry import TelemetryManager
 from rtmdk.server.grpc_service import serve_grpc
+from rtmdk.server.graphql_schema import schema
 from rtmdk.support.circuit_breaker import AsyncCircuitBreaker
+
+# GraphQL
+_sot_bootstrap_breaker = AsyncCircuitBreaker("SOTBootstrap", failure_threshold=3, recovery_timeout=60.0)
+
+try:
+    from strawberry.fastapi import GraphQLRouter
+    graphql_router = GraphQLRouter(schema)
+    GRAPHQL_AVAILABLE = True
+except Exception:
+    graphql_router = None  # type: ignore[assignment]
+    GRAPHQL_AVAILABLE = False
 
 # Prometheus metrics
 try:
@@ -314,8 +326,19 @@ async def lifespan(app: FastAPI):
     if telemetry_manager.enabled:
         logger.info("OpenTelemetry tracing enabled")
 
-    # Async SOT bootstrap from existing memory nodes
+    # SOT checkpoint loading
+    _sot_checkpoint_path = os.path.join(
+        os.path.expanduser("~"), ".rtmdk", "sot_checkpoint.json"
+    )
     if memory and memory.field and memory.field.sot_tokenizer:
+        if os.path.exists(_sot_checkpoint_path):
+            try:
+                with open(_sot_checkpoint_path, "r", encoding="utf-8") as fh:
+                    sot_state = json.load(fh)
+                memory.field.sot_tokenizer.load_state(sot_state)
+                logger.info(f"SOT checkpoint loaded ({len(sot_state.get('token_embeddings', {}))} tokens)")
+            except Exception:
+                logger.warning("Failed to load SOT checkpoint", exc_info=True)
         asyncio.create_task(_sot_bootstrap_from_memory())
 
     asyncio.create_task(_health_check_loop())
@@ -357,6 +380,19 @@ async def lifespan(app: FastAPI):
                         pass
             field._workers.clear()
 
+        # SOT checkpoint saving
+        if field and field.sot_tokenizer:
+            try:
+                sot_state = field.sot_tokenizer.get_state()
+                _sot_checkpoint_path = os.path.join(
+                    os.path.expanduser("~"), ".rtmdk", "sot_checkpoint.json")
+                os.makedirs(os.path.dirname(_sot_checkpoint_path), exist_ok=True)
+                with open(_sot_checkpoint_path, "w", encoding="utf-8") as fh:
+                    json.dump(sot_state, fh, ensure_ascii=False, default=str)
+                logger.info(f"SOT checkpoint saved ({len(sot_state.get('token_embeddings', {}))} tokens)")
+            except Exception:
+                logger.exception("Failed to save SOT checkpoint")
+
         try:
             save_path = _get_save_path(MEMORY_FILE)
             os.makedirs(os.path.dirname(save_path), exist_ok=True)
@@ -374,6 +410,9 @@ app = FastAPI(
     version="8.2.0",
     lifespan=lifespan,
 )
+
+if GRAPHQL_AVAILABLE and graphql_router is not None:
+    app.include_router(graphql_router, prefix="/graphql")
 
 app.add_middleware(
     CORSMiddleware,
@@ -1776,6 +1815,58 @@ async def telemetry_status(request: Request):
 
 
 # ============================================================================
+# WEBSOCKET STREAMING
+# ============================================================================
+
+
+@app.websocket("/ws/memory")
+async def memory_websocket(websocket: WebSocket):
+    """Real-time WebSocket for memory events."""
+    await websocket.accept()
+    try:
+        while True:
+            data = await websocket.receive_text()
+            try:
+                msg = json.loads(data)
+                action = msg.get("action")
+                if action == "query":
+                    query = msg.get("query", "")
+                    top_k = msg.get("top_k", 5)
+                    if memory and memory.field:
+                        embedding = await _get_embedding_cached(query)
+                        results = await run_sync(memory.field.query, embedding, top_k=top_k)
+                        out = []
+                        for nid, score, node in results:
+                            content = ""
+                            if hasattr(node, "content"):
+                                if isinstance(node.content, dict):
+                                    content = node.content.get("text", str(node.content))
+                                else:
+                                    content = str(node.content)
+                            out.append({
+                                "node_id": nid,
+                                "score": score,
+                                "content": content,
+                            })
+                        await websocket.send_json({"type": "query_results", "results": out})
+                    else:
+                        await websocket.send_json({"type": "error", "message": "Memory not ready"})
+                elif action == "ping":
+                    await websocket.send_json({"type": "pong"})
+                else:
+                    await websocket.send_json({"type": "error", "message": f"Unknown action: {action}"})
+            except json.JSONDecodeError:
+                await websocket.send_json({"type": "error", "message": "Invalid JSON"})
+    except Exception:
+        pass
+    finally:
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+
+
+# ============================================================================
 # SOT ENDPOINTS
 # ============================================================================
 
@@ -1797,6 +1888,27 @@ async def sot_status():
     }
 
 
+@app.get("/v1/sot/vocab")
+async def sot_vocab(
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    search: Optional[str] = Query(None),
+):
+    """Inspect SOT vocabulary."""
+    if memory is None or memory.field is None:
+        raise HTTPException(status_code=503, detail="Memory not initialized")
+    sot = memory.field.sot_tokenizer
+    if sot is None:
+        raise HTTPException(status_code=503, detail="SOT not enabled")
+    items = []
+    word_map = getattr(sot, "word_to_id", {})
+    for word, tid in list(word_map.items())[offset:offset + limit]:
+        if search and search.lower() not in word.lower():
+            continue
+        items.append({"word": word, "token_id": tid})
+    return {"items": items, "total": len(word_map), "limit": limit, "offset": offset}
+
+
 @app.post("/v1/sot/bootstrap")
 async def sot_bootstrap(req: dict):
     """Bootstrap SOT from a corpus of texts.
@@ -1812,12 +1924,15 @@ async def sot_bootstrap(req: dict):
     teacher = req.get("teacher_model")
     if not texts:
         raise HTTPException(status_code=400, detail="texts required")
-    try:
+
+    async def _do_bootstrap():
         if teacher:
             memory.field.sot_bootstrap(texts, teacher_model=teacher)
         else:
-            # Warm-start without teacher
             sot.warm_start_from_corpus(texts)
+
+    try:
+        await _sot_bootstrap_breaker.call(_do_bootstrap)
         return {"status": "bootstrapped", "vocab_size": len(sot.token_embeddings)}
     except Exception as exc:
         logger.exception("SOT bootstrap failed")
