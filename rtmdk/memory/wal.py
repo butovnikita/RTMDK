@@ -45,7 +45,7 @@ class WAL:
                                       Any],
                         modality: str = "text",
                         embedding: Optional[List[float]] = None):
-        payload = {
+        payload: Dict[str, Any] = {
             "node_id": node_id,
             "content": content,
             "modality": modality}

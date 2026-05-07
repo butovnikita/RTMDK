@@ -21,7 +21,7 @@ class PredictiveCodingModel:
             self.state_dim,
             self.state_dim).astype(
             np.float32) * 0.01
-        self.b = np.zeros(self.state_dim, dtype=np.float32)
+        self.b: np.ndarray = np.zeros(self.state_dim, dtype=np.float32)
         self._complexity_weight = 0.01
 
     def predict(self, state: NDArray) -> NDArray:

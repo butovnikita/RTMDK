@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections import deque
-from typing import TYPE_CHECKING, Dict, List, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Tuple
 
 import numpy as np
 from scipy.spatial.distance import cdist
@@ -43,7 +43,7 @@ class TopologyHealer:
         positions = np.array([n.latent_pos for n in nodes.values()])
         dists = cdist(positions, positions)
         np.fill_diagonal(dists, np.inf)
-        return np.mean(dists[dists < np.inf]) < self.hyperconvergence_threshold
+        return bool(np.mean(dists[dists < np.inf]) < self.hyperconvergence_threshold)
 
     def detect_fragmentation(
             self, nodes: Dict[str, "MemoryNode"], radius: float = 2.0) -> float:
@@ -52,13 +52,13 @@ class TopologyHealer:
         positions = np.array([n.latent_pos for n in nodes.values()])
         dists = cdist(positions, positions)
         np.fill_diagonal(dists, np.inf)
-        isolated = np.sum(np.all(dists > radius, axis=1))
+        isolated: int = int(np.sum(np.all(dists > radius, axis=1)))
         return float(isolated / len(nodes))
 
     def compute_field_health(
             self, nodes: Dict[str, "MemoryNode"]) -> Tuple["FieldHealth", Dict]:
         from rtmdk.memory.config import FieldHealth
-        diagnostics = {}
+        diagnostics: Dict[str, Any] = {}
         dead = self.detect_dead_zones(nodes)
         diagnostics["dead_zones"] = len(dead)
         diagnostics["dead_zone_nodes"] = dead
@@ -74,7 +74,7 @@ class TopologyHealer:
             diagnostics["avg_pairwise_dist"] = float(np.mean(valid))
             diagnostics["std_pairwise_dist"] = float(np.std(valid))
             diagnostics["density_cv"] = float(
-                np.std(valid) / max(np.mean(valid), 1e-8))
+                np.std(valid) / float(max(np.mean(valid), 1e-8)))
         else:
             diagnostics["avg_pairwise_dist"] = 0.0
             diagnostics["density_cv"] = 0.0
@@ -94,7 +94,7 @@ class TopologyHealer:
                         nodes: Dict[str,
                                     "MemoryNode"],
                         dead_ids: List[str]) -> List[Dict]:
-        healed = []
+        healed: List[Dict[str, Any]] = []
         alive_ids = [nid for nid in nodes if nid not in dead_ids]
         if not alive_ids or not dead_ids:
             return healed
@@ -126,7 +126,7 @@ class TopologyHealer:
 
     def heal_hyperconvergence(
             self, nodes: Dict[str, "MemoryNode"]) -> List[Dict]:
-        healed = []
+        healed: List[Dict[str, Any]] = []
         if len(nodes) < 3:
             return healed
         positions = np.array([n.latent_pos for n in nodes.values()])
@@ -137,7 +137,7 @@ class TopologyHealer:
             norm = np.linalg.norm(direction)
             if norm < 1e-8:
                 direction = np.random.randn(len(centroid)).astype(np.float32)
-                norm = 1.0
+                norm: float = 1.0
             direction = direction / norm
             old_pos = node.latent_pos.copy()
             node.latent_pos = (
@@ -157,7 +157,7 @@ class TopologyHealer:
                            nodes: Dict[str,
                                        "MemoryNode"],
                            isolated_ids: List[str]) -> List[Dict]:
-        healed = []
+        healed: List[Dict[str, Any]] = []
         non_isolated = [nid for nid in nodes if nid not in isolated_ids]
         if not non_isolated or not isolated_ids:
             return healed

@@ -5,7 +5,7 @@ Exports RTMDK memory in readable formats.
 """
 
 import time
-from typing import Dict, Any
+from typing import Dict, Any, List
 from pathlib import Path
 
 
@@ -61,7 +61,7 @@ class MemoryExporter:
         ]
 
         # Group by tier
-        tiers = {}
+        tiers: Dict[str, List[Any]] = {}
         for node in nodes:
             tier = getattr(node, 'tier', 'unknown')
             if tier not in tiers:

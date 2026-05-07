@@ -98,7 +98,7 @@ class SSMDynamics:
     def _init_hippo_matrix(self, dim: int) -> np.ndarray:
         """Initialize HiPPO matrix for long-range memory (simplified LegS)."""
         n = dim
-        A = np.zeros((n, n), dtype=np.float32)
+        A: np.ndarray = np.zeros((n, n), dtype=np.float32)
         for i in range(n):
             for j in range(n):
                 if i > j:

@@ -171,7 +171,7 @@ class NeuralODEDynamics:
             return 1.0
         responses = np.array(self._response_history)
         std = np.std(responses)
-        return max(0.0, 1.0 - std)
+        return float(max(0.0, 1.0 - std))  # type: ignore[arg-type]
 
     def record_response(self, response: float):
         self._response_history.append(response)

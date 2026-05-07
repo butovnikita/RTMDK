@@ -10,7 +10,7 @@ import time
 import uuid
 import sqlite3
 from pathlib import Path
-from typing import Dict, List, Any, Callable
+from typing import Dict, List, Any, Callable, Optional
 from datetime import datetime, timezone
 from contextlib import contextmanager
 from collections import defaultdict
@@ -54,10 +54,12 @@ class AnalyticsStore:
     Thread-safe, auto-creating schema.
     """
 
-    def __init__(self, db_path: str = None):
+    def __init__(self, db_path: Optional[str] = None):
         if db_path is None:
-            db_path = Path.home() / ".rtmdk" / "analytics.db"
-        self.db_path = str(db_path)
+            _path = Path.home() / ".rtmdk" / "analytics.db"
+        else:
+            _path = Path(db_path)
+        self.db_path = str(_path)
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         self._init_schema()
@@ -134,7 +136,7 @@ class AnalyticsStore:
               since: float = None, limit: int = 1000) -> List[Dict]:
         """Query events with filters."""
         q = "SELECT * FROM events WHERE 1=1"
-        params = []
+        params: List[Any] = []
         if event_type:
             q += " AND event_type = ?"
             params.append(event_type)

@@ -139,7 +139,7 @@ if __name__ == "__main__":
         state = json.load(f)
     tok = SOTokenizer(latent_dim=state.get("latent_dim", 64))
     tok.load_state(state)
-    run_bootstrap(tok, model_path=sys.argv[1])
+    run_bootstrap(tok, texts=[], model_path=sys.argv[1])
     with open(sys.argv[2] + "_fasttext.json", "w", encoding="utf-8") as f:
         json.dump(tok.get_state(), f)
     print(f"Saved to {sys.argv[2]}_fasttext.json")

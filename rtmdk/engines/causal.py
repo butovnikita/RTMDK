@@ -268,7 +268,7 @@ class CausalInferenceEngine:
 
     def validate_consolidation(
             self, node_a: str, node_b: str) -> Dict[str, Any]:
-        result = {
+        result: Dict[str, Any] = {
             "safe": True,
             "reasons": [],
             "causal_conflicts": [],

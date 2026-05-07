@@ -63,7 +63,7 @@ class CircuitBreaker:
                 logger.debug(
                     f"[CircuitBreaker:{self.name}] OPEN — fast-fail ({self._failure_count} failures)"
                 )
-                return self.default
+                return self.default  # type: ignore[return-value]
 
         try:
             result = func(*args, **kwargs)
@@ -71,7 +71,7 @@ class CircuitBreaker:
             raise
         except self.exceptions as e:
             self._on_failure(e)
-            return self.default
+            return self.default  # type: ignore[return-value]
 
         self._on_success()
         return result

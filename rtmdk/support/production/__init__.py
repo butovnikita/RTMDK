@@ -144,7 +144,7 @@ class RAGASPlusEvaluator:
         if not causal_edges:
             return 0.5
         answer_lower = answer.lower()
-        consistent = 0
+        consistent = 0.0
         for cause, effect, strength in causal_edges:
             if cause.lower() in answer_lower and effect.lower() in answer_lower:
                 consistent += strength
@@ -167,18 +167,19 @@ class RAGASPlusEvaluator:
                 coherent += 1
         return coherent / len(contexts)
 
-    def get_trend(self) -> Dict[str, float]:
+    def get_trend(self) -> Dict[str, Any]:
         if len(self._eval_history) < 5:
             return {}
         recent = self._eval_history[-10:]
         older = self._eval_history[-20:-10] if len(
             self._eval_history) >= 20 else self._eval_history[:5]
         return {
-            "recent_overall": np.mean([e.overall_score for e in recent]),
-            "older_overall": np.mean([e.overall_score for e in older]),
-            "trend": "improving" if np.mean(
-                [e.overall_score for e in recent]) > np.mean(
-                [e.overall_score for e in older]) else "degrading",
+            "recent_overall": float(np.mean([e.overall_score for e in recent])),
+            "older_overall": float(np.mean([e.overall_score for e in older])),
+            "trend": "improving" if (
+                float(np.mean([e.overall_score for e in recent])) >
+                float(np.mean([e.overall_score for e in older]))
+            ) else "degrading",
         }
 
 

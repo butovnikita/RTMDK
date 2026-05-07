@@ -103,7 +103,8 @@ class TrustConsensusEngine:
                 return False
 
         # Accept update (weighted by reputation)
-        self.peer_embeddings.setdefault(peer_id, {})[node_id] = peer_embedding
+        if peer_embedding is not None:
+            self.peer_embeddings.setdefault(peer_id, {})[node_id] = peer_embedding
         self._stats["updates_accepted"] += 1
         return True
 
@@ -112,7 +113,7 @@ class TrustConsensusEngine:
 
         Returns aggregated embeddings weighted by peer reputation.
         """
-        all_node_ids = set()
+        all_node_ids: set[str] = set()
         for peer_embs in self.peer_embeddings.values():
             all_node_ids.update(peer_embs.keys())
 
@@ -136,7 +137,7 @@ class TrustConsensusEngine:
                     weighted_sum += weight * emb
                 total_weight += weight
 
-            if total_weight > 0:
+            if total_weight > 0 and weighted_sum is not None:
                 consensus[node_id] = weighted_sum / total_weight
 
         self._stats["consensus_rounds"] += 1

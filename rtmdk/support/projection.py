@@ -26,7 +26,7 @@ class IncPCAProjection:
         self.projection = np.random.randn(
             input_dim, latent_dim).astype(
             np.float32) * 0.1
-        self.mean = np.zeros(input_dim, dtype=np.float32)
+        self.mean: np.ndarray = np.zeros(input_dim, dtype=np.float32)
         self.buffer: List[NDArray] = []
         self.n_samples = 0
         self._try_sklearn()

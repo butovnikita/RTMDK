@@ -407,7 +407,7 @@ class SOTokenizer:
                     norm = np.linalg.norm(self.token_embeddings[token_id])
                     if norm > 0:
                         self.token_embeddings[token_id] /= norm
-                    total_delta += np.linalg.norm(delta_token)
+                    total_delta += float(np.linalg.norm(delta_token))
 
                 if epoch % 10 == 0:
                     logger.info(
@@ -455,8 +455,8 @@ class SOTokenizer:
         if not corpus_texts:
             return
         # Build byte co-occurrence statistics
-        cooc = defaultdict(float)
-        totals = defaultdict(float)
+        cooc: Dict[Tuple[int, int], float] = defaultdict(float)
+        totals: Dict[int, float] = defaultdict(float)
         for text in corpus_texts:
             bytes_list = list(text.encode("utf-8"))
             for b in bytes_list:
@@ -514,7 +514,7 @@ class SOTokenizer:
 
         text = text.lower()
         tokens = []
-        current = []
+        current: List[str] = []
 
         for ch in text:
             # CJK characters are individual semantic units regardless of

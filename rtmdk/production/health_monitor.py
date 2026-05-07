@@ -11,7 +11,7 @@ Features:
 
 import time
 import tracemalloc
-from typing import Dict, List, Any, Callable
+from typing import Dict, List, Any, Callable, Optional
 
 
 class HealthMonitor:
@@ -36,7 +36,7 @@ class HealthMonitor:
         self._alerts: List[Dict] = []
         self._last_check = 0
         self._latency_history: List[float] = []
-        self._last_health = None
+        self._last_health: Optional[Dict[str, Any]] = None
 
     def check_health(self) -> Dict[str, Any]:
         """Comprehensive health check.

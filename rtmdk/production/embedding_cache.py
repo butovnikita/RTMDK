@@ -73,15 +73,16 @@ class EmbeddingCache:
                 del self.memory_cache[key]
 
         # Check disk cache
-        emb = self._load_from_disk(key)
-        if emb is not None:
+        disk_emb = self._load_from_disk(key)
+        if disk_emb is not None:
             self._hits += 1
-            self._save_to_memory_cache(key, emb)
-            return emb
+            self._save_to_memory_cache(key, disk_emb)
+            return disk_emb
 
         # Compute via embedder
         self._misses += 1
         emb = embedder(text)
+        assert emb is not None
 
         # Save to caches
         self._save_to_memory_cache(key, emb)
@@ -93,9 +94,9 @@ class EmbeddingCache:
                              texts: List[str],
                              embedder) -> List[np.ndarray]:
         """Batch version — more efficient for multiple texts."""
-        results = []
-        uncached_texts = []
-        uncached_keys = []
+        results: List[Optional[np.ndarray]] = []
+        uncached_texts: List[str] = []
+        uncached_keys: List[str] = []
 
         # Check cache for each text
         for text in texts:
@@ -109,28 +110,30 @@ class EmbeddingCache:
                     results.append(emb)
                     continue
 
-            emb = self._load_from_disk(key)
-            if emb is not None:
+            disk_emb = self._load_from_disk(key)
+            if disk_emb is not None:
                 self._hits += 1
-                self._save_to_memory_cache(key, emb)
-                results.append(emb)
+                self._save_to_memory_cache(key, disk_emb)
+                results.append(disk_emb)
                 continue
 
             uncached_texts.append(text)
             uncached_keys.append(key)
-            results.append(None)  # Placeholder
+            results.append(None)
 
         # Compute uncached embeddings
         if uncached_texts:
             uncached_embs = [embedder(t) for t in uncached_texts]
             self._misses += len(uncached_texts)
 
-            for i, (key, emb) in enumerate(zip(uncached_keys, uncached_embs)):
-                results[results.index(None)] = emb
+            for key, emb in zip(uncached_keys, uncached_embs):
+                idx = results.index(None)
+                results[idx] = emb
                 self._save_to_memory_cache(key, emb)
                 self._save_to_disk(key, emb)
 
-        return results
+        assert all(r is not None for r in results)
+        return results  # type: ignore[return-value]
 
     def clear(self):
         """Clear all caches."""

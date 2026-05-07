@@ -192,12 +192,12 @@ def _sillytavern() -> RTMDKConfig:
 
 
 # Bind presets as class methods for backward compatibility
-RTMDKConfig.local = staticmethod(_local)
-RTMDKConfig.production = staticmethod(_production)
-RTMDKConfig.research = staticmethod(_research)
-RTMDKConfig.enterprise = staticmethod(_enterprise)
-RTMDKConfig.agent = staticmethod(_agent)
-RTMDKConfig.legal = staticmethod(_legal)
-RTMDKConfig.medical = staticmethod(_medical)
-RTMDKConfig.streaming = staticmethod(_streaming)
-RTMDKConfig.sillytavern = staticmethod(_sillytavern)
+RTMDKConfig.local = staticmethod(_local)  # type: ignore
+RTMDKConfig.production = staticmethod(_production)  # type: ignore
+RTMDKConfig.research = staticmethod(_research)  # type: ignore
+RTMDKConfig.enterprise = staticmethod(_enterprise)  # type: ignore
+RTMDKConfig.agent = staticmethod(_agent)  # type: ignore
+RTMDKConfig.legal = staticmethod(_legal)  # type: ignore
+RTMDKConfig.medical = staticmethod(_medical)  # type: ignore
+RTMDKConfig.streaming = staticmethod(_streaming)  # type: ignore
+RTMDKConfig.sillytavern = staticmethod(_sillytavern)  # type: ignore

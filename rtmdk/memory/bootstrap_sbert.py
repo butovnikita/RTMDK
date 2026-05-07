@@ -86,7 +86,7 @@ def run_bootstrap(
     n_samples = len(valid_texts)
     n_vocab = len(vocab)
 
-    X = np.zeros((n_samples, n_vocab), dtype=np.float32)
+    X: np.ndarray = np.zeros((n_samples, n_vocab), dtype=np.float32)
     for i, text in enumerate(valid_texts):
         tokens = tokenize(text)
         for t in tokens:

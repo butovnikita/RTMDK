@@ -121,7 +121,7 @@ class RoleDetector:
                     scores[role] += 1
         if not scores:
             return DEFAULT_ROLE
-        return max(scores, key=scores.get)
+        return max(scores, key=lambda k: scores[k])
 
 
 class RoleShardRouter:
@@ -211,7 +211,7 @@ class RoleShardRouter:
                 shard_scores[role] = 0.1
 
         # Sort by score descending
-        sorted_roles = sorted(shard_scores, key=shard_scores.get, reverse=True)
+        sorted_roles = sorted(shard_scores, key=lambda k: shard_scores[k], reverse=True)
         return sorted_roles[:top_n]
 
     def should_exchange(self, shard_a: str, shard_b: str,

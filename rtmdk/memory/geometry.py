@@ -22,10 +22,10 @@ def poincare_dist(u: NDArray, v: NDArray, ball_radius: float = 0.85) -> float:
     u_norm = np.linalg.norm(u)
     v_norm = np.linalg.norm(v)
     delta = u - v
-    sq_delta = np.sum(delta ** 2)
+    sq_delta: float = float(np.sum(delta ** 2))
     r_sq = ball_radius ** 2
     denom = ((r_sq - u_norm ** 2) * (r_sq - v_norm ** 2)) / max(r_sq, 1e-8)
-    arg = 1 + 2 * sq_delta / max(denom, 1e-8)
+    arg = 1 + 2 * sq_delta / float(max(denom, 1e-8))
     return float(ball_radius * np.arccosh(np.clip(arg, 1.0, None)))
 
 
@@ -38,7 +38,7 @@ def exp_map_poincare(
     tangent_norm = np.linalg.norm(tangent)
     if tangent_norm < 1e-8:
         return base.copy().astype(np.float32)
-    base_norm_sq = np.sum(base ** 2)
+    base_norm_sq: float = float(np.sum(base ** 2))
     lambda_base = 2.0 / (1.0 - base_norm_sq / (ball_radius ** 2))
     scaled_norm = lambda_base * tangent_norm / (2.0 * ball_radius)
     c = ball_radius * np.tanh(scaled_norm) / max(tangent_norm, 1e-8)
@@ -58,10 +58,10 @@ def log_map_poincare(
     diff_norm = np.linalg.norm(diff)
     if diff_norm < 1e-8:
         return np.zeros_like(point)
-    base_norm_sq = np.sum(base ** 2)
+    base_norm_sq: float = float(np.sum(base ** 2))
     lambda_base = 2.0 / (1.0 - base_norm_sq / (ball_radius ** 2))
     ratio = diff_norm / ball_radius
-    ratio = min(ratio, 1.0 - 1e-8)
+    ratio = min(ratio, 1.0 - 1e-8)  # type: ignore[assignment]
     factor = (2.0 * ball_radius * np.arctanh(ratio)) / \
         (lambda_base * diff_norm)
     tangent = diff * factor

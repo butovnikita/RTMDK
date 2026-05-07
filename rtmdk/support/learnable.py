@@ -106,7 +106,7 @@ class DifferentiableConsolidation:
             node2.phase), w1 * np.cos(node1.phase) + w2 * np.cos(node2.phase)) % (2 * np.pi)
         new_amp = min(1.0, w1 * node1.amplitude + w2 * node2.amplitude)
         new_sal = w1 * node1.salience + w2 * node2.salience
-        pos_loss = np.sum((new_latent - node1.latent_pos)**2) + \
+        pos_loss: float = np.sum((new_latent - node1.latent_pos)**2) + \
             np.sum((new_latent - node2.latent_pos)**2)
         phase_loss = min(abs(new_phase - node1.phase),
                          2 * np.pi - abs(new_phase - node1.phase)) + min(abs(new_phase - node2.phase),

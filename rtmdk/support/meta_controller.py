@@ -125,7 +125,7 @@ class MetaController:
             mean_dist = np.mean(valid_dists)
             std_dist = np.std(valid_dists)
             cv = std_dist / (mean_dist + 1e-8)
-            score += max(0, 1.0 - cv) * 0.4
+            score += float(max(0, 1.0 - cv)) * 0.4  # type: ignore[arg-type]
         phases = np.array([n.phase for n in field.nodes.values()])
         phase_order = np.abs(np.mean(np.exp(1j * phases)))
         score += phase_order * 0.3

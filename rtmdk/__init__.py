@@ -15,18 +15,18 @@ from rtmdk.memory.core import RTMDKMemory, RTMDKField
 
 # Bind preset methods to RTMDKConfig class
 from rtmdk.config import (
-    _local, _production, _research, _enterprise,
-    _agent, _legal, _medical, _streaming, _sillytavern,
+    _local, _production, _research, _enterprise,  # type: ignore[attr-defined]
+    _agent, _legal, _medical, _streaming, _sillytavern,  # type: ignore[attr-defined]
 )
-RTMDKConfig.local = staticmethod(_local)
-RTMDKConfig.production = staticmethod(_production)
-RTMDKConfig.research = staticmethod(_research)
-RTMDKConfig.enterprise = staticmethod(_enterprise)
-RTMDKConfig.agent = staticmethod(_agent)
-RTMDKConfig.legal = staticmethod(_legal)
-RTMDKConfig.medical = staticmethod(_medical)
-RTMDKConfig.streaming = staticmethod(_streaming)
-RTMDKConfig.sillytavern = staticmethod(_sillytavern)
+RTMDKConfig.local = staticmethod(_local)  # type: ignore
+RTMDKConfig.production = staticmethod(_production)  # type: ignore
+RTMDKConfig.research = staticmethod(_research)  # type: ignore
+RTMDKConfig.enterprise = staticmethod(_enterprise)  # type: ignore
+RTMDKConfig.agent = staticmethod(_agent)  # type: ignore
+RTMDKConfig.legal = staticmethod(_legal)  # type: ignore
+RTMDKConfig.medical = staticmethod(_medical)  # type: ignore
+RTMDKConfig.streaming = staticmethod(_streaming)  # type: ignore
+RTMDKConfig.sillytavern = staticmethod(_sillytavern)  # type: ignore
 
 
 def list_presets():
@@ -47,15 +47,15 @@ def create_rtmdk(preset: str = "local", embedder=None) -> RTMDKMemory:
         Configured RTMDKMemory instance
     """
     preset_methods = {
-        "local": RTMDKConfig.local,
-        "production": RTMDKConfig.production,
-        "research": RTMDKConfig.research,
-        "enterprise": RTMDKConfig.enterprise,
-        "agent": RTMDKConfig.agent,
-        "legal": RTMDKConfig.legal,
-        "medical": RTMDKConfig.medical,
-        "streaming": RTMDKConfig.streaming,
-        "sillytavern": RTMDKConfig.sillytavern,
+        "local": RTMDKConfig.local,  # type: ignore
+        "production": RTMDKConfig.production,  # type: ignore
+        "research": RTMDKConfig.research,  # type: ignore
+        "enterprise": RTMDKConfig.enterprise,  # type: ignore
+        "agent": RTMDKConfig.agent,  # type: ignore
+        "legal": RTMDKConfig.legal,  # type: ignore
+        "medical": RTMDKConfig.medical,  # type: ignore
+        "streaming": RTMDKConfig.streaming,  # type: ignore
+        "sillytavern": RTMDKConfig.sillytavern,  # type: ignore
     }
 
     if preset not in preset_methods:

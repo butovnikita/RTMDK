@@ -35,7 +35,7 @@ class MemoryAnalytics:
 
     def get_topic_distribution(self) -> Dict[str, int]:
         """Get distribution of nodes by topic/tier."""
-        distribution = defaultdict(int)
+        distribution: Dict[str, int] = defaultdict(int)
         for node in self.memory.field.nodes.values():
             tier = getattr(node, 'tier', 'unknown')
             distribution[tier] += 1

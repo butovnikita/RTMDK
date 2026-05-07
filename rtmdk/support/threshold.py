@@ -20,13 +20,10 @@ class AdaptiveThreshold:
     def record_tension(self, tension: float):
         self.window.append(tension)
         if len(self.window) >= 5:
-            self.current_threshold = max(
+            self.current_threshold = float(max(
                 0.01,
-                np.mean(
-                    self.window) +
-                self.sensitivity *
-                np.std(
-                    self.window))
+                np.mean(self.window) +
+                self.sensitivity * np.std(self.window)))  # type: ignore[arg-type]
 
     def get_threshold(self) -> float:
         return self.current_threshold

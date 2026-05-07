@@ -402,7 +402,7 @@ class NeuroSymbolicProver:
 
     def _find_contradictions(self) -> List[Dict]:
         """Find contradictory propositions."""
-        contradictions = []
+        contradictions: List[Dict[str, Any]] = []
 
         # Check for direct contradictions (A and NOT A)
         for fact, value in self.facts.items():

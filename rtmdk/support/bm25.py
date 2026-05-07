@@ -27,8 +27,8 @@ class BM25Index:
         self.doc_lengths[doc_id] = len(tokens)
         for token in set(tokens):
             self.doc_freq[token] = self.doc_freq.get(token, 0) + 1
-        self.avg_doc_length = np.mean(
-            list(self.doc_lengths.values())) if self.doc_lengths else 0.0
+        self.avg_doc_length = float(np.mean(
+            list(self.doc_lengths.values()))) if self.doc_lengths else 0.0
 
     def remove_document(self, doc_id: str):
         if doc_id in self.documents:
@@ -39,7 +39,7 @@ class BM25Index:
                     del self.doc_freq[token]
             self.doc_lengths.pop(doc_id, None)
             if self.doc_lengths:
-                self.avg_doc_length = np.mean(list(self.doc_lengths.values()))
+                self.avg_doc_length = float(np.mean(list(self.doc_lengths.values())))
 
     def search(self, query: str, top_k: int = 5) -> List[Tuple[str, float]]:
         if not self.documents:

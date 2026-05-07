@@ -57,7 +57,7 @@ class EntropyController:
         probs = scores / total
 
         # Shannon entropy
-        entropy = -np.sum(probs * np.log2(probs + 1e-10))
+        entropy: float = -np.sum(probs * np.log2(probs + 1e-10))
 
         # Normalize by max possible entropy (log2(N))
         max_entropy = np.log2(len(probs))
@@ -80,7 +80,7 @@ class EntropyController:
         if total < 1e-8:
             return 0.0
         probs = saliencies / total
-        entropy = -np.sum(probs * np.log2(probs + 1e-10))
+        entropy: float = -np.sum(probs * np.log2(probs + 1e-10))
         max_entropy = np.log2(len(probs))
         return float(entropy / max_entropy) if max_entropy > 0 else 0.0
 

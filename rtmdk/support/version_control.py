@@ -297,10 +297,12 @@ class VersionControl:
             return None
         states = self._node_states[node_id]
         # Find the latest state ≤ version_id
-        best_vid = None
+        best_vid: Optional[int] = None
         for vid in sorted(states.keys()):
             if vid <= version_id:
                 best_vid = vid
+        if best_vid is None:
+            return None
         return states.get(best_vid)
 
     @property

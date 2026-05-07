@@ -123,7 +123,7 @@ class BM25FallbackRetriever:
         if not query_tokens:
             return []
 
-        scores = defaultdict(float)
+        scores: Dict[str, float] = defaultdict(float)
         n = self._total_docs
 
         for token in query_tokens:

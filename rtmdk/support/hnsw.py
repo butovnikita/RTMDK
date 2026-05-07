@@ -59,7 +59,7 @@ class NaiveGraphIndex:
             return []
         start = list(self.positions.keys())[0]
         candidates = {start}
-        visited = set()
+        visited: set[str] = set()
         for _ in range(min(self.ef_construction, len(self.positions))):
             best = min(
                 (c for c in candidates - visited),

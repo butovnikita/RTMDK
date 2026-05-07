@@ -58,7 +58,7 @@ class LyapunovFunction:
             self._response_history.append(0.0)
             return
         probs = scores / total
-        entropy = -np.sum(probs * np.log2(probs + 1e-10))
+        entropy: float = -np.sum(probs * np.log2(probs + 1e-10))
         max_entropy = np.log2(len(probs))
         normalized = float(entropy / max_entropy) if max_entropy > 0 else 0.0
         self._response_history.append(normalized)
@@ -205,7 +205,7 @@ class SafetyCertifier:
         return abs(dV_dt) > self.lyapunov_threshold
 
     def get_stats(self) -> Dict:
-        summary = self.lyapunov.get_state_summary()
+        summary: Dict[str, Any] = dict(self.lyapunov.get_state_summary())
         summary.update({
             "mode": self.mode,
             "total_checks": self._total_checks,

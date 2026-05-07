@@ -58,7 +58,7 @@ class SmartPruner:
             "procedural": {"max_age_days": 730, "min_salience": 0.01},
         }
 
-        self._stats = {
+        self._stats: Dict[str, Any] = {
             "total_prunes": 0,
             "total_nodes_pruned": 0,
             "last_prune": None,
