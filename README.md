@@ -147,7 +147,8 @@ RTMDK v8.2.0 (30,000+ строк, 111+ файлов, 105+ API)
 │   ├── Track 20: gRPC Service
 │   ├── Track 21: Encryption at Rest
 │   ├── Track 22: OpenTelemetry Tracing
-│   └── Track 23: Load Tests + Docker Compose
+│   ├── Track 23: Load Tests + Docker Compose
+│   └── Track 24: SOT Out-of-the-Box (Self-Organizing Tokenizer)
 └── Integrations: OpenAI, Anthropic, LM Studio, SillyTavern, MCP, LangChain, LlamaIndex
 ```
 
