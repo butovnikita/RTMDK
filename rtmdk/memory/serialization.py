@@ -98,7 +98,7 @@ class FieldSerializer:
         # Build data dict
         data = {
             "config": cd,
-            "nodes": [n.to_dict() for n in field.nodes.values()],
+            "nodes": list(field.nodes.all_node_dicts()) if hasattr(field.nodes, "all_node_dicts") else [n.to_dict() for n in field.nodes.values()],
             "stats": field.stats,
         }
 
@@ -121,6 +121,8 @@ class FieldSerializer:
         if field.tda_monitor and hasattr(field.tda_monitor, 'history'):
             data["tda_history"] = field.tda_monitor.history
 
+        if field._tiered_store is not None:
+            data["tiered_store"] = field._tiered_store.save_state()
         return data
 
     @staticmethod
@@ -304,6 +306,8 @@ class FieldSerializer:
             node = MemoryNode.from_dict(nd)
             memory.field.nodes[node.id] = node
             memory.field.node_index.append(node.id)
+        if "tiered_store" in data and memory.field._tiered_store is not None:
+            memory.field._tiered_store.load_state(data["tiered_store"])
         logger.info(f"import_field: successfully loaded {len(memory.field.nodes)} nodes")
 
         # Reconcile stats

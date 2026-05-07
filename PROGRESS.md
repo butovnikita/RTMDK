@@ -1,4 +1,52 @@
 # RTMDK Production Hardening — Progress Log
+## ✅ 9. Track 2: Tiered Storage (Hot / Warm / Cold) — Shipped
+
+**Goal:** Support unlimited node count without proportional RAM growth.
+
+### Implementation
+
+- **`rtmdk/memory/tiered_storage.py`**: `TieredNodeStore` class
+  - **Hot tier**: full `MemoryNode` objects in RAM (`OrderedDict` for LRU-friendly eviction)
+  - **Warm tier**: dict serialization in RAM (~3–5× smaller footprint, no numpy overhead)
+  - **Cold tier**: `msgpack+zlib` batches on disk, loaded lazily on access
+  - LFU auto-promotion/demotion: least-frequently-used nodes demoted first
+  - Thread-safe (`RLock`) for concurrent query / add / delete
+  - Drop-in `MutableMapping` replacement for `self.nodes`
+
+### Integration
+
+- `RTMDKField.__init__`: instantiates `TieredNodeStore` when `tiered_storage_enabled=True`
+- `_build_node_cache`: builds vectorized cache from hot + warm nodes only
+- `query()`:
+  1. Vectorized scan on hot+warm cache (`_query_vectorized`)
+  2. Fallback to warm nodes via `_batch_resonance` if results < top_k
+  3. Sampled cold fallback (random sample, batch load, resonance) if still insufficient
+- `export_field` / `import_field`: serialize/deserialize `tiered_store` metadata + all node dicts
+
+### Config
+
+```python
+config = RTMDKConfig(
+    tiered_storage_enabled=True,
+    tiered_storage_path="./rtmdk_cold_storage",
+    tiered_hot_pct=0.01,
+    tiered_warm_pct=0.09,
+    max_nodes=100_000,
+)
+```
+
+### Test Results
+
+- 8 new tests in `tests/test_tiered_storage.py` — all passing
+- Full regression suite: **340 passed, 2 skipped** (no regressions)
+
+### Notes
+
+- 1M-node benchmark deferred to v8.3 stress-test suite
+- Warm tier uses dict form (not `numpy.memmap` as originally spec'd) — simpler, portable, still ~3–5× RAM savings
+- Cold tier batch size is dynamic (up to `warm_limit` nodes per batch)
+
+---
 
 ## Sprint: Accuracy Gap + Async Consolidation + Stability + Docs Cleanup
 

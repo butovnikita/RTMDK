@@ -622,6 +622,16 @@ class RTMDKField:
         self.nodes: Dict[str, MemoryNode] = {}
         self.node_index: List[str] = []
 
+        # Track 2: Tiered Storage (Hot / Warm / Cold)
+        self._tiered_store: Optional[Any] = None
+        if config.tiered_storage_enabled:
+            from rtmdk.memory.tiered_storage import TieredNodeStore
+            hot_limit = max(1, int(config.max_nodes * config.tiered_hot_pct)) if config.max_nodes else 100
+            warm_limit = max(1, int(config.max_nodes * config.tiered_warm_pct)) if config.max_nodes else 1000
+            cold_dir = config.tiered_storage_path or "./rtmdk_cold_storage"
+            self._tiered_store = TieredNodeStore(hot_limit, warm_limit, cold_dir, config.latent_dim)
+            self.nodes = self._tiered_store  # type: ignore[assignment]
+
         # WAL for durability
         from rtmdk.memory.wal import WAL
         self.wal = WAL(wal_path, enabled=wal_path is not None)
@@ -1257,7 +1267,10 @@ class RTMDKField:
         """Build numpy arrays cache from nodes — called once when cache is dirty."""
         # Thread-safety: compact node_index to exclude nodes that may have been deleted
         # by async consolidation while query() was running.
-        valid_entries = [(nid, self.nodes[nid]) for nid in self.node_index if nid in self.nodes]
+        if self._tiered_store is not None:
+            valid_entries = list(self._tiered_store.cacheable_nodes())
+        else:
+            valid_entries = [(nid, self.nodes[nid]) for nid in self.node_index if nid in self.nodes]
         n = len(valid_entries)
         if n == 0:
             self._cached_positions = np.empty((0, self.cfg.latent_dim), dtype=self._quant.dtype)
@@ -1350,7 +1363,7 @@ class RTMDKField:
             return []
 
         # Build cache if dirty (single pass through nodes)
-        if self._cache_dirty:
+        if self._cache_dirty or self._cached_positions is None:
             self._build_node_cache()
 
         # P1: Session pre-filtering — build mask once, apply to all arrays
@@ -1569,6 +1582,47 @@ class RTMDKField:
         else:
             # Always use vectorized batch resonance (removes Python-loop overhead)
             results = self._query_vectorized(query_latent, phase, top_k, modality, session_id, t0)
+
+        # Track 2: Fallback to warm/cold tiers if tiered storage is enabled
+        if self._tiered_store is not None and len(results) < top_k:
+            needed = top_k - len(results)
+            # Warm candidates
+            warm_ids = self._tiered_store.warm_ids()
+            if warm_ids:
+                warm_nodes = self._tiered_store.get_batch(warm_ids)
+                if warm_nodes:
+                    scores = self._batch_resonance(
+                        query_latent[np.newaxis, :],
+                        np.array([phase], dtype=np.float32),
+                        [n.id for n in warm_nodes],
+                    )[0]
+                    for idx, node in enumerate(warm_nodes):
+                        resp = float(scores[idx]) * (1.3 if session_id and node.content.get("session") == session_id else 1.0)
+                        if resp >= self.cfg.min_response:
+                            results.append((node.id, resp, node))
+                            node.last_resonated = time.time()
+                    results.sort(key=lambda x: x[1], reverse=True)
+            # Cold candidates (sample to avoid loading everything)
+            if len(results) < top_k:
+                cold_ids = self._tiered_store.cold_ids()
+                if cold_ids:
+                    import random
+                    sample_size = min(len(cold_ids), needed * 5)
+                    sample_ids = random.sample(cold_ids, sample_size)
+                    cold_nodes = self._tiered_store.get_batch(sample_ids)
+                    if cold_nodes:
+                        scores = self._batch_resonance(
+                            query_latent[np.newaxis, :],
+                            np.array([phase], dtype=np.float32),
+                            [n.id for n in cold_nodes],
+                        )[0]
+                        for idx, node in enumerate(cold_nodes):
+                            resp = float(scores[idx]) * (1.3 if session_id and node.content.get("session") == session_id else 1.0)
+                            if resp >= self.cfg.min_response:
+                                results.append((node.id, resp, node))
+                                node.last_resonated = time.time()
+                        results.sort(key=lambda x: x[1], reverse=True)
+                        results = results[:top_k]
 
         # Fallback loop path (should rarely reach here)
         if 'results' not in locals():
@@ -3987,7 +4041,8 @@ class RTMDKField:
         cd["eval_mode"] = _enum_value(cd.get("eval_mode"), "production")
         if "memory_tiers" in cd and isinstance(cd["memory_tiers"], set):
             cd["memory_tiers"] = list(cd["memory_tiers"])
-        data = {"_schema_version": "1.0", "config": cd, "nodes": [n.to_dict() for n in self.nodes.values()], "stats": self.stats}
+        nodes_data = list(self.nodes.all_node_dicts()) if hasattr(self.nodes, "all_node_dicts") else [n.to_dict() for n in self.nodes.values()]
+        data = {"_schema_version": "1.0", "config": cd, "nodes": nodes_data, "stats": self.stats}
         if self.projection_learner:
             data["projection_state"] = self.projection_learner.get_state()
         else:

@@ -60,3 +60,6 @@ rtmdk_github/
 *.model
 *.model.vectors.npy
 
+
+# Track 2: Tiered Storage cold batches
+rtmdk_cold_storage/

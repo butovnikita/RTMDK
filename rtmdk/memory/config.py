@@ -301,6 +301,10 @@ _FIELD_GROUPS: Dict[str, str] = {
     "symbolic_min_self_sup": "MemorySystemConfig",
     "symbolic_overlay": "MemorySystemConfig",
     "system_prompt": "ProductionConfig",
+    "tiered_storage_enabled": "MemorySystemConfig",
+    "tiered_storage_path": "MemorySystemConfig",
+    "tiered_hot_pct": "MemorySystemConfig",
+    "tiered_warm_pct": "MemorySystemConfig",
     "tda_check_freq": "RetrievalConfig",
     "tda_monitoring": "RetrievalConfig",
     "tension_spike_threshold": "ProductionConfig",
@@ -544,6 +548,10 @@ class MemorySystemConfig:
         cpen_parent_ode: bool = False
         cpen_child_ode: bool = False
         hebbian_learning_rate: float = 0.01
+        tiered_storage_enabled: bool = False
+        tiered_storage_path: Optional[str] = None
+        tiered_hot_pct: float = 0.01
+        tiered_warm_pct: float = 0.09
 
 
 @dataclass
