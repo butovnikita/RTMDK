@@ -39,6 +39,8 @@ from rtmdk.production.analytics_dashboard import AnalyticsDashboard
 from rtmdk.production.api_key_manager import APIKeyManager
 from rtmdk.production.tenant_rate_limiter import TenantRateLimiter
 from rtmdk.production.webhooks import WebhookManager
+from rtmdk.production.retention import RetentionManager, RetentionPolicy
+from rtmdk.production.audit_log import AuditLog
 from rtmdk.support.circuit_breaker import AsyncCircuitBreaker
 
 # Prometheus metrics
@@ -119,6 +121,22 @@ ALLOWED_ORIGINS = os.getenv("RTMDK_ALLOWED_ORIGINS", "*").split(",")
 
 # Shared async HTTP client
 http_client = httpx.AsyncClient()
+
+# Graceful shutdown state
+_active_requests = 0
+_shutdown_event = asyncio.Event()
+
+
+async def _drain_active_requests(timeout: float = 30.0):
+    """Wait for active requests to complete before shutdown."""
+    t0 = time.time()
+    while _active_requests > 0 and (time.time() - t0) < timeout:
+        logger.info(f"Draining {_active_requests} active requests...")
+        await asyncio.sleep(0.5)
+    if _active_requests > 0:
+        logger.warning(f"Shutdown with {_active_requests} requests still active")
+    else:
+        logger.info("All requests drained gracefully")
 
 # ============================================================================
 # SIGNAL / LIFECYCLE HANDLERS
@@ -212,7 +230,7 @@ async def _auto_save_loop():
 async def lifespan(app: FastAPI):
     global memory, lm_studio_available
     global query_cache, embedding_cache, context_optimizer, health_monitor
-    global analytics_dashboard, api_key_manager, tenant_rate_limiter, webhook_manager
+    global analytics_dashboard, api_key_manager, tenant_rate_limiter, webhook_manager, audit_log, retention_manager
     logger.info("Starting RTMDK Production API v8.2.0")
     logger.info(f"Memory file: {MEMORY_FILE}")
     logger.info(f"LM Studio URL: {LM_STUDIO_URL}")
@@ -242,6 +260,18 @@ async def lifespan(app: FastAPI):
     api_key_manager = APIKeyManager()
     tenant_rate_limiter = TenantRateLimiter(api_key_manager=api_key_manager)
     webhook_manager = WebhookManager()
+    audit_log = AuditLog()
+
+    # Retention manager
+    retention_manager = RetentionManager(memory.field)
+    retention_manager.set_policy(
+        RetentionPolicy(
+            max_age_seconds=float(os.getenv("RTMDK_RETENTION_MAX_AGE_DAYS", "0")) * 86400 or None,
+            max_nodes=int(os.getenv("RTMDK_RETENTION_MAX_NODES", "0")) or None,
+        )
+    )
+    retention_manager.start()
+
     asyncio.create_task(_health_check_loop())
     asyncio.create_task(_auto_save_loop())
 
@@ -249,11 +279,17 @@ async def lifespan(app: FastAPI):
     if memory.field is not None:
         logger.info(f"Memory nodes: {len(memory.field.nodes)}")
     logger.info(
-        "Production modules: QueryCache, EmbeddingCache, ContextOptimizer, HealthMonitor enabled")
+        "Production modules: QueryCache, EmbeddingCache, ContextOptimizer, HealthMonitor, AuditLog enabled")
 
     yield
 
     logger.info("RTMDK server shutting down...")
+    _shutdown_event.set()
+    await _drain_active_requests(timeout=30.0)
+    if retention_manager is not None:
+        retention_manager.stop()
+    if audit_log is not None:
+        audit_log.close()
     if memory:
         # Gracefully stop background workers
         field = memory.field
@@ -292,6 +328,45 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ============================================================================
+# REQUEST COUNTER MIDDLEWARE (for graceful shutdown draining)
+# ============================================================================
+
+
+@app.middleware("http")
+async def request_counter_middleware(request: Request, call_next):
+    """Count active requests for graceful shutdown."""
+    global _active_requests
+    if _shutdown_event.is_set():
+        return JSONResponse(
+            status_code=503,
+            content={"error": "Server is shutting down"})
+    _active_requests += 1
+    try:
+        response = await call_next(request)
+        return response
+    finally:
+        _active_requests -= 1
+
+
+# ============================================================================
+# REQUEST TIMEOUT MIDDLEWARE
+# ============================================================================
+
+
+@app.middleware("http")
+async def request_timeout_middleware(request: Request, call_next):
+    """Enforce per-request timeout."""
+    timeout = float(os.getenv("RTMDK_REQUEST_TIMEOUT", "60"))
+    try:
+        return await asyncio.wait_for(call_next(request), timeout=timeout)
+    except asyncio.TimeoutError:
+        logger.warning("Request timeout: %s %s", request.method, request.url.path)
+        return JSONResponse(
+            status_code=504,
+            content={"error": "Request timeout"})
 
 
 # ============================================================================
@@ -750,6 +825,8 @@ analytics_dashboard: Optional[Any] = None
 api_key_manager: Optional[APIKeyManager] = None
 tenant_rate_limiter: Optional[TenantRateLimiter] = None
 webhook_manager: Optional[WebhookManager] = None
+audit_log: Optional[AuditLog] = None
+retention_manager: Optional[RetentionManager] = None
 
 
 # ============================================================================
@@ -1166,6 +1243,12 @@ async def create_node(req: CreateNodeRequest):
             content=content_dict,
             node_id=req.node_id,
         )
+        if audit_log is not None:
+            audit_log.record(
+                action="create_node",
+                resource=nid,
+                details={"content_preview": req.content[:100]},
+            )
         return {"id": nid, "status": "created"}
     except Exception as exc:
         logger.warning("Create node failed: %s", exc)
@@ -1210,6 +1293,11 @@ async def update_node(node_id: str, req: UpdateNodeRequest):
         if req.metadata is not None:
             if isinstance(node.content, dict):
                 node.content.update(req.metadata)
+        if audit_log is not None:
+            audit_log.record(
+                action="update_node",
+                resource=node_id,
+            )
         return {"id": node_id, "status": "updated"}
     except Exception as exc:
         logger.warning("Update node failed: %s", exc)
@@ -1227,6 +1315,11 @@ async def delete_node(node_id: str):
         raise HTTPException(status_code=404, detail="Node not found")
     try:
         memory.field.delete_nodes([node_id])
+        if audit_log is not None:
+            audit_log.record(
+                action="delete_node",
+                resource=node_id,
+            )
         return {"id": node_id, "status": "deleted"}
     except Exception as exc:
         logger.warning("Delete node failed: %s", exc)
@@ -1373,6 +1466,81 @@ async def health():
     return base
 
 
+@app.get("/health/deep")
+async def health_deep():
+    """Deep health check with integrity probes."""
+    checks = {}
+    overall = "ok"
+
+    # Memory field check
+    if memory and memory.field is not None:
+        field = memory.field
+        checks["memory_field"] = {
+            "nodes": len(field.nodes),
+            "status": "ok",
+        }
+        # HNSW integrity check
+        hnsw = getattr(field, "hnsw_index", None)
+        if hnsw is not None:
+            try:
+                hnsw_size = getattr(hnsw, "get_current_count", lambda: -1)()
+                checks["hnsw"] = {"status": "ok", "indexed_nodes": hnsw_size}
+            except Exception as exc:
+                checks["hnsw"] = {"status": "error", "error": str(exc)}
+                overall = "degraded"
+        # Embedding dimension consistency
+        try:
+            expected_dim = memory.config.latent_dim
+            sample_nodes = list(field.nodes.values())[:5]
+            dim_ok = all(
+                getattr(n, "latent_pos", None) is not None and len(n.latent_pos) == expected_dim
+                for n in sample_nodes
+            )
+            checks["embedding_dims"] = {
+                "status": "ok" if dim_ok else "error",
+                "expected": expected_dim,
+            }
+            if not dim_ok:
+                overall = "degraded"
+        except Exception as exc:
+            checks["embedding_dims"] = {"status": "error", "error": str(exc)}
+            overall = "degraded"
+    else:
+        checks["memory_field"] = {"status": "error", "error": "Memory not initialized"}
+        overall = "error"
+
+    # WAL backlog check
+    wal = getattr(memory.field if memory else None, "wal", None)
+    if wal is not None:
+        try:
+            backlog = len(wal._buffer) if hasattr(wal, "_buffer") else 0
+            checks["wal"] = {"status": "ok", "backlog": backlog}
+        except Exception as exc:
+            checks["wal"] = {"status": "error", "error": str(exc)}
+    else:
+        checks["wal"] = {"status": "ok", "backlog": 0}
+
+    # Async index builder check
+    aib = getattr(memory.field if memory else None, "async_index_builder", None)
+    if aib is not None:
+        try:
+            pending = len(aib._pending) if hasattr(aib, "_pending") else 0
+            checks["async_index"] = {"status": "ok", "pending": pending}
+        except Exception as exc:
+            checks["async_index"] = {"status": "error", "error": str(exc)}
+    else:
+        checks["async_index"] = {"status": "ok", "pending": 0}
+
+    # Active requests check
+    checks["active_requests"] = {"count": _active_requests}
+
+    return {
+        "status": overall,
+        "version": "8.2.0",
+        "checks": checks,
+    }
+
+
 @app.get("/metrics")
 async def metrics():
     """Prometheus-compatible metrics endpoint."""
@@ -1474,6 +1642,40 @@ async def analytics_track(req: AnalyticsTrackRequest):
     except Exception as exc:
         logger.warning("Analytics track failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ============================================================================
+# AUDIT LOG ENDPOINTS
+# ============================================================================
+
+
+@app.get("/v1/admin/audit-log")
+async def audit_log_query(
+    request: Request,
+    actor: Optional[str] = Query(None),
+    action: Optional[str] = Query(None),
+    since: Optional[float] = Query(None),
+    limit: int = Query(100, ge=1, le=1000),
+):
+    """Query audit log entries (admin only)."""
+    _require_admin(request)
+    if audit_log is None:
+        raise HTTPException(status_code=503, detail="Audit log not available")
+    try:
+        entries = audit_log.query(actor=actor, action=action, since=since, limit=limit)
+        return {"entries": entries, "count": len(entries)}
+    except Exception as exc:
+        logger.warning("Audit log query failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/v1/admin/retention")
+async def retention_stats(request: Request):
+    """Get retention manager statistics (admin only)."""
+    _require_admin(request)
+    if retention_manager is None:
+        raise HTTPException(status_code=503, detail="Retention manager not available")
+    return retention_manager.stats()
 
 
 # ============================================================================

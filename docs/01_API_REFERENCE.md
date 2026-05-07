@@ -4,7 +4,7 @@
 
 ---
 
-## Все API Endpoints (30+)
+## Все API Endpoints (32+)
 
 | Метод | Путь | Описание |
 |-------|------|----------|
@@ -53,6 +53,8 @@
 | POST | `/v1/admin/api-keys/revoke` | Отозвать ключ |
 | DELETE | `/v1/admin/api-keys/{hash}` | Удалить ключ |
 | GET | `/v1/admin/tenants` | Список тенантов |
+| GET | `/v1/admin/audit-log` | Журнал аудита (admin) |
+| GET | `/v1/admin/retention` | Статистика retention (admin) |
 | POST | `/v1/webhooks` | Подписаться на webhook |
 | DELETE | `/v1/webhooks/{id}` | Отписаться |
 | GET | `/v1/webhooks` | Список подписок |
@@ -1095,3 +1097,67 @@ streamlit run streamlit_app.py
 | `6f7b781` | Sync rtmdk/ модулей с монолитом | 3 | +54 |
 
 *Документация актуальна для коммита `6f7b781`.*
+
+---
+
+## 17. Audit Log
+
+### GET /v1/admin/audit-log
+
+Query audit log entries (admin only).
+
+**Query parameters:**
+- `actor` (optional): Filter by actor identifier
+- `action` (optional): Filter by action type (e.g., `create_node`, `update_node`, `delete_node`)
+- `since` (optional): Unix timestamp — only entries after this time
+- `limit` (default 100, max 1000): Maximum number of entries to return
+
+**Headers:**
+- `X-API-Key: <admin_key>`
+
+**Response:**
+```json
+{
+  "entries": [
+    {
+      "timestamp": 1715078400.123,
+      "action": "create_node",
+      "actor": "tenant_1",
+      "resource": "node_abc123",
+      "details": {"content_preview": "Hello world"}
+    }
+  ],
+  "count": 1
+}
+```
+
+---
+
+## 18. Data Retention
+
+### GET /v1/admin/retention
+
+Get retention manager statistics (admin only).
+
+**Headers:**
+- `X-API-Key: <admin_key>`
+
+**Response:**
+```json
+{
+  "pruned_total": 42,
+  "policy": {
+    "enabled": true,
+    "max_age_seconds": 2592000,
+    "max_nodes": null
+  }
+}
+```
+
+**Environment variables:**
+- `RTMDK_RETENTION_MAX_AGE_DAYS` — automatic pruning of nodes older than N days (0 = disabled)
+- `RTMDK_RETENTION_MAX_NODES` — keep only N most recently accessed nodes (0 = disabled)
+
+---
+
+*Updated: 2026-05-07 — Track 17: Tier 1 Production Readiness*

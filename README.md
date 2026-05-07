@@ -140,7 +140,8 @@ RTMDK v8.2.0 (30,000+ строк, 111+ файлов, 105+ API)
 │   ├── Track 13: Structured JSON Request Logging
 │   ├── Track 14: Python Client SDK
 │   ├── Track 15: Webhook Subscriptions
-│   └── Track 16: Batch Ingestion + Import/Export REST
+│   ├── Track 16: Batch Ingestion + Import/Export REST
+│   └── Track 17: Tier 1 Production Readiness (Health, Audit Log, Retention)
 └── Integrations: OpenAI, Anthropic, LM Studio, SillyTavern, MCP, LangChain, LlamaIndex
 ```
 
