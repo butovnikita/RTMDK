@@ -20,7 +20,7 @@ class QueryCache:
         self._stats = {"hits": 0, "misses": 0, "evictions": 0}
 
     def _hash_query(self, query: str) -> str:
-        return hashlib.md5(query.encode()).hexdigest()
+        return hashlib.md5(query.encode(), usedforsecurity=False).hexdigest()
 
     def get(self, query: str) -> Optional[Any]:
         key = self._hash_query(query)

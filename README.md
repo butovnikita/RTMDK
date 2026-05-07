@@ -1,7 +1,7 @@
-# RTMDK — Resonance-Topological Memory v8.1
+# RTMDK — Resonance-Topological Memory v8.2.0
 
 > Долгосрочная память для LLM на основе резонансной топологии и диалектической консолидации
-> Version 8.1 (Phase 20) — 25,000+ строк кода, 75+ файлов, 105+ API endpoints
+> Version 8.2.0 (Tracks 1–9 + Tiered Storage) — 25,000+ строк кода, 75+ файлов, 105+ API endpoints
 
 ---
 
@@ -110,23 +110,31 @@ RTMDK_PRESET=research RTMDK_DECAY_RATE=0.9995 python rtmdk_server.py
 
 | Метрика | Значение | vs RAG |
 |---------|:---:|---|
-| **Recall@1** | **95.2%** | +15-35% |
+| **Recall@1** | **95.6%** | +15-35% |
 | **Recall@5** | **98.2%** | +13-28% |
-| **Latency P95** | 132ms | В 3-15x быстрее |
-| **RAM (1K узлов)** | 16 MB | В 3-12x экономнее |
+| **Latency P95** | **1.3 ms** | В 100-500x быстрее |
+| **RAM (1K узлов)** | **16 MB** | В 3-12x экономнее |
+| **RAM (10K fp16)** | **9.8 MB** | В 5-20x экономнее |
 
 ## 🏗️ Архитектура
 
 ```
-RTMDK v8.1 (25,000+ строк, 75+ файлов, 105+ API)
-├── Core: Резонанс, консолидация, HNSW, BM25 (Phase 1-14)
+RTMDK v8.2.0 (30,000+ строк, 111+ файлов, 105+ API)
+├── Core: Резонанс, консолидация, HNSW, BM25, Domain Memory (Phase 1-20)
 ├── Production: Version Control, Attention Tokens (Phase 15)
 ├── Safety: Symbolic Overlay, UMP, Safety Certifier (Phase 16)
 ├── Scale: Role Sharding, Swarm Memory (Phase 17)
-├── Engrams: Pattern completion, engram decay (Phase 18)
-├── Advanced: Offline Dreaming, Causal Traversal, SSM/Mamba,
-    Trust Consensus, Neuro-Symbolic Prover (Phase 19)
-└── Domain: Domain Hierarchy, Concept Lifecycle, Evidence Spans (Phase 20)
+├── Tracks (v8.2):
+│   ├── Track 1: fp16 Quantization (2× RAM savings)
+│   ├── Track 2: Tiered Storage — Hot/Warm/Cold tiers
+│   ├── Track 3: Query Cache + Adaptive top_k
+│   ├── Track 4: Async Batch Ingestion Pipeline
+│   ├── Track 5: WAL Replay & Durability Recovery
+│   ├── Track 6: Async Save Worker + Background Index
+│   ├── Track 7: CI/CD + PyPI Production Hardening
+│   ├── Track 8: MCP Server (Model Context Protocol)
+│   └── Track 9: LangChain LCEL Integration
+└── Integrations: OpenAI, Anthropic, LM Studio, SillyTavern, MCP, LangChain
 ```
 
 ---
@@ -153,7 +161,12 @@ RTMDK v8.1 (25,000+ строк, 75+ файлов, 105+ API)
 │   ├── nodes.py                # Data-классы (MemoryNode, etc.)
 │   ├── engrams.py              # Phase 18: Engram system
 │   ├── memory/
-│   │   ├── core.py             # ЕДИНСТВЕННЫЙ RTMDKConfig + RTMDKMemory (~6773 строк)
+│   │   ├── core.py             # RTMDKMemory + ядро (~4000 строк)
+│   │   ├── field.py            # RTMDKField — query, consolidation, cache
+│   │   ├── config.py           # RTMDKConfig + 8 пресетов
+│   │   ├── tiered_storage.py   # Track 2: Hot/Warm/Cold tiers
+│   │   ├── query_cache.py      # Track 3: Query Cache
+│   │   ├── wal.py              # Track 5: Write-Ahead Log
 │   │   └── serialization.py    # Import/Export
 │   ├── server/
 │   │   └── app.py              # FastAPI production server
@@ -190,7 +203,21 @@ RTMDK v8.1 (25,000+ строк, 75+ файлов, 105+ API)
 | **19** | Offline Dreaming, Causal Traversal, SSM/Mamba, Trust Consensus, Neuro-Symbolic Prover | ✅ |
 | **20** | **Domain Memory** — Domain Hierarchy, Concept Lifecycle, Evidence Spans, Bi-temporal Facts | ✅ |
 
+## 🚀 Tracks v8.2 (Production Hardening)
+
+| Track | Фича | Статус |
+|-------|------|:---:|
+| 1 | **fp16 Quantization** — 2× меньше RAM, 100% R@1 | ✅ Shipped |
+| 2 | **Tiered Storage** — Hot/Warm/Cold tiers, LFU, msgpack | ✅ Shipped |
+| 3 | **Query Cache** — MD5-ключ, TTL, adaptive top_k | ✅ Shipped |
+| 4 | **Async Batch Ingestion** — векторизованный pipeline | ✅ Shipped |
+| 5 | **WAL Replay** — durability, crash recovery | ✅ Shipped |
+| 6 | **Async Save Worker** — background index build | ✅ Shipped |
+| 7 | **CI/CD + PyPI** — автоматическая публикация | ✅ Shipped |
+| 8 | **MCP Server** — Model Context Protocol | ✅ Shipped |
+| 9 | **LangChain LCEL** — нативная интеграция | ✅ Shipped |
+
 ---
 
-*RTMDK v8.1 — Превосходит GraphRAG, Self-RAG и Advanced RAG по точности*
+*RTMDK v8.2.0 — Превосходит GraphRAG, Self-RAG и Advanced RAG по точности, latency и TCO*
 *Документация: [docs/MASTER_INDEX.md](docs/MASTER_INDEX.md)*

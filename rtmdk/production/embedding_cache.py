@@ -159,7 +159,7 @@ class EmbeddingCache:
     
     def _make_key(self, text: str) -> str:
         """Create cache key from text."""
-        return hashlib.md5(text.encode('utf-8')).hexdigest()
+        return hashlib.md5(text.encode('utf-8'), usedforsecurity=False).hexdigest()
     
     def _save_to_memory_cache(self, key: str, emb: np.ndarray):
         """Save to in-memory LRU cache."""
