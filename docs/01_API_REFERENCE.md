@@ -13,6 +13,8 @@
 | POST | `/v1/chat/completions` | Чат с памятью (OpenAI-compatible) |
 | POST | `/v1/embeddings` | Эмбеддинги |
 | POST | `/v1/feedback` | Feedback Loop |
+| POST | `/graphql` | GraphQL API (Strawberry) |
+| WS | `/ws/memory` | WebSocket streaming для real-time query |
 | POST | `/v1/session/save` | Сохранить сессию |
 | POST | `/v1/session/load` | Загрузить сессию |
 | GET | `/v1/session/list` | Список сессий |
@@ -942,6 +944,40 @@ docker-compose up -d
 | POST | `/v1/memory/clear` | Очистить память |
 | GET | `/v1/memory/causal` | Каузальная сводка |
 | GET | `/v1/memory/contradictions` | Противоречия |
+
+### GraphQL API
+
+Endpoint: `POST /graphql`
+
+| Операция | Пример |
+|----------|--------|
+| Query health | `{ health { status version memoryNodes } }` |
+| Query node | `{ node(id: "n0") { id content salience phase amplitude } }` |
+| Query nodes | `{ nodes(limit: 10, offset: 0) { id content salience } }` |
+| Create node | `mutation { createNode(content: "hello", salience: 0.8) { id content } }` |
+| Delete node | `mutation { deleteNode(id: "n0") }` |
+
+### WebSocket Streaming
+
+Endpoint: `WS /ws/memory`
+
+```json
+// Query
+{"action": "query", "query": "hello", "top_k": 5}
+// → {"type": "query_results", "results": [...]}
+
+// Ping
+{"action": "ping"}
+// → {"type": "pong"}
+```
+
+### SOT Endpoints
+
+| Метод | Путь | Описание |
+|-------|------|----------|
+| GET | `/v1/sot/status` | Статус SOT: vocab_size, max_vocab, merges_count |
+| POST | `/v1/sot/bootstrap` | Bootstrap из корпуса: `{"texts": [...], "teacher_model": "..."}` |
+| GET | `/v1/sot/vocab` | Словарь SOT с пагинацией: `?limit=100&offset=0&search=hello` |
 
 ---
 

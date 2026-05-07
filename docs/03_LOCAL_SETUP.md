@@ -126,6 +126,37 @@ curl http://localhost:8080/dashboard  # Веб-UI
 
 ---
 
+## React Admin Panel
+
+Визуальный интерфейс управления памятью.
+
+### Запуск
+
+```bash
+cd admin
+npm install
+npm run dev
+```
+
+Открой `http://localhost:5173` (URL покажет терминал).
+
+### Вкладки
+
+- **Dashboard** — health status, количество нод, версия
+- **Memory Nodes** — пагинированная таблица всех узлов памяти
+- **Query** — интерактивный поиск по памяти с live-результатами
+- **SOT** — статус Self-Organizing Tokenizer и просмотр словаря
+
+### Production build
+
+```bash
+cd admin
+npm run build
+# Статические файлы в dist/
+```
+
+---
+
 ## SillyTavern интеграция
 
 ### Вариант 1: Monolith (проще)

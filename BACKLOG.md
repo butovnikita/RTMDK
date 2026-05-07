@@ -1,8 +1,8 @@
 # RTMDK Development Backlog
 
-> Last updated: 2026-05-01
-> Current version: 8.2.0
-> Test status: 340 passed, 2 skipped
+> Last updated: 2026-05-07
+> Current version: 8.2.1
+> Test status: 668 passed, 2 skipped
 
 ---
 
@@ -10,6 +10,20 @@
 
 RTMDK v8.2 is production-ready for single-node deployment (10K–100K nodes, sub-10ms latency).
 The backlog below targets **enterprise scale** (1M+ nodes), **cost reduction**, and **deployment ergonomics**.
+
+---
+
+## Completed in v8.2.1
+
+- [x] **GraphQL API** — Strawberry schema at `/graphql` (Query + Mutation)
+- [x] **WebSocket Streaming** — Real-time `/ws/memory` endpoint
+- [x] **SOT Vocabulary Endpoint** — `/v1/sot/vocab` with pagination and search
+- [x] **SOT Persistence** — SOT state included in `field_to_dict()` / `field_from_file()`
+- [x] **SOT Graceful Degradation** — LRU eviction instead of RuntimeError on vocab full
+- [x] **SOT Circuit Breaker** — Protects SBERT bootstrap from cascading failures
+- [x] **React Admin Panel** — Vite + React dashboard (`admin/`)
+- [x] **Vector-Native Storage Stub** — SQLite-VSS / pgvector migration path
+- [x] **Multi-Master Replication Stub** — Raft/Paxos distributed consensus
 
 ---
 

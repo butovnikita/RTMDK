@@ -199,6 +199,22 @@ EngramPattern                    EngramIndex                    PatternCompleter
 **Флаги конфигурации:** `sot_enabled`, `sot_token_dim`, `sot_max_vocab`, `sot_contrastive_lr`, `sot_ssm_sync`, `sot_diagonal_ssm`, `sot_use_for_query`, `sot_merge_freq`, `sot_merge_threshold`, `sot_tokenization_mode`, `sot_warm_start_corpus`, `sot_subword_seed`, `sot_attention_pooling`, `sot_hard_negatives`, `sot_retrieval_feedback`, `sot_skipgram_window`, `sot_bootstrap_projection`, `sot_bootstrap_corpus`, `sot_bootstrap_model`, `sot_max_cooccurrence`.
 
 ---
+
+### Phase 22: v8.2.1 Enhancement Wave
+
+| Компонент | Описание | Файл |
+|-----------|----------|------|
+| **GraphQL API** | Strawberry GraphQL schema: Query (health, node, nodes) + Mutation (create_node, delete_node). Endpoint `/graphql`. | `server/graphql_schema.py` |
+| **WebSocket Streaming** | Real-time WebSocket `/ws/memory` для query, ping/pong, live events. | `server/app.py` |
+| **SOT Vocabulary Endpoint** | REST `/v1/sot/vocab` с пагинацией и поиском. | `server/app.py` |
+| **SOT Persistence** | SOT tokenizer state сериализуется в `field_to_dict()` и загружается при `field_from_file()`. | `memory/serialization.py` |
+| **SOT Graceful Degradation** | LRU eviction вместо RuntimeError при переполнении vocab. | `memory/self_organizing_field.py` |
+| **SOT Circuit Breaker** | AsyncCircuitBreaker защищает SBERT bootstrap от cascading failures. | `server/app.py` |
+| **React Admin Panel** | Vite + React приложение: Dashboard, Memory Nodes, Query, SOT. | `admin/` |
+| **Vector-Native Storage** | Stub для SQLite-VSS / pgvector backend. | `production/vector_storage.py` |
+| **Multi-Master Replication** | Stub для Raft/Paxos distributed consensus. | `production/replication.py` |
+
+---
 ---
 
 ## Конфигурационная система (Unified Config)

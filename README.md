@@ -1,7 +1,7 @@
-# RTMDK — Resonance-Topological Memory v8.2.0
+# RTMDK — Resonance-Topological Memory v8.2.1
 
 > Долгосрочная память для LLM на основе резонансной топологии и диалектической консолидации
-> Version 8.2.0 (Tracks 1–9 + Tiered Storage) — 25,000+ строк кода, 75+ файлов, 105+ API endpoints
+> Version 8.2.1 (Tracks 1–9 + Tiered Storage + GraphQL + WebSocket) — 30,000+ строк кода, 85+ файлов, 110+ API endpoints
 
 ---
 
@@ -148,7 +148,11 @@ RTMDK v8.2.0 (30,000+ строк, 111+ файлов, 105+ API)
 │   ├── Track 21: Encryption at Rest
 │   ├── Track 22: OpenTelemetry Tracing
 │   ├── Track 23: Load Tests + Docker Compose
-│   └── Track 24: SOT Out-of-the-Box (Self-Organizing Tokenizer)
+│   ├── Track 24: SOT Out-of-the-Box (Self-Organizing Tokenizer)
+│   ├── Track 25: GraphQL API (Strawberry)
+│   ├── Track 26: WebSocket Streaming (/ws/memory)
+│   ├── Track 27: React Admin Panel
+│   └── Track 28: SOT Persistence + Graceful Degradation
 └── Integrations: OpenAI, Anthropic, LM Studio, SillyTavern, MCP, LangChain, LlamaIndex
 ```
 
@@ -234,5 +238,5 @@ RTMDK v8.2.0 (30,000+ строк, 111+ файлов, 105+ API)
 
 ---
 
-*RTMDK v8.2.0 — Превосходит GraphRAG, Self-RAG и Advanced RAG по точности, latency и TCO*
+*RTMDK v8.2.1 — Превосходит GraphRAG, Self-RAG и Advanced RAG по точности, latency и TCO*
 *Документация: [docs/MASTER_INDEX.md](docs/MASTER_INDEX.md)*

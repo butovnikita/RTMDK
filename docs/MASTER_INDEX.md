@@ -1,7 +1,7 @@
-# RTMDK v8.1 — Полная документация
+# RTMDK v8.2.1 — Полная документация
 
-> Resonance-Topological Memory для LLM — версия 8.1 (Phase 20)
-> Репозиторий: 75+ файлов, 25,000+ строк кода, 105+ API endpoints
+> Resonance-Topological Memory для LLM — версия 8.2.1 (Phase 22)
+> Репозиторий: 85+ файлов, 30,000+ строк кода, 110+ API endpoints
 
 ---
 
@@ -33,7 +33,7 @@ python rtmdk_sillytavern_launcher.py
 ### Установка и настройка
 | Документ | Описание |
 |----------|----------|
-| **[03_LOCAL_SETUP.md](./03_LOCAL_SETUP.md)** | Локальный запуск на своём ПК — Python, Docker, LM Studio |
+| **[03_LOCAL_SETUP.md](./03_LOCAL_SETUP.md)** | Локальный запуск на своём ПК — Python, Docker, LM Studio, React Admin Panel |
 | **[04_DOCKER_SETUP.md](./04_DOCKER_SETUP.md)** | Docker + SillyTavern — все docker-compose варианты |
 | **[ST_PROXY_SETUP.md](./ST_PROXY_SETUP.md)** | RTMDK Proxy для SillyTavern — архитектура и настройка |
 | **[SILLYTAVERN_CONNECTION_GUIDE.md](../SILLYTAVERN_CONNECTION_GUIDE.md)** | Подключение SillyTavern — 3 варианта (Monolith/Proxy/Text Completion) |
