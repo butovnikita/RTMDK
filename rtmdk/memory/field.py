@@ -1449,8 +1449,9 @@ class RTMDKField:
                              for nid in self.node_index if nid in self.nodes]
         n = len(valid_entries)
         if n == 0:
+            cache_dtype = np.float32 if self._quant.mode == "int8" else self._quant.dtype
             self._cached_positions = np.empty(
-                (0, self.cfg.latent_dim), dtype=self._quant.dtype)
+                (0, self.cfg.latent_dim), dtype=cache_dtype)
             self._cached_phases = np.empty(0, dtype=np.float32)
             self._cached_amplitudes = np.empty(0, dtype=np.float32)
             self._cached_saliences = np.empty(0, dtype=np.float32)
@@ -1463,7 +1464,8 @@ class RTMDKField:
 
         # Single pass through valid nodes — much faster than 5 separate list
         # comprehensions
-        positions = np.zeros((n, self.cfg.latent_dim), dtype=self._quant.dtype)
+        cache_dtype = np.float32 if self._quant.mode == "int8" else self._quant.dtype
+        positions = np.zeros((n, self.cfg.latent_dim), dtype=cache_dtype)
         phases = np.zeros(n, dtype=np.float32)
         amplitudes = np.zeros(n, dtype=np.float32)
         saliences = np.zeros(n, dtype=np.float32)
@@ -1473,7 +1475,11 @@ class RTMDKField:
         causal_boost = np.zeros(n, dtype=np.float32)
 
         for i, (nid, node) in enumerate(valid_entries):
-            positions[i] = node.latent_pos
+            positions[i] = self._quant.dequantize(
+                node.latent_pos,
+                getattr(node, "latent_scale", 1.0),
+                getattr(node, "latent_zero_point", 0.0),
+            )
             phases[i] = node.phase
             amplitudes[i] = node.amplitude
             saliences[i] = node.salience
@@ -2292,7 +2298,7 @@ class RTMDKField:
                                    1e-6) / max(norm, 1e-8)
 
         # Track 1: Quantize latent position to reduce RAM usage
-        latent = self._quant.quantize(latent)
+        latent, latent_scale, latent_zero_point = self._quant.quantize_with_meta(latent)
 
         if phase is None:
             phase = self._get_phase(session_id, embedding, modality)
@@ -2314,7 +2320,9 @@ class RTMDKField:
             salience=salience,
             content=content,
             lineage=[],
-            modality=modality)
+            modality=modality,
+            latent_scale=latent_scale,
+            latent_zero_point=latent_zero_point)
 
         # P2.2: Initialize uncertainty covariance
         if self.kalman_filter is not None:
@@ -2463,7 +2471,10 @@ class RTMDKField:
                     (self.cfg.ball_radius - 1e-6) / np.maximum(norms[mask], 1e-8)
 
         # Track 1: Quantize (loop — quantizer may not be vectorizable)
-        latents = np.array([self._quant.quantize(vec) for vec in latents])
+        _q_results = [self._quant.quantize_with_meta(vec) for vec in latents]
+        latents = np.array([r[0] for r in _q_results])
+        _latent_scales = [r[1] for r in _q_results]
+        _latent_zps = [r[2] for r in _q_results]
 
         # --- Vectorized phase / amplitude / salience ---
         if phases is None:
@@ -2506,6 +2517,8 @@ class RTMDKField:
                 content=contents[i],
                 lineage=[],
                 modality=modalities[i] if modalities else "text",
+                latent_scale=_latent_scales[i],
+                latent_zero_point=_latent_zps[i],
             )
             if self.cfg.cross_modal:
                 node.modal_embedding = embeddings[i].copy()

@@ -1,0 +1,46 @@
+# RTMDK Test Docker Compose
+# Spins up the full stack for integration and load testing.
+version: "3.8"
+
+services:
+  rtmdk:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rtmdk-test-server
+    ports:
+      - "18080:8080"
+      - "15051:50051"
+    environment:
+      - RTMDK_HOST=0.0.0.0
+      - RTMDK_PORT=8080
+      - RTMDK_GRPC_PORT=50051
+      - REDIS_URL=redis://redis:6379/0
+      - RTMDK_ENABLE_API_AUTH=false
+      - RTMDK_ENABLE_LM_STUDIO=false
+      - RTMDK_LOG_LEVEL=INFO
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: rtmdk-test-redis
+    ports:
+      - "16379:6379"
+
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rtmdk-test-runner
+    command: ["pytest", "tests/test_server_load.py", "-v"]
+    environment:
+      - RTMDK_BASE_URL=http://rtmdk:8080
+    depends_on:
+      rtmdk:
+        condition: service_healthy

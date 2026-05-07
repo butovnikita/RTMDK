@@ -373,7 +373,7 @@ class CoreConfig:
     bm25_k1: float = 1.5
     bm25_b: float = 0.75
     hybrid_alpha: float = 1.0  # 1.0 = pure RTMDK, 0.0 = pure BM25, 0.7 = 70/30 blend
-    quantization: str = "none"  # "none" | "fp16"
+    quantization: str = "none"  # "none" | "fp16" | "int8"
 
 
 @dataclass

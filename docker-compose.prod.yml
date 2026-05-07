@@ -22,6 +22,7 @@ services:
       - RTMDK_ENABLE_API_AUTH=${RTMDK_ENABLE_API_AUTH:-true}
       - RTMDK_ENABLE_LM_STUDIO=${RTMDK_ENABLE_LM_STUDIO:-true}
       - RTMDK_AUTO_SAVE_INTERVAL=${RTMDK_AUTO_SAVE_INTERVAL:-60}
+      - REDIS_URL=redis://redis:6379/0
     volumes:
       - rtmdk-data:/data
     healthcheck:
@@ -44,7 +45,26 @@ services:
         max-size: "50m"
         max-file: "5"
     stop_grace_period: 30s
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    container_name: rtmdk-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
 
 volumes:
   rtmdk-data:
+    driver: local
+  redis-data:
     driver: local

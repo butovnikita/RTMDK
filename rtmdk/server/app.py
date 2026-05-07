@@ -41,6 +41,10 @@ from rtmdk.production.tenant_rate_limiter import TenantRateLimiter
 from rtmdk.production.webhooks import WebhookManager
 from rtmdk.production.retention import RetentionManager, RetentionPolicy
 from rtmdk.production.audit_log import AuditLog
+from rtmdk.production.redis_cache import RedisQueryCache, RedisEmbeddingCache
+from rtmdk.production.encryption import EncryptionManager
+from rtmdk.production.telemetry import TelemetryManager
+from rtmdk.server.grpc_service import serve_grpc
 from rtmdk.support.circuit_breaker import AsyncCircuitBreaker
 
 # Prometheus metrics
@@ -230,7 +234,9 @@ async def _auto_save_loop():
 async def lifespan(app: FastAPI):
     global memory, lm_studio_available
     global query_cache, embedding_cache, context_optimizer, health_monitor
-    global analytics_dashboard, api_key_manager, tenant_rate_limiter, webhook_manager, audit_log, retention_manager
+    global analytics_dashboard, api_key_manager, tenant_rate_limiter
+    global webhook_manager, audit_log, retention_manager
+    global redis_query_cache, redis_embedding_cache, encryption_manager, telemetry_manager
     logger.info("Starting RTMDK Production API v8.2.0")
     logger.info(f"Memory file: {MEMORY_FILE}")
     logger.info(f"LM Studio URL: {LM_STUDIO_URL}")
@@ -272,8 +278,32 @@ async def lifespan(app: FastAPI):
     )
     retention_manager.start()
 
+    # Redis caches
+    redis_query_cache = RedisQueryCache(redis_url=os.getenv("REDIS_URL"))
+    redis_embedding_cache = RedisEmbeddingCache(redis_url=os.getenv("REDIS_URL"))
+    if redis_query_cache.available:
+        logger.info("Redis query cache connected")
+    if redis_embedding_cache.available:
+        logger.info("Redis embedding cache connected")
+
+    # Encryption at rest
+    encryption_manager = EncryptionManager()
+    if encryption_manager.enabled:
+        logger.info("Encryption at rest enabled")
+
+    # OpenTelemetry tracing
+    telemetry_manager = TelemetryManager()
+    if telemetry_manager.enabled:
+        logger.info("OpenTelemetry tracing enabled")
+
     asyncio.create_task(_health_check_loop())
     asyncio.create_task(_auto_save_loop())
+
+    # gRPC server (optional)
+    grpc_port = int(os.getenv("RTMDK_GRPC_PORT", "0"))
+    if grpc_port > 0:
+        asyncio.create_task(serve_grpc(port=grpc_port))
+        logger.info(f"gRPC server started on port {grpc_port}")
 
     logger.info(f"Server ready on {SERVER_HOST}:{SERVER_PORT}")
     if memory.field is not None:
@@ -286,6 +316,8 @@ async def lifespan(app: FastAPI):
     logger.info("RTMDK server shutting down...")
     _shutdown_event.set()
     await _drain_active_requests(timeout=30.0)
+    if telemetry_manager is not None:
+        telemetry_manager.shutdown()
     if retention_manager is not None:
         retention_manager.stop()
     if audit_log is not None:
@@ -827,6 +859,10 @@ tenant_rate_limiter: Optional[TenantRateLimiter] = None
 webhook_manager: Optional[WebhookManager] = None
 audit_log: Optional[AuditLog] = None
 retention_manager: Optional[RetentionManager] = None
+redis_query_cache: Optional[RedisQueryCache] = None
+redis_embedding_cache: Optional[RedisEmbeddingCache] = None
+encryption_manager: Optional[EncryptionManager] = None
+telemetry_manager: Optional[TelemetryManager] = None
 
 
 # ============================================================================
@@ -1676,6 +1712,34 @@ async def retention_stats(request: Request):
     if retention_manager is None:
         raise HTTPException(status_code=503, detail="Retention manager not available")
     return retention_manager.stats()
+
+
+@app.get("/v1/admin/cache")
+async def cache_stats(request: Request):
+    """Get cache statistics (admin only)."""
+    _require_admin(request)
+    return {
+        "redis_query": redis_query_cache.stats() if redis_query_cache else None,
+        "redis_embedding": redis_embedding_cache.stats() if redis_embedding_cache else None,
+    }
+
+
+@app.get("/v1/admin/encryption")
+async def encryption_status(request: Request):
+    """Get encryption status (admin only)."""
+    _require_admin(request)
+    if encryption_manager is None:
+        raise HTTPException(status_code=503, detail="Encryption manager not available")
+    return {"enabled": encryption_manager.enabled}
+
+
+@app.get("/v1/admin/telemetry")
+async def telemetry_status(request: Request):
+    """Get telemetry status (admin only)."""
+    _require_admin(request)
+    if telemetry_manager is None:
+        raise HTTPException(status_code=503, detail="Telemetry manager not available")
+    return {"enabled": telemetry_manager.enabled}
 
 
 # ============================================================================

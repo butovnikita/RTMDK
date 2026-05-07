@@ -1,0 +1,81 @@
+syntax = "proto3";
+
+package rtmdk;
+
+service RTMDK {
+  rpc Health (HealthRequest) returns (HealthResponse);
+  rpc QueryMemory (QueryMemoryRequest) returns (QueryMemoryResponse);
+  rpc CreateNode (CreateNodeRequest) returns (CreateNodeResponse);
+  rpc GetNode (GetNodeRequest) returns (Node);
+  rpc DeleteNode (DeleteNodeRequest) returns (DeleteNodeResponse);
+  rpc BatchIngest (BatchIngestRequest) returns (BatchIngestResponse);
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+  string status = 1;
+  string version = 2;
+  int64 memory_nodes = 3;
+}
+
+message QueryMemoryRequest {
+  string query = 1;
+  int32 top_k = 2;
+  string session_id = 3;
+  string api_key = 4;
+}
+
+message MemoryResult {
+  string node_id = 1;
+  float score = 2;
+  string content = 3;
+}
+
+message QueryMemoryResponse {
+  repeated MemoryResult results = 1;
+  int32 total = 2;
+}
+
+message CreateNodeRequest {
+  string content = 1;
+  string node_id = 2;
+  map<string, string> metadata = 3;
+  string api_key = 4;
+}
+
+message CreateNodeResponse {
+  string node_id = 1;
+  string status = 2;
+}
+
+message GetNodeRequest {
+  string node_id = 1;
+}
+
+message Node {
+  string id = 1;
+  string content = 2;
+  float salience = 3;
+  float phase = 4;
+  float amplitude = 5;
+}
+
+message DeleteNodeRequest {
+  string node_id = 1;
+}
+
+message DeleteNodeResponse {
+  string status = 1;
+}
+
+message BatchIngestRequest {
+  repeated string contents = 1;
+  repeated string node_ids = 2;
+  string api_key = 3;
+}
+
+message BatchIngestResponse {
+  int32 ingested = 1;
+  repeated string node_ids = 2;
+}

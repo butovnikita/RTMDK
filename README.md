@@ -141,7 +141,13 @@ RTMDK v8.2.0 (30,000+ строк, 111+ файлов, 105+ API)
 │   ├── Track 14: Python Client SDK
 │   ├── Track 15: Webhook Subscriptions
 │   ├── Track 16: Batch Ingestion + Import/Export REST
-│   └── Track 17: Tier 1 Production Readiness (Health, Audit Log, Retention)
+│   ├── Track 17: Tier 1 Production Readiness (Health, Audit Log, Retention)
+│   ├── Track 18: int8 Quantization
+│   ├── Track 19: Redis Cache Layer
+│   ├── Track 20: gRPC Service
+│   ├── Track 21: Encryption at Rest
+│   ├── Track 22: OpenTelemetry Tracing
+│   └── Track 23: Load Tests + Docker Compose
 └── Integrations: OpenAI, Anthropic, LM Studio, SillyTavern, MCP, LangChain, LlamaIndex
 ```
 

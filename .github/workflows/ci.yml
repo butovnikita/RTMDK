@@ -59,3 +59,24 @@ jobs:
       - name: Run benchmark (smoke test)
         run: python benchmark.py --dataset datasets/qa_1000_en.json --methods bm25,word -o /tmp/benchmark_smoke.json
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10'
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t rtmdk:test .
+
+      - name: Start Docker Compose test stack
+        run: docker-compose -f docker-compose.test.yml up -d
+
+      - name: Wait for services
+        run: sleep 15
+
+      - name: Run load tests
+        run: docker-compose -f docker-compose.test.yml exec -T test pytest tests/test_server_load.py -v
+
+      - name: Tear down
+        run: docker-compose -f docker-compose.test.yml down -v
