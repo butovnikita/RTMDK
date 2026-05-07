@@ -274,6 +274,10 @@ class AdaptiveDepthRetriever:
         pool_size = min(self.max_k * 2, 50)
         pool = self.retriever.retrieve(query, query_embedding, pool_size)
 
+        # Normalize tuple return from ConfidenceAwareFallback
+        if isinstance(pool, tuple):
+            pool = pool[0]
+
         if not pool:
             return []
 

@@ -32,8 +32,30 @@
 | POST | `/v1/cache/clear` | Clear cache |
 | POST | `/v1/memory/save` | Сохранить контекст |
 | POST | `/v1/memory/query` | Запросить память |
+| POST | `/v1/memory/batch_query` | Batch query памяти |
+| POST | `/v1/memory/nodes` | Создать ноду |
+| GET | `/v1/memory/nodes/{id}` | Получить ноду |
+| PUT | `/v1/memory/nodes/{id}` | Обновить ноду |
+| DELETE | `/v1/memory/nodes/{id}` | Удалить ноду |
+| GET | `/v1/memory/nodes` | Список нод (пагинация) |
+| POST | `/v1/memory/batch_ingest` | Batch ingest документов |
+| GET | `/v1/memory/export` | Экспорт памяти |
+| POST | `/v1/memory/import` | Импорт памяти |
 | POST | `/v1/memory/clear` | Очистить память |
 | GET | `/v1/memory/stats` | Статистика |
+| GET | `/v1/analytics/overview` | Dashboard overview |
+| GET | `/v1/analytics/memory` | Memory analytics |
+| GET | `/v1/analytics/events` | Event log |
+| GET | `/v1/analytics/report` | Full report |
+| POST | `/v1/analytics/track` | Track custom event |
+| POST | `/v1/admin/api-keys` | Создать API ключ |
+| GET | `/v1/admin/api-keys` | Список API ключей |
+| POST | `/v1/admin/api-keys/revoke` | Отозвать ключ |
+| DELETE | `/v1/admin/api-keys/{hash}` | Удалить ключ |
+| GET | `/v1/admin/tenants` | Список тенантов |
+| POST | `/v1/webhooks` | Подписаться на webhook |
+| DELETE | `/v1/webhooks/{id}` | Отписаться |
+| GET | `/v1/webhooks` | Список подписок |
 
 ---
 

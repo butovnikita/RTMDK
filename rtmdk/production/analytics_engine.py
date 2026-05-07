@@ -151,7 +151,16 @@ class AnalyticsStore:
 
         with self._conn() as conn:
             rows = conn.execute(q, params).fetchall()
-        return [dict(r) for r in rows]
+        results = []
+        for r in rows:
+            row = dict(r)
+            if "properties" in row and isinstance(row["properties"], str):
+                try:
+                    row["properties"] = json.loads(row["properties"])
+                except json.JSONDecodeError:
+                    pass
+            results.append(row)
+        return results
 
     def register_conversion(self, name: str, event_type: str,
                             counting: str = "once_per_session"):

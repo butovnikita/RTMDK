@@ -127,7 +127,7 @@ class EmbeddingCache:
             self._misses += len(uncached_texts)
 
             for key, emb in zip(uncached_keys, uncached_embs):
-                idx = results.index(None)
+                idx = next(i for i, r in enumerate(results) if r is None)
                 results[idx] = emb
                 self._save_to_memory_cache(key, emb)
                 self._save_to_disk(key, emb)

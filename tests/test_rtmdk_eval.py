@@ -7,7 +7,6 @@ Covers:
 3. Conversion tracking
 """
 
-import json
 import os
 import tempfile
 
@@ -28,7 +27,7 @@ class TestAnalyticsStore:
             events = store.query(event_type=EventType.NODE_CREATED)
             assert len(events) == 1
             assert events[0]["event_type"] == EventType.NODE_CREATED
-            assert json.loads(events[0]["properties"])["node_id"] == "n1"
+            assert events[0]["properties"]["node_id"] == "n1"
 
     def test_query_filters_by_session(self):
         with tempfile.TemporaryDirectory() as tmpdir:

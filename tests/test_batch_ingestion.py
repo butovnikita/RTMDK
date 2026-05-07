@@ -190,6 +190,36 @@ class TestAddNodesBatch:
                 [{"text": "x"}]
             )
 
+    def test_batch_with_async_hnsw_and_wal(self, tmp_path):
+        wal_path = str(tmp_path / "wal.jsonl")
+        cfg = RTMDKConfig(
+            latent_dim=64,
+            use_hnsw=True,
+            hyperbolic=False,
+            bm25_fallback=False,
+            quantization="none",
+            query_cache_size=0,
+            async_hnsw_build=True,
+            async_hnsw_interval_ms=50,
+            async_hnsw_batch_size=1000,
+            wal_fsync_interval_ms=50,
+            wal_batch_size=10,
+        )
+        field = RTMDKField(cfg, wal_path=wal_path)
+        n = 5
+        embeddings = np.random.randn(n, cfg.latent_dim).astype(np.float32)
+        contents = [{"text": f"node {i}"} for i in range(n)]
+        nids = field.add_nodes_batch(embeddings, contents)
+        assert len(nids) == n
+        # WAL should have the batch record after interval flush
+        import time
+        time.sleep(0.15)
+        records = field.wal.replay()
+        assert any(r["op"] == "add_nodes_batch" for r in records)
+        # HNSW should be populated after background flush
+        assert len(field.hnsw_index.positions) == n
+        field.close()
+
     def test_batch_skip_projection(self, cfg):
         field = RTMDKField(cfg)
         n = 3

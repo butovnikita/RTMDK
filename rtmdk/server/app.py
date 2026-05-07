@@ -19,22 +19,26 @@ import os
 import sys
 import time
 from contextlib import asynccontextmanager
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import httpx
 import numpy as np
-from fastapi import APIRouter, FastAPI, HTTPException, Request
+from fastapi import APIRouter, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 # RTMDK package imports
 from rtmdk.memory.core import RTMDKConfig, RTMDKMemory
-from rtmdk.production.rate_limiter import RateLimiter
+
 from rtmdk.production.query_cache import QueryCache
 from rtmdk.production.embedding_cache import EmbeddingCache
 from rtmdk.production.context_optimizer import ContextOptimizer
 from rtmdk.production.health_monitor import HealthMonitor
+from rtmdk.production.analytics_dashboard import AnalyticsDashboard
+from rtmdk.production.api_key_manager import APIKeyManager
+from rtmdk.production.tenant_rate_limiter import TenantRateLimiter
+from rtmdk.production.webhooks import WebhookManager
 from rtmdk.support.circuit_breaker import AsyncCircuitBreaker
 
 # Prometheus metrics
@@ -208,7 +212,8 @@ async def _auto_save_loop():
 async def lifespan(app: FastAPI):
     global memory, lm_studio_available
     global query_cache, embedding_cache, context_optimizer, health_monitor
-    logger.info("Starting RTMDK Production API v8.0.0")
+    global analytics_dashboard, api_key_manager, tenant_rate_limiter, webhook_manager
+    logger.info("Starting RTMDK Production API v8.2.0")
     logger.info(f"Memory file: {MEMORY_FILE}")
     logger.info(f"LM Studio URL: {LM_STUDIO_URL}")
 
@@ -233,6 +238,10 @@ async def lifespan(app: FastAPI):
     context_optimizer = ContextOptimizer(
         model="default", min_tokens=50, max_tokens=300)
     health_monitor = HealthMonitor(memory=memory, check_interval=60)
+    analytics_dashboard = AnalyticsDashboard(memory, health_monitor=health_monitor)
+    api_key_manager = APIKeyManager()
+    tenant_rate_limiter = TenantRateLimiter(api_key_manager=api_key_manager)
+    webhook_manager = WebhookManager()
     asyncio.create_task(_health_check_loop())
     asyncio.create_task(_auto_save_loop())
 
@@ -272,7 +281,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="RTMDK Production API",
     description="OpenAI-compatible API with Resonance-Topological Memory (No SillyTavern)",
-    version="8.0.0",
+    version="8.2.0",
     lifespan=lifespan,
 )
 
@@ -286,56 +295,105 @@ app.add_middleware(
 
 
 # ============================================================================
+# STRUCTURED REQUEST LOGGING MIDDLEWARE
+# ============================================================================
+
+
+@app.middleware("http")
+async def request_logging_middleware(request: Request, call_next):
+    """Log every request with structured JSON for production observability."""
+    import uuid
+    request_id = str(uuid.uuid4())[:8]
+    request.state.request_id = request_id
+    t0 = time.time()
+    try:
+        response = await call_next(request)
+        latency_ms = round((time.time() - t0) * 1000, 2)
+        logger.info(
+            json.dumps({
+                "event": "http_request",
+                "request_id": request_id,
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": response.status_code,
+                "latency_ms": latency_ms,
+                "tenant_id": getattr(request.state, "tenant_id", None),
+                "client_host": request.client.host if request.client else None,
+            }, ensure_ascii=False)
+        )
+        response.headers["X-Request-ID"] = request_id
+        return response
+    except Exception as exc:
+        latency_ms = round((time.time() - t0) * 1000, 2)
+        logger.warning(
+            json.dumps({
+                "event": "http_request_error",
+                "request_id": request_id,
+                "method": request.method,
+                "path": request.url.path,
+                "error": str(exc),
+                "latency_ms": latency_ms,
+                "tenant_id": getattr(request.state, "tenant_id", None),
+            }, ensure_ascii=False)
+        )
+        raise
+
+
+# ============================================================================
 # SECURITY MIDDLEWARE
 # ============================================================================
 
 
 @app.middleware("http")
 async def security_middleware(request: Request, call_next):
-    """Enforce API key authentication and payload limits."""
-    skip_auth_paths = [
+    """Enforce API key authentication, resolve tenant, and check payload limits."""
+    skip_auth_paths = {
         "/health",
         "/v1/models",
         "/docs",
         "/openapi.json",
         "/redoc",
-        "/dashboard"]
-    if request.url.path in skip_auth_paths or request.url.path.startswith(
-            "/api/"):
+        "/dashboard"}
+    if request.url.path in skip_auth_paths or request.url.path.startswith("/api/"):
         return await call_next(request)
 
     content_length = request.headers.get("content-length")
     if content_length and int(content_length) > MAX_PAYLOAD_SIZE:
         return JSONResponse(
-            status_code=413, content={
-                "error": "Payload too large"})
+            status_code=413, content={"error": "Payload too large"})
 
     if ENABLE_API_AUTH:
         auth_header = request.headers.get("authorization", "")
-        api_key = auth_header.replace(
-            "Bearer ", "").replace(
-            "bearer ", "") if auth_header else ""
+        api_key = auth_header.replace("Bearer ", "").replace("bearer ", "") if auth_header else ""
         if not api_key:
             api_key = request.headers.get("x-api-key", "")
-        if not api_key or api_key != API_KEY:
+
+        tenant_id = None
+        if api_key_manager is not None:
+            tenant_id = api_key_manager.validate_key(api_key)
+
+        # Fallback to legacy global API_KEY for backward compatibility
+        if tenant_id is None and api_key == API_KEY:
+            tenant_id = "__admin__"
+
+        if tenant_id is None:
             return JSONResponse(
-                status_code=401, content={
-                    "error": "Unauthorized. Provide valid API key."})
+                status_code=401,
+                content={"error": "Unauthorized. Provide valid API key."})
+
+        request.state.tenant_id = tenant_id
+        request.state.api_key = api_key
 
     return await call_next(request)
 
 
-# Phase 4: Rate limiter middleware
-rate_limiter = RateLimiter(
-    max_per_minute=int(os.getenv("RTMDK_RATE_LIMIT_PER_MINUTE", "60")),
-    max_per_hour=int(os.getenv("RTMDK_RATE_LIMIT_PER_HOUR", "1000")),
-    max_per_day=int(os.getenv("RTMDK_RATE_LIMIT_PER_DAY", "10000")),
-)
+# Phase 4: Tenant-aware rate limiter middleware
+# Note: old global rate_limiter replaced by tenant_rate_limiter initialized in lifespan
 
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
-    """Enforce per-client rate limits."""
+    """Enforce per-tenant rate limits."""
     skip_paths = {
         "/health",
         "/v1/models",
@@ -346,15 +404,18 @@ async def rate_limit_middleware(request: Request, call_next):
         "/metrics"}
     if request.url.path in skip_paths or request.url.path.startswith("/api/"):
         return await call_next(request)
-    client_id = request.headers.get(
-        "x-api-key", request.client.host if request.client else "unknown")
-    if not rate_limiter.allow_request(client_id):
-        remaining = rate_limiter.get_remaining(client_id)
+
+    tenant_id = getattr(request.state, "tenant_id", None)
+    if tenant_id is None:
+        # If auth disabled, rate-limit by IP
+        tenant_id = request.client.host if request.client else "anonymous"
+
+    if tenant_rate_limiter is not None and not tenant_rate_limiter.allow_request(tenant_id):
+        remaining = tenant_rate_limiter.get_remaining(tenant_id)
         return JSONResponse(
             status_code=429,
-            content={
-                "error": "Rate limit exceeded",
-                "remaining": remaining})
+            content={"error": "Rate limit exceeded", "remaining": remaining})
+
     return await call_next(request)
 
 
@@ -685,6 +746,10 @@ query_cache: Optional[QueryCache] = None
 embedding_cache: Optional[EmbeddingCache] = None
 context_optimizer: Optional[ContextOptimizer] = None
 health_monitor: Optional[HealthMonitor] = None
+analytics_dashboard: Optional[Any] = None
+api_key_manager: Optional[APIKeyManager] = None
+tenant_rate_limiter: Optional[TenantRateLimiter] = None
+webhook_manager: Optional[WebhookManager] = None
 
 
 # ============================================================================
@@ -900,6 +965,82 @@ class BatchQueryRequest(BaseModel):
     }
 
 
+class AnalyticsTrackRequest(BaseModel):
+    """Track a custom analytics event."""
+
+    event_type: str = Field(..., min_length=1)
+    properties: Dict[str, Any] = Field(default_factory=dict)
+    session_id: Optional[str] = Field(default=None)
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "event_type": "user_query",
+                "properties": {"topic": "science"},
+                "session_id": "abc123",
+            }
+        }
+    }
+
+
+class CreateAPIKeyRequest(BaseModel):
+    """Create a new API key for a tenant."""
+
+    tenant_id: str = Field(..., min_length=1)
+    name: str = Field(default="")
+    rate_limit_override: Optional[Dict[str, int]] = Field(default=None)
+
+
+class RevokeAPIKeyRequest(BaseModel):
+    """Revoke an existing API key."""
+
+    key_hash: str = Field(..., min_length=1)
+
+
+class CreateNodeRequest(BaseModel):
+    """Create a new memory node."""
+
+    content: str = Field(..., min_length=1)
+    node_id: Optional[str] = Field(default=None)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class UpdateNodeRequest(BaseModel):
+    """Update an existing memory node."""
+
+    content: Optional[str] = Field(default=None)
+    metadata: Optional[Dict[str, Any]] = Field(default=None)
+
+
+class BatchIngestRequest(BaseModel):
+    """Batch ingest documents into memory."""
+
+    documents: List[str] = Field(..., min_length=1, max_length=1000)
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    node_ids: Optional[List[str]] = Field(default=None)
+
+
+class MemoryImportRequest(BaseModel):
+    """Import memory nodes from JSON payload."""
+
+    nodes: List[Dict[str, Any]] = Field(..., min_length=1)
+    clear_existing: bool = Field(default=False)
+
+
+class WebhookSubscribeRequest(BaseModel):
+    """Subscribe to webhook events."""
+
+    url: str = Field(..., min_length=1)
+    events: List[str] = Field(..., min_length=1)
+    secret: Optional[str] = Field(default=None)
+
+
+class WebhookUnsubscribeRequest(BaseModel):
+    """Unsubscribe from webhook events."""
+
+    subscription_id: str = Field(..., min_length=1)
+
+
 @app.post("/v1/memory/query")
 async def memory_query(req: MemoryQueryRequest):
     """Query memory and return ranked results."""
@@ -1006,12 +1147,210 @@ async def memory_batch_query(req: BatchQueryRequest):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+# ============================================================================
+# MEMORY NODE CRUD ENDPOINTS
+# ============================================================================
+
+
+@app.post("/v1/memory/nodes")
+async def create_node(req: CreateNodeRequest):
+    """Create a new memory node."""
+    if not memory:
+        raise HTTPException(status_code=503, detail="Memory not initialized")
+    assert memory.field is not None
+    try:
+        embedding = await _get_embedding_cached(req.content)
+        content_dict = {"content": req.content, **req.metadata}
+        nid = memory.field.add_node(
+            embedding=embedding,
+            content=content_dict,
+            node_id=req.node_id,
+        )
+        return {"id": nid, "status": "created"}
+    except Exception as exc:
+        logger.warning("Create node failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/v1/memory/nodes/{node_id}")
+async def get_node(node_id: str):
+    """Get a memory node by ID."""
+    if not memory:
+        raise HTTPException(status_code=503, detail="Memory not initialized")
+    assert memory.field is not None
+    node = memory.field.nodes.get(node_id)
+    if node is None:
+        raise HTTPException(status_code=404, detail="Node not found")
+    return {
+        "id": node_id,
+        "content": node.content,
+        "salience": node.salience,
+        "created_at": getattr(node, "created_at", None),
+        "last_accessed": getattr(node, "last_accessed", None),
+    }
+
+
+@app.put("/v1/memory/nodes/{node_id}")
+async def update_node(node_id: str, req: UpdateNodeRequest):
+    """Update an existing memory node."""
+    if not memory:
+        raise HTTPException(status_code=503, detail="Memory not initialized")
+    assert memory.field is not None
+    node = memory.field.nodes.get(node_id)
+    if node is None:
+        raise HTTPException(status_code=404, detail="Node not found")
+    try:
+        if req.content is not None:
+            embedding = await _get_embedding_cached(req.content)
+            node.latent_pos = embedding
+            if isinstance(node.content, dict):
+                node.content["content"] = req.content
+            else:
+                node.content = req.content
+        if req.metadata is not None:
+            if isinstance(node.content, dict):
+                node.content.update(req.metadata)
+        return {"id": node_id, "status": "updated"}
+    except Exception as exc:
+        logger.warning("Update node failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.delete("/v1/memory/nodes/{node_id}")
+async def delete_node(node_id: str):
+    """Delete a memory node by ID."""
+    if not memory:
+        raise HTTPException(status_code=503, detail="Memory not initialized")
+    assert memory.field is not None
+    node = memory.field.nodes.get(node_id)
+    if node is None:
+        raise HTTPException(status_code=404, detail="Node not found")
+    try:
+        memory.field.delete_nodes([node_id])
+        return {"id": node_id, "status": "deleted"}
+    except Exception as exc:
+        logger.warning("Delete node failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/v1/memory/nodes")
+async def list_nodes(
+    limit: int = Query(50, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+):
+    """List memory nodes with pagination."""
+    if not memory:
+        raise HTTPException(status_code=503, detail="Memory not initialized")
+    assert memory.field is not None
+    nodes = list(memory.field.nodes.items())
+    total = len(nodes)
+    page = nodes[offset:offset + limit]
+    results = []
+    for nid, node in page:
+        results.append({
+            "id": nid,
+            "content": node.content if isinstance(node.content, dict) else {"content": str(node.content)},
+            "salience": node.salience,
+        })
+    return {"total": total, "offset": offset, "limit": limit, "nodes": results}
+
+
+@app.post("/v1/memory/batch_ingest")
+async def batch_ingest(req: BatchIngestRequest):
+    """Batch ingest documents into memory."""
+    if not memory:
+        raise HTTPException(status_code=503, detail="Memory not initialized")
+    assert memory.field is not None
+    try:
+        t0 = time.time()
+        created = []
+        for idx, doc in enumerate(req.documents):
+            embedding = await _get_embedding_cached(doc)
+            content_dict = {"content": doc, **(req.metadata or {})}
+            nid = req.node_ids[idx] if req.node_ids and idx < len(req.node_ids) else None
+            node_id = memory.field.add_node(
+                embedding=embedding,
+                content=content_dict,
+                node_id=nid,
+            )
+            created.append(node_id)
+        latency_ms = round((time.time() - t0) * 1000, 2)
+        return {
+            "ingested": len(created),
+            "node_ids": created,
+            "latency_ms": latency_ms,
+        }
+    except Exception as exc:
+        logger.warning("Batch ingest failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/v1/memory/export")
+async def memory_export():
+    """Export all memory nodes as JSON."""
+    if not memory:
+        raise HTTPException(status_code=503, detail="Memory not initialized")
+    assert memory.field is not None
+    try:
+        nodes = []
+        for nid, node in memory.field.nodes.items():
+            nodes.append({
+                "id": nid,
+                "content": node.content,
+                "latent_pos": (
+                    node.latent_pos.tolist()
+                    if hasattr(node.latent_pos, "tolist")
+                    else list(node.latent_pos)
+                ),
+                "salience": node.salience,
+                "created_at": getattr(node, "created_at", None),
+                "last_accessed": getattr(node, "last_accessed", None),
+            })
+        return {"nodes": nodes, "total": len(nodes), "exported_at": time.time()}
+    except Exception as exc:
+        logger.warning("Memory export failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/v1/memory/import")
+async def memory_import(req: MemoryImportRequest):
+    """Import memory nodes from JSON payload."""
+    if not memory:
+        raise HTTPException(status_code=503, detail="Memory not initialized")
+    assert memory.field is not None
+    try:
+        import numpy as np
+        t0 = time.time()
+        if req.clear_existing:
+            memory.field.nodes.clear()
+        created = []
+        for node_data in req.nodes:
+            nid = node_data.get("id")
+            emb = np.array(node_data.get("latent_pos", node_data.get("embedding", [])), dtype=np.float32)
+            content = node_data.get("content", {})
+            node_id = memory.field.add_node(
+                embedding=emb,
+                content=content,
+                node_id=nid,
+            )
+            created.append(node_id)
+        latency_ms = round((time.time() - t0) * 1000, 2)
+        return {
+            "imported": len(created),
+            "node_ids": created,
+            "latency_ms": latency_ms,
+        }
+    except Exception as exc:
+        logger.warning("Memory import failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @app.get("/health")
 async def health():
     """Health check with production metrics."""
     base = {
         "status": "ok",
-        "version": "8.0.0",
+        "version": "8.2.0",
         "lm_studio": lm_studio_available,
         "memory_nodes": len(memory.field.nodes) if memory else 0,
     }
@@ -1056,6 +1395,256 @@ async def metrics():
             if boot_time is not None:
                 _metric_sot_bootstrap_time.set(boot_time)
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
+# ============================================================================
+# ANALYTICS DASHBOARD ENDPOINTS
+# ============================================================================
+
+
+@app.get("/v1/analytics/overview")
+async def analytics_overview():
+    """Dashboard overview with key metrics."""
+    if analytics_dashboard is None:
+        raise HTTPException(status_code=503,
+                            detail="Analytics dashboard not available")
+    try:
+        return analytics_dashboard.get_overview()
+    except Exception as exc:
+        logger.warning("Analytics overview failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/v1/analytics/memory")
+async def analytics_memory():
+    """Memory-specific analytics."""
+    if analytics_dashboard is None:
+        raise HTTPException(status_code=503,
+                            detail="Analytics dashboard not available")
+    try:
+        return analytics_dashboard.get_memory_analytics()
+    except Exception as exc:
+        logger.warning("Analytics memory failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/v1/analytics/events")
+async def analytics_events(limit: int = Query(50, ge=1, le=500),
+                           event_type: Optional[str] = Query(None)):
+    """Recent event log with optional filtering."""
+    if analytics_dashboard is None:
+        raise HTTPException(status_code=503,
+                            detail="Analytics dashboard not available")
+    try:
+        return analytics_dashboard.get_event_series(
+            limit=limit,
+            event_type=event_type,
+        )
+    except Exception as exc:
+        logger.warning("Analytics events failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/v1/analytics/report")
+async def analytics_report():
+    """Full analytics report combining all metrics."""
+    if analytics_dashboard is None:
+        raise HTTPException(status_code=503,
+                            detail="Analytics dashboard not available")
+    try:
+        return analytics_dashboard.get_report()
+    except Exception as exc:
+        logger.warning("Analytics report failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/v1/analytics/track")
+async def analytics_track(req: AnalyticsTrackRequest):
+    """Track a custom analytics event."""
+    if analytics_dashboard is None:
+        raise HTTPException(status_code=503,
+                            detail="Analytics dashboard not available")
+    try:
+        analytics_dashboard.track_event(
+            event_type=req.event_type,
+            properties=req.properties,
+            session_id=req.session_id,
+        )
+        return {"status": "ok"}
+    except Exception as exc:
+        logger.warning("Analytics track failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ============================================================================
+# API KEY MANAGEMENT ENDPOINTS
+# ============================================================================
+
+
+def _require_admin(request: Request):
+    """Ensure request carries the legacy admin key."""
+    if not ENABLE_API_AUTH:
+        return
+    api_key = getattr(request.state, "api_key", "")
+    if api_key != API_KEY:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+
+@app.post("/v1/admin/api-keys")
+async def create_api_key(req: CreateAPIKeyRequest, request: Request):
+    """Create a new API key for a tenant (admin only)."""
+    _require_admin(request)
+    if api_key_manager is None:
+        raise HTTPException(status_code=503, detail="API key manager not available")
+    try:
+        raw_key, record = api_key_manager.create_key(
+            tenant_id=req.tenant_id,
+            name=req.name,
+            rate_limit_override=req.rate_limit_override,
+        )
+        return {
+            "api_key": raw_key,
+            "key_hash": record.key_hash,
+            "tenant_id": record.tenant_id,
+            "created_at": record.created_at,
+        }
+    except Exception as exc:
+        logger.warning("Create API key failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/v1/admin/api-keys")
+async def list_api_keys(tenant_id: Optional[str] = Query(None), request: Request = ...):  # type: ignore[assignment]
+    # FastAPI injects Request automatically
+    """List API keys metadata (admin only)."""
+    _require_admin(request)
+    if api_key_manager is None:
+        raise HTTPException(status_code=503, detail="API key manager not available")
+    try:
+        keys = api_key_manager.list_keys(tenant_id=tenant_id, include_revoked=True)
+        return {"keys": keys}
+    except Exception as exc:
+        logger.warning("List API keys failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/v1/admin/api-keys/revoke")
+async def revoke_api_key(req: RevokeAPIKeyRequest, request: Request):
+    """Revoke an API key by hash (admin only)."""
+    _require_admin(request)
+    if api_key_manager is None:
+        raise HTTPException(status_code=503, detail="API key manager not available")
+    try:
+        ok = api_key_manager.revoke_key(req.key_hash)
+        if not ok:
+            raise HTTPException(status_code=404, detail="Key not found")
+        return {"status": "revoked", "key_hash": req.key_hash}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Revoke API key failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.delete("/v1/admin/api-keys/{key_hash}")
+async def delete_api_key(key_hash: str, request: Request):
+    """Permanently delete an API key (admin only)."""
+    _require_admin(request)
+    if api_key_manager is None:
+        raise HTTPException(status_code=503, detail="API key manager not available")
+    try:
+        ok = api_key_manager.delete_key(key_hash)
+        if not ok:
+            raise HTTPException(status_code=404, detail="Key not found")
+        return {"status": "deleted", "key_hash": key_hash}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Delete API key failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/v1/admin/tenants")
+async def list_tenants(request: Request):
+    """List all tenants with key counts (admin only)."""
+    _require_admin(request)
+    if api_key_manager is None:
+        raise HTTPException(status_code=503, detail="API key manager not available")
+    try:
+        keys = api_key_manager.list_keys(include_revoked=True)
+        tenants: Dict[str, Dict] = {}
+        for k in keys:
+            tid = k["tenant_id"]
+            if tid not in tenants:
+                tenants[tid] = {"tenant_id": tid, "total_keys": 0, "active_keys": 0}
+            tenants[tid]["total_keys"] += 1
+            if not k.get("revoked"):
+                tenants[tid]["active_keys"] += 1
+        return {"tenants": list(tenants.values())}
+    except Exception as exc:
+        logger.warning("List tenants failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ============================================================================
+# WEBHOOK ENDPOINTS
+# ============================================================================
+
+
+@app.post("/v1/webhooks")
+async def webhook_subscribe(req: WebhookSubscribeRequest, request: Request):
+    """Subscribe to webhook events."""
+    if webhook_manager is None:
+        raise HTTPException(status_code=503, detail="Webhook manager not available")
+    tenant_id = getattr(request.state, "tenant_id", None)
+    try:
+        sub = webhook_manager.subscribe(
+            url=req.url,
+            events=req.events,
+            secret=req.secret,
+            tenant_id=tenant_id,
+        )
+        return {
+            "subscription_id": sub.id,
+            "url": sub.url,
+            "events": sub.events,
+            "created_at": sub.created_at,
+        }
+    except Exception as exc:
+        logger.warning("Webhook subscribe failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.delete("/v1/webhooks/{subscription_id}")
+async def webhook_unsubscribe(subscription_id: str):
+    """Unsubscribe from webhook events."""
+    if webhook_manager is None:
+        raise HTTPException(status_code=503, detail="Webhook manager not available")
+    ok = webhook_manager.unsubscribe(subscription_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Subscription not found")
+    return {"status": "unsubscribed", "subscription_id": subscription_id}
+
+
+@app.get("/v1/webhooks")
+async def webhook_list(request: Request):
+    """List active webhook subscriptions."""
+    if webhook_manager is None:
+        raise HTTPException(status_code=503, detail="Webhook manager not available")
+    tenant_id = getattr(request.state, "tenant_id", None)
+    subs = webhook_manager.list_subscriptions(tenant_id=tenant_id)
+    return {
+        "subscriptions": [
+            {
+                "id": s.id,
+                "url": s.url,
+                "events": s.events,
+                "active": s.active,
+                "tenant_id": s.tenant_id,
+            }
+            for s in subs
+        ]
+    }
 
 
 # ============================================================================
@@ -1104,7 +1693,7 @@ app.include_router(create_dashboard_router(lambda: memory, _ux_config))
 
 def main():
     print("=" * 60)
-    print("  RTMDK Production API v8.0.0")
+    print("  RTMDK Production API v8.2.0")
     print("  (No SillyTavern modules)")
     print("=" * 60)
     print()
@@ -1124,6 +1713,10 @@ def main():
     print("    GET  /dashboard              — Web UI Dashboard")
     print("    GET  /api/models             — UX model selector")
     print("    POST /api/config             — Runtime configuration")
+    print("    GET  /v1/analytics/overview  — Dashboard overview")
+    print("    GET  /v1/analytics/memory    — Memory analytics")
+    print("    GET  /v1/analytics/events    — Event log")
+    print("    GET  /v1/analytics/report    — Full analytics report")
     print()
     print("-" * 60)
 

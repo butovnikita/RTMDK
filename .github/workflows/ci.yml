@@ -33,6 +33,14 @@ jobs:
       - name: Lint with flake8
         run: flake8 rtmdk tests --max-line-length=120
 
+      - name: Type check with mypy
+        run: mypy rtmdk --config-file mypy.ini
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10'
+
+      - name: Format check with black
+        run: black --check rtmdk tests
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10'
+
       - name: Run tests (fast)
         run: pytest tests/ -v --tb=short -q -m "not slow"
 
@@ -41,7 +49,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10'
 
       - name: Coverage report
-        run: pytest tests/ --cov=rtmdk --cov-report=xml --cov-fail-under=40 -m "not slow"
+        run: pytest tests/ --cov=rtmdk --cov-report=xml --cov-fail-under=55 -m "not slow"
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10'
 
       - name: Build package

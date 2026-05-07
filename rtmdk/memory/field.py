@@ -663,7 +663,12 @@ class RTMDKField:
 
         # WAL for durability
         from rtmdk.memory.wal import WAL
-        self.wal = WAL(wal_path, enabled=wal_path is not None)
+        self.wal = WAL(
+            wal_path,
+            enabled=wal_path is not None,
+            fsync_interval_ms=config.wal_fsync_interval_ms,
+            batch_size=config.wal_batch_size,
+        )
 
         # Phase 3d: Dirty flag for auto-save — only save if state changed
         self._dirty = False
@@ -747,6 +752,15 @@ class RTMDKField:
                     config.hnsw_m, config.hnsw_ef_construction)
         else:
             self.hnsw_index = None
+
+        self._async_index_builder: Optional[Any] = None
+        if config.use_hnsw and config.async_hnsw_build and self.hnsw_index:
+            from rtmdk.memory.async_index import AsyncIndexBuilder
+            self._async_index_builder = AsyncIndexBuilder(
+                self.hnsw_index,
+                interval_ms=config.async_hnsw_interval_ms,
+                batch_size=config.async_hnsw_batch_size,
+            )
 
         # Pre-select batch resonance backend to avoid branching in hot path
         if self.gpu_backend and self.gpu_backend.available:
@@ -2371,7 +2385,10 @@ class RTMDKField:
             self.stats["role_router_enabled"] = True
 
         if self.cfg.use_hnsw and self.hnsw_index:
-            self.hnsw_index.insert(nid, latent)
+            if self._async_index_builder:
+                self._async_index_builder.submit(nid, latent)
+            else:
+                self.hnsw_index.insert(nid, latent)
         if self.cfg.bm25_fallback and self.bm25_index:
             # Handle both v1 (text) and v2 (input_text + output_text) nodes
             text = content.get("text", "")
@@ -2520,7 +2537,9 @@ class RTMDKField:
 
         # --- Batch HNSW insert ---
         if self.cfg.use_hnsw and self.hnsw_index:
-            if hasattr(self.hnsw_index, "insert_batch"):
+            if self._async_index_builder:
+                self._async_index_builder.submit_batch(batch_nids, latents)
+            elif hasattr(self.hnsw_index, "insert_batch"):
                 self.hnsw_index.insert_batch(batch_nids, latents)
             else:
                 for nid, latent in zip(batch_nids, latents):
@@ -2559,8 +2578,12 @@ class RTMDKField:
         # Rebuild node_index (remove deleted, preserve order)
         self.node_index = [nid for nid in self.node_index if nid in self.nodes]
         if self.cfg.use_hnsw and self.hnsw_index:
-            for nid in node_ids:
-                self.hnsw_index.remove(nid)
+            if self._async_index_builder:
+                for nid in node_ids:
+                    self._async_index_builder.remove(nid)
+            else:
+                for nid in node_ids:
+                    self.hnsw_index.remove(nid)
         # Track 5: WAL durability for explicit deletions
         self.wal.append_delete(node_ids)
         # Invalidate caches
@@ -4624,6 +4647,13 @@ class RTMDKField:
         FieldSerializer.field_to_file(self, path, fmt)
         self._dirty = False
         self.wal.truncate()
+
+    def close(self) -> None:
+        """Release background resources (async builder, WAL)."""
+        if self._async_index_builder is not None:
+            self._async_index_builder.close()
+            self._async_index_builder = None
+        self.wal.close()
 
     def get_state(self) -> Dict[str, Any]:
         """Get lightweight state dict for SOT persistence."""

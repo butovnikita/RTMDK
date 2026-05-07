@@ -133,8 +133,15 @@ RTMDK v8.2.0 (30,000+ строк, 111+ файлов, 105+ API)
 │   ├── Track 6: Async Save Worker + Background Index
 │   ├── Track 7: CI/CD + PyPI Production Hardening
 │   ├── Track 8: MCP Server (Model Context Protocol)
-│   └── Track 9: LangChain LCEL Integration
-└── Integrations: OpenAI, Anthropic, LM Studio, SillyTavern, MCP, LangChain
+│   ├── Track 9: LangChain LCEL Integration
+│   ├── Track 10: Analytics Dashboard API
+│   ├── Track 11: API Keys + Tenant Rate Limiting
+│   ├── Track 12: Memory Node CRUD REST API
+│   ├── Track 13: Structured JSON Request Logging
+│   ├── Track 14: Python Client SDK
+│   ├── Track 15: Webhook Subscriptions
+│   └── Track 16: Batch Ingestion + Import/Export REST
+└── Integrations: OpenAI, Anthropic, LM Studio, SillyTavern, MCP, LangChain, LlamaIndex
 ```
 
 ---

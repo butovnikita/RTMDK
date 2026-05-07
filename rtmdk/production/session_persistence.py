@@ -134,8 +134,17 @@ class SessionPersistence:
         self.memory.field.node_index.clear()
 
         for nid, node_data in session_data.get("nodes", {}).items():
-            # Create node with saved data (simplified restoration)
-            node = self.memory.field._create_node_from_data(node_data)
+            from rtmdk.nodes import MemoryNode
+            node = MemoryNode(
+                id=nid,
+                latent_pos=node_data["latent_pos"],
+                phase=node_data["phase"],
+                amplitude=node_data["amplitude"],
+                salience=node_data["salience"],
+                content=node_data["content"],
+            )
+            node.tier = node_data.get("tier", "semantic")
+            node.created_at = node_data.get("created_at", time.time())
             self.memory.field.nodes[nid] = node
             self.memory.field.node_index.append(nid)
 

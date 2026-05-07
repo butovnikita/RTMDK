@@ -254,6 +254,11 @@ _FIELD_GROUPS: Dict[str, str] = {
     "safety_certifier": "MemorySystemConfig",
     "safety_mode": "MemorySystemConfig",
     "save_queue_size": "MemorySystemConfig",
+    "wal_fsync_interval_ms": "MemorySystemConfig",
+    "wal_batch_size": "MemorySystemConfig",
+    "async_hnsw_build": "MemorySystemConfig",
+    "async_hnsw_interval_ms": "MemorySystemConfig",
+    "async_hnsw_batch_size": "MemorySystemConfig",
     "sde_noise_level": "DynamicsConfig",
     "security_enabled": "ProductionConfig",
     "seed": "CoreConfig",
@@ -521,6 +526,11 @@ class MemorySystemConfig:
     query_queue_size: int = 50
     save_queue_size: int = 100
     evolve_queue_size: int = 20
+    wal_fsync_interval_ms: int = 0
+    wal_batch_size: int = 100
+    async_hnsw_build: bool = False
+    async_hnsw_interval_ms: int = 5000
+    async_hnsw_batch_size: int = 1000
     meta_memory: bool = False
     self_reflection_freq: int = 100
     memory_age_factor: float = 0.001
