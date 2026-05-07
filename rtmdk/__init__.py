@@ -7,6 +7,7 @@ Usage:
     memory = RTMDKMemory(config=config, embedder=my_embedder)
 """
 
+from rtmdk.nodes import MemoryNode
 __version__ = "8.1.0"
 
 from rtmdk.memory.config import RTMDKConfig, ConsolidationMode, Backend, ContextFormat, FieldHealth, EvalMode
@@ -58,13 +59,12 @@ def create_rtmdk(preset: str = "local", embedder=None) -> RTMDKMemory:
     }
 
     if preset not in preset_methods:
-        raise ValueError(f"Unknown preset: {preset}. Available: {list(preset_methods.keys())}")
+        raise ValueError(
+            f"Unknown preset: {preset}. Available: {list(preset_methods.keys())}")
 
     config = preset_methods[preset]()
     return RTMDKMemory(config=config, embedder=embedder)
 
-
-from rtmdk.nodes import MemoryNode
 
 __all__ = [
     "RTMDKMemory",

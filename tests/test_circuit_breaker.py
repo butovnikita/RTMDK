@@ -40,7 +40,11 @@ class TestCircuitBreakerBasics:
             cb.call(lambda: (_ for _ in ()).throw(KeyboardInterrupt))
 
     def test_recovery_half_open_then_closed(self):
-        cb = CircuitBreaker("test", failure_threshold=1, recovery_timeout=0.0, default=0)
+        cb = CircuitBreaker(
+            "test",
+            failure_threshold=1,
+            recovery_timeout=0.0,
+            default=0)
 
         def fail():
             raise RuntimeError("boom")
@@ -54,7 +58,11 @@ class TestCircuitBreakerBasics:
         assert cb._failure_count == 0
 
     def test_half_open_failure_reopens(self):
-        cb = CircuitBreaker("test", failure_threshold=1, recovery_timeout=0.0, default=0)
+        cb = CircuitBreaker(
+            "test",
+            failure_threshold=1,
+            recovery_timeout=0.0,
+            default=0)
 
         def fail():
             raise RuntimeError("boom")

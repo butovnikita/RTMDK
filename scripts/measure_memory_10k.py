@@ -8,6 +8,8 @@ Metrics:
 4. Comparison: exact vs HNSW vs SOT-only
 """
 
+from rtmdk.memory.config import RTMDKConfig
+from rtmdk.memory.field import RTMDKField
 import os
 import sys
 import time
@@ -16,8 +18,6 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from rtmdk.memory.field import RTMDKField
-from rtmdk.memory.config import RTMDKConfig
 
 os.environ["RTMDK_ADD_RATE_LIMIT"] = "0"
 np.random.seed(42)
@@ -75,7 +75,8 @@ def build_field(cfg_name, cfg):
     latencies = np.array(latencies)
 
     # Token economics
-    avg_chars_per_node = sum(len(field.nodes[f"n{i}"].content.get("text", "")) for i in range(N_NODES)) / N_NODES
+    avg_chars_per_node = sum(len(field.nodes[f"n{i}"].content.get(
+        "text", "")) for i in range(N_NODES)) / N_NODES
     avg_tokens_per_node = avg_chars_per_node / 4  # ~4 chars per token (rough)
     tokens_naive = N_NODES * avg_tokens_per_node
     tokens_rtmdk = 5 * avg_tokens_per_node
@@ -84,9 +85,11 @@ def build_field(cfg_name, cfg):
     print(f"  Build time: {build_time:.1f}s")
     print(f"  RAM total: {ram_total:.1f} MB")
     print(f"  RAM per node: {ram_per_node:.2f} KB")
-    print(f"  Query latency: p50={np.percentile(latencies, 50):.2f}ms p99={np.percentile(latencies, 99):.2f}ms")
+    print(
+        f"  Query latency: p50={np.percentile(latencies, 50):.2f}ms p99={np.percentile(latencies, 99):.2f}ms")
     print(f"  Avg tokens/node: {avg_tokens_per_node:.0f}")
-    print(f"  Token savings vs naive: {savings_ratio:.0f}x (naive={tokens_naive:.0f} -> RTMDK={tokens_rtmdk:.0f})")
+    print(
+        f"  Token savings vs naive: {savings_ratio:.0f}x (naive={tokens_naive:.0f} -> RTMDK={tokens_rtmdk:.0f})")
 
     del field
     import gc
@@ -103,7 +106,7 @@ def build_field(cfg_name, cfg):
 
 def main():
     try:
-        import psutil
+        pass
     except ImportError:
         print("pip install psutil required for memory measurement")
         return
@@ -141,16 +144,18 @@ def main():
         sot_max_vocab=5000,
     ))
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("SUMMARY")
-    print("="*60)
+    print("=" * 60)
     for name, r in results.items():
-        print(f"  {name:15s}: RAM={r['ram_total_mb']:5.1f}MB  per_node={r['ram_per_node_kb']:5.2f}KB  "
-              f"p50={r['query_p50_ms']:5.2f}ms  savings={r['token_savings_ratio']:4.0f}x")
+        print(
+            f"  {name:15s}: RAM={r['ram_total_mb']:5.1f}MB  per_node={r['ram_per_node_kb']:5.2f}KB  "
+            f"p50={r['query_p50_ms']:5.2f}ms  savings={r['token_savings_ratio']:4.0f}x")
 
     # Write JSON
     with open("archive/benchmarks/memory_10k_report.json", "w", encoding="utf-8") as f:
-        json.dump({"N_NODES": N_NODES, "DIM": DIM, "results": results}, f, indent=2, ensure_ascii=False)
+        json.dump({"N_NODES": N_NODES, "DIM": DIM, "results": results},
+                  f, indent=2, ensure_ascii=False)
     print("\nReport saved to archive/benchmarks/memory_10k_report.json")
 
 

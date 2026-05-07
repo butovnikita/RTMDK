@@ -14,7 +14,6 @@ Then in config:
 """
 import json
 import logging
-import os
 from typing import Callable, List, Optional
 
 import numpy as np
@@ -40,7 +39,8 @@ def run_bootstrap(
     if teacher_embed_fn is None:
         from sentence_transformers import SentenceTransformer
         teacher = SentenceTransformer(model_name)
-        teacher_embed_fn = lambda t: teacher.encode(t, show_progress_bar=False)
+        def teacher_embed_fn(t): return teacher.encode(
+            t, show_progress_bar=False)
 
     logger.info(f"SBERT bootstrap: {len(texts)} texts -> {output_path}")
     teacher_embs = []
@@ -57,7 +57,7 @@ def run_bootstrap(
         logger.warning("No valid teacher embeddings")
         return
     teacher_matrix = np.stack(teacher_embs).astype(np.float32)
-    teacher_dim = teacher_matrix.shape[1]
+    teacher_matrix.shape[1]
     logger.info(f"Teacher embeddings shape: {teacher_matrix.shape}")
 
     # Simple byte tokenizer (same logic as SOT)
@@ -106,7 +106,8 @@ def run_bootstrap(
 
     # W shape: (n_vocab, teacher_dim)
     # We also store token embeddings aligned to this vocab
-    emb_matrix = np.stack([token_embeddings[t] for t in vocab]).astype(np.float32)
+    emb_matrix = np.stack([token_embeddings[t]
+                          for t in vocab]).astype(np.float32)
 
     np.savez(
         output_path,
@@ -115,7 +116,8 @@ def run_bootstrap(
         token_embeddings=emb_matrix,
         token_frequencies=np.array([token_freq[t] for t in vocab], dtype=np.float32),
     )
-    logger.info(f"Saved bootstrap to {output_path}: vocab={n_vocab}, proj={W.shape}")
+    logger.info(
+        f"Saved bootstrap to {output_path}: vocab={n_vocab}, proj={W.shape}")
 
 
 def load_bootstrap(path: str, tokenizer):

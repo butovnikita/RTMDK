@@ -7,8 +7,6 @@ Covers:
 3. State serialization
 """
 
-import pytest
-import numpy as np
 
 from rtmdk.support.swarm import SwarmConsensusProtocol
 

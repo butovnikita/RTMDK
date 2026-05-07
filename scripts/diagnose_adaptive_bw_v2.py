@@ -5,13 +5,13 @@ Hypothesis: Random projection 768d -> 128d distorts local density,
 causing extreme bw factors that destroy ranking.
 """
 
-import sys, os
+from rtmdk.memory.config import RTMDKConfig
+from rtmdk.memory.field import RTMDKField
+import numpy as np
+import sys
+import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import numpy as np
-from scipy import stats
-from rtmdk.memory.field import RTMDKField
-from rtmdk.memory.config import RTMDKConfig
 
 np.random.seed(42)
 
@@ -96,15 +96,20 @@ def bw_stats(field):
         return None
     bw = field._cached_bw
     return {
-        "mean": float(np.mean(bw)),
-        "median": float(np.median(bw)),
-        "std": float(np.std(bw)),
-        "min": float(np.min(bw)),
-        "max": float(np.max(bw)),
-        "p01": float(np.percentile(bw, 1)),
-        "p99": float(np.percentile(bw, 99)),
-        "ratio": float(np.percentile(bw, 99) / max(np.percentile(bw, 1), 1e-8)),
-    }
+        "mean": float(
+            np.mean(bw)), "median": float(
+            np.median(bw)), "std": float(
+                np.std(bw)), "min": float(
+                    np.min(bw)), "max": float(
+                        np.max(bw)), "p01": float(
+                            np.percentile(
+                                bw, 1)), "p99": float(
+                                    np.percentile(
+                                        bw, 99)), "ratio": float(
+                                            np.percentile(
+                                                bw, 99) / max(
+                                                    np.percentile(
+                                                        bw, 1), 1e-8)), }
 
 
 def run(name, cfg, X, labels, centers, skip_proj=False):
@@ -117,15 +122,18 @@ def run(name, cfg, X, labels, centers, skip_proj=False):
     bw = bw_stats(field)
     print(f"  R@1: {stats['R@1']:.3f}  R@5: {stats['R@5']:.3f}")
     if bw:
-        print(f"  BW  mean={bw['mean']:.3f} med={bw['median']:.3f} std={bw['std']:.3f}")
-        print(f"  BW  min={bw['min']:.4f} max={bw['max']:.4f} p01={bw['p01']:.4f} p99={bw['p99']:.4f}")
+        print(
+            f"  BW  mean={bw['mean']:.3f} med={bw['median']:.3f} std={bw['std']:.3f}")
+        print(
+            f"  BW  min={bw['min']:.4f} max={bw['max']:.4f} p01={bw['p01']:.4f} p99={bw['p99']:.4f}")
         print(f"  BW  p99/p01 ratio: {bw['ratio']:.2f}x")
     return field, stats, bw
 
 
 def main():
     print("Generating realistic synthetic embeddings (768d, cosine-normalized)...")
-    X, labels, centers, cluster_info = generate_realistic_embeddings(n_clusters=20, dim=768)
+    X, labels, centers, cluster_info = generate_realistic_embeddings(
+        n_clusters=20, dim=768)
     print(f"  Total nodes: {len(X)}  Clusters: 20  Outliers: 100")
     print(f"  Cluster spreads: {[f'{s:.2f}' for _, s in cluster_info[:5]]}...")
 
@@ -139,7 +147,8 @@ def main():
         min_response=0.001,
         use_hnsw=False,
     )
-    f1, s1, bw1 = run("No projection, global bw", cfg_no_proj, X, labels, centers, skip_proj=True)
+    f1, s1, bw1 = run("No projection, global bw", cfg_no_proj,
+                      X, labels, centers, skip_proj=True)
 
     cfg_adapt_no_proj = RTMDKConfig(
         latent_dim=768,
@@ -152,7 +161,8 @@ def main():
         min_response=0.001,
         use_hnsw=False,
     )
-    f2, s2, bw2 = run("No projection, adaptive k=5", cfg_adapt_no_proj, X, labels, centers, skip_proj=True)
+    f2, s2, bw2 = run("No projection, adaptive k=5",
+                      cfg_adapt_no_proj, X, labels, centers, skip_proj=True)
 
     # --- With random projection 768->128 ---
     cfg_proj = RTMDKConfig(
@@ -165,7 +175,8 @@ def main():
         use_hnsw=False,
         learn_projection=False,  # use random projection matrix
     )
-    f3, s3, bw3 = run("Projection 768->128, global bw", cfg_proj, X, labels, centers, skip_proj=False)
+    f3, s3, bw3 = run("Projection 768->128, global bw",
+                      cfg_proj, X, labels, centers, skip_proj=False)
 
     cfg_adapt_proj = RTMDKConfig(
         latent_dim=128,
@@ -179,12 +190,13 @@ def main():
         use_hnsw=False,
         learn_projection=False,
     )
-    f4, s4, bw4 = run("Projection 768->128, adaptive k=5", cfg_adapt_proj, X, labels, centers, skip_proj=False)
+    f4, s4, bw4 = run("Projection 768->128, adaptive k=5",
+                      cfg_adapt_proj, X, labels, centers, skip_proj=False)
 
     # --- Summary ---
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("SUMMARY")
-    print("="*60)
+    print("=" * 60)
     rows = [
         ("No proj, global", s1, bw1),
         ("No proj, adaptive", s2, bw2),
@@ -197,9 +209,9 @@ def main():
 
     # --- Diagnostic: does projection create extreme bw factors? ---
     if bw4:
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("DIAGNOSTIC: BW factor distribution")
-        print("="*60)
+        print("=" * 60)
         print(f"  Global bw = 1.0")
         print(f"  Adaptive bw range: {bw4['min']:.4f} to {bw4['max']:.4f}")
         print(f"  Spread ratio (p99/p01): {bw4['ratio']:.1f}x")

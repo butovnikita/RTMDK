@@ -21,8 +21,9 @@ from .embedding_cache import EmbeddingCache
 
 # Advanced retrieval classes (lazy to avoid heavy imports)
 _advanced_retrieval = None
+
+
 def __getattr__(name):
-    global _advanced_retrieval
     _lazy_map = {
         "RTMDKRetriever": "langchain_adapter",
         "RTMDKChatMessageHistory": "langchain_adapter",
@@ -42,13 +43,16 @@ def __getattr__(name):
         "CircuitBreaker": "circuit_breaker",
         "OnboardingWizard": "onboarding",
         "ConversationReplay": "replay",
-        "MemoryDiff": "memory_diff",
+        "MemoryDif": "memory_dif",
         "LLMEvaluator": "llm_eval",
     }
     if name in _lazy_map:
-        module = __import__(f"rtmdk.production.{_lazy_map[name]}", fromlist=[name])
+        module = __import__(
+            f"rtmdk.production.{_lazy_map[name]}",
+            fromlist=[name])
         return getattr(module, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "QueryCache",
@@ -74,7 +78,7 @@ __all__ = [
     "MetaRetrievalController", "AdvancedRTMDKRetriever",
     "OfflineDreamer", "MultiTenantRouter", "ABTesting",
     "CircuitBreaker", "OnboardingWizard", "ConversationReplay",
-    "MemoryDiff", "LLMEvaluator",
+    "MemoryDif", "LLMEvaluator",
     # LangChain integration (lazy to avoid hard dependency)
     "RTMDKRetriever", "RTMDKChatMessageHistory", "RTMDKVectorStore", "RTMDKDocument",
 ]

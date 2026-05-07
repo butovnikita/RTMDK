@@ -22,7 +22,8 @@ class CausalInferenceEngine:
         self.children: Dict[str, Set[str]] = defaultdict(set)
         self.ancestors: Dict[str, Set[str]] = defaultdict(set)
         self._cooccurrence: Dict[Tuple[str, str], int] = defaultdict(int)
-        self._conditional_counts: Dict[Tuple[str, str, str], int] = defaultdict(int)
+        self._conditional_counts: Dict[Tuple[str,
+                                             str, str], int] = defaultdict(int)
         self._node_counts: Dict[str, int] = defaultdict(int)
         self._total_observations = 0
         self.causal_effects: Dict[Tuple[str, str], CausalEdge] = {}
@@ -38,17 +39,21 @@ class CausalInferenceEngine:
         self._node_counts[b] += 1
         self._total_observations += 1
 
-    def record_observation(self, active_nodes: List[str], context: Optional[Dict] = None):
+    def record_observation(
+            self,
+            active_nodes: List[str],
+            context: Optional[Dict] = None):
         self._total_observations += 1
         for node in active_nodes:
             self._node_counts[node] += 1
         for i, a in enumerate(active_nodes):
-            for b in active_nodes[i+1:]:
+            for b in active_nodes[i + 1:]:
                 self._cooccurrence[(a, b)] += 1
                 self._cooccurrence[(b, a)] += 1
                 if context:
                     for ctx_key, ctx_val in context.items():
-                        self._conditional_counts[(a, b, f"{ctx_key}={ctx_val}")] += 1
+                        self._conditional_counts[(
+                            a, b, f"{ctx_key}={ctx_val}")] += 1
 
     def discover_causal_structure(self) -> Dict[str, Set[str]]:
         nodes = list(self._node_counts.keys())
@@ -56,7 +61,7 @@ class CausalInferenceEngine:
             return dict(self.parents)
         skeleton: Dict[str, Set[str]] = defaultdict(set)
         for i, a in enumerate(nodes):
-            for b in nodes[i+1:]:
+            for b in nodes[i + 1:]:
                 if self._test_independence(a, b, set()):
                     continue
                 skeleton[a].add(b)
@@ -66,7 +71,7 @@ class CausalInferenceEngine:
         for z in nodes:
             neighbors = list(skeleton.get(z, set()))
             for i, x in enumerate(neighbors):
-                for y in neighbors[i+1:]:
+                for y in neighbors[i + 1:]:
                     if y not in skeleton.get(x, set()):
                         new_parents[z].add(x)
                         new_parents[z].add(y)
@@ -104,7 +109,7 @@ class CausalInferenceEngine:
             # Compute conditional probabilities
             p_a_given_c = min(n_ab, n_c) / max(n_c, 1)
             p_b_given_c = min(n_ab, n_c) / max(n_c, 1)
-            p_ab_given_c = n_ab / max(n, 1)
+            n_ab / max(n, 1)
             expected_cond = p_a_given_c * p_b_given_c * n_c
             if expected_cond > 0:
                 chi2_cond += (n_ab - expected_cond) ** 2 / expected_cond
@@ -133,7 +138,8 @@ class CausalInferenceEngine:
             ancestors.update(self._get_ancestors(parent, visited))
         return ancestors
 
-    def _get_descendants(self, node: str, visited: Optional[Set[str]] = None) -> Set[str]:
+    def _get_descendants(self, node: str,
+                         visited: Optional[Set[str]] = None) -> Set[str]:
         if visited is None:
             visited = set()
         if node in visited:
@@ -145,8 +151,11 @@ class CausalInferenceEngine:
             descendants.update(self._get_descendants(child, visited))
         return descendants
 
-    def compute_do_probability(self, effect: str, intervention: str,
-                               evidence: Optional[Dict[str, Any]] = None) -> float:
+    def compute_do_probability(self,
+                               effect: str,
+                               intervention: str,
+                               evidence: Optional[Dict[str,
+                                                       Any]] = None) -> float:
         edge = self.causal_effects.get((intervention, effect))
         if edge:
             return edge.strength
@@ -178,7 +187,9 @@ class CausalInferenceEngine:
                 return True
         return False
 
-    def detect_contradictions(self, threshold: float = 0.3) -> List[ContradictionRecord]:
+    def detect_contradictions(
+            self,
+            threshold: float = 0.3) -> List[ContradictionRecord]:
         new_contradictions = []
         effect_causes: Dict[str, List[Tuple[str, float]]] = defaultdict(list)
         for (cause, effect), edge in self.causal_effects.items():
@@ -188,13 +199,15 @@ class CausalInferenceEngine:
             if len(causes) < 2:
                 continue
             for i, (cause_a, strength_a) in enumerate(causes):
-                for cause_b, strength_b in causes[i+1:]:
+                for cause_b, strength_b in causes[i + 1:]:
                     cooc = self._cooccurrence.get((cause_a, cause_b), 0)
                     n_a = self._node_counts.get(cause_a, 0)
                     n_b = self._node_counts.get(cause_b, 0)
                     if n_a > 0 and n_b > 0:
-                        expected = (n_a / self._total_observations) * (n_b / self._total_observations) * self._total_observations
-                        if expected > 0 and cooc / expected < (1.0 - threshold):
+                        expected = (n_a / self._total_observations) * (
+                            n_b / self._total_observations) * self._total_observations
+                        if expected > 0 and cooc / \
+                                expected < (1.0 - threshold):
                             self._contradiction_counter += 1
                             record = ContradictionRecord(
                                 id=f"contr_{self._contradiction_counter}",
@@ -205,13 +218,19 @@ class CausalInferenceEngine:
                             self.contradictions[record.id] = record
                             new_contradictions.append(record)
                             if (cause_a, effect_node) in self.causal_effects:
-                                self.causal_effects[(cause_a, effect_node)].is_contradicted = True
+                                self.causal_effects[(
+                                    cause_a, effect_node)].is_contradicted = True
                             if (cause_b, effect_node) in self.causal_effects:
-                                self.causal_effects[(cause_b, effect_node)].is_contradicted = True
+                                self.causal_effects[(
+                                    cause_b, effect_node)].is_contradicted = True
         return new_contradictions
 
-    def counterfactual_query(self, intervention: Dict[str, Any], query_nodes: List[str],
-                             evidence: Optional[Dict[str, Any]] = None,
+    def counterfactual_query(self,
+                             intervention: Dict[str,
+                                                Any],
+                             query_nodes: List[str],
+                             evidence: Optional[Dict[str,
+                                                     Any]] = None,
                              max_depth: int = 3) -> CounterfactualResult:
         query_str = f"do({intervention})|{query_nodes}"
         if query_str in self._counterfactual_cache:
@@ -238,14 +257,29 @@ class CausalInferenceEngine:
                 reasoning_path.append(f"No causal path to {target}")
         confidence = np.mean([p for _, p in outcomes]) if outcomes else 0.5
         result = CounterfactualResult(
-            query=query_str, intervention=intervention, predicted_outcomes=outcomes,
-            confidence=float(confidence), reasoning_path=reasoning_path, assumptions=[])
+            query=query_str,
+            intervention=intervention,
+            predicted_outcomes=outcomes,
+            confidence=float(confidence),
+            reasoning_path=reasoning_path,
+            assumptions=[])
         self._counterfactual_cache[query_str] = result
         return result
 
-    def validate_consolidation(self, node_a: str, node_b: str) -> Dict[str, Any]:
-        result = {"safe": True, "reasons": [], "causal_conflicts": [], "recommendation": "proceed"}
-        common_targets = set(self.children.get(node_a, set())) & set(self.children.get(node_b, set()))
+    def validate_consolidation(
+            self, node_a: str, node_b: str) -> Dict[str, Any]:
+        result = {
+            "safe": True,
+            "reasons": [],
+            "causal_conflicts": [],
+            "recommendation": "proceed"}
+        common_targets = set(
+            self.children.get(
+                node_a,
+                set())) & set(
+            self.children.get(
+                node_b,
+                set()))
         for target in common_targets:
             edge_a = self.causal_effects.get((node_a, target))
             edge_b = self.causal_effects.get((node_b, target))
@@ -253,13 +287,26 @@ class CausalInferenceEngine:
                 diff = abs(edge_a.strength - edge_b.strength)
                 if diff > 0.4:
                     result["safe"] = False
-                    result["causal_conflicts"].append({"target": target, "effect_a": edge_a.strength, "effect_b": edge_b.strength, "difference": diff})
+                    result["causal_conflicts"].append(
+                        {
+                            "target": target,
+                            "effect_a": edge_a.strength,
+                            "effect_b": edge_b.strength,
+                            "difference": diff})
                     result["reasons"].append(f"Opposing effects on {target}")
-        if node_b in self.children.get(node_a, set()) or node_a in self.children.get(node_b, set()):
+        if node_b in self.children.get(
+                node_a,
+                set()) or node_a in self.children.get(
+                node_b,
+                set()):
             result["safe"] = False
             result["reasons"].append("Causal relationship exists")
             result["recommendation"] = "preserve_separate"
-        if node_a in self.ancestors.get(node_b, set()) or node_b in self.ancestors.get(node_a, set()):
+        if node_a in self.ancestors.get(
+                node_b,
+                set()) or node_b in self.ancestors.get(
+                node_a,
+                set()):
             result["safe"] = False
             result["reasons"].append("Merging would create causal cycle")
             result["recommendation"] = "preserve_separate"
@@ -294,22 +341,45 @@ class CausalInferenceEngine:
 
     def get_state(self) -> Dict:
         return {
-            "parents": {k: list(v) for k, v in self.parents.items()},
-            "children": {k: list(v) for k, v in self.children.items()},
-            "causal_effects": {f"{k[0]}->{k[1]}": v.to_dict() for k, v in self.causal_effects.items()},
-            "contradictions": {k: v.to_dict() for k, v in self.contradictions.items()},
-            "node_counts": dict(self._node_counts),
+            "parents": {
+                k: list(v) for k,
+                v in self.parents.items()},
+            "children": {
+                k: list(v) for k,
+                v in self.children.items()},
+            "causal_effects": {
+                f"{k[0]}->{k[1]}": v.to_dict() for k,
+                v in self.causal_effects.items()},
+            "contradictions": {
+                k: v.to_dict() for k,
+                v in self.contradictions.items()},
+            "node_counts": dict(
+                self._node_counts),
             "total_observations": self._total_observations,
-            "intervention_store": {k: [{"new_pos": v["new_pos"].tolist() if hasattr(v["new_pos"], 'tolist') else v["new_pos"], "timestamp": v["timestamp"]} for v in vals] for k, vals in self._intervention_store.items()},
+            "intervention_store": {
+                k: [
+                    {
+                        "new_pos": v["new_pos"].tolist() if hasattr(
+                            v["new_pos"],
+                            'tolist') else v["new_pos"],
+                        "timestamp": v["timestamp"]} for v in vals] for k,
+                vals in self._intervention_store.items()},
         }
 
     def load_state(self, state: Dict):
-        self.parents = defaultdict(set, {k: set(v) for k, v in state.get("parents", {}).items()})
-        self.children = defaultdict(set, {k: set(v) for k, v in state.get("children", {}).items()})
+        self.parents = defaultdict(
+            set, {
+                k: set(v) for k, v in state.get(
+                    "parents", {}).items()})
+        self.children = defaultdict(
+            set, {
+                k: set(v) for k, v in state.get(
+                    "children", {}).items()})
         self._node_counts = defaultdict(int, state.get("node_counts", {}))
         self._total_observations = state.get("total_observations", 0)
         self._intervention_store = {}
-        for node_id, interventions in state.get("intervention_store", {}).items():
+        for node_id, interventions in state.get(
+                "intervention_store", {}).items():
             self._intervention_store[node_id] = [
                 {"new_pos": np.array(iv["new_pos"], dtype=np.float32), "timestamp": iv["timestamp"]}
                 for iv in interventions
@@ -317,7 +387,8 @@ class CausalInferenceEngine:
         for key, edge_data in state.get("causal_effects", {}).items():
             parts = key.split("->")
             if len(parts) == 2:
-                self.causal_effects[(parts[0], parts[1])] = CausalEdge.from_dict(edge_data)
+                self.causal_effects[(parts[0], parts[1])
+                                    ] = CausalEdge.from_dict(edge_data)
         for cid, record_data in state.get("contradictions", {}).items():
             self.contradictions[cid] = ContradictionRecord(
                 id=record_data["id"], effect_node=record_data["effect_node"],

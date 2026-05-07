@@ -1,9 +1,7 @@
 """rtmdk/support/entropy_controller.py — Information-theoretic capacity management."""
 from __future__ import annotations
-from typing import Dict, List, Optional, Any
-import math
+from typing import Dict, List, Any
 import numpy as np
-from numpy.typing import NDArray
 
 
 class EntropyController:

@@ -31,7 +31,8 @@ class NaiveGraphIndex:
         self.graph[node_id] = []
         if len(self.positions) <= 1:
             return
-        candidates = [c for c in list(self.positions.keys()) if c != node_id][:self.ef_construction]
+        candidates = [c for c in list(
+            self.positions.keys()) if c != node_id][:self.ef_construction]
         if candidates:
             cand_pos = np.array([self.positions[c] for c in candidates])
             dists = np.linalg.norm(cand_pos - pos, axis=1)
@@ -60,12 +61,21 @@ class NaiveGraphIndex:
         candidates = {start}
         visited = set()
         for _ in range(min(self.ef_construction, len(self.positions))):
-            best = min((c for c in candidates - visited), key=lambda c: np.linalg.norm(self.positions[c] - query_pos), default=None)
+            best = min(
+                (c for c in candidates - visited),
+                key=lambda c: np.linalg.norm(
+                    self.positions[c] - query_pos),
+                default=None)
             if best is None:
                 break
             visited.add(best)
             candidates.update(self.graph.get(best, []))
-        return sorted(candidates, key=lambda nid: np.linalg.norm(self.positions[nid] - query_pos))[:top_k]
+        return sorted(
+            candidates,
+            key=lambda nid: np.linalg.norm(
+                self.positions[nid] -
+                query_pos))[
+            :top_k]
 
 
 # Backward-compatible alias

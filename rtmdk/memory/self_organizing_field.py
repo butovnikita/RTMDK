@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import logging
 import math
-from collections import Counter, defaultdict
-from typing import Dict, List, Optional, Tuple
+from collections import defaultdict
+from typing import Dict, List, Optional, Set, Tuple
 
 import numpy as np
 
@@ -64,9 +64,6 @@ class CooccurrenceStore:
     def __iter__(self):
         return iter(self._data)
 
-    def __len__(self) -> int:
-        return len(self._data)
-
     def __bool__(self) -> bool:
         return bool(self._data)
 
@@ -75,12 +72,16 @@ class CooccurrenceStore:
         if len(self._data) <= self.prune_threshold:
             return
         # Sort by weight descending, keep top max_size
-        sorted_items = sorted(self._data.items(), key=lambda kv: kv[1], reverse=True)
+        sorted_items = sorted(
+            self._data.items(),
+            key=lambda kv: kv[1],
+            reverse=True)
         kept = sorted_items[: self.max_size]
         dropped = len(sorted_items) - len(kept)
         self._data = dict(kept)
         self._total_prunes += dropped
-        logger.info(f"CooccurrenceStore pruned: dropped {dropped} entries, kept {len(self._data)}")
+        logger.info(
+            f"CooccurrenceStore pruned: dropped {dropped} entries, kept {len(self._data)}")
 
     def get_stats(self) -> Dict[str, int]:
         return {
@@ -142,7 +143,9 @@ class SOTokenizer:
         if self.token_dim == self.latent_dim:
             self.projection = np.eye(self.token_dim, dtype=np.float32)
         else:
-            self.projection = self._rng.standard_normal((self.token_dim, self.latent_dim)).astype(np.float32) * 0.1
+            self.projection = self._rng.standard_normal(
+                (self.token_dim, self.latent_dim)).astype(
+                np.float32) * 0.1
             # Orthogonal initialization for better conditioning
             if self.token_dim >= self.latent_dim:
                 q, _ = np.linalg.qr(self.projection)
@@ -155,7 +158,9 @@ class SOTokenizer:
         else:
             # Word mode: reserve IDs 0..255 for special / fallback
             for i in range(self.initial_byte_vocab):
-                emb = self._rng.standard_normal(self.token_dim).astype(np.float32)
+                emb = self._rng.standard_normal(
+                    self.token_dim).astype(
+                    np.float32)
                 norm = np.linalg.norm(emb)
                 if norm > 0:
                     emb /= norm
@@ -169,7 +174,10 @@ class SOTokenizer:
                 emb /= norm
             self.token_embeddings[i] = emb
 
-    def _seed_subword_tokens(self, top_n_bigrams: int = 500, top_n_trigrams: int = 200):
+    def _seed_subword_tokens(
+            self,
+            top_n_bigrams: int = 500,
+            top_n_trigrams: int = 200):
         """Pre-seed vocabulary with common English byte patterns.
         These are learned from a small static corpus (no runtime dependency)."""
         # Common byte bigrams in English text (from frequency analysis)
@@ -283,7 +291,8 @@ class SOTokenizer:
                 if triple[:2] not in self.merges:
                     self._create_merge(triple[:2])
                 first = self.merges[triple[:2]]
-                if (first, triple[2]) not in self.merges and first in self.token_embeddings:
+                if (first,
+                        triple[2]) not in self.merges and first in self.token_embeddings:
                     self._create_merge((first, triple[2]))
 
     def _create_merge(self, pair: Tuple[int, int]):
@@ -326,7 +335,8 @@ class SOTokenizer:
         """
         if not texts:
             return
-        logger.info(f"SOT bootstrap: computing teacher embeddings for {len(texts)} texts...")
+        logger.info(
+            f"SOT bootstrap: computing teacher embeddings for {len(texts)} texts...")
         teacher_embs = []
         valid_texts = []
         for text in texts:
@@ -348,7 +358,8 @@ class SOTokenizer:
             from sklearn.decomposition import PCA
 
             pca = PCA(n_components=self.latent_dim)
-            teacher_reduced = pca.fit_transform(teacher_matrix).astype(np.float32)
+            teacher_reduced = pca.fit_transform(
+                teacher_matrix).astype(np.float32)
             # Normalize
             norms = np.linalg.norm(teacher_reduced, axis=1, keepdims=True)
             teacher_reduced /= np.maximum(norms, 1e-8)
@@ -356,12 +367,17 @@ class SOTokenizer:
             teacher_reduced = teacher_matrix.copy()
             # Pad with zeros if teacher_dim < latent_dim
             if teacher_dim < self.latent_dim:
-                pad = np.zeros((len(teacher_reduced), self.latent_dim - teacher_dim), dtype=np.float32)
-                teacher_reduced = np.concatenate([teacher_reduced, pad], axis=1)
+                pad = np.zeros(
+                    (len(teacher_reduced),
+                     self.latent_dim - teacher_dim),
+                    dtype=np.float32)
+                teacher_reduced = np.concatenate(
+                    [teacher_reduced, pad], axis=1)
             norms = np.linalg.norm(teacher_reduced, axis=1, keepdims=True)
             teacher_reduced /= np.maximum(norms, 1e-8)
 
-        logger.info(f"SOT bootstrap: teacher shape {teacher_matrix.shape}, reduced to {teacher_reduced.shape}")
+        logger.info(
+            f"SOT bootstrap: teacher shape {teacher_matrix.shape}, reduced to {teacher_reduced.shape}")
 
         if not fit_projection_only:
             # Build token → text indices mapping
@@ -377,7 +393,10 @@ class SOTokenizer:
                 for token_id, indices in token_to_indices.items():
                     if token_id not in self.token_embeddings:
                         continue
-                    target = np.mean(teacher_reduced[indices], axis=0).astype(np.float32)
+                    target = np.mean(
+                        teacher_reduced[indices],
+                        axis=0).astype(
+                        np.float32)
                     current = self.token_embeddings[token_id] @ self.projection
                     error = target - current
                     delta_token = lr * (error @ self.projection.T)
@@ -391,7 +410,8 @@ class SOTokenizer:
                     total_delta += np.linalg.norm(delta_token)
 
                 if epoch % 10 == 0:
-                    logger.info(f"SOT bootstrap epoch {epoch}: avg delta={total_delta / len(token_to_indices):.4f}")
+                    logger.info(
+                        f"SOT bootstrap epoch {epoch}: avg delta={total_delta / len(token_to_indices):.4f}")
 
         # Fit projection matrix via Ridge regression
         logger.info("SOT bootstrap: fitting projection matrix...")
@@ -401,7 +421,8 @@ class SOTokenizer:
             tokens = self.encode(text)
             if not tokens:
                 continue
-            pooled = np.mean([self.token_embeddings[t] for t in tokens if t in self.token_embeddings], axis=0)
+            pooled = np.mean([self.token_embeddings[t]
+                             for t in tokens if t in self.token_embeddings], axis=0)
             X.append(pooled)
             Y.append(teacher_reduced[idx])
         if len(X) >= self.latent_dim:
@@ -414,13 +435,16 @@ class SOTokenizer:
                 W = np.linalg.solve(XtX, X.T @ Y).astype(np.float32)
                 if W.shape == self.projection.shape:
                     self.projection = W
-                    logger.info("SOT bootstrap: projection matrix updated via Ridge regression")
+                    logger.info(
+                        "SOT bootstrap: projection matrix updated via Ridge regression")
                 else:
-                    logger.warning(f"SOT bootstrap: projection shape mismatch {W.shape} vs {self.projection.shape}")
+                    logger.warning(
+                        f"SOT bootstrap: projection shape mismatch {W.shape} vs {self.projection.shape}")
             except np.linalg.LinAlgError:
-                logger.warning("SOT bootstrap: Ridge regression failed, keeping original projection")
+                logger.warning(
+                    "SOT bootstrap: Ridge regression failed, keeping original projection")
 
-        logger.info(f"SOT bootstrap complete")
+        logger.info("SOT bootstrap complete")
 
     def warm_start_from_corpus(self, corpus_texts: List[str]):
         """Pre-train token embeddings on a corpus using PMI-based initialization.
@@ -458,7 +482,8 @@ class SOTokenizer:
                 if pmi > 0:
                     # Pull embeddings of co-occurring bytes closer
                     if a in self.token_embeddings and b in self.token_embeddings:
-                        direction = self.token_embeddings[b] - self.token_embeddings[a]
+                        direction = self.token_embeddings[b] - \
+                            self.token_embeddings[a]
                         self.token_embeddings[a] += 0.05 * pmi * direction
                         self.token_embeddings[b] += 0.05 * pmi * (-direction)
 
@@ -476,8 +501,7 @@ class SOTokenizer:
                 self.token_idf[b] = idf
         logger.info(
             f"SOT warm-start: processed {len(corpus_texts)} texts, "
-            f"{len(cooc)} co-occurrence pairs, IDF computed for {len(self.token_idf)} bytes"
-        )
+            f"{len(cooc)} co-occurrence pairs, IDF computed for {len(self.token_idf)} bytes")
 
     def _word_tokenize(self, text: str) -> List[str]:
         """Unicode-aware word tokenization.
@@ -493,7 +517,8 @@ class SOTokenizer:
         current = []
 
         for ch in text:
-            # CJK characters are individual semantic units regardless of category
+            # CJK characters are individual semantic units regardless of
+            # category
             is_cjk = (
                 "\u4e00" <= ch <= "\u9fff"  # CJK Unified Ideographs
                 or "\u3040" <= ch <= "\u309f"  # Hiragana
@@ -566,7 +591,8 @@ class SOTokenizer:
             new_tokens: List[int] = []
             i = 0
             while i < len(tokens):
-                if i + 1 < len(tokens) and (tokens[i], tokens[i + 1]) in self.merges:
+                if i + 1 < len(tokens) and (tokens[i],
+                                            tokens[i + 1]) in self.merges:
                     new_tokens.append(self.merges[(tokens[i], tokens[i + 1])])
                     i += 2
                     changed = True
@@ -608,7 +634,8 @@ class SOTokenizer:
                         found = True
                         break
                 if not found:
-                    logger.warning(f"SOT decode: token {tid} has no merge rule")
+                    logger.warning(
+                        f"SOT decode: token {tid} has no merge rule")
                     byte_seq.append(tid % self.initial_byte_vocab)
         return byte_seq.decode("utf-8", errors="replace")
 
@@ -627,7 +654,8 @@ class SOTokenizer:
                 # IDF weight: rare tokens are more informative
                 idf = self.token_idf.get(t, 1.0)
                 # Position weight: first and last tokens often more important
-                pos_weight = 1.0 + 0.5 * (1.0 if i == 0 or i == len(tokens) - 1 else 0.0)
+                pos_weight = 1.0 + 0.5 * \
+                    (1.0 if i == 0 or i == len(tokens) - 1 else 0.0)
                 weights.append(idf * pos_weight)
             else:
                 weights.append(1.0)
@@ -665,19 +693,24 @@ class SOTokenizer:
         if self.attention_pooling and self.token_frequency:
             n_docs = sum(1 for _ in self.token_frequency.values())
             for tid, freq in self.token_frequency.items():
-                self.token_idf[tid] = math.log(max(n_docs, 1) / (freq + 1.0) + 1.0)
+                self.token_idf[tid] = math.log(
+                    max(n_docs, 1) / (freq + 1.0) + 1.0)
 
     def propose_merges(self, n: int) -> List[Tuple[int, int]]:
         """Return top-N merge candidates by co-occurrence score."""
         if not self.cooccurrence:
             return []
-        sorted_pairs = sorted(self.cooccurrence.items(), key=lambda kv: kv[1], reverse=True)
+        sorted_pairs = sorted(
+            self.cooccurrence.items(),
+            key=lambda kv: kv[1],
+            reverse=True)
         return [pair for pair, _ in sorted_pairs[:n]]
 
     def merge(self, pair: Tuple[int, int]):
         """Execute a merge: create new token embedding as weighted average."""
         if len(self.token_embeddings) >= self.max_vocab:
-            raise RuntimeError(f"Max vocab size {self.max_vocab} reached, cannot merge")
+            raise RuntimeError(
+                f"Max vocab size {self.max_vocab} reached, cannot merge")
         a, b = pair
         if a not in self.token_embeddings or b not in self.token_embeddings:
             raise ValueError(f"Invalid pair {pair}: missing embeddings")
@@ -686,13 +719,15 @@ class SOTokenizer:
         self.next_token_id += 1
         wa = weight
         wb = weight
-        new_emb = (wa * self.token_embeddings[a] + wb * self.token_embeddings[b]) / (wa + wb)
+        new_emb = (
+            wa * self.token_embeddings[a] + wb * self.token_embeddings[b]) / (wa + wb)
         norm = np.linalg.norm(new_emb)
         if norm > 0:
             new_emb /= norm
         self.token_embeddings[new_id] = new_emb.astype(np.float32)
         self.merges[pair] = new_id
-        logger.debug(f"SOT merge: {pair} -> {new_id} (vocab={len(self.token_embeddings)})")
+        logger.debug(
+            f"SOT merge: {pair} -> {new_id} (vocab={len(self.token_embeddings)})")
 
     def update_projection(
         self,
@@ -751,7 +786,6 @@ class SOTokenizer:
                 so that the effective update strength stays constant across
                 different token dimensionalities. Defaults to self.adaptive_lr.
         """
-        from typing import List
 
         if adaptive_lr is None:
             adaptive_lr = self.adaptive_lr
@@ -780,7 +814,8 @@ class SOTokenizer:
             n_tokens = self.encode(neg_text)
             n_ids = [t for t in n_tokens if t in self.token_embeddings]
             if n_ids:
-                neg_means.append(np.mean([self.token_embeddings[t] for t in n_ids], axis=0))
+                neg_means.append(
+                    np.mean([self.token_embeddings[t] for t in n_ids], axis=0))
 
         # Update query tokens
         for tid in q_ids:
@@ -814,9 +849,8 @@ class SOTokenizer:
         if self.tokenization_mode != "word":
             logger.warning("prune_vocab only meaningful in word mode")
             return
-        to_remove = [
-            tid for tid, freq in self.token_frequency.items() if freq < min_freq and tid >= self.initial_byte_vocab
-        ]
+        to_remove = [tid for tid, freq in self.token_frequency.items(
+        ) if freq < min_freq and tid >= self.initial_byte_vocab]
         if not to_remove:
             return
         # Ensure unk token exists
@@ -840,10 +874,12 @@ class SOTokenizer:
             self.token_frequency.pop(tid, None)
             self.token_idf.pop(tid, None)
         # Clean cooccurrence pairs involving removed tokens
-        keys_to_remove = [k for k in self.cooccurrence.keys() if k[0] in to_remove or k[1] in to_remove]
+        keys_to_remove = [k for k in self.cooccurrence.keys(
+        ) if k[0] in to_remove or k[1] in to_remove]
         for k in keys_to_remove:
             self.cooccurrence.pop(k)
-        logger.info(f"prune_vocab: removed {len(to_remove)} rare tokens, vocab={len(self.token_embeddings)}")
+        logger.info(
+            f"prune_vocab: removed {len(to_remove)} rare tokens, vocab={len(self.token_embeddings)}")
 
     def get_state(self) -> dict:
         return {
@@ -873,16 +909,23 @@ class SOTokenizer:
         self.latent_dim = state.get("latent_dim", self.latent_dim)
         self.token_dim = state.get("token_dim", self.token_dim)
         self.max_vocab = state.get("max_vocab", self.max_vocab)
-        self.initial_byte_vocab = state.get("initial_byte_vocab", self.initial_byte_vocab)
-        self.next_token_id = state.get("next_token_id", self.initial_byte_vocab)
-        self.tokenization_mode = state.get("tokenization_mode", self.tokenization_mode)
-        self.max_cooccurrence = state.get("max_cooccurrence", self.max_cooccurrence)
-        self.skipgram_window = state.get("skipgram_window", self.skipgram_window)
-        self.attention_pooling = state.get("attention_pooling", self.attention_pooling)
+        self.initial_byte_vocab = state.get(
+            "initial_byte_vocab", self.initial_byte_vocab)
+        self.next_token_id = state.get(
+            "next_token_id", self.initial_byte_vocab)
+        self.tokenization_mode = state.get(
+            "tokenization_mode", self.tokenization_mode)
+        self.max_cooccurrence = state.get(
+            "max_cooccurrence", self.max_cooccurrence)
+        self.skipgram_window = state.get(
+            "skipgram_window", self.skipgram_window)
+        self.attention_pooling = state.get(
+            "attention_pooling", self.attention_pooling)
         self.subword_seed = state.get("subword_seed", self.subword_seed)
         self.token_embeddings = {
-            int(k): np.array(v, dtype=np.float32) for k, v in state.get("token_embeddings", {}).items()
-        }
+            int(k): np.array(
+                v, dtype=np.float32) for k, v in state.get(
+                "token_embeddings", {}).items()}
         self.merges = {}
         for k, v in state.get("merges", {}).items():
             a_str, b_str = k.split(",")
@@ -898,17 +941,26 @@ class SOTokenizer:
                 self.latent_dim,
             ), f"Projection shape mismatch: {self.projection.shape} vs ({self.token_dim}, {self.latent_dim})"
         self.word_to_id = state.get("word_to_id", {})
-        self.id_to_word = {int(k): v for k, v in state.get("id_to_word", {}).items()}
+        self.id_to_word = {
+            int(k): v for k,
+            v in state.get(
+                "id_to_word",
+                {}).items()}
         self._unk_token_id = state.get("unk_token_id", None)
         self._pruned_words = set(state.get("pruned_words", []))
-        self.token_frequency = defaultdict(float, state.get("token_frequency", {}))
+        self.token_frequency = defaultdict(
+            float, state.get("token_frequency", {}))
         self.token_idf = state.get("token_idf", {})
 
 
 class ContrastiveHebbian:
     """Online contrastive Hebbian learning for embeddings."""
 
-    def __init__(self, lr: float = 0.01, neg_ratio: float = 0.2, temperature: float = 0.1):
+    def __init__(
+            self,
+            lr: float = 0.01,
+            neg_ratio: float = 0.2,
+            temperature: float = 0.1):
         self.lr = lr
         self.neg_ratio = neg_ratio
         self.temperature = temperature
@@ -979,12 +1031,14 @@ class ContrastiveHebbian:
         if len(positives) < 2:
             return
         positive_set = set(positives)
-        candidates = [c for c in all_candidates if c not in positive_set and c in embeddings]
+        candidates = [
+            c for c in all_candidates if c not in positive_set and c in embeddings]
 
         if not candidates:
             return
 
-        # For each positive, find hardest negatives (highest similarity among non-positives)
+        # For each positive, find hardest negatives (highest similarity among
+        # non-positives)
         hard_negatives = set()
         for i in positives:
             if i not in embeddings:
@@ -1024,10 +1078,12 @@ class ContrastiveHebbian:
                 if i == j:
                     continue
                 sim = self._cosine_sim(node_embeddings[i], node_embeddings[j])
-                delta += self.lr * sim * (node_embeddings[j] - node_embeddings[i])
+                delta += self.lr * sim * \
+                    (node_embeddings[j] - node_embeddings[i])
             for k in valid_neg:
                 sim = self._cosine_sim(node_embeddings[i], node_embeddings[k])
-                delta -= self.lr * 0.1 * sim * (node_embeddings[k] - node_embeddings[i])
+                delta -= self.lr * 0.1 * sim * \
+                    (node_embeddings[k] - node_embeddings[i])
             node_embeddings[i] += delta
             norm = np.linalg.norm(node_embeddings[i])
             if norm > 0:
@@ -1036,7 +1092,8 @@ class ContrastiveHebbian:
             delta = np.zeros_like(node_embeddings[k])
             for i in valid_pos:
                 sim = self._cosine_sim(node_embeddings[k], node_embeddings[i])
-                delta -= self.lr * 0.1 * sim * (node_embeddings[i] - node_embeddings[k])
+                delta -= self.lr * 0.1 * sim * \
+                    (node_embeddings[i] - node_embeddings[k])
             node_embeddings[k] += delta
             norm = np.linalg.norm(node_embeddings[k])
             if norm > 0:
@@ -1046,7 +1103,11 @@ class ContrastiveHebbian:
 class EmbeddingFieldSSM:
     """Bridges SSMDynamics with the embedding field for smooth trajectories."""
 
-    def __init__(self, latent_dim: int, tokenizer: SOTokenizer, diagonal: bool = True):
+    def __init__(
+            self,
+            latent_dim: int,
+            tokenizer: SOTokenizer,
+            diagonal: bool = True):
         self.latent_dim = latent_dim
         self.tokenizer = tokenizer
         self.ssm = SSMDynamics(
@@ -1059,7 +1120,10 @@ class EmbeddingFieldSSM:
             diagonal=diagonal,
         )
 
-    def step(self, token_ids: List[int], field_state: np.ndarray) -> np.ndarray:
+    def step(
+            self,
+            token_ids: List[int],
+            field_state: np.ndarray) -> np.ndarray:
         """Compute momentum from SSM given current token sequence and field state."""
         if field_state.ndim != 1 or field_state.shape[0] != self.latent_dim:
             field_state = np.zeros(self.latent_dim, dtype=np.float32)

@@ -1,5 +1,4 @@
 """Memory pressure and leak tests for RTMDK."""
-import numpy as np
 import pytest
 
 from rtmdk.memory.config import RTMDKConfig
@@ -31,17 +30,24 @@ class TestCooccurrenceBounded:
 
 class TestVocabBounded:
     def test_word_vocab_respects_max_vocab(self):
-        tok = SOTokenizer(latent_dim=16, max_vocab=20, tokenization_mode="word")
+        tok = SOTokenizer(
+            latent_dim=16,
+            max_vocab=20,
+            tokenization_mode="word")
         # Encode many unique words
         text = " ".join([f"word{i}" for i in range(100)])
         tokens = tok.encode(text)
         # Vocab should not exceed max_vocab (including byte fallback)
-        assert len(tok.token_embeddings) <= tok.max_vocab + tok.initial_byte_vocab
+        assert len(tok.token_embeddings) <= tok.max_vocab + \
+            tok.initial_byte_vocab
         # All tokens should be valid IDs
         assert all(t < tok.next_token_id for t in tokens)
 
     def test_byte_vocab_never_exceeds_256_plus_merges(self):
-        tok = SOTokenizer(latent_dim=16, max_vocab=4096, tokenization_mode="byte")
+        tok = SOTokenizer(
+            latent_dim=16,
+            max_vocab=4096,
+            tokenization_mode="byte")
         for i in range(500):
             tok.record_cooccurrence(list(range(256)), weight=1.0)
             if i % 50 == 0:
@@ -73,7 +79,10 @@ class TestMemoryPressure:
         assert len(tok.cooccurrence) <= 100
 
     def test_field_token_frequency_tracked(self):
-        cfg = RTMDKConfig(latent_dim=16, sot_enabled=True, sot_tokenization_mode="word")
+        cfg = RTMDKConfig(
+            latent_dim=16,
+            sot_enabled=True,
+            sot_tokenization_mode="word")
         field = RTMDKField(cfg)
         tok = field.sot_tokenizer
 

@@ -28,7 +28,7 @@ class CPENParentODE:
         self.state_dim = latent_dim * num_nodes
         # Initialize weight matrix with small random values
         self.W = np.random.randn(self.state_dim, self.state_dim) * 0.1
-        
+
     def set_input(self, input_vector: np.ndarray):
         """Set external input vector (should match state_dim)."""
         if input_vector.shape[0] != self.state_dim:
@@ -39,10 +39,11 @@ class CPENParentODE:
             else:
                 # Pad or truncate
                 self.input = np.zeros(self.state_dim)
-                self.input[:min(self.state_dim, input_vector.shape[0])] = input_vector[:min(self.state_dim, input_vector.shape[0])]
+                self.input[:min(self.state_dim, input_vector.shape[0])] = input_vector[:min(
+                    self.state_dim, input_vector.shape[0])]
         else:
             self.input = input_vector
-    
+
     def dynamics(self, t: float, state: np.ndarray) -> np.ndarray:
         """Compute parent ODE dynamics."""
         # Parent dynamics: dx/dt = -x + W * tanh(x) + I
@@ -61,13 +62,19 @@ class CPENChildODE:
     where A_i is amplitude, phi_i is phase.
     """
 
-    def __init__(self, latent_dim: int, num_nodes: int, hebbian_eta: float = 0.01, decay: float = 0.01):
+    def __init__(
+            self,
+            latent_dim: int,
+            num_nodes: int,
+            hebbian_eta: float = 0.01,
+            decay: float = 0.01):
         self.latent_dim = latent_dim
         self.num_nodes = num_nodes
         self.hebbian_eta = hebbian_eta
         self.decay = decay
-        self.state_dim = 2 * num_nodes  # [A_0, ..., A_{N-1}, phi_0, ..., phi_{N-1}]
-        
+        # [A_0, ..., A_{N-1}, phi_0, ..., phi_{N-1}]
+        self.state_dim = 2 * num_nodes
+
     def set_input(self, input_vectors: np.ndarray):
         """Set input for each node (latent_dim x num_nodes)."""
         # input_vectors shape: (latent_dim, num_nodes) or (num_nodes, latent_dim)
@@ -84,29 +91,31 @@ class CPENChildODE:
             else:
                 # Default to zero
                 self.inputs = np.zeros((self.latent_dim, self.num_nodes))
-    
+
     def dynamics(self, t: float, state: np.ndarray) -> np.ndarray:
         """Compute child ODE dynamics for all nodes."""
         A = state[:self.num_nodes]          # amplitudes
         phi = state[self.num_nodes:]        # phases
-        
+
         # Hebbian update for amplitude: dA/dt = eta * (input * A - decay * A)
         # input per node: we take the norm of the input vector for that node
         input_norms = np.linalg.norm(self.inputs, axis=0)  # shape (num_nodes,)
         dA_dt = self.hebbian_eta * (input_norms * A - self.decay * A)
-        
+
         # Phase dynamics: dphi/dt = natural_freq + coupling * sum_j sin(phi_j - phi_i)
         # For simplicity, set natural_freq = 0.1 and coupling = 0.1
         natural_freq = 0.1 * np.ones_like(phi)
         coupling = 0.1
         # Compute coupling term using vectorized version
-        # For each i, sum_j sin(phi_j - phi_i) = sum_j sin(phi_j) * cos(phi_i) - cos(phi_j) * sin(phi_i)
+        # For each i, sum_j sin(phi_j - phi_i) = sum_j sin(phi_j) * cos(phi_i)
+        # - cos(phi_j) * sin(phi_i)
         sin_phi = np.sin(phi)
         cos_phi = np.cos(phi)
         sum_sin_phi = np.sum(sin_phi)
         sum_cos_phi = np.sum(cos_phi)
-        dphi_dt = natural_freq + coupling * (sum_sin_phi * cos_phi - sum_cos_phi * sin_phi)
-        
+        dphi_dt = natural_freq + coupling * \
+            (sum_sin_phi * cos_phi - sum_cos_phi * sin_phi)
+
         return np.concatenate([dA_dt, dphi_dt])
 
 
@@ -122,9 +131,10 @@ class CPENODECoupledSystem:
         self.latent_dim = latent_dim
         self.num_nodes = num_nodes
         self.parent_ode = CPENParentODE(latent_dim, num_nodes, input_dim)
-        self.child_ode = CPENChildODE(latent_dim, num_nodes, hebbian_eta, decay)
+        self.child_ode = CPENChildODE(
+            latent_dim, num_nodes, hebbian_eta, decay)
         self.state_dim = latent_dim * num_nodes + 2 * num_nodes
-        
+
     def set_input(self, input_vector: np.ndarray):
         """Set input for the system."""
         # Input is assumed to be of shape (latent_dim,) for a single token embedding
@@ -133,25 +143,27 @@ class CPENODECoupledSystem:
         # For child: treat as input for each node (same for all nodes)
         self.parent_ode.set_input(input_vector)
         # For child, we need input per node: we'll use the same input vector for each node
-        # Create a matrix of shape (latent_dim, num_nodes) where each column is input_vector
-        self.child_ode.set_input(np.tile(input_vector.reshape(-1, 1), (1, self.num_nodes)))
-    
+        # Create a matrix of shape (latent_dim, num_nodes) where each column is
+        # input_vector
+        self.child_ode.set_input(
+            np.tile(input_vector.reshape(-1, 1), (1, self.num_nodes)))
+
     def dynamics(self, t: float, state: np.ndarray) -> np.ndarray:
         """Compute combined dynamics."""
         # Split state
         parent_size = self.latent_dim * self.num_nodes
         parent_state = state[:parent_size]
         child_state = state[parent_size:]
-        
+
         # Temporarily set the states in the sub-ODEs
         # We'll compute dynamics by calling each sub-ODE's dynamics method
         # but we need to set their internal state.
         # Instead, we can compute directly:
         parent_dx = self.parent_ode.dynamics(t, parent_state)
         child_dx = self.child_ode.dynamics(t, child_state)
-        
+
         return np.concatenate([parent_dx, child_dx])
-    
+
     def integrate(self, t_span: Tuple[float, float], initial_state: np.ndarray,
                   t_eval: Optional[np.ndarray] = None, method: str = 'RK45',
                   atol: float = 1e-6, rtol: float = 1e-3):
@@ -169,20 +181,26 @@ if __name__ == "__main__":
     latent_dim = 64
     num_nodes = 5
     input_dim = 768
-    
+
     system = CPENODECoupledSystem(latent_dim, num_nodes, input_dim)
-    
+
     # Initial state: random latent positions, amplitudes=1, phases=0
     initial_parent = np.random.randn(latent_dim * num_nodes) * 0.1
     initial_child = np.concatenate([np.ones(num_nodes), np.zeros(num_nodes)])
     initial_state = np.concatenate([initial_parent, initial_child])
-    
+
     # Input: random embedding
     input_vector = np.random.randn(input_dim)
     system.set_input(input_vector)
-    
+
     # Integrate from t=0 to t=1
     t_span = (0.0, 1.0)
-    sol = system.integrate(t_span, initial_state, t_eval=np.linspace(0, 1, 100))
-    
+    sol = system.integrate(
+        t_span,
+        initial_state,
+        t_eval=np.linspace(
+            0,
+            1,
+            100))
+
     print(f"Integration successful. Shape of solution: {sol.y.shape}")

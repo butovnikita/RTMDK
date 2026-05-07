@@ -1,12 +1,10 @@
 """rtmdk/support/version_control.py — Delta-based version control for memory fields."""
 from __future__ import annotations
 import time
-import json
 from dataclasses import dataclass, field, asdict
 from typing import Dict, List, Optional, Any, Tuple
 from collections import OrderedDict
 import numpy as np
-from numpy.typing import NDArray
 
 
 @dataclass
@@ -22,8 +20,13 @@ class NodeDelta:
         for k in ("old_state", "new_state"):
             if d[k] is not None:
                 v = d[k]
-                for kk in ("latent_pos", "pre_consolidation_pos", "velocity",
-                           "acceleration", "gradient_cache", "modal_embedding"):
+                for kk in (
+                    "latent_pos",
+                    "pre_consolidation_pos",
+                    "velocity",
+                    "acceleration",
+                    "gradient_cache",
+                        "modal_embedding"):
                     if kk in v and isinstance(v[kk], np.ndarray):
                         v[kk] = v[kk].tolist()
                 d[k] = v
@@ -34,8 +37,13 @@ class NodeDelta:
         for k in ("old_state", "new_state"):
             if data.get(k):
                 v = data[k]
-                for kk in ("latent_pos", "pre_consolidation_pos", "velocity",
-                           "acceleration", "gradient_cache", "modal_embedding"):
+                for kk in (
+                    "latent_pos",
+                    "pre_consolidation_pos",
+                    "velocity",
+                    "acceleration",
+                    "gradient_cache",
+                        "modal_embedding"):
                     if kk in v and isinstance(v[kk], list):
                         v[kk] = np.array(v[kk], dtype=np.float32)
         return cls(**data)
@@ -87,14 +95,18 @@ class DiffResult:
     def summary(self) -> str:
         lines = [f"Diff v{self.from_version} → v{self.to_version}:"]
         if self.added_nodes:
-            lines.append(f"  + {len(self.added_nodes)} added: {self.added_nodes[:5]}{'...' if len(self.added_nodes) > 5 else ''}")
+            lines.append(
+                f"  + {len(self.added_nodes)} added: "
+                f"{self.added_nodes[:5]}"
+                f"{'...' if len(self.added_nodes) > 5 else ''}")
         if self.deleted_nodes:
             lines.append(f"  - {len(self.deleted_nodes)} deleted")
         if self.modified_nodes:
             lines.append(f"  ~ {len(self.modified_nodes)} modified")
         if self.merged_nodes:
             lines.append(f"  ⨝ {len(self.merged_nodes)} merged")
-        if not any([self.added_nodes, self.deleted_nodes, self.modified_nodes, self.merged_nodes]):
+        if not any([self.added_nodes, self.deleted_nodes,
+                   self.modified_nodes, self.merged_nodes]):
             lines.append("  (no changes)")
         return "\n".join(lines)
 
@@ -116,7 +128,8 @@ class VersionControl:
         self.max_versions = max_versions
         self._versions: OrderedDict[int, Version] = OrderedDict()
         self._current_version: int = 0
-        self._node_states: Dict[str, Dict[int, Dict]] = {}  # node_id → {version_id → state}
+        # node_id → {version_id → state}
+        self._node_states: Dict[str, Dict[int, Dict]] = {}
 
     def create_version(self, deltas: List[NodeDelta], message: str = "",
                        stats: Optional[Dict] = None) -> Version:
@@ -126,7 +139,8 @@ class VersionControl:
             version_id=self._current_version,
             deltas=deltas,
             message=message or f"Auto v{self._current_version}",
-            parent_id=self._current_version - 1 if self._current_version > 1 else None,
+            parent_id=self._current_version -
+            1 if self._current_version > 1 else None,
             stats=stats or {},
         )
         self._versions[version.version_id] = version
@@ -145,7 +159,10 @@ class VersionControl:
 
         return version
 
-    def diff(self, from_version: int, to_version: Optional[int] = None) -> DiffResult:
+    def diff(
+            self,
+            from_version: int,
+            to_version: Optional[int] = None) -> DiffResult:
         """Compute diff between two versions."""
         if to_version is None:
             to_version = self._current_version
@@ -156,8 +173,10 @@ class VersionControl:
 
         # Collect all deltas between versions
         version_ids = list(self._versions.keys())
-        start_idx = version_ids.index(from_version) if from_version in version_ids else -1
-        end_idx = version_ids.index(to_version) if to_version in version_ids else -1
+        start_idx = version_ids.index(
+            from_version) if from_version in version_ids else -1
+        end_idx = version_ids.index(
+            to_version) if to_version in version_ids else -1
         if start_idx < 0 or end_idx < 0:
             return result
 
@@ -209,9 +228,12 @@ class VersionControl:
         for nid in result.modified_nodes:
             old_state = self._get_node_state_at(nid, version_id)
             if old_state:
-                rollback_deltas.append(NodeDelta(
-                    node_id=nid, action="modified", old_state=None, new_state=old_state
-                ))
+                rollback_deltas.append(
+                    NodeDelta(
+                        node_id=nid,
+                        action="modified",
+                        old_state=None,
+                        new_state=old_state))
 
         return rollback_deltas
 
@@ -262,9 +284,14 @@ class VersionControl:
             self._versions[int(k)] = Version.from_dict(v)
         self._node_states = {}
         for nid, states in data.get("node_states", {}).items():
-            self._node_states[nid] = {int(vid): state for vid, state in states.items()}
+            self._node_states[nid] = {
+                int(vid): state for vid,
+                state in states.items()}
 
-    def _get_node_state_at(self, node_id: str, version_id: int) -> Optional[Dict]:
+    def _get_node_state_at(
+            self,
+            node_id: str,
+            version_id: int) -> Optional[Dict]:
         """Get node state at a specific version."""
         if node_id not in self._node_states:
             return None

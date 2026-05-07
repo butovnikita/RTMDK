@@ -30,7 +30,8 @@ def analyze_dimensionality(dim, n_samples=500, k=5):
 
     # Compute what bw spread sqrt transform would give
     factors = np.sqrt(kdist / max(median, 1e-8))
-    bw_ratio = np.percentile(factors, 99) / max(np.percentile(factors, 1), 1e-8)
+    bw_ratio = np.percentile(factors, 99) / \
+        max(np.percentile(factors, 1), 1e-8)
 
     return {
         "dim": dim,

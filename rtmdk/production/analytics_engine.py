@@ -10,7 +10,7 @@ import time
 import uuid
 import sqlite3
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Callable
+from typing import Dict, List, Any, Callable
 from datetime import datetime, timezone
 from contextlib import contextmanager
 from collections import defaultdict
@@ -29,8 +29,10 @@ class EventType:
     MEMORY_ACCESSED = "memory_accessed"         # Memory field was accessed
 
     # Intent Signals
-    CONTEXT_INJECTED = "context_injected"         # Memory context injected into response
-    IMAGINE_TRIGGERED = "imagine_triggered"      # Counterfactual imagination activated
+    # Memory context injected into response
+    CONTEXT_INJECTED = "context_injected"
+    # Counterfactual imagination activated
+    IMAGINE_TRIGGERED = "imagine_triggered"
 
     # Completion Signals
     CONSOLIDATION_COMPLETED = "consolidation_completed"  # Memory consolidation finished
@@ -125,8 +127,7 @@ class AnalyticsStore:
             conn.execute(
                 """INSERT INTO events(id, event_type, user_id, session_id, properties, timestamp, received_at)
                    VALUES(:id, :event_type, :user_id, :session_id, :properties, :timestamp, :received_at)""",
-                event
-            )
+                event)
             conn.commit()
 
     def query(self, event_type: str = None, session_id: str = None,
@@ -151,18 +152,16 @@ class AnalyticsStore:
         return [dict(r) for r in rows]
 
     def register_conversion(self, name: str, event_type: str,
-                           counting: str = "once_per_session"):
+                            counting: str = "once_per_session"):
         """Register a conversion."""
         with self._conn() as conn:
             conn.execute(
                 """INSERT OR IGNORE INTO conversions(name, event_type, counting, created_at)
-                   VALUES(?, ?, ?, ?)""",
-                (name, event_type, counting, time.time())
-            )
+                   VALUES(?, ?, ?, ?)""", (name, event_type, counting, time.time()))
             conn.commit()
 
     def fire_conversion(self, name: str, session_id: str,
-                       properties: Dict = None):
+                        properties: Dict = None):
         """Fire a conversion, respecting counting rules."""
         with self._conn() as conn:
             row = conn.execute(
@@ -182,10 +181,9 @@ class AnalyticsStore:
 
             conn.execute(
                 """INSERT INTO conversion_fires(id, conversion_name, session_id, timestamp, properties)
-                   VALUES(?, ?, ?, ?, ?)""",
-                (str(uuid.uuid4()), name, session_id, time.time(),
-                 json.dumps(properties or {}))
-            )
+                   VALUES(?, ?, ?, ?, ?)""", (str(
+                    uuid.uuid4()), name, session_id, time.time(), json.dumps(
+                    properties or {})))
             conn.commit()
             return True
 
@@ -262,7 +260,7 @@ class AnalyticsEngine:
         self._handlers[event_type].append(handler)
 
     def define_conversion(self, name: str, event_type: str,
-                         counting: str = "once_per_session"):
+                          counting: str = "once_per_session"):
         """Define a conversion tied to an event type."""
         self.store.register_conversion(name, event_type, counting)
 
@@ -272,7 +270,7 @@ class AnalyticsEngine:
         self.store.fire_conversion(name, session_id or "unknown", properties)
 
     def set_session_context(self, session_id: str, user_id: str = None,
-                             metadata: Dict = None):
+                            metadata: Dict = None):
         """Set context for a session (call at request start)."""
         self._session_context[session_id] = {
             "user_id": user_id,

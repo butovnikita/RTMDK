@@ -16,7 +16,6 @@ Or CLI:
 """
 import logging
 import os
-from typing import Optional
 
 import numpy as np
 
@@ -68,7 +67,8 @@ def run_bootstrap(
     for word, tid in tokenizer.word_to_id.items():
         if word in model:
             vec = model[word].astype(np.float32)
-            tokenizer.token_embeddings[tid] = vec / (np.linalg.norm(vec) + 1e-8)
+            tokenizer.token_embeddings[tid] = vec / \
+                (np.linalg.norm(vec) + 1e-8)
             vectors.append(vec)
             token_ids.append(tid)
             matched += 1
@@ -94,13 +94,16 @@ def run_bootstrap(
         if len(emb) < vector_dim:
             padded = np.zeros(vector_dim, dtype=np.float32)
             padded[:len(emb)] = emb
-            tokenizer.token_embeddings[tid] = padded / (np.linalg.norm(padded) + 1e-8)
+            tokenizer.token_embeddings[tid] = padded / \
+                (np.linalg.norm(padded) + 1e-8)
         elif len(emb) > vector_dim:
-            tokenizer.token_embeddings[tid] = emb[:vector_dim] / (np.linalg.norm(emb[:vector_dim]) + 1e-8)
+            tokenizer.token_embeddings[tid] = emb[:vector_dim] / \
+                (np.linalg.norm(emb[:vector_dim]) + 1e-8)
 
     # Learn projection if dimensions differ
     if vector_dim != tokenizer.latent_dim:
-        logger.info(f"Learning projection: {vector_dim} -> {tokenizer.latent_dim}")
+        logger.info(
+            f"Learning projection: {vector_dim} -> {tokenizer.latent_dim}")
         X = np.stack(vectors).astype(np.float32)
         # Center
         mean_vec = X.mean(axis=0, keepdims=True)

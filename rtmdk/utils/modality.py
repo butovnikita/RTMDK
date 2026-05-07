@@ -10,11 +10,26 @@ def detect_tier(text: str, context: Optional[Dict] = None) -> str:
     text_lower = text.lower()
     if context.get("tool_used"):
         return "procedural"
-    if any(p in text_lower for p in ["how to", "how do", "how can", "steps to", "tutorial", "guide"]):
+    if any(
+        p in text_lower for p in [
+            "how to",
+            "how do",
+            "how can",
+            "steps to",
+            "tutorial",
+            "guide"]):
         return "procedural"
     if re.search(r"\d{4}-\d{2}-\d{2}|\d{2}/\d{2}/\d{4}", text):
         return "episodic"
-    if any(p in text_lower for p in ["yesterday", "last week", "last month", "ago", "вчера", "на прошлой", "неделю назад"]):
+    if any(
+        p in text_lower for p in [
+            "yesterday",
+            "last week",
+            "last month",
+            "ago",
+            "вчера",
+            "на прошлой",
+            "неделю назад"]):
         return "episodic"
     return "semantic"
 

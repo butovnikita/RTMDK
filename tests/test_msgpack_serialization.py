@@ -3,7 +3,6 @@ import os
 import tempfile
 
 import numpy as np
-import pytest
 
 from rtmdk.memory.core import RTMDKField, RTMDKConfig, RTMDKMemory
 
@@ -28,7 +27,8 @@ def test_msgpack_roundtrip():
         # Dirty flag should be cleared after export
         assert not field._dirty
 
-        embedder = lambda text: np.random.default_rng(7).standard_normal(64).astype(np.float32)
+        def embedder(text): return np.random.default_rng(
+            7).standard_normal(64).astype(np.float32)
         memory = RTMDKMemory.import_field(path, embedder)
         assert len(memory.field.nodes) == 50
     finally:

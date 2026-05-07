@@ -18,6 +18,31 @@ KuramotoSync, FederatedRTMDK, FederatedNode, detect_modality, cross_modal_resona
 """
 
 from __future__ import annotations
+from rtmdk.support.circuit_breaker import CircuitBreaker
+from rtmdk.support.meta_controller import MetaController
+from rtmdk.support.learnable import LearnableKernel, DifferentiableConsolidation
+from rtmdk.support.torch_backend import TorchBackend
+from rtmdk.support.projection import IncPCAProjection
+from rtmdk.support.production import ShadowModeEvaluator, RAGASPlusEvaluator, AutoRollbackManager
+from rtmdk.support.agents import AgentPlanner, HypothesisVerifier, ToolRouter
+from rtmdk.support.healer import TopologyHealer
+from rtmdk.support.meta_adaptive import MetaAdaptiveKernel
+from rtmdk.engines.causal import CausalInferenceEngine
+from rtmdk.engines.neural_ode import NeuralODEDynamics
+from rtmdk.engines.privacy import DifferentialPrivacy
+from rtmdk.engines.predictive import PredictiveCodingModel
+from rtmdk.memory.geometry import (
+    poincare_dist, exp_map_poincare, log_map_poincare, poincare_midpoint,
+)
+from rtmdk.memory.quantization import QuantizationHelper
+from rtmdk.memory.config import (
+    ConsolidationMode, Backend, ContextFormat, FieldHealth, EvalMode,
+    RTMDKConfig,
+)
+from rtmdk.nodes import (
+    MemoryNode, CounterfactualResult, AgentPlan, ToolCall,
+    Hypothesis, EvalResult,
+)
 import asyncio
 import functools
 import json
@@ -30,21 +55,17 @@ from concurrent.futures import ThreadPoolExecutor
 import copy
 import hashlib
 from collections import deque, defaultdict
-from dataclasses import dataclass, field, asdict
-from typing import List, Dict, Optional, Tuple, Union, Callable, Any, Set, FrozenSet
+from typing import List, Dict, Optional, Tuple, Callable, Any, Set
 from enum import Enum
 import numpy as np
 from numpy.typing import NDArray
-from scipy.spatial.distance import cdist, pdist, squareform
+from scipy.spatial.distance import cdist, pdist
 from scipy.spatial import cKDTree
-from scipy.integrate import odeint, solve_ivp
-from scipy import stats as scipy_stats
-from pydantic import BaseModel, Field, ConfigDict, model_validator
 import logging
 
 # Extracted engine classes (kept in sync with rtmdk/support/ modules)
-from rtmdk.support.kuramoto import KuramotoSync, FederatedRTMDK
-from rtmdk.support.hnsw import NaiveGraphIndex, HNSWIndex
+from rtmdk.support.kuramoto import FederatedRTMDK
+from rtmdk.support.hnsw import NaiveGraphIndex
 try:
     from rtmdk.support.hnsw_lib import HNSWLibIndex
     _HNSWLIB_AVAILABLE = True
@@ -63,19 +84,15 @@ from rtmdk.support.security import SecurityValidator
 from rtmdk.support.swarm import SwarmConsensusProtocol
 from rtmdk.support.threshold import AdaptiveThreshold
 from rtmdk.support.tda import TDAMonitor
-from rtmdk.memory.utils import SecurityViolationError, detect_modality, cross_modal_resonance
+from rtmdk.memory.utils import SecurityViolationError, cross_modal_resonance
 
 logger = logging.getLogger(__name__)
 
 # Phase 5: dataclass nodes extracted to rtmdk.nodes
-from rtmdk.nodes import (
-    MemoryNode, CausalEdge, ContradictionRecord, CounterfactualResult,
-    AgentPlan, ToolCall, Hypothesis, EvalResult, GoalNode, FederatedNode,
-)
 
 # Phase 15: New modules
 try:
-    from rtmdk.support.version_control import VersionControl, NodeDelta, Version, DiffResult
+    from rtmdk.support.version_control import VersionControl, NodeDelta
     VC_AVAILABLE = True
 except ImportError:
     VC_AVAILABLE = False
@@ -95,26 +112,25 @@ except ImportError:
 
 # Phase 16: New modules
 try:
-    from rtmdk.support.symbolic_overlay import SymbolicOverlay, SymbolicRule, SymbolicInference
+    from rtmdk.support.symbolic_overlay import SymbolicOverlay
     SYMBOLIC_AVAILABLE = True
 except ImportError:
     SYMBOLIC_AVAILABLE = False
 
 try:
-    from rtmdk.support.safety_certifier import SafetyCertifier, LyapunovFunction
+    from rtmdk.support.safety_certifier import SafetyCertifier
     SAFETY_AVAILABLE = True
 except ImportError:
     SAFETY_AVAILABLE = False
 
 try:
-    from rtmdk.support.ump import UniversalMemoryProtocol, UMP_VERSION, UMP_SCHEMA
     UMP_AVAILABLE = True
 except ImportError:
     UMP_AVAILABLE = False
 
 # Phase 17: RoleShardRouter
 try:
-    from rtmdk.support.role_shard_router import RoleShardRouter, RoleShard, RoleDetector, DEFAULT_ROLE
+    from rtmdk.support.role_shard_router import RoleShardRouter, DEFAULT_ROLE
     ROLE_SHARD_AVAILABLE = True
 except ImportError:
     ROLE_SHARD_AVAILABLE = False
@@ -171,7 +187,7 @@ MAX_NODES_PRUNE_CHECK_FREQ = 10
 
 def _sanitize_path(path: str) -> str:
     """Sanitize file path to prevent directory traversal attacks.
-    
+
     Rejects paths containing '..' (path traversal).
     Returns normalized path.
     """
@@ -189,41 +205,20 @@ def _safe_json_load(path: str) -> Dict:
     """Load JSON with size limit to prevent memory exhaustion."""
     file_size = os.path.getsize(path)
     if file_size > MAX_FILE_SIZE_BYTES:
-        raise ValueError(f"File too large: {file_size / (1024*1024):.1f}MB (max {MAX_FILE_SIZE_BYTES / (1024*1024):.0f}MB)")
+        raise ValueError(
+            f"File too large: {file_size / (1024*1024):.1f}MB (max {MAX_FILE_SIZE_BYTES / (1024*1024):.0f}MB)")
     with open(path, "r", encoding="utf-8") as f:
         raw = f.read()
     if len(raw.encode("utf-8")) > MAX_FILE_SIZE_BYTES:
-        raise ValueError("File exceeds maximum allowed size after encoding check")
+        raise ValueError(
+            "File exceeds maximum allowed size after encoding check")
     return json.loads(raw)
 
 
 # ============================================================================
 # CONFIGURATION v7 — extracted to rtmdk/memory/config.py (P0 refactor)
 # ============================================================================
-from rtmdk.memory.config import (
-    ConsolidationMode, Backend, ContextFormat, FieldHealth, EvalMode,
-    RTMDKConfig,
-)
-from rtmdk.memory.quantization import QuantizationHelper
-from rtmdk.memory.geometry import (
-    poincare_dist, exp_map_poincare, log_map_poincare, mobius_add,
-    poincare_midpoint,
-)
 # Extracted engine classes (P0 refactor � imported from canonical modules)
-from rtmdk.engines.predictive import PredictiveCodingModel
-from rtmdk.engines.privacy import DifferentialPrivacy
-from rtmdk.engines.neural_ode import NeuralODEDynamics
-from rtmdk.engines.causal import CausalInferenceEngine
-from rtmdk.support.meta_adaptive import MetaAdaptiveKernel
-from rtmdk.support.healer import TopologyHealer
-from rtmdk.support.agents import AgentPlanner, HypothesisVerifier, ToolRouter
-from rtmdk.support.production import ShadowModeEvaluator, RAGASPlusEvaluator, AutoRollbackManager
-from rtmdk.support.projection import IncPCAProjection
-from rtmdk.support.torch_backend import TorchBackend
-from rtmdk.support.learnable import LearnableKernel, DifferentiableConsolidation
-from rtmdk.support.meta_controller import MetaController
-from rtmdk.support.circuit_breaker import CircuitBreaker
-
 
 
 # ============================================================================
@@ -232,7 +227,9 @@ from rtmdk.support.circuit_breaker import CircuitBreaker
 
 def _enum_value(val, default):
     """Safely extract enum value for serialization."""
-    return val.value if isinstance(val, Enum) else (val if val is not None else default)
+    return val.value if isinstance(
+        val, Enum) else (
+        val if val is not None else default)
 
 
 def detect_tier(text: str, context: Optional[Dict] = None) -> str:
@@ -242,12 +239,27 @@ def detect_tier(text: str, context: Optional[Dict] = None) -> str:
     # Procedural: how-to, tool usage
     if context.get("tool_used"):
         return "procedural"
-    if any(p in text_lower for p in ["how to", "how do", "how can", "steps to", "tutorial", "guide"]):
+    if any(
+        p in text_lower for p in [
+            "how to",
+            "how do",
+            "how can",
+            "steps to",
+            "tutorial",
+            "guide"]):
         return "procedural"
     # Episodic: dates, temporal markers
     if re.search(r"\d{4}-\d{2}-\d{2}|\d{2}/\d{2}/\d{4}", text):
         return "episodic"
-    if any(p in text_lower for p in ["yesterday", "last week", "last month", "ago", "вчера", "на прошлой", "неделю назад"]):
+    if any(
+        p in text_lower for p in [
+            "yesterday",
+            "last week",
+            "last month",
+            "ago",
+            "вчера",
+            "на прошлой",
+            "неделю назад"]):
         return "episodic"
     return "semantic"
 
@@ -283,7 +295,9 @@ def apply_attention_bias(results: List[Tuple[str, float, MemoryNode]],
         # Base resonance
         score = resp
         # Causal boost
-        causal_boost = sum(node.causal_strength.values()) if hasattr(node, 'causal_strength') else 0
+        causal_boost = sum(
+            node.causal_strength.values()) if hasattr(
+            node, 'causal_strength') else 0
         score *= (1.0 + 0.2 * min(1.0, causal_boost))
         # Tension penalty (high tension = less reliable)
         score *= max(0.5, 1.0 - node.tension)
@@ -312,7 +326,7 @@ def apply_attention_bias(results: List[Tuple[str, float, MemoryNode]],
 def format_cognitive_context(results: List[Tuple[str, float, MemoryNode]],
                              bias_applied: bool = False) -> str:
     """Format memory results with structural attention signals for LLM.
-    
+
     Handles both structured nodes (v2: input_text, output_text, emotion, tags)
     and legacy nodes (v1: text).
     """
@@ -322,7 +336,7 @@ def format_cognitive_context(results: List[Tuple[str, float, MemoryNode]],
     lines = ["### COGNITIVE_CONTEXT"]
     for nid, score, node in results:
         content = node.content
-        
+
         # Check for structured node (v2)
         if content.get("version") == "2.0":
             input_text = content.get("input_text", "")
@@ -330,15 +344,16 @@ def format_cognitive_context(results: List[Tuple[str, float, MemoryNode]],
             emotion = content.get("emotion", "neutral")
             tags = content.get("tags", [])
             session = content.get("session", "")
-            
+
             # Format structured context
             text_parts = []
             if input_text:
                 text_parts.append(f"User: {input_text[:80]}")
             if output_text:
                 text_parts.append(f"AI: {output_text[:80]}")
-            text = " | ".join(text_parts) if text_parts else content.get("text", "unknown")[:80]
-            
+            text = " | ".join(text_parts) if text_parts else content.get(
+                "text", "unknown")[:80]
+
             tier = content.get("tier", getattr(node, 'tier', 'semantic'))
             tokens = f"[SCORE:{score:.3f}]"
             tokens += f"[TIER:{tier[0].upper()}]"
@@ -355,10 +370,12 @@ def format_cognitive_context(results: List[Tuple[str, float, MemoryNode]],
             tokens = f"[SCORE:{score:.3f}]"
             tokens += f"[TIER:{tier[0].upper()}]"
 
-        causal = len(node.causal_strength) if hasattr(node, 'causal_strength') else 0
+        causal = len(
+            node.causal_strength) if hasattr(
+            node, 'causal_strength') else 0
         tension = node.tension
         lineage = len(node.lineage) if node.lineage else 0
-        
+
         if causal > 0:
             tokens += f"[CAUSAL:{causal}]"
         if tension > 0.3:
@@ -396,17 +413,9 @@ def format_cognitive_context(results: List[Tuple[str, float, MemoryNode]],
 # ============================================================================
 
 
-
-
-
-
-
-
-
 # ============================================================================
 # CONTEXT FORMATTING
 # ============================================================================
-
 SYSTEM_PROMPT_TEMPLATES = {
     ContextFormat.PLAIN: (
         "You are a helpful assistant with long-term memory.\n"
@@ -446,12 +455,13 @@ SYSTEM_PROMPT_TEMPLATES = {
 }
 
 
-def format_context(results: List[Tuple[str, float, MemoryNode]], fmt: ContextFormat) -> str:
+def format_context(
+        results: List[Tuple[str, float, MemoryNode]], fmt: ContextFormat) -> str:
     if fmt == ContextFormat.JSON:
         items = []
         for nid, resp, node in results:
             content = node.content
-            
+
             # Check for structured node (v2)
             if content.get("version") == "2.0":
                 item = {
@@ -483,8 +493,11 @@ def format_context(results: List[Tuple[str, float, MemoryNode]], fmt: ContextFor
                 if meta:
                     item["metadata"] = meta
             items.append(item)
-        return json.dumps(items, ensure_ascii=False, indent=2) if items else "[]"
-    
+        return json.dumps(
+            items,
+            ensure_ascii=False,
+            indent=2) if items else "[]"
+
     elif fmt == ContextFormat.YAML:
         lines = []
         for nid, resp, node in results:
@@ -493,8 +506,8 @@ def format_context(results: List[Tuple[str, float, MemoryNode]], fmt: ContextFor
                 lines.extend([
                     f"- resonance: {resp:.4f}",
                     f"  salience: {node.salience:.4f}",
-                    f"  input: \"{content.get('input_text', '')}\"",
-                    f"  output: \"{content.get('output_text', '')}\"",
+                    "  input: \"{content.get('input_text', '')}\"",
+                    "  output: \"{content.get('output_text', '')}\"",
                     f"  role: {content.get('role', '')}",
                     f"  emotion: {content.get('emotion', '')}",
                     f"  tier: {content.get('tier', '')}",
@@ -503,21 +516,24 @@ def format_context(results: List[Tuple[str, float, MemoryNode]], fmt: ContextFor
                 lines.extend([
                     f"- resonance: {resp:.4f}",
                     f"  salience: {node.salience:.4f}",
-                    f"  text: \"{content.get('text', '')}\"",
+                    "  text: \"{content.get('text', '')}\"",
                     f"  lineage: {node.lineage}",
                     f"  modality: {node.modality}",
                     f"  cross_modal_score: {node.cross_modal_score:.4f}",
                 ])
         return "\n".join(lines) if lines else "No relevant memory."
-    
+
     elif fmt == ContextFormat.ATTENTION:
         lines = ["### ATTENTION_CONTEXT"]
         for nid, resp, node in results:
             content = node.content
-            causal = len(node.causal_strength) if hasattr(node, 'causal_strength') else 0
+            causal = len(
+                node.causal_strength) if hasattr(
+                node, 'causal_strength') else 0
             goal_rel = getattr(node, 'goal_relevance', 0.0)
-            tokens = (f"[ATTN:{resp:.3f}][SAL:{node.salience:.3f}]"
-                      f"[TIER:{content.get('tier', getattr(node, 'tier', 'semantic'))[0].upper()}]")
+            tokens = (
+                f"[ATTN:{resp:.3f}][SAL:{node.salience:.3f}]"
+                f"[TIER:{content.get('tier', getattr(node, 'tier', 'semantic'))[0].upper()}]")
             # Phase 20: Domain & State tokens
             domain = getattr(node, 'domain', 'general')
             if domain and domain != 'general':
@@ -529,7 +545,7 @@ def format_context(results: List[Tuple[str, float, MemoryNode]], fmt: ContextFor
                 tokens += f"[CAUSAL:{causal}]"
             if goal_rel > 0.3:
                 tokens += f"[GOAL:{goal_rel:.2f}]"
-            
+
             # Extract text from structured or legacy node
             if content.get("version") == "2.0":
                 input_t = content.get("input_text", "")[:60]
@@ -551,7 +567,7 @@ def format_context(results: List[Tuple[str, float, MemoryNode]], fmt: ContextFor
                     text += f" #{','.join(tags[:2])}"
             else:
                 text = node.content.get("text", "unknown")[:100]
-            
+
             lines.append(f"{tokens} {text}")
         return "\n".join(lines) if len(lines) > 1 else "No relevant memory."
     else:
@@ -561,17 +577,24 @@ def format_context(results: List[Tuple[str, float, MemoryNode]], fmt: ContextFor
             if content.get("version") == "2.0":
                 input_t = content.get("input_text", "")[:50]
                 output_t = content.get("output_text", "")[:50]
-                text = f"U:{input_t} | AI:{output_t}" if input_t and output_t else (input_t or output_t or "unknown")
+                text = f"U:{input_t} | AI:{output_t}" if input_t and output_t else (
+                    input_t or output_t or "unknown")
             else:
                 text = n.content.get('text', '')
-            parts.append(f"[R:{r:.2f}|S:{n.salience:.2f}|CM:{n.cross_modal_score:.2f}] {text}")
+            parts.append(
+                f"[R:{r:.2f}|S:{n.salience:.2f}|CM:{n.cross_modal_score:.2f}] {text}")
         return "\n".join(parts) if parts else "No relevant memory."
 
 
-def build_system_prompt(context: str, fmt: ContextFormat, use_structured: bool) -> str:
-    if not use_structured or not context or context in ("No relevant memory.", "[]"):
+def build_system_prompt(
+        context: str,
+        fmt: ContextFormat,
+        use_structured: bool) -> str:
+    if not use_structured or not context or context in (
+            "No relevant memory.", "[]"):
         return "You are a helpful assistant with long-term memory."
-    return SYSTEM_PROMPT_TEMPLATES.get(fmt, SYSTEM_PROMPT_TEMPLATES[ContextFormat.PLAIN]).format(context=context)
+    return SYSTEM_PROMPT_TEMPLATES.get(
+        fmt, SYSTEM_PROMPT_TEMPLATES[ContextFormat.PLAIN]).format(context=context)
 
 
 # ============================================================================
@@ -614,8 +637,11 @@ def _copy_node(node):
 
 
 class RTMDKField:
-    def __init__(self, config: RTMDKConfig, projection_matrix: Optional[NDArray] = None,
-                 wal_path: Optional[str] = None):
+    def __init__(
+            self,
+            config: RTMDKConfig,
+            projection_matrix: Optional[NDArray] = None,
+            wal_path: Optional[str] = None):
         self.cfg = config
         self._quant = QuantizationHelper(config.quantization)
         self._rng = np.random.default_rng(config.seed)
@@ -626,10 +652,13 @@ class RTMDKField:
         self._tiered_store: Optional[Any] = None
         if config.tiered_storage_enabled:
             from rtmdk.memory.tiered_storage import TieredNodeStore
-            hot_limit = max(1, int(config.max_nodes * config.tiered_hot_pct)) if config.max_nodes else 100
-            warm_limit = max(1, int(config.max_nodes * config.tiered_warm_pct)) if config.max_nodes else 1000
+            hot_limit = max(1, int(config.max_nodes *
+                                   config.tiered_hot_pct)) if config.max_nodes else 100
+            warm_limit = max(1, int(config.max_nodes *
+                                    config.tiered_warm_pct)) if config.max_nodes else 1000
             cold_dir = config.tiered_storage_path or "./rtmdk_cold_storage"
-            self._tiered_store = TieredNodeStore(hot_limit, warm_limit, cold_dir, config.latent_dim)
+            self._tiered_store = TieredNodeStore(
+                hot_limit, warm_limit, cold_dir, config.latent_dim)
             self.nodes = self._tiered_store  # type: ignore[assignment]
 
         # WAL for durability
@@ -639,26 +668,33 @@ class RTMDKField:
         # Phase 3d: Dirty flag for auto-save — only save if state changed
         self._dirty = False
 
-        # P0: Cached numpy arrays for vectorized query — avoids O(N) Python loop on every query
-        self._cached_positions: Optional[NDArray] = None       # (N, latent_dim)
+        # P0: Cached numpy arrays for vectorized query — avoids O(N) Python
+        # loop on every query
+        # (N, latent_dim)
+        self._cached_positions: Optional[NDArray] = None
         self._cached_phases: Optional[NDArray] = None          # (N,)
         self._cached_amplitudes: Optional[NDArray] = None      # (N,)
         self._cached_saliences: Optional[NDArray] = None       # (N,)
         self._cached_modal_weights: Optional[NDArray] = None   # (N,)
-        self._cached_gates: Optional[NDArray] = None           # (N,) soft_gate values
-        self._cached_causal_boost: Optional[NDArray] = None    # (N,) causal boost factor
+        # (N,) soft_gate values
+        self._cached_gates: Optional[NDArray] = None
+        # (N,) causal boost factor
+        self._cached_causal_boost: Optional[NDArray] = None
         self._cache_dirty: bool = False
 
         # Track 3: Query cache
         self.query_cache: Optional[Any] = None
         if config.query_cache_size > 0:
             from rtmdk.production.query_cache import QueryCache
-            self.query_cache = QueryCache(max_size=config.query_cache_size, ttl_seconds=config.query_cache_ttl)
+            self.query_cache = QueryCache(
+                max_size=config.query_cache_size,
+                ttl_seconds=config.query_cache_ttl)
 
         # P1.1: Conformal prediction calibrator
         self.conformal_calibrator: Optional[ConformalCalibrator] = None
         if config.conformal_prediction:
-            self.conformal_calibrator = ConformalCalibrator(alpha=config.conformal_alpha)
+            self.conformal_calibrator = ConformalCalibrator(
+                alpha=config.conformal_alpha)
 
         # P2.2: Kalman filter for position uncertainty
         self.kalman_filter: Optional[KalmanFilter] = None
@@ -675,27 +711,40 @@ class RTMDKField:
 
         if config.learn_projection:
             self.projection_learner = IncPCAProjection(
-                config.embedding_dim, config.pca_n_components or config.latent_dim,
-                config.projection_lr, config.projection_update_freq, config.l2_regularization)
+                config.embedding_dim,
+                config.pca_n_components or config.latent_dim,
+                config.projection_lr,
+                config.projection_update_freq,
+                config.l2_regularization)
             if projection_matrix is not None:
                 self.projection_learner.set_matrix(projection_matrix)
         else:
             self.projection_learner = None
-            self._raw_projection = (projection_matrix.astype(np.float32) if projection_matrix is not None
-                                    else self._rng.standard_normal((config.embedding_dim, config.latent_dim)).astype(np.float32) * 0.1)
+            self._raw_projection = (
+                projection_matrix.astype(
+                    np.float32) if projection_matrix is not None else self._rng.standard_normal(
+                    (config.embedding_dim, config.latent_dim)).astype(
+                    np.float32) * 0.1)
 
-        self.adaptive_threshold = AdaptiveThreshold(config.adaptive_window, config.tension_threshold) if config.adaptive_threshold else None
-        self.bm25_index = BM25Index(config.bm25_k1, config.bm25_b) if config.bm25_fallback else None
+        self.adaptive_threshold = AdaptiveThreshold(
+            config.adaptive_window,
+            config.tension_threshold) if config.adaptive_threshold else None
+        self.bm25_index = BM25Index(
+            config.bm25_k1,
+            config.bm25_b) if config.bm25_fallback else None
         self.tda_monitor = TDAMonitor() if config.tda_monitoring else None
         self.gpu_backend = TorchBackend() if config.backend == Backend.TORCH else None
         if self.gpu_backend and not self.gpu_backend.available:
             self.gpu_backend = None
         if config.use_hnsw:
             if _HNSWLIB_AVAILABLE:
-                self.hnsw_index = HNSWLibIndex(dim=config.latent_dim, m=config.hnsw_m,
-                                               ef_construction=config.hnsw_ef_construction)
+                self.hnsw_index = HNSWLibIndex(
+                    dim=config.latent_dim,
+                    m=config.hnsw_m,
+                    ef_construction=config.hnsw_ef_construction)
             else:
-                self.hnsw_index = NaiveGraphIndex(config.hnsw_m, config.hnsw_ef_construction)
+                self.hnsw_index = NaiveGraphIndex(
+                    config.hnsw_m, config.hnsw_ef_construction)
         else:
             self.hnsw_index = None
 
@@ -708,22 +757,36 @@ class RTMDKField:
         self.learnable_kernel: Optional[LearnableKernel] = None
         self.diff_consolidation: Optional[DifferentiableConsolidation] = None
         if config.differentiable:
-            self.learnable_kernel = LearnableKernel(config.bandwidth, config.phase_coupling, config.decay_rate, config.gradient_clip)
-            self.diff_consolidation = DifferentiableConsolidation(config.consolidation_loss_weight)
+            self.learnable_kernel = LearnableKernel(
+                config.bandwidth,
+                config.phase_coupling,
+                config.decay_rate,
+                config.gradient_clip)
+            self.diff_consolidation = DifferentiableConsolidation(
+                config.consolidation_loss_weight)
 
         self.monitor: Optional[Any] = None
 
         self.meta_kernel: Optional[MetaAdaptiveKernel] = None
         if config.meta_adaptive:
-            self.meta_kernel = MetaAdaptiveKernel(config.bandwidth, config.phase_coupling, config.meta_adaptation_lr,
-                                                  config.kurtosis_target_min, config.kurtosis_target_max)
+            self.meta_kernel = MetaAdaptiveKernel(
+                config.bandwidth,
+                config.phase_coupling,
+                config.meta_adaptation_lr,
+                config.kurtosis_target_min,
+                config.kurtosis_target_max)
 
         self.healer: Optional[TopologyHealer] = None
         if config.self_healing:
-            self.healer = TopologyHealer(config.dead_zone_threshold, config.hyperconvergence_threshold,
-                                        config.fragmentation_threshold, config.healing_strength, config.max_healing_nodes_per_step)
+            self.healer = TopologyHealer(
+                config.dead_zone_threshold,
+                config.hyperconvergence_threshold,
+                config.fragmentation_threshold,
+                config.healing_strength,
+                config.max_healing_nodes_per_step)
 
-        # B2: Lazy module initialization — store flags but don't instantiate yet
+        # B2: Lazy module initialization — store flags but don't instantiate
+        # yet
         self._causal_engine: Optional[CausalInferenceEngine] = None
         self._causal_engine_initialized = config.causal_topological
 
@@ -738,8 +801,12 @@ class RTMDKField:
         self.hypothesis_verifier: Optional[HypothesisVerifier] = None
         self.tool_router: Optional[ToolRouter] = None
         if config.agent_orchestration:
-            self.agent_planner = AgentPlanner(config.max_plan_depth, config.max_tool_calls, config.tool_timeout)
-            self.hypothesis_verifier = HypothesisVerifier(config.verification_confidence_threshold)
+            self.agent_planner = AgentPlanner(
+                config.max_plan_depth,
+                config.max_tool_calls,
+                config.tool_timeout)
+            self.hypothesis_verifier = HypothesisVerifier(
+                config.verification_confidence_threshold)
             self.tool_router = ToolRouter(config.tool_timeout)
 
         self.shadow_evaluator: Optional[ShadowModeEvaluator] = None
@@ -747,11 +814,13 @@ class RTMDKField:
         self.rollback_manager: Optional[AutoRollbackManager] = None
         if config.production_mode:
             if config.shadow_mode:
-                self.shadow_evaluator = ShadowModeEvaluator(config.shadow_fallback_threshold)
+                self.shadow_evaluator = ShadowModeEvaluator(
+                    config.shadow_fallback_threshold)
             if config.ragas_enabled:
                 self.ragas_evaluator = RAGASPlusEvaluator()
             if config.auto_rollback:
-                self.rollback_manager = AutoRollbackManager(config.auto_rollback_threshold)
+                self.rollback_manager = AutoRollbackManager(
+                    config.auto_rollback_threshold)
 
         # Track 10.3: Federated
         self.federated: Optional[FederatedRTMDK] = None
@@ -766,25 +835,29 @@ class RTMDKField:
         # Phase 11 Track 3: Predictive coding
         self.predictor: Optional[PredictiveCodingModel] = None
         if config.predictive_coding:
-            self.predictor = PredictiveCodingModel(config.latent_dim, lr=config.pc_lr)
+            self.predictor = PredictiveCodingModel(
+                config.latent_dim, lr=config.pc_lr)
         self._state_history: deque = deque(maxlen=100)
 
         # Phase 11 Track 4: Counterfactual imagination
         self.scenario_planner: Optional[ScenarioPlanner] = None
         if config.counterfactual_imagination:
-            self.scenario_planner = ScenarioPlanner(self, max_scenarios=config.max_scenarios)
+            self.scenario_planner = ScenarioPlanner(
+                self, max_scenarios=config.max_scenarios)
 
         # Phase 11 Track 5: Differential privacy
         self.dp: Optional[DifferentialPrivacy] = None
         if config.differential_privacy:
-            self.dp = DifferentialPrivacy(config.dp_epsilon, config.dp_delta, config.dp_max_norm)
+            self.dp = DifferentialPrivacy(
+                config.dp_epsilon, config.dp_delta, config.dp_max_norm)
 
         # Phase 12 Track 1: Sparse resonant routing (MoE-memory)
         self.shard_centers: Optional[NDArray] = None
         self.shard_router: Optional[NDArray] = None
         self._node_shard_map: Dict[str, int] = {}
         if config.sparse_routing:
-            self.shard_centers = self._rng.standard_normal((config.num_shards, config.latent_dim)).astype(np.float32)
+            self.shard_centers = self._rng.standard_normal(
+                (config.num_shards, config.latent_dim)).astype(np.float32)
             self.shard_router = np.zeros(config.num_shards, dtype=np.float32)
 
         # Phase 12 Track 3: Crystallization
@@ -794,7 +867,8 @@ class RTMDKField:
         # Fix 3: Lifecycle & Throttling Controls
         self._workers: List[asyncio.Task] = []
         self._write_lock = threading.RLock()
-        self._consolidation_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="rtmdk_consolidate")
+        self._consolidation_executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="rtmdk_consolidate")
         self._consolidation_future = None
         self._backpressure_events = 0
         self._heavy_modules_degraded = False  # Track if we've entered degraded mode
@@ -818,7 +892,8 @@ class RTMDKField:
         }
 
         # B1: Tension caching
-        self._tension_cache: Dict[str, Tuple[float, float]] = {}  # node_id -> (tension, step)
+        # node_id -> (tension, step)
+        self._tension_cache: Dict[str, Tuple[float, float]] = {}
         self._tension_cache_max_age = 25  # steps — covers multiple consolidation cycles
         self._tension_cache_hits = 0
         self._tension_cache_misses = 0
@@ -837,8 +912,9 @@ class RTMDKField:
         self.goal_tracker: Optional[GoalTracker] = None
         if config.goal_tracking:
             self.goal_tracker = GoalTracker(
-                config.max_goals, config.goal_decay, config.goal_completion_threshold
-            )
+                config.max_goals,
+                config.goal_decay,
+                config.goal_completion_threshold)
 
         # Phase 13 Track 3: RL feedback loop
         self.rl_feedback_loop: Optional[RLFeedbackLoop] = None
@@ -853,9 +929,11 @@ class RTMDKField:
         if config.event_driven:
             self.event_scheduler = EventDrivenScheduler()
         if config.low_rank_compression:
-            self.low_rank_compressor = LowRankCompressor(config.compression_rank)
+            self.low_rank_compressor = LowRankCompressor(
+                config.compression_rank)
 
-        # Phase 18: Engram Manager (Fix 4: ensure attribute always exists even when disabled)
+        # Phase 18: Engram Manager (Fix 4: ensure attribute always exists even
+        # when disabled)
         self.engram_manager: Optional[Any] = None
         if config.enable_engrams:
             try:
@@ -869,7 +947,9 @@ class RTMDKField:
                     overlap_threshold=config.engram_overlap_threshold,
                 )
             except Exception:
-                logger.warning("Engram manager initialization failed in RTMDKField, disabling", exc_info=True)
+                logger.warning(
+                    "Engram manager initialization failed in RTMDKField, disabling",
+                    exc_info=True)
                 self.engram_manager = None
 
         # Phase 14 Track 1: Meta-Memory
@@ -899,10 +979,13 @@ class RTMDKField:
         # Phase 15 Track 1: Version Control (Memory Git)
         self.version_control: Optional["VersionControl"] = None
         if config.version_control and VC_AVAILABLE:
-            self.version_control = VersionControl(max_versions=config.max_versions)
+            self.version_control = VersionControl(
+                max_versions=config.max_versions)
         elif config.version_control and not VC_AVAILABLE:
-            logger.error("version_control enabled but rtmdk.support.version_control not available — feature disabled")
-            self.stats.setdefault("startup_warnings", []).append("version_control unavailable")
+            logger.error(
+                "version_control enabled but rtmdk.support.version_control not available — feature disabled")
+            self.stats.setdefault("startup_warnings", []).append(
+                "version_control unavailable")
 
         # Phase 15 Track 4: Entropy Control
         self.entropy_ctrl: Optional["EntropyController"] = None
@@ -912,13 +995,16 @@ class RTMDKField:
                 low_entropy_threshold=config.entropy_low_threshold,
             )
         elif config.entropy_management and not ENTROPY_AVAILABLE:
-            logger.error("entropy_management enabled but rtmdk.support.entropy_controller not available — feature disabled")
-            self.stats.setdefault("startup_warnings", []).append("entropy_controller unavailable")
+            logger.error(
+                "entropy_management enabled but rtmdk.support.entropy_controller not available — feature disabled")
+            self.stats.setdefault("startup_warnings", []).append(
+                "entropy_controller unavailable")
 
         # Phase 15 Track 5: Triton Backend
         self.triton_backend: Optional[Any] = None
         if config.triton_backend and GPUBackend is not None:
-            self.triton_backend = GPUBackend(min_nodes_for_gpu=config.min_nodes_for_gpu)
+            self.triton_backend = GPUBackend(
+                min_nodes_for_gpu=config.min_nodes_for_gpu)
 
         # Phase 16 Track 1: SymbolicOverlay
         self.symbolic_overlay: Optional["SymbolicOverlay"] = None
@@ -929,8 +1015,10 @@ class RTMDKField:
                 confidence_threshold=config.symbolic_confidence_threshold,
             )
         elif config.symbolic_overlay and not SYMBOLIC_AVAILABLE:
-            logger.error("symbolic_overlay enabled but rtmdk.support.symbolic_overlay not available — feature disabled")
-            self.stats.setdefault("startup_warnings", []).append("symbolic_overlay unavailable")
+            logger.error(
+                "symbolic_overlay enabled but rtmdk.support.symbolic_overlay not available — feature disabled")
+            self.stats.setdefault("startup_warnings", []).append(
+                "symbolic_overlay unavailable")
 
         # Phase 16 Track 2: SafetyCertifier
         self.safety_certifier: Optional["SafetyCertifier"] = None
@@ -943,8 +1031,10 @@ class RTMDKField:
                 gamma=config.lyapunov_gamma,
             )
         elif config.safety_certifier and not SAFETY_AVAILABLE:
-            logger.error("safety_certifier enabled but rtmdk.support.safety_certifier not available — feature disabled")
-            self.stats.setdefault("startup_warnings", []).append("safety_certifier unavailable")
+            logger.error(
+                "safety_certifier enabled but rtmdk.support.safety_certifier not available — feature disabled")
+            self.stats.setdefault("startup_warnings", []).append(
+                "safety_certifier unavailable")
 
         # Phase 17: RoleShardRouter
         self.role_router: Optional["RoleShardRouter"] = None
@@ -955,8 +1045,10 @@ class RTMDKField:
                 auto_role_detection=config.auto_role_detection,
             )
         elif config.role_sharding and not ROLE_SHARD_AVAILABLE:
-            logger.error("role_sharding enabled but rtmdk.support.role_shard_router not available — feature disabled")
-            self.stats.setdefault("startup_warnings", []).append("role_shard_router unavailable")
+            logger.error(
+                "role_sharding enabled but rtmdk.support.role_shard_router not available — feature disabled")
+            self.stats.setdefault("startup_warnings", []).append(
+                "role_shard_router unavailable")
 
         self.stats = {
             "total_adds": 0, "total_queries": 0, "consolidations": 0,
@@ -1051,8 +1143,18 @@ class RTMDKField:
                         data = json.load(f)
                     texts = []
                     if isinstance(data, dict) and 'records' in data:
-                        texts = [r.get('context', '') + ' ' + r.get('answer', '') + ' ' + r.get('query', '')
-                                 for r in data['records']]
+                        texts = [
+                            r.get(
+                                'context',
+                                '') +
+                            ' ' +
+                            r.get(
+                                'answer',
+                                '') +
+                            ' ' +
+                            r.get(
+                                'query',
+                                '') for r in data['records']]
                     elif isinstance(data, list):
                         texts = [str(item) for item in data]
                     self.sot_tokenizer.warm_start_from_corpus(texts)
@@ -1062,9 +1164,12 @@ class RTMDKField:
             if config.sot_bootstrap_projection:
                 try:
                     from rtmdk.memory.bootstrap_sbert import load_bootstrap
-                    load_bootstrap(config.sot_bootstrap_projection, self.sot_tokenizer)
+                    load_bootstrap(
+                        config.sot_bootstrap_projection,
+                        self.sot_tokenizer)
                 except Exception as e:
-                    logger.warning(f"SOT bootstrap projection load failed: {e}")
+                    logger.warning(
+                        f"SOT bootstrap projection load failed: {e}")
             # Auto-bootstrap from FastText model (lightweight alternative)
             if config.sot_bootstrap_fasttext_model and config.sot_bootstrap_corpus:
                 try:
@@ -1073,15 +1178,25 @@ class RTMDKField:
                         data = json.load(f)
                     texts = []
                     if isinstance(data, dict) and 'records' in data:
-                        texts = [r.get('context', '') + ' ' + r.get('answer', '')
-                                 for r in data['records']]
+                        texts = [
+                            r.get(
+                                'context',
+                                '') +
+                            ' ' +
+                            r.get(
+                                'answer',
+                                '') for r in data['records']]
                     elif isinstance(data, list):
                         texts = [str(item) for item in data]
                     from rtmdk.memory.bootstrap_fasttext import run_bootstrap
-                    run_bootstrap(self.sot_tokenizer, texts=texts, model_path=config.sot_bootstrap_fasttext_model)
+                    run_bootstrap(
+                        self.sot_tokenizer,
+                        texts=texts,
+                        model_path=config.sot_bootstrap_fasttext_model)
                 except Exception as e:
                     logger.warning(f"SOT FastText auto-bootstrap failed: {e}")
-            # Auto-bootstrap from corpus via SBERT if no FastText and no projection
+            # Auto-bootstrap from corpus via SBERT if no FastText and no
+            # projection
             elif config.sot_bootstrap_corpus and not config.sot_bootstrap_projection:
                 try:
                     import json
@@ -1089,8 +1204,14 @@ class RTMDKField:
                         data = json.load(f)
                     texts = []
                     if isinstance(data, dict) and 'records' in data:
-                        texts = [r.get('context', '') + ' ' + r.get('answer', '')
-                                 for r in data['records']]
+                        texts = [
+                            r.get(
+                                'context',
+                                '') +
+                            ' ' +
+                            r.get(
+                                'answer',
+                                '') for r in data['records']]
                     elif isinstance(data, list):
                         texts = [str(item) for item in data]
                     from sentence_transformers import SentenceTransformer
@@ -1118,8 +1239,10 @@ class RTMDKField:
         self._step_counter = 0
         # Rate limiting: track add_node timestamps (max 100 nodes/sec)
         self._add_node_timestamps: deque = deque(maxlen=1000)
-        self._rollback_history: deque = deque(maxlen=config.max_rollback_history)
-        self._stability_buffer: deque = deque(maxlen=config.field_stability_window)
+        self._rollback_history: deque = deque(
+            maxlen=config.max_rollback_history)
+        self._stability_buffer: deque = deque(
+            maxlen=config.field_stability_window)
         self._active_node_history: deque = deque(maxlen=50)
 
     def _project(self, embedding: NDArray) -> NDArray:
@@ -1129,7 +1252,8 @@ class RTMDKField:
         elif self.projection_learner:
             latent = self.projection_learner.project(embedding)
         else:
-            # Normalize before random projection to preserve cosine relationships in L2 space
+            # Normalize before random projection to preserve cosine
+            # relationships in L2 space
             emb = embedding.astype(np.float32)
             norm = np.linalg.norm(emb)
             if norm > 1e-8:
@@ -1139,7 +1263,8 @@ class RTMDKField:
         if self.cfg.hyperbolic:
             norm = np.linalg.norm(latent)
             if norm >= self.cfg.ball_radius:
-                latent = latent * (self.cfg.ball_radius - 1e-6) / max(norm, 1e-8)
+                latent = latent * (self.cfg.ball_radius -
+                                   1e-6) / max(norm, 1e-8)
         return latent
 
     def _project_batch(self, embeddings: NDArray) -> NDArray:
@@ -1149,7 +1274,8 @@ class RTMDKField:
             return embeddings.astype(np.float32)
         if self.projection_learner:
             # Sequential fallback for stateful projection learner
-            return np.array([self.projection_learner.project(e) for e in embeddings])
+            return np.array([self.projection_learner.project(e)
+                            for e in embeddings])
         # Vectorized random projection
         embs = embeddings.astype(np.float32)
         norms = np.linalg.norm(embs, axis=1, keepdims=True)
@@ -1157,8 +1283,11 @@ class RTMDKField:
         embs = embs / norms
         return embs @ self._raw_projection
 
-    def _get_phase(self, session_id: Optional[str] = None, embedding: Optional[NDArray] = None,
-                   modality: str = "text") -> float:
+    def _get_phase(
+            self,
+            session_id: Optional[str] = None,
+            embedding: Optional[NDArray] = None,
+            modality: str = "text") -> float:
         base = (time.time() * 0.01) % (2 * np.pi)
         if self.cfg.cross_modal and modality in self.cfg.modal_phase_offsets:
             base += self.cfg.modal_phase_offsets[modality]
@@ -1166,47 +1295,62 @@ class RTMDKField:
             base += self.cfg.modality_phase_shifts[modality]
         return base % (2 * np.pi)
 
-    def _resonance_response(self, query_latent: NDArray, query_phase: float, node: MemoryNode,
-                            query_modality: str = "text") -> float:
+    def _resonance_response(
+            self,
+            query_latent: NDArray,
+            query_phase: float,
+            node: MemoryNode,
+            query_modality: str = "text") -> float:
         # Fix 1: Torch backend auto-switch for batch resonance
         # (Single-node response always uses numpy for simplicity;
         #  batch queries use TorchBackend.batch_resonance via query())
 
         # Phase 11 Track 2: Hyperbolic distance
         if self.cfg.hyperbolic:
-            dist = poincare_dist(query_latent, node.latent_pos, self.cfg.ball_radius)
-            self.stats["avg_hyperbolic_dist"] = 0.99 * self.stats["avg_hyperbolic_dist"] + 0.01 * dist
+            dist = poincare_dist(
+                query_latent,
+                node.latent_pos,
+                self.cfg.ball_radius)
+            self.stats["avg_hyperbolic_dist"] = 0.99 * \
+                self.stats["avg_hyperbolic_dist"] + 0.01 * dist
         else:
             dist = np.linalg.norm(query_latent - node.latent_pos)
         phase_diff = node.phase - query_phase
         bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self.cfg.bandwidth
         bw = max(bw, 1e-8)
-        pc = self.meta_kernel.get_phase_coupling() if self.meta_kernel else self.cfg.phase_coupling
+        pc = self.meta_kernel.get_phase_coupling(
+        ) if self.meta_kernel else self.cfg.phase_coupling
 
         if self.learnable_kernel:
-            resp = self.learnable_kernel.resonance_response(dist, phase_diff, node.amplitude, node.salience)
+            resp = self.learnable_kernel.resonance_response(
+                dist, phase_diff, node.amplitude, node.salience)
         else:
             if self.cfg.resonance_kernel in ("gaussian", "gaussian_phase"):
                 spatial = math.exp(-dist ** 2 / (2 * bw ** 2))
             elif self.cfg.resonance_kernel == "cosine":
                 nq = np.linalg.norm(query_latent)
                 nn = np.linalg.norm(node.latent_pos)
-                spatial = 0.5 + 0.5 * np.dot(query_latent, node.latent_pos) / (nq * nn + 1e-8) if nq > 1e-8 and nn > 1e-8 else 0.5
+                spatial = 0.5 + 0.5 * np.dot(query_latent, node.latent_pos) / (
+                    nq * nn + 1e-8) if nq > 1e-8 and nn > 1e-8 else 0.5
             else:
                 spatial = math.exp(-dist / bw)
             phase_align = 0.5 + 0.5 * math.cos(phase_diff)
-            resp = spatial * ((1 - pc) + pc * phase_align) * node.amplitude * node.salience
+            resp = spatial * ((1 - pc) + pc * phase_align) * \
+                node.amplitude * node.salience
 
         gate = node.soft_gate if self.cfg.soft_gates else 1.0
         if self.causal_engine and node.causal_parents:
-            causal_boost = sum(node.causal_strength.get(p, 0) for p in node.causal_parents)
+            causal_boost = sum(node.causal_strength.get(p, 0)
+                               for p in node.causal_parents)
             resp *= (1.0 + 0.1 * causal_boost)
 
         if self.cfg.cross_modal:
             resp = cross_modal_resonance(
-                query_modality, node.modality, resp,
-                self.cfg.modal_phase_offsets, self.cfg.cross_modal_kernel_weight
-            )
+                query_modality,
+                node.modality,
+                resp,
+                self.cfg.modal_phase_offsets,
+                self.cfg.cross_modal_kernel_weight)
             base_val = spatial * node.amplitude * node.salience
             node.cross_modal_score = resp / base_val if base_val > 1e-8 else 0.0
 
@@ -1217,22 +1361,30 @@ class RTMDKField:
         """Batch resonance computation. Pre-selected backend avoids hot-path branching."""
         return self._batch_resonance_fn(query_latents, query_phases, node_ids)
 
-    def _batch_resonance_numpy(self, query_latents: NDArray, query_phases: NDArray,
-                               node_ids: List[str]) -> NDArray:
+    def _batch_resonance_numpy(
+            self,
+            query_latents: NDArray,
+            query_phases: NDArray,
+            node_ids: List[str]) -> NDArray:
         """Pure numpy batch resonance — no branching, no torch overhead."""
         if not node_ids:
             return np.empty((len(query_latents), 0), dtype=np.float32)
 
-        node_positions = np.array([self.nodes[nid].latent_pos for nid in node_ids])
+        node_positions = np.array(
+            [self.nodes[nid].latent_pos for nid in node_ids])
         node_phases = np.array([self.nodes[nid].phase for nid in node_ids])
-        node_amplitudes = np.array([self.nodes[nid].amplitude for nid in node_ids])
-        node_saliences = np.array([self.nodes[nid].salience for nid in node_ids])
+        node_amplitudes = np.array(
+            [self.nodes[nid].amplitude for nid in node_ids])
+        node_saliences = np.array(
+            [self.nodes[nid].salience for nid in node_ids])
 
         dists = cdist(query_latents, node_positions)
-        # Gaussian kernel: exp(-d^2/(2*bw^2)) — use meta_kernel if available (Fix 2: consistency with single-node path)
+        # Gaussian kernel: exp(-d^2/(2*bw^2)) — use meta_kernel if available
+        # (Fix 2: consistency with single-node path)
         bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self.cfg.bandwidth
         bw = np.maximum(bw, 1e-8)
-        pc = self.meta_kernel.get_phase_coupling() if self.meta_kernel else self.cfg.phase_coupling
+        pc = self.meta_kernel.get_phase_coupling(
+        ) if self.meta_kernel else self.cfg.phase_coupling
         # Broadcasting: per-node bw across queries
         if np.ndim(bw) == 0:
             spatial = np.exp(-dists ** 2 / (2 * bw ** 2))
@@ -1241,22 +1393,31 @@ class RTMDKField:
         phase_diff = query_phases[:, np.newaxis] - node_phases[np.newaxis, :]
         phase_align = 0.5 + 0.5 * np.cos(phase_diff)
         response = spatial * ((1 - pc) + pc * phase_align)
-        return response * node_amplitudes[np.newaxis, :] * node_saliences[np.newaxis, :]
+        return response * \
+            node_amplitudes[np.newaxis, :] * node_saliences[np.newaxis, :]
 
-    def _batch_resonance_torch(self, query_latents: NDArray, query_phases: NDArray,
-                               node_ids: List[str]) -> NDArray:
+    def _batch_resonance_torch(
+            self,
+            query_latents: NDArray,
+            query_phases: NDArray,
+            node_ids: List[str]) -> NDArray:
         """Torch batch resonance — GPU accelerated."""
         if not node_ids:
             return np.empty((len(query_latents), 0), dtype=np.float32)
 
-        node_positions = np.array([self.nodes[nid].latent_pos for nid in node_ids])
+        node_positions = np.array(
+            [self.nodes[nid].latent_pos for nid in node_ids])
         node_phases = np.array([self.nodes[nid].phase for nid in node_ids])
-        node_amplitudes = np.array([self.nodes[nid].amplitude for nid in node_ids])
-        node_saliences = np.array([self.nodes[nid].salience for nid in node_ids])
+        node_amplitudes = np.array(
+            [self.nodes[nid].amplitude for nid in node_ids])
+        node_saliences = np.array(
+            [self.nodes[nid].salience for nid in node_ids])
 
-        # Use meta_kernel if available (Fix 2: consistency with single-node path)
+        # Use meta_kernel if available (Fix 2: consistency with single-node
+        # path)
         bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self.cfg.bandwidth
-        pc = self.meta_kernel.get_phase_coupling() if self.meta_kernel else self.cfg.phase_coupling
+        pc = self.meta_kernel.get_phase_coupling(
+        ) if self.meta_kernel else self.cfg.phase_coupling
         return self.gpu_backend.batch_resonance(
             query_latents, query_phases, node_positions, node_phases,
             node_amplitudes, node_saliences,
@@ -1270,10 +1431,12 @@ class RTMDKField:
         if self._tiered_store is not None:
             valid_entries = list(self._tiered_store.cacheable_nodes())
         else:
-            valid_entries = [(nid, self.nodes[nid]) for nid in self.node_index if nid in self.nodes]
+            valid_entries = [(nid, self.nodes[nid])
+                             for nid in self.node_index if nid in self.nodes]
         n = len(valid_entries)
         if n == 0:
-            self._cached_positions = np.empty((0, self.cfg.latent_dim), dtype=self._quant.dtype)
+            self._cached_positions = np.empty(
+                (0, self.cfg.latent_dim), dtype=self._quant.dtype)
             self._cached_phases = np.empty(0, dtype=np.float32)
             self._cached_amplitudes = np.empty(0, dtype=np.float32)
             self._cached_saliences = np.empty(0, dtype=np.float32)
@@ -1284,14 +1447,16 @@ class RTMDKField:
             self.node_index = []
             return
 
-        # Single pass through valid nodes — much faster than 5 separate list comprehensions
+        # Single pass through valid nodes — much faster than 5 separate list
+        # comprehensions
         positions = np.zeros((n, self.cfg.latent_dim), dtype=self._quant.dtype)
         phases = np.zeros(n, dtype=np.float32)
         amplitudes = np.zeros(n, dtype=np.float32)
         saliences = np.zeros(n, dtype=np.float32)
         modal_weights = np.zeros(n, dtype=np.float32)
         gates = np.ones(n, dtype=np.float32)  # Default gate = 1.0
-        causal_boost = np.zeros(n, dtype=np.float32)  # Default causal boost = 0
+        # Default causal boost = 0
+        causal_boost = np.zeros(n, dtype=np.float32)
 
         for i, (nid, node) in enumerate(valid_entries):
             positions[i] = node.latent_pos
@@ -1302,8 +1467,10 @@ class RTMDKField:
             if self.cfg.soft_gates and hasattr(node, 'soft_gate'):
                 gates[i] = node.soft_gate
             # Pre-compute causal boost factor: 1.0 + 0.1 * sum(causal_strength)
-            if self.causal_engine and hasattr(node, 'causal_parents') and node.causal_parents:
-                cb = sum(node.causal_strength.get(p, 0) for p in node.causal_parents)
+            if self.causal_engine and hasattr(
+                    node, 'causal_parents') and node.causal_parents:
+                cb = sum(node.causal_strength.get(p, 0)
+                         for p in node.causal_parents)
                 causal_boost[i] = 1.0 + 0.1 * cb
 
         self._cached_positions = positions
@@ -1316,9 +1483,18 @@ class RTMDKField:
         self._cache_dirty = False
         self.node_index = [nid for nid, _ in valid_entries]
 
-    def _compute_resonance_chunk(self, positions, phases, amplitudes, saliences,
-                                  modal_weights, gates, causal_boost,
-                                  query_latent, query_phase, bw=None):
+    def _compute_resonance_chunk(
+            self,
+            positions,
+            phases,
+            amplitudes,
+            saliences,
+            modal_weights,
+            gates,
+            causal_boost,
+            query_latent,
+            query_phase,
+            bw=None):
         """Compute resonance response for a chunk of nodes.
 
         Args:
@@ -1329,12 +1505,15 @@ class RTMDKField:
         if bw is not None:
             local_bw = np.asarray(bw)
         else:
-            local_bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self.cfg.bandwidth
+            local_bw = self.meta_kernel.get_bandwidth(
+            ) if self.meta_kernel else self.cfg.bandwidth
         local_bw = np.maximum(local_bw, 1e-8)
         spatial = np.exp(-dists ** 2 / (2 * local_bw ** 2))
-        pc = self.meta_kernel.get_phase_coupling() if self.meta_kernel else self.cfg.phase_coupling
+        pc = self.meta_kernel.get_phase_coupling(
+        ) if self.meta_kernel else self.cfg.phase_coupling
         phase_align = 0.5 + 0.5 * np.cos(phases - query_phase)
-        resp = spatial * ((1 - pc) + pc * phase_align) * amplitudes * saliences * modal_weights
+        resp = spatial * ((1 - pc) + pc * phase_align) * \
+            amplitudes * saliences * modal_weights
         if self.cfg.soft_gates:
             resp = resp * gates
         if self.causal_engine:
@@ -1405,7 +1584,8 @@ class RTMDKField:
             causal_boost = self._cached_causal_boost
             session_indices = None
 
-        # Phase 3c: Chunked batch computation — prevents OOM and improves cache locality
+        # Phase 3c: Chunked batch computation — prevents OOM and improves cache
+        # locality
         batch_size = self.cfg.gpu_batch_size
         n = len(positions)
 
@@ -1425,12 +1605,15 @@ class RTMDKField:
                 return []
             if session_indices is not None:
                 indices = session_indices[indices]
-            scores = resp[indices] if session_indices is None else resp[np.where(above_threshold)[0]]
+            scores = resp[indices] if session_indices is None else resp[np.where(above_threshold)[
+                0]]
             n_results = min(len(indices), top_k * 2)
             if len(indices) > top_k * 3:
                 if n_results < len(scores):
-                    partition_idx = np.argpartition(scores, -n_results)[-n_results:]
-                    top_local = partition_idx[np.argsort(scores[partition_idx])[::-1][:top_k]]
+                    partition_idx = np.argpartition(
+                        scores, -n_results)[-n_results:]
+                    top_local = partition_idx[np.argsort(
+                        scores[partition_idx])[::-1][:top_k]]
                 else:
                     top_local = np.argsort(scores)[::-1][:top_k]
                 top_indices = indices[top_local]
@@ -1450,7 +1633,8 @@ class RTMDKField:
                     causal_boost[start:end], query_latent, query_phase,
                 )
                 if session_id and session_id != "default" and session_mask is not None and session_indices is None:
-                    resp = resp * (1.0 + 0.5 * session_mask[start:end].astype(np.float32))
+                    resp = resp * \
+                        (1.0 + 0.5 * session_mask[start:end].astype(np.float32))
                 above = resp >= self.cfg.min_response
                 local_idx = np.where(above)[0]
                 if len(local_idx) == 0:
@@ -1461,7 +1645,8 @@ class RTMDKField:
                 if len(local_idx) > top_k * 3:
                     if chunk_n < len(scores):
                         part_idx = np.argpartition(scores, -chunk_n)[-chunk_n:]
-                        top_local = part_idx[np.argsort(scores[part_idx])[::-1][:top_k]]
+                        top_local = part_idx[np.argsort(
+                            scores[part_idx])[::-1][:top_k]]
                     else:
                         top_local = np.argsort(scores)[::-1][:top_k]
                 else:
@@ -1474,10 +1659,13 @@ class RTMDKField:
             candidates.sort(key=lambda x: x[1], reverse=True)
             top_candidates = candidates[:top_k]
             if session_indices is not None:
-                top_indices = np.array([session_indices[idx] for idx, _ in top_candidates], dtype=np.int64)
+                top_indices = np.array([session_indices[idx]
+                                       for idx, _ in top_candidates], dtype=np.int64)
             else:
-                top_indices = np.array([idx for idx, _ in top_candidates], dtype=np.int64)
-            top_scores = np.array([score for _, score in top_candidates], dtype=np.float32)
+                top_indices = np.array(
+                    [idx for idx, _ in top_candidates], dtype=np.int64)
+            top_scores = np.array(
+                [score for _, score in top_candidates], dtype=np.float32)
 
         # Build result list
         results = []
@@ -1491,37 +1679,52 @@ class RTMDKField:
         # Update stats
         self.stats["total_queries"] += 1
         if results:
-            self.stats["avg_response"] = 0.9 * self.stats["avg_response"] + 0.1 * results[0][1]
+            self.stats["avg_response"] = 0.9 * \
+                self.stats["avg_response"] + 0.1 * results[0][1]
             if self.ode_dynamics:
                 self.ode_dynamics.record_response(results[0][1])
             if self.entropy_ctrl:
-                self.entropy_ctrl.record_response(results[0][1], results[0][2].salience)
+                self.entropy_ctrl.record_response(
+                    results[0][1], results[0][2].salience)
             if self.goal_tracker:
                 for nid, resp_val, node in results:
-                    node.goal_relevance = self.goal_tracker.get_goal_relevance(nid)
+                    node.goal_relevance = self.goal_tracker.get_goal_relevance(
+                        nid)
             if self.cfg.attention_bias:
                 from rtmdk.memory.core import apply_attention_bias
-                results = apply_attention_bias(results, self.cfg.bias_temperature)
+                results = apply_attention_bias(
+                    results, self.cfg.bias_temperature)
                 self.stats["attention_bias_applied"] += 1
 
         # Track timing
         elapsed_ms = (time.time() - t0) * 1000
         if self.cfg.sparse_routing:
             self.stats["avg_shard_query_time_ms"] = (
-                0.95 * self.stats["avg_shard_query_time_ms"] + 0.05 * elapsed_ms
-            )
+                0.95 * self.stats["avg_shard_query_time_ms"] + 0.05 * elapsed_ms)
 
         return results
 
-    def _query_cache_key(self, query_latent: NDArray, phase: float, top_k: int, modality: str, session_id: Optional[str]) -> str:
+    def _query_cache_key(
+            self,
+            query_latent: NDArray,
+            phase: float,
+            top_k: int,
+            modality: str,
+            session_id: Optional[str]) -> str:
         """Hash embedding + query params for cache key."""
         import hashlib
         # Round to fp16 precision to tolerate tiny float noise
         vec = query_latent.astype(np.float16).tobytes()
-        raw = vec + f"|{phase:.4f}|{top_k}|{modality}|{session_id or ''}".encode()
+        raw = vec + \
+            f"|{phase:.4f}|{top_k}|{modality}|{session_id or ''}".encode()
         return hashlib.md5(raw).hexdigest()
 
-    def _apply_adaptive_top_k(self, results: List[Tuple[str, float, MemoryNode]]) -> List[Tuple[str, float, MemoryNode]]:
+    def _apply_adaptive_top_k(self,
+                              results: List[Tuple[str,
+                                                  float,
+                                                  MemoryNode]]) -> List[Tuple[str,
+                                                                              float,
+                                                                              MemoryNode]]:
         """Reduce top_k when top result is highly confident."""
         if not results:
             return results
@@ -1533,15 +1736,22 @@ class RTMDKField:
         else:
             return results[:5]
 
-    def query(self, embedding: NDArray, phase: float = 0.0, top_k: Optional[int] = None,
-              modality: str = "text", session_id: Optional[str] = None) -> List[Tuple[str, float, MemoryNode]]:
+    def query(self,
+              embedding: NDArray,
+              phase: float = 0.0,
+              top_k: Optional[int] = None,
+              modality: str = "text",
+              session_id: Optional[str] = None) -> List[Tuple[str,
+                                                              float,
+                                                              MemoryNode]]:
         t0 = time.time()
         top_k = top_k or self.cfg.top_k
         query_latent = self._project(embedding)
 
         # Track 3: Query cache check
         if self.query_cache is not None:
-            cache_key = self._query_cache_key(query_latent, phase, top_k, modality, session_id)
+            cache_key = self._query_cache_key(
+                query_latent, phase, top_k, modality, session_id)
             cached = self.query_cache.get_raw(cache_key)
             if cached is not None:
                 self.stats.setdefault("query_cache_hits", 0)
@@ -1551,13 +1761,16 @@ class RTMDKField:
             self.stats["query_cache_misses"] += 1
 
         # Fix 1: HNSW auto-intercept for large N (>5000 nodes).
-        # For small datasets, full vectorized scan is more accurate and still fast (SIMD).
-        if self.cfg.use_hnsw and self.hnsw_index and len(self.hnsw_index.positions) > 20000:
+        # For small datasets, full vectorized scan is more accurate and still
+        # fast (SIMD).
+        if self.cfg.use_hnsw and self.hnsw_index and len(
+                self.hnsw_index.positions) > 20000:
             n_pos = len(self.hnsw_index.positions)
             hnsw_k = min(n_pos, max(top_k * 20, min(n_pos // 20, 2000)))
             candidate_ids = self.hnsw_index.search(query_latent, hnsw_k)
             candidate_ids = [nid for nid in candidate_ids if nid in self.nodes]
-            # Vectorized batch resonance on HNSW candidates (avoids slow Python loop)
+            # Vectorized batch resonance on HNSW candidates (avoids slow Python
+            # loop)
             if candidate_ids:
                 scores = self._batch_resonance(
                     query_latent[np.newaxis, :],
@@ -1567,7 +1780,8 @@ class RTMDKField:
                 results = []
                 for idx, nid in enumerate(candidate_ids):
                     node = self.nodes[nid]
-                    resp = float(scores[idx]) * (1.3 if session_id and node.content.get("session") == session_id else 1.0)
+                    resp = float(
+                        scores[idx]) * (1.3 if session_id and node.content.get("session") == session_id else 1.0)
                     if resp >= self.cfg.min_response:
                         results.append((nid, resp, node))
                         node.last_resonated = time.time()
@@ -1575,13 +1789,18 @@ class RTMDKField:
             else:
                 results = []
         elif self.cfg.sparse_routing and self.shard_centers is not None and len(self.nodes) > self.cfg.num_shards * 2:
-            active_shards = self._route_query(query_latent, self.cfg.top_shards)
-            candidate_ids = [nid for nid in self.node_index if self._get_node_shard(nid) in active_shards]
-            search_nodes = [(nid, self.nodes[nid]) for nid in candidate_ids if nid in self.nodes]
+            active_shards = self._route_query(
+                query_latent, self.cfg.top_shards)
+            candidate_ids = [
+                nid for nid in self.node_index if self._get_node_shard(nid) in active_shards]
+            search_nodes = [(nid, self.nodes[nid])
+                            for nid in candidate_ids if nid in self.nodes]
             self.stats["shard_hits"] += len(candidate_ids)
         else:
-            # Always use vectorized batch resonance (removes Python-loop overhead)
-            results = self._query_vectorized(query_latent, phase, top_k, modality, session_id, t0)
+            # Always use vectorized batch resonance (removes Python-loop
+            # overhead)
+            results = self._query_vectorized(
+                query_latent, phase, top_k, modality, session_id, t0)
 
         # Track 2: Fallback to warm/cold tiers if tiered storage is enabled
         if self._tiered_store is not None and len(results) < top_k:
@@ -1597,7 +1816,8 @@ class RTMDKField:
                         [n.id for n in warm_nodes],
                     )[0]
                     for idx, node in enumerate(warm_nodes):
-                        resp = float(scores[idx]) * (1.3 if session_id and node.content.get("session") == session_id else 1.0)
+                        resp = float(
+                            scores[idx]) * (1.3 if session_id and node.content.get("session") == session_id else 1.0)
                         if resp >= self.cfg.min_response:
                             results.append((node.id, resp, node))
                             node.last_resonated = time.time()
@@ -1617,7 +1837,9 @@ class RTMDKField:
                             [n.id for n in cold_nodes],
                         )[0]
                         for idx, node in enumerate(cold_nodes):
-                            resp = float(scores[idx]) * (1.3 if session_id and node.content.get("session") == session_id else 1.0)
+                            resp = float(scores[idx]) * (
+                                1.3 if session_id and
+                                node.content.get("session") == session_id else 1.0)
                             if resp >= self.cfg.min_response:
                                 results.append((node.id, resp, node))
                                 node.last_resonated = time.time()
@@ -1626,7 +1848,8 @@ class RTMDKField:
 
         # Fallback loop path (should rarely reach here)
         if 'results' not in locals():
-            search_nodes = [(nid, self.nodes[nid]) for nid in self.node_index if nid in self.nodes]
+            search_nodes = [(nid, self.nodes[nid])
+                            for nid in self.node_index if nid in self.nodes]
             if self.cfg.sparse_routing:
                 self.stats["shard_misses"] += 1
 
@@ -1634,15 +1857,19 @@ class RTMDKField:
             if self.cfg.hyperbolic and len(search_nodes) > top_k * 5:
                 query_norm = np.linalg.norm(query_latent)
                 if query_norm >= self.cfg.ball_radius:
-                    query_latent = query_latent * (self.cfg.ball_radius - 1e-6) / max(query_norm, 1e-8)
+                    query_latent = query_latent * \
+                        (self.cfg.ball_radius - 1e-6) / max(query_norm, 1e-8)
                 prefiltered = []
                 for nid, node in search_nodes:
-                    # FIX: Never mutate node.latent_pos — use a local copy for projection
+                    # FIX: Never mutate node.latent_pos — use a local copy for
+                    # projection
                     node_norm = np.linalg.norm(node.latent_pos)
                     node_pos = node.latent_pos
                     if node_norm >= self.cfg.ball_radius:
-                        node_pos = node.latent_pos * (self.cfg.ball_radius - 1e-6) / max(node_norm, 1e-8)
-                    hdist = poincare_dist(query_latent, node_pos, self.cfg.ball_radius)
+                        node_pos = node.latent_pos * \
+                            (self.cfg.ball_radius - 1e-6) / max(node_norm, 1e-8)
+                    hdist = poincare_dist(
+                        query_latent, node_pos, self.cfg.ball_radius)
                     if hdist < 3.0:
                         prefiltered.append((nid, node))
                 if len(prefiltered) > 0:
@@ -1650,8 +1877,10 @@ class RTMDKField:
 
             results = []
             for nid, node in search_nodes:
-                resp = self._resonance_response(query_latent, phase, node, query_modality=modality)
-                # Session priority bonus: boost nodes matching the queried session
+                resp = self._resonance_response(
+                    query_latent, phase, node, query_modality=modality)
+                # Session priority bonus: boost nodes matching the queried
+                # session
                 if session_id and node.content.get("session") == session_id:
                     resp *= 1.3  # 30% boost for session-matching nodes
                 if resp >= self.cfg.min_response:
@@ -1665,14 +1894,14 @@ class RTMDKField:
         if self.cfg.sparse_routing:
             elapsed_ms = (time.time() - t0) * 1000
             self.stats["avg_shard_query_time_ms"] = (
-                0.95 * self.stats["avg_shard_query_time_ms"] + 0.05 * elapsed_ms
-            )
+                0.95 * self.stats["avg_shard_query_time_ms"] + 0.05 * elapsed_ms)
 
         if self.cfg.cross_modal:
             self.stats["cross_modal_queries"] += 1
             if results:
                 cm_scores = [n.cross_modal_score for _, _, n in results]
-                self.stats["cross_modal_recall"] = 0.9 * self.stats["cross_modal_recall"] + 0.1 * float(np.mean(cm_scores))
+                self.stats["cross_modal_recall"] = 0.9 * \
+                    self.stats["cross_modal_recall"] + 0.1 * float(np.mean(cm_scores))
 
         if len(results) == 0 and self.cfg.bm25_fallback and self.bm25_index:
             # Handle both v1 (text) and v2 (input_text + output_text) nodes
@@ -1681,26 +1910,31 @@ class RTMDKField:
                 content = self.nodes[nid].content
                 t = content.get("text", "")
                 if not t:
-                    t = f"{content.get('input_text', '')} {content.get('output_text', '')}".strip()
+                    t = f"{content.get('input_text', '')} {content.get('output_text', '')}".strip(
+                    )
                 if t:
                     texts.append(t)
             query_text = " ".join(texts)
             if query_text:
                 for doc_id, score in self.bm25_index.search(query_text, top_k):
                     if doc_id in self.nodes:
-                        results.append((doc_id, score * 0.1, self.nodes[doc_id]))
+                        results.append(
+                            (doc_id, score * 0.1, self.nodes[doc_id]))
                 self.stats["bm25_fallbacks"] += 1
 
         if results:
-            self.stats["avg_response"] = 0.9 * self.stats["avg_response"] + 0.1 * results[0][1]
+            self.stats["avg_response"] = 0.9 * \
+                self.stats["avg_response"] + 0.1 * results[0][1]
             if self.ode_dynamics:
                 self.ode_dynamics.record_response(results[0][1])
 
             # Phase 15 Track 4: Record resonance for entropy
             if self.entropy_ctrl:
-                self.entropy_ctrl.record_response(results[0][1], results[0][2].salience)
+                self.entropy_ctrl.record_response(
+                    results[0][1], results[0][2].salience)
 
-        # P2.2: Weight retrieval scores by uncertainty (lower uncertainty → higher score)
+        # P2.2: Weight retrieval scores by uncertainty (lower uncertainty →
+        # higher score)
         if self.kalman_filter is not None and results:
             weighted = []
             for nid, score, node in results:
@@ -1722,14 +1956,16 @@ class RTMDKField:
 
         # Phase 13 Track 4: Event-driven trigger for queries
         if self.event_scheduler and results:
-            self.event_scheduler.enqueue("query", {"top_score": results[0][1] if results else 0})
+            self.event_scheduler.enqueue(
+                "query", {"top_score": results[0][1] if results else 0})
 
         if self.meta_kernel:
             self.meta_kernel.record_response(results[0][1] if results else 0.0)
             if len(results) >= 2:
                 positions = np.array([n.latent_pos for _, _, n in results])
                 valid = pdist(positions)
-                density = 1.0 / (1.0 + np.mean(valid)) if len(valid) > 0 else 0.0
+                density = 1.0 / (1.0 + np.mean(valid)
+                                 ) if len(valid) > 0 else 0.0
                 self.meta_kernel.record_semantic_density(float(density))
             if len(results) >= 2:
                 responses = np.array([r for _, r, _ in results])
@@ -1741,8 +1977,13 @@ class RTMDKField:
         self._last_query_results = results
 
         if self.causal_engine and len(results) >= 2:
-            self.causal_engine.record_cooccurrence(results[0][0], results[1][0])
-            active = [nid for nid, resp, _ in results if resp > self.cfg.min_response * 0.5]
+            self.causal_engine.record_cooccurrence(
+                results[0][0], results[1][0])
+            active = [
+                nid for nid,
+                resp,
+                _ in results if resp > self.cfg.min_response *
+                0.5]
             if active:
                 self.causal_engine.record_observation(active)
                 self._active_node_history.append(active)
@@ -1750,8 +1991,10 @@ class RTMDKField:
         # Phase 14 Track 1: Meta-memory recall tracking
         if self.meta_memory_eval and results:
             top_score = results[0][1]
-            avg_age = np.mean([time.time() - n.created_at for _, _, n in results])
-            self.meta_memory_eval.record_recall("", top_score, node_age=avg_age)
+            avg_age = np.mean(
+                [time.time() - n.created_at for _, _, n in results])
+            self.meta_memory_eval.record_recall(
+                "", top_score, node_age=avg_age)
             self.stats["recall_accuracy"] = self.meta_memory_eval.evaluate_recall_accuracy()
 
         # P1.1: Conformal prediction filtering
@@ -1769,17 +2012,21 @@ class RTMDKField:
 
         # Track 3: Store in cache
         if self.query_cache is not None:
-            cache_key = self._query_cache_key(query_latent, phase, top_k, modality, session_id)
+            cache_key = self._query_cache_key(
+                query_latent, phase, top_k, modality, session_id)
             self.query_cache.put_raw(cache_key, final)
 
         return final
 
-    def sot_bootstrap(self, texts: List[str], teacher_model: str = 'all-MiniLM-L6-v2'):
+    def sot_bootstrap(
+            self,
+            texts: List[str],
+            teacher_model: str = 'all-MiniLM-L6-v2'):
         """Bootstrap SOT embeddings from a sentence-transformer teacher model.
-        
+
         This dramatically improves cold-start quality by initializing byte/token
         embeddings with semantic structure from a pre-trained model.
-        
+
         Args:
             texts: Corpus texts to use for bootstrap (e.g. from dataset).
             teacher_model: Sentence-transformer model name.
@@ -1789,14 +2036,16 @@ class RTMDKField:
         try:
             from sentence_transformers import SentenceTransformer
             teacher = SentenceTransformer(teacher_model)
-            logger.info(f"SOT bootstrap: loading teacher model {teacher_model}")
-            
+            logger.info(
+                f"SOT bootstrap: loading teacher model {teacher_model}")
+
             def embed_fn(text):
                 return teacher.encode(text, show_progress_bar=False)
-            
+
             self.sot_tokenizer.bootstrap_from_teacher(texts, embed_fn)
         except ImportError:
-            logger.error("sentence-transformers not installed, cannot bootstrap SOT")
+            logger.error(
+                "sentence-transformers not installed, cannot bootstrap SOT")
             raise
         except Exception as e:
             logger.error(f"SOT bootstrap failed: {e}")
@@ -1806,7 +2055,7 @@ class RTMDKField:
         self,
         query_text: str,
         positive_text: str,
-        negative_texts = None,
+        negative_texts=None,
         lr: float = 0.01,
     ):
         """Online contrastive learning step for SOT token embeddings.
@@ -1824,30 +2073,34 @@ class RTMDKField:
             adaptive_lr=self.cfg.sot_adaptive_lr,
         )
 
-    def _sot_retrieval_feedback(self, query_latent: np.ndarray, results: List[Tuple[str, float, MemoryNode]]):
+    def _sot_retrieval_feedback(
+            self, query_latent: np.ndarray, results: List[Tuple[str, float, MemoryNode]]):
         """Update SOT embeddings based on retrieval results.
         Pull query-relevant tokens closer to top results, push away from low-scoring results."""
         if not self.sot_tokenizer or not self.sot_hebbian:
             return
         # Use top result as positive anchor, bottom result as negative anchor
         top_nid, top_score, top_node = results[0]
-        bottom_nid, bottom_score, bottom_node = results[-1] if len(results) > 1 else (None, 0.0, None)
-        
+        bottom_nid, bottom_score, bottom_node = results[-1] if len(
+            results) > 1 else (None, 0.0, None)
+
         if top_score < 0.1:
             return  # Too uncertain, skip feedback
-        
+
         # Get query tokens (re-encode from the node's query context if available)
         # Since we don't have original query text here, we use a heuristic:
-        # update token embeddings of top result toward query latent, away from bottom
+        # update token embeddings of top result toward query latent, away from
+        # bottom
         top_text = top_node.content.get('text', '')
-        bottom_text = bottom_node.content.get('text', '') if bottom_node else ''
-        
+        bottom_text = bottom_node.content.get(
+            'text', '') if bottom_node else ''
+
         top_tokens = self.sot_tokenizer.encode(top_text)
         if bottom_text:
             bottom_tokens = self.sot_tokenizer.encode(bottom_text)
         else:
             bottom_tokens = []
-        
+
         # Pull top result tokens toward query direction
         # (approximate: treat query_latent as target for top tokens)
         if top_tokens and len(top_tokens) > 1:
@@ -1856,10 +2109,11 @@ class RTMDKField:
                 top_tokens,
                 [t for t in bottom_tokens if t not in top_tokens][:self.cfg.sot_negatives_per_query],
             )
-        
+
         # Update projection matrix if token_dim != latent_dim
         if self.sot_tokenizer.token_dim != self.sot_tokenizer.latent_dim and top_tokens:
-            # Simple gradient: push projection so that top text embeds closer to query
+            # Simple gradient: push projection so that top text embeds closer
+            # to query
             top_emb = self.sot_tokenizer.embed(top_tokens)
             error = query_latent - top_emb
             # Gradient clipping (SOT-D)
@@ -1872,15 +2126,23 @@ class RTMDKField:
                     delta = 0.001 * np.outer(token_vec, error)
                     self.sot_tokenizer.projection += delta
             # NaN guard (SOT-D)
-            if np.isnan(self.sot_tokenizer.projection).any() or np.isinf(self.sot_tokenizer.projection).any():
-                logger.warning("SOT projection NaN/Inf detected, skipping update")
+            if np.isnan(
+                    self.sot_tokenizer.projection).any() or np.isinf(
+                    self.sot_tokenizer.projection).any():
+                logger.warning(
+                    "SOT projection NaN/Inf detected, skipping update")
                 return
             # Renormalize columns
-            norms = np.linalg.norm(self.sot_tokenizer.projection, axis=0, keepdims=True)
+            norms = np.linalg.norm(
+                self.sot_tokenizer.projection, axis=0, keepdims=True)
             self.sot_tokenizer.projection /= np.maximum(norms, 1e-8)
 
-    def query_by_text(self, text: str, top_k: Optional[int] = None,
-                      session_id: Optional[str] = None) -> List[Tuple[str, float, MemoryNode]]:
+    def query_by_text(self,
+                      text: str,
+                      top_k: Optional[int] = None,
+                      session_id: Optional[str] = None) -> List[Tuple[str,
+                                                                      float,
+                                                                      MemoryNode]]:
         """Query field using SOT tokenizer (no external embedder required).
 
         Args:
@@ -1920,9 +2182,14 @@ class RTMDKField:
     def ode_dynamics(self) -> Optional["NeuralODEDynamics"]:
         if self._ode_dynamics_initialized and self._ode_dynamics is None:
             self._ode_dynamics = NeuralODEDynamics(
-                self.cfg.latent_dim, self.cfg.sde_noise_level, self.cfg.ode_time_horizon,
-                self.cfg.ode_n_steps, self.cfg.ode_chunk_size, self.cfg.ode_solver,
-                self.cfg.ode_atol, self.cfg.ode_rtol)
+                self.cfg.latent_dim,
+                self.cfg.sde_noise_level,
+                self.cfg.ode_time_horizon,
+                self.cfg.ode_n_steps,
+                self.cfg.ode_chunk_size,
+                self.cfg.ode_solver,
+                self.cfg.ode_atol,
+                self.cfg.ode_rtol)
         return self._ode_dynamics
 
     @ode_dynamics.setter
@@ -1947,17 +2214,25 @@ class RTMDKField:
         self._meta_controller_initialized = value is not None
 
     @_locked
-    def add_node(self, embedding: NDArray, content: Dict, phase: Optional[float] = None,
-                 node_id: Optional[str] = None, session_id: Optional[str] = None, modality: str = "text",
-                 skip_projection: bool = False) -> str:
-        # Rate limiting: configurable via RTMDK_ADD_RATE_LIMIT env var (default 100/sec)
+    def add_node(
+            self,
+            embedding: NDArray,
+            content: Dict,
+            phase: Optional[float] = None,
+            node_id: Optional[str] = None,
+            session_id: Optional[str] = None,
+            modality: str = "text",
+            skip_projection: bool = False) -> str:
+        # Rate limiting: configurable via RTMDK_ADD_RATE_LIMIT env var (default
+        # 100/sec)
         _rate_limit = int(os.environ.get("RTMDK_ADD_RATE_LIMIT", "100"))
         if _rate_limit > 0:
             now = time.time()
             while self._add_node_timestamps and self._add_node_timestamps[0] < now - 1.0:
                 self._add_node_timestamps.popleft()
             if len(self._add_node_timestamps) >= _rate_limit:
-                raise SecurityViolationError(f"Rate limit exceeded: max {_rate_limit} nodes/second")
+                raise SecurityViolationError(
+                    f"Rate limit exceeded: max {_rate_limit} nodes/second")
             self._add_node_timestamps.append(now)
 
         # Phase 14 Track 2: Security validation
@@ -1968,12 +2243,16 @@ class RTMDKField:
             output_text = content.get("output_text", "")
             for field_text in [text, input_text, output_text]:
                 if field_text:
-                    validation = self.security.validate_node_content(field_text)
+                    validation = self.security.validate_node_content(
+                        field_text)
                     if not validation["is_safe"]:
                         self.stats["security_violations"] += 1
-                        logger.warning(f"Security violation in add_node: {validation['violations']}")
-                        # Fix 7: Raise instead of returning "" — caller must handle
-                        raise SecurityViolationError(f"Security violation: {validation['violations']}")
+                        logger.warning(
+                            f"Security violation in add_node: {validation['violations']}")
+                        # Fix 7: Raise instead of returning "" — caller must
+                        # handle
+                        raise SecurityViolationError(
+                            f"Security violation: {validation['violations']}")
 
         nid = node_id or f"n_{len(self.nodes)}_{int(time.time() * 1000)}"
         if skip_projection:
@@ -1981,8 +2260,7 @@ class RTMDKField:
             if len(embedding) != self.cfg.latent_dim:
                 raise ValueError(
                     f"skip_projection=True but embedding dim {len(embedding)} != "
-                    f"latent_dim {self.cfg.latent_dim}"
-                )
+                    f"latent_dim {self.cfg.latent_dim}")
             latent = embedding
         elif len(embedding) == self.cfg.latent_dim:
             # Phase 21: SOT embeddings are already latent_dim — use directly
@@ -1996,7 +2274,8 @@ class RTMDKField:
         if self.cfg.hyperbolic:
             norm = np.linalg.norm(latent)
             if norm >= self.cfg.ball_radius:
-                latent = latent * (self.cfg.ball_radius - 1e-6) / max(norm, 1e-8)
+                latent = latent * (self.cfg.ball_radius -
+                                   1e-6) / max(norm, 1e-8)
 
         # Track 1: Quantize latent position to reduce RAM usage
         latent = self._quant.quantize(latent)
@@ -2005,16 +2284,23 @@ class RTMDKField:
             phase = self._get_phase(session_id, embedding, modality)
 
         # OPTIMIZED: Initialize amplitude/salience based on embedding quality
-        # Higher norm embeddings → more informative content → higher initial salience
+        # Higher norm embeddings → more informative content → higher initial
+        # salience
         emb_norm = float(np.linalg.norm(embedding))
         # Typical emb_norm range: 5-30 for real embeddings, 2-10 for synthetic
         # Normalize to [0.5, 1.0] range for salience
         salience = min(1.0, max(0.3, emb_norm / 20.0))
         amplitude = min(1.0, max(0.5, emb_norm / 15.0))
 
-        node = MemoryNode(id=nid, latent_pos=latent, phase=phase,
-                          amplitude=amplitude, salience=salience, content=content,
-                          lineage=[], modality=modality)
+        node = MemoryNode(
+            id=nid,
+            latent_pos=latent,
+            phase=phase,
+            amplitude=amplitude,
+            salience=salience,
+            content=content,
+            lineage=[],
+            modality=modality)
 
         # P2.2: Initialize uncertainty covariance
         if self.kalman_filter is not None:
@@ -2043,21 +2329,33 @@ class RTMDKField:
         if self._cached_positions is not None:
             # Incremental append to avoid full rebuild
             try:
-                self._cached_positions = np.vstack([self._cached_positions, latent.reshape(1, -1)])
-                self._cached_phases = np.append(self._cached_phases, phase if phase is not None else self._get_phase(session_id, embedding))
-                self._cached_amplitudes = np.append(self._cached_amplitudes, amplitude)
-                self._cached_saliences = np.append(self._cached_saliences, salience)
-                self._cached_modal_weights = np.append(self._cached_modal_weights, 1.0)
+                self._cached_positions = np.vstack(
+                    [self._cached_positions, latent.reshape(1, -1)])
+                self._cached_phases = np.append(
+                    self._cached_phases,
+                    phase if phase is not None else self._get_phase(
+                        session_id,
+                        embedding))
+                self._cached_amplitudes = np.append(
+                    self._cached_amplitudes, amplitude)
+                self._cached_saliences = np.append(
+                    self._cached_saliences, salience)
+                self._cached_modal_weights = np.append(
+                    self._cached_modal_weights, 1.0)
                 self._cached_gates = np.append(self._cached_gates, 1.0)
-                self._cached_causal_boost = np.append(self._cached_causal_boost, 1.0)
+                self._cached_causal_boost = np.append(
+                    self._cached_causal_boost, 1.0)
             except Exception:
-                logger.warning("Incremental cache append failed, falling back to full rebuild", exc_info=True)
+                logger.warning(
+                    "Incremental cache append failed, falling back to full rebuild",
+                    exc_info=True)
                 # Fallback: mark dirty for full rebuild
                 self._cache_dirty = True
         else:
             self._cache_dirty = True
 
-        # B1: Invalidate tension cache for neighbors (new node affects topology)
+        # B1: Invalidate tension cache for neighbors (new node affects
+        # topology)
         self._invalidate_tension_cache(nid)
 
         # Track 3: Invalidate query cache (new node may change rankings)
@@ -2086,10 +2384,13 @@ class RTMDKField:
 
         # Phase 13 Track 1: Event-driven trigger for node added
         if self.event_scheduler:
-            self.event_scheduler.enqueue("node_added", {"node_id": nid, "modality": modality})
+            self.event_scheduler.enqueue(
+                "node_added", {
+                    "node_id": nid, "modality": modality})
 
         # Track 5: Store embedding in WAL for durable replay
-        self.wal.append_add_node(nid, content, modality, embedding=latent.tolist())
+        self.wal.append_add_node(
+            nid, content, modality, embedding=latent.tolist())
         self._dirty = True
         return nid
 
@@ -2114,7 +2415,8 @@ class RTMDKField:
         - WAL receives a single append
         """
         if len(embeddings) != len(contents):
-            raise ValueError(f"embeddings length {len(embeddings)} != contents length {len(contents)}")
+            raise ValueError(
+                f"embeddings length {len(embeddings)} != contents length {len(contents)}")
         n = len(embeddings)
         if n == 0:
             return []
@@ -2124,8 +2426,7 @@ class RTMDKField:
             if embeddings.shape[1] != self.cfg.latent_dim:
                 raise ValueError(
                     f"skip_projection=True but embedding dim {embeddings.shape[1]} != "
-                    f"latent_dim {self.cfg.latent_dim}"
-                )
+                    f"latent_dim {self.cfg.latent_dim}")
             latents = embeddings.astype(np.float32)
         elif embeddings.shape[1] == self.cfg.latent_dim:
             latents = embeddings.astype(np.float32)
@@ -2141,10 +2442,11 @@ class RTMDKField:
             norms = np.linalg.norm(latents, axis=1, keepdims=True)
             mask = norms.flatten() >= self.cfg.ball_radius
             if np.any(mask):
-                latents[mask] = latents[mask] * (self.cfg.ball_radius - 1e-6) / np.maximum(norms[mask], 1e-8)
+                latents[mask] = latents[mask] * \
+                    (self.cfg.ball_radius - 1e-6) / np.maximum(norms[mask], 1e-8)
 
         # Track 1: Quantize (loop — quantizer may not be vectorizable)
-        latents = np.array([self._quant.quantize(l) for l in latents])
+        latents = np.array([self._quant.quantize(vec) for vec in latents])
 
         # --- Vectorized phase / amplitude / salience ---
         if phases is None:
@@ -2197,10 +2499,13 @@ class RTMDKField:
 
         # --- Vectorized cache append ---
         if self._cached_positions is not None:
-            self._cached_positions = np.vstack([self._cached_positions, latents])
+            self._cached_positions = np.vstack(
+                [self._cached_positions, latents])
             self._cached_phases = np.append(self._cached_phases, phases)
-            self._cached_amplitudes = np.append(self._cached_amplitudes, amplitudes)
-            self._cached_saliences = np.append(self._cached_saliences, saliences)
+            self._cached_amplitudes = np.append(
+                self._cached_amplitudes, amplitudes)
+            self._cached_saliences = np.append(
+                self._cached_saliences, saliences)
             self._cached_modal_weights = np.append(
                 self._cached_modal_weights, np.ones(n, dtype=np.float32)
             )
@@ -2240,7 +2545,7 @@ class RTMDKField:
             "count": n,
             "node_ids": batch_nids,
             "contents": contents,
-            "embeddings": [l.tolist() for l in latents],
+            "embeddings": [vec.tolist() for vec in latents],
             "modalities": modalities if modalities else ["text"] * n,
         })
         self._dirty = True
@@ -2287,10 +2592,15 @@ class RTMDKField:
             self.save_q.put_nowait(payload)
         except asyncio.QueueFull:
             # Backpressure: fall back to synchronous path
-            logger.warning("save_q full — falling back to synchronous add_nodes_batch")
+            logger.warning(
+                "save_q full — falling back to synchronous add_nodes_batch")
             self.add_nodes_batch(embeddings, contents, modalities=modalities)
 
-    def calibrate(self, query_embedding: NDArray, node_id: str, is_relevant: bool) -> None:
+    def calibrate(
+            self,
+            query_embedding: NDArray,
+            node_id: str,
+            is_relevant: bool) -> None:
         """Add a labeled query-result pair to the conformal calibration set.
 
         Args:
@@ -2307,7 +2617,12 @@ class RTMDKField:
         score = self._resonance_response(query_latent, node.phase, node)
         self.conformal_calibrator.add_sample(score)
 
-    def _apply_conformal_filter(self, results: List[Tuple[str, float, MemoryNode]]) -> List[Tuple[str, float, MemoryNode]]:
+    def _apply_conformal_filter(self,
+                                results: List[Tuple[str,
+                                                    float,
+                                                    MemoryNode]]) -> List[Tuple[str,
+                                                                                float,
+                                                                                MemoryNode]]:
         """Filter query results through conformal prediction threshold.
 
         Returns only results whose score lies in the conformal prediction set.
@@ -2319,12 +2634,14 @@ class RTMDKField:
             return results
         scores = [score for _, score, _ in results]
         nids = [nid for nid, _, _ in results]
-        pred_set, confidence, threshold = self.conformal_calibrator.predict(scores, nids)
+        pred_set, confidence, threshold = self.conformal_calibrator.predict(
+            scores, nids)
         self.stats["conformal_threshold"] = threshold
         self.stats["conformal_confidence"] = confidence
         self.stats["conformal_prediction_set_size"] = len(pred_set)
         pred_set_lookup = set(pred_set)
-        return [(nid, score, node) for nid, score, node in results if nid in pred_set_lookup]
+        return [(nid, score, node)
+                for nid, score, node in results if nid in pred_set_lookup]
 
     def _invalidate_tension_cache(self, node_id: Optional[str] = None):
         """B1: Invalidate tension cache. If node_id given, invalidate that node and neighbors.
@@ -2366,7 +2683,10 @@ class RTMDKField:
         for k in keys_to_remove:
             self._tension_cache.pop(k, None)
 
-    def _compute_tension(self, node_id: str, neighborhood_radius: float = 2.0) -> float:
+    def _compute_tension(
+            self,
+            node_id: str,
+            neighborhood_radius: float = 2.0) -> float:
         # B1: Tension cache check
         if node_id in self._tension_cache:
             cached_tension, cached_step = self._tension_cache[node_id]
@@ -2382,23 +2702,33 @@ class RTMDKField:
         k_neighbors = 10
         neighbor_ids = []
 
-        if self.cfg.use_hnsw and self.hnsw_index and len(self.hnsw_index.positions) > k_neighbors:
-            candidate_ids = self.hnsw_index.search(node.latent_pos, top_k=k_neighbors + 1)
-            neighbor_ids = [nid for nid in candidate_ids if nid != node_id and nid in self.nodes]
+        if self.cfg.use_hnsw and self.hnsw_index and len(
+                self.hnsw_index.positions) > k_neighbors:
+            candidate_ids = self.hnsw_index.search(
+                node.latent_pos, top_k=k_neighbors + 1)
+            neighbor_ids = [
+                nid for nid in candidate_ids if nid != node_id and nid in self.nodes]
         else:
             # Deterministic fallback: compute distances to a limited window
             ids_to_check = self.node_index
             max_scan = 200  # Limit scan for performance
             if len(ids_to_check) > max_scan:
-                # Use reservoir-style sample with deterministic seed based on node_id
-                rng = np.random.RandomState(int(hashlib.md5(node_id.encode()).hexdigest(), 16) % 2**32)
-                ids_to_check = list(rng.choice(ids_to_check, size=max_scan, replace=False))
+                # Use reservoir-style sample with deterministic seed based on
+                # node_id
+                rng = np.random.RandomState(
+                    int(hashlib.md5(node_id.encode()).hexdigest(), 16) % 2**32)
+                ids_to_check = list(
+                    rng.choice(
+                        ids_to_check,
+                        size=max_scan,
+                        replace=False))
 
             if len(ids_to_check) < 2:
                 return 0.0
 
             # Compute distances and select k nearest within radius
-            others = [(oid, self.nodes[oid]) for oid in ids_to_check if oid != node_id and oid in self.nodes]
+            others = [(oid, self.nodes[oid])
+                      for oid in ids_to_check if oid != node_id and oid in self.nodes]
             if not others:
                 return 0.0
 
@@ -2414,7 +2744,8 @@ class RTMDKField:
                 nearest_idx = np.argsort(dists)[:k]
                 neighbor_ids = [other_ids[i] for i in nearest_idx]
             else:
-                radius_dists = [(other_ids[i], dists[i]) for i in range(len(dists)) if within_radius[i]]
+                radius_dists = [(other_ids[i], dists[i])
+                                for i in range(len(dists)) if within_radius[i]]
                 radius_dists.sort(key=lambda x: x[1])
                 neighbor_ids = [oid for oid, _ in radius_dists[:k_neighbors]]
 
@@ -2424,10 +2755,12 @@ class RTMDKField:
             neighbors = [self.nodes[oid] for oid in neighbor_ids]
             phases = np.array([n.phase for n in neighbors])
             saliences = np.array([n.salience for n in neighbors])
-            tension = 0.6 * (np.std(np.cos(phases)) + np.std(np.sin(phases))) + 0.4 * np.std(saliences)
+            tension = 0.6 * (np.std(np.cos(phases)) +
+                             np.std(np.sin(phases))) + 0.4 * np.std(saliences)
 
         # Phase 14 Track 2: Security - detect tension spikes
-        if self.security and not self.security.validate_tension_spike(float(tension)):
+        if self.security and not self.security.validate_tension_spike(
+                float(tension)):
             self.stats["tension_spikes_blocked"] += 1
 
         # B1: Cache the computed tension
@@ -2438,15 +2771,23 @@ class RTMDKField:
     def _soft_gate(self, tension: float) -> float:
         if not self.cfg.soft_gates:
             return 1.0
-        eff = self.adaptive_threshold.get_threshold() if self.adaptive_threshold else self.cfg.tension_threshold
-        return float(1 / (1 + math.exp(-(tension - eff) / self.cfg.gate_temperature)))
+        eff = self.adaptive_threshold.get_threshold(
+        ) if self.adaptive_threshold else self.cfg.tension_threshold
+        return float(
+            1 / (1 + math.exp(-(tension - eff) / self.cfg.gate_temperature)))
 
     def get_effective_threshold(self) -> float:
-        return self.adaptive_threshold.get_threshold() if self.adaptive_threshold else self.cfg.tension_threshold
+        return self.adaptive_threshold.get_threshold(
+        ) if self.adaptive_threshold else self.cfg.tension_threshold
 
-    def _spectral_merge_clusters(self, high_tension: List[str], mode: ConsolidationMode,
-                                  updated: List[str], pending_deletions: List[str],
-                                  processed: Set[str], pre_state: Dict) -> bool:
+    def _spectral_merge_clusters(
+            self,
+            high_tension: List[str],
+            mode: ConsolidationMode,
+            updated: List[str],
+            pending_deletions: List[str],
+            processed: Set[str],
+            pre_state: Dict) -> bool:
         """P2.1: Spectral Graph Laplacian clustering for consolidation.
 
         Groups high-tension nodes into clusters using spectral embedding,
@@ -2493,14 +2834,17 @@ class RTMDKField:
             while len(cluster_nids) >= 2:
                 best_pair = None
                 best_dist = float('inf')
-                cluster_positions = {nid: self.nodes[nid].latent_pos for nid in cluster_nids if nid in self.nodes}
+                cluster_positions = {
+                    nid: self.nodes[nid].latent_pos for nid in cluster_nids if nid in self.nodes}
                 if len(cluster_positions) < 2:
                     break
                 nids_list = list(cluster_positions.keys())
                 for i in range(len(nids_list)):
                     for j in range(i + 1, len(nids_list)):
                         nid_i, nid_j = nids_list[i], nids_list[j]
-                        d = np.linalg.norm(cluster_positions[nid_i] - cluster_positions[nid_j])
+                        d = np.linalg.norm(
+                            cluster_positions[nid_i] -
+                            cluster_positions[nid_j])
                         if d < best_dist:
                             best_dist = d
                             best_pair = (nid_i, nid_j)
@@ -2509,10 +2853,18 @@ class RTMDKField:
                 nid, pid = best_pair
                 if nid not in self.nodes or pid not in self.nodes or nid in processed or pid in processed:
                     break
-                if self._do_merge(nid, pid, mode, updated, pending_deletions, processed, pre_state):
+                if self._do_merge(
+                        nid,
+                        pid,
+                        mode,
+                        updated,
+                        pending_deletions,
+                        processed,
+                        pre_state):
                     merged_any = True
                     # Remove pid from cluster, keep nid as merged survivor
-                    cluster_nids = [n for n in cluster_nids if n != pid and n in self.nodes]
+                    cluster_nids = [
+                        n for n in cluster_nids if n != pid and n in self.nodes]
                 else:
                     break
         return merged_any
@@ -2548,10 +2900,14 @@ class RTMDKField:
             node.pre_consolidation_pos = node.latent_pos.copy()
 
         if self.diff_consolidation and mode == ConsolidationMode.DIALECTICAL:
-            synth = self.diff_consolidation.compute_synthesis(node, partner, gate)
+            synth = self.diff_consolidation.compute_synthesis(
+                node, partner, gate)
             if self.cfg.hyperbolic:
                 node.latent_pos = exp_map_poincare(
-                    log_map_poincare(synth["latent_pos"], node.latent_pos, self.cfg.ball_radius),
+                    log_map_poincare(
+                        synth["latent_pos"],
+                        node.latent_pos,
+                        self.cfg.ball_radius),
                     node.latent_pos,
                     self.cfg.ball_radius,
                 )
@@ -2567,10 +2923,11 @@ class RTMDKField:
                 )
             else:
                 node.latent_pos = 0.5 * (node.latent_pos + partner.latent_pos)
-            node.phase = np.arctan2(0.5*(np.sin(node.phase)+np.sin(partner.phase)),
-                                    0.5*(np.cos(node.phase)+np.cos(partner.phase))) % (2*np.pi)
-            node.amplitude = min(1.0, 0.8*(node.amplitude+partner.amplitude))
-            node.salience = min(1.0, 0.7*(node.salience+partner.salience))
+            node.phase = np.arctan2(0.5 * (np.sin(node.phase) + np.sin(partner.phase)), 0.5 * (
+                np.cos(node.phase) + np.cos(partner.phase))) % (2 * np.pi)
+            node.amplitude = min(
+                1.0, 0.8 * (node.amplitude + partner.amplitude))
+            node.salience = min(1.0, 0.7 * (node.salience + partner.salience))
         else:
             if self.cfg.hyperbolic:
                 node.latent_pos = poincare_midpoint(
@@ -2578,8 +2935,8 @@ class RTMDKField:
                 )
             else:
                 node.latent_pos = 0.5 * (node.latent_pos + partner.latent_pos)
-            node.phase = np.arctan2(0.5*(np.sin(node.phase)+np.sin(partner.phase)),
-                                    0.5*(np.cos(node.phase)+np.cos(partner.phase))) % (2*np.pi)
+            node.phase = np.arctan2(0.5 * (np.sin(node.phase) + np.sin(partner.phase)), 0.5 * (
+                np.cos(node.phase) + np.cos(partner.phase))) % (2 * np.pi)
 
         # P2.2: Kalman filter prediction + update on merge
         if self.kalman_filter is not None:
@@ -2590,7 +2947,8 @@ class RTMDKField:
                 _, node.covariance = self.kalman_filter.update(
                     node.latent_pos, partner.latent_pos, node.covariance
                 )
-                node.covariance = self.kalman_filter.merge_covariance(node.covariance, partner.covariance)
+                node.covariance = self.kalman_filter.merge_covariance(
+                    node.covariance, partner.covariance)
             elif partner.covariance is not None:
                 node.covariance = partner.covariance.copy()
 
@@ -2600,14 +2958,18 @@ class RTMDKField:
         node.content["synthesis_note"] = f"Consolidated with {pid} at t={time.time():.0f}"
         if "merged_content" not in node.content:
             node.content["merged_content"] = []
-        node.content["merged_content"].append(partner.content.get("text", "") or partner.content.get("input_text", ""))
+        node.content["merged_content"].append(
+            partner.content.get(
+                "text", "") or partner.content.get(
+                "input_text", ""))
 
         if self.causal_engine:
             for parent, strength in partner.causal_strength.items():
                 if parent not in node.causal_strength:
                     node.causal_strength[parent] = strength
                 else:
-                    node.causal_strength[parent] = max(node.causal_strength[parent], strength)
+                    node.causal_strength[parent] = max(
+                        node.causal_strength[parent], strength)
 
         if self.cfg.use_hnsw and self.hnsw_index:
             self.hnsw_index.remove(pid)
@@ -2623,7 +2985,9 @@ class RTMDKField:
         return True
 
     @_locked
-    def consolidate(self, mode: Optional[ConsolidationMode] = None) -> List[str]:
+    def consolidate(
+            self,
+            mode: Optional[ConsolidationMode] = None) -> List[str]:
         mode = mode or self.cfg.consolidation_mode
         updated = []
         eff_threshold = self.get_effective_threshold()
@@ -2632,7 +2996,8 @@ class RTMDKField:
         if self.cfg.enable_rollback or self.cfg.self_sup_verify_after_consolidate:
             for nid in self.node_index:
                 n = self.nodes[nid]
-                # H3: Save full state for complete rollback — not just position/phase
+                # H3: Save full state for complete rollback — not just
+                # position/phase
                 pre_state[nid] = {
                     "latent_pos": n.latent_pos.copy(),
                     "phase": n.phase,
@@ -2640,7 +3005,8 @@ class RTMDKField:
                     "salience": n.salience,
                     "tension": n.tension,
                     "soft_gate": n.soft_gate,
-                    "content": dict(n.content),  # shallow copy — synthesis_note gets added
+                    # shallow copy — synthesis_note gets added
+                    "content": dict(n.content),
                     "lineage": list(n.lineage),
                     "causal_strength": dict(n.causal_strength),
                     "causal_parents": list(n.causal_parents),
@@ -2656,36 +3022,41 @@ class RTMDKField:
             self.nodes[nid].soft_gate = self._soft_gate(tension)
             if self.adaptive_threshold:
                 self.adaptive_threshold.record_tension(tension)
-                self.stats["adaptive_threshold_value"] = self.adaptive_threshold.get_threshold()
+                self.stats["adaptive_threshold_value"] = self.adaptive_threshold.get_threshold(
+                )
 
-        high_tension = [nid for nid in node_index_snapshot if nid in self.nodes and self.nodes[nid].tension > eff_threshold]
+        high_tension = [
+            nid for nid in node_index_snapshot if nid in self.nodes and self.nodes[nid].tension > eff_threshold]
         processed = set()
         pending_deletions = []
-        # Fix: Snapshot node_index ONCE before outer loop (was O(N²) due to repeated copies)
+        # Fix: Snapshot node_index ONCE before outer loop (was O(N²) due to
+        # repeated copies)
         node_index_snapshot = list(self.node_index)
         n_snap = len(node_index_snapshot)
 
         # P2.1: Spectral Graph Laplacian clustering (optional, opt-in)
         if self.cfg.spectral_consolidation and len(high_tension) >= 3:
             spectral_merged = self._spectral_merge_clusters(
-                high_tension, mode, updated, pending_deletions, processed, pre_state
-            )
+                high_tension, mode, updated, pending_deletions, processed, pre_state)
             if spectral_merged:
                 # Recompute high_tension excluding already processed nodes
-                high_tension = [nid for nid in high_tension if nid not in processed and nid in self.nodes]
+                high_tension = [
+                    nid for nid in high_tension if nid not in processed and nid in self.nodes]
 
         # FIX: Precompute positions for vectorized distance computation
         if self.cfg.use_hnsw and self.hnsw_index and n_snap > 50:
             # Use HNSW for candidate search — O(N log N)
             # Fix 10: Track HNSW bypass when node count <= 50
             if n_snap <= 50:
-                self.stats["hnsw_bypassed"] = self.stats.get("hnsw_bypassed", 0) + 1
+                self.stats["hnsw_bypassed"] = self.stats.get(
+                    "hnsw_bypassed", 0) + 1
             for nid in high_tension:
                 if nid in processed or nid not in self.nodes:
                     continue
                 node = self.nodes[nid]
                 # HNSW search for neighbors within distance 2.5
-                candidate_ids = self.hnsw_index.search(node.latent_pos, top_k=min(50, n_snap))
+                candidate_ids = self.hnsw_index.search(
+                    node.latent_pos, top_k=min(50, n_snap))
                 candidates = []
                 for oid in candidate_ids:
                     if oid == nid or oid in processed or oid not in self.nodes:
@@ -2694,7 +3065,8 @@ class RTMDKField:
                     dist = np.linalg.norm(node.latent_pos - other.latent_pos)
                     if dist >= 2.5:
                         continue
-                    pd = min(abs(node.phase - other.phase), 2 * np.pi - abs(node.phase - other.phase))
+                    pd = min(abs(node.phase - other.phase), 2 *
+                             np.pi - abs(node.phase - other.phase))
                     if pd > 1.0:
                         candidates.append((oid, dist, pd))
                 if not candidates:
@@ -2706,7 +3078,8 @@ class RTMDKField:
                 partner = self.nodes[pid]
 
                 if self.cfg.do_calculus_validation and self.causal_engine:
-                    validation = self.causal_engine.validate_consolidation(nid, pid)
+                    validation = self.causal_engine.validate_consolidation(
+                        nid, pid)
                     self.stats["consolidation_validations"] += 1
                     if not validation["safe"]:
                         self.stats["blocked_consolidations"] += 1
@@ -2714,7 +3087,8 @@ class RTMDKField:
                         processed.add(pid)
                         continue
 
-                # Phase 20: Domain consolidation guard — don't merge nodes from different domains
+                # Phase 20: Domain consolidation guard — don't merge nodes from
+                # different domains
                 if self.cfg.domain_consolidation_guard and node.domain != partner.domain:
                     if partner.id not in node.conflict_with:
                         node.conflict_with.append(partner.id)
@@ -2730,10 +3104,14 @@ class RTMDKField:
                     node.pre_consolidation_pos = node.latent_pos.copy()
 
                 if self.diff_consolidation and mode == ConsolidationMode.DIALECTICAL:
-                    synth = self.diff_consolidation.compute_synthesis(node, partner, gate)
+                    synth = self.diff_consolidation.compute_synthesis(
+                        node, partner, gate)
                     if self.cfg.hyperbolic:
                         node.latent_pos = exp_map_poincare(
-                            log_map_poincare(synth["latent_pos"], node.latent_pos, self.cfg.ball_radius),
+                            log_map_poincare(
+                                synth["latent_pos"],
+                                node.latent_pos,
+                                self.cfg.ball_radius),
                             node.latent_pos,
                             self.cfg.ball_radius,
                         )
@@ -2745,40 +3123,48 @@ class RTMDKField:
                 elif mode == ConsolidationMode.DIALECTICAL:
                     if self.cfg.hyperbolic:
                         node.latent_pos = poincare_midpoint(
-                            node.latent_pos, partner.latent_pos, self.cfg.ball_radius
-                        )
+                            node.latent_pos, partner.latent_pos, self.cfg.ball_radius)
                     else:
-                        node.latent_pos = 0.5 * (node.latent_pos + partner.latent_pos)
-                    node.phase = np.arctan2(0.5*(np.sin(node.phase)+np.sin(partner.phase)),
-                                            0.5*(np.cos(node.phase)+np.cos(partner.phase))) % (2*np.pi)
-                    node.amplitude = min(1.0, 0.8*(node.amplitude+partner.amplitude))
-                    node.salience = min(1.0, 0.7*(node.salience+partner.salience))
+                        node.latent_pos = 0.5 * \
+                            (node.latent_pos + partner.latent_pos)
+                    node.phase = np.arctan2(0.5 * (np.sin(node.phase) + np.sin(partner.phase)), 0.5 * (
+                        np.cos(node.phase) + np.cos(partner.phase))) % (2 * np.pi)
+                    node.amplitude = min(
+                        1.0, 0.8 * (node.amplitude + partner.amplitude))
+                    node.salience = min(
+                        1.0, 0.7 * (node.salience + partner.salience))
                 else:
-                    # MERGE and PRUNE modes: same spatial merge, keep amplitude/salience from survivor
+                    # MERGE and PRUNE modes: same spatial merge, keep
+                    # amplitude/salience from survivor
                     if self.cfg.hyperbolic:
                         node.latent_pos = poincare_midpoint(
-                            node.latent_pos, partner.latent_pos, self.cfg.ball_radius
-                        )
+                            node.latent_pos, partner.latent_pos, self.cfg.ball_radius)
                     else:
-                        node.latent_pos = 0.5 * (node.latent_pos + partner.latent_pos)
-                    node.phase = np.arctan2(0.5*(np.sin(node.phase)+np.sin(partner.phase)),
-                                            0.5*(np.cos(node.phase)+np.cos(partner.phase))) % (2*np.pi)
+                        node.latent_pos = 0.5 * \
+                            (node.latent_pos + partner.latent_pos)
+                    node.phase = np.arctan2(0.5 * (np.sin(node.phase) + np.sin(partner.phase)), 0.5 * (
+                        np.cos(node.phase) + np.cos(partner.phase))) % (2 * np.pi)
 
                 node.tension = 0.0
                 node.soft_gate = 1.0
-                node.lineage = [f"{node.id}+{pid}"] + node.lineage + partner.lineage
+                node.lineage = [f"{node.id}+{pid}"] + \
+                    node.lineage + partner.lineage
                 # Preserve partner content for traceability
                 node.content["synthesis_note"] = f"Consolidated with {pid} at t={time.time():.0f}"
                 if "merged_content" not in node.content:
                     node.content["merged_content"] = []
-                node.content["merged_content"].append(partner.content.get("text", "") or partner.content.get("input_text", ""))
+                node.content["merged_content"].append(
+                    partner.content.get(
+                        "text", "") or partner.content.get(
+                        "input_text", ""))
 
                 if self.causal_engine:
                     for parent, strength in partner.causal_strength.items():
                         if parent not in node.causal_strength:
                             node.causal_strength[parent] = strength
                         else:
-                            node.causal_strength[parent] = max(node.causal_strength[parent], strength)
+                            node.causal_strength[parent] = max(
+                                node.causal_strength[parent], strength)
 
                 if self.cfg.use_hnsw and self.hnsw_index:
                     self.hnsw_index.remove(pid)
@@ -2793,11 +3179,14 @@ class RTMDKField:
                 processed.add(nid)
         else:
             # Fallback: vectorized candidate search without HNSW — O(N) per node via vectorized ops
-            # Precompute all positions once (not O(N²) — done once outside loop)
-            snap_positions = np.array([self.nodes[oid].latent_pos for oid in node_index_snapshot if oid in self.nodes])
-            snap_ids = [oid for oid in node_index_snapshot if oid in self.nodes]
+            # Precompute all positions once (not O(N²) — done once outside
+            # loop)
+            snap_positions = np.array(
+                [self.nodes[oid].latent_pos for oid in node_index_snapshot if oid in self.nodes])
+            snap_ids = [
+                oid for oid in node_index_snapshot if oid in self.nodes]
             snap_phases = np.array([self.nodes[oid].phase for oid in snap_ids])
-            
+
             # O(1) lookup instead of O(N) index search
             snap_id_to_idx = {nid: idx for idx, nid in enumerate(snap_ids)}
 
@@ -2825,14 +3214,16 @@ class RTMDKField:
                     continue
 
                 # Sort by distance and pick nearest
-                sorted_indices = candidate_indices[np.argsort(dists[candidate_indices])]
+                sorted_indices = candidate_indices[np.argsort(
+                    dists[candidate_indices])]
                 pid = snap_ids[sorted_indices[0]]
                 if pid not in self.nodes or pid in processed:
                     continue
                 partner = self.nodes[pid]
 
                 if self.cfg.do_calculus_validation and self.causal_engine:
-                    validation = self.causal_engine.validate_consolidation(nid, pid)
+                    validation = self.causal_engine.validate_consolidation(
+                        nid, pid)
                     self.stats["consolidation_validations"] += 1
                     if not validation["safe"]:
                         self.stats["blocked_consolidations"] += 1
@@ -2840,7 +3231,8 @@ class RTMDKField:
                         processed.add(pid)
                         continue
 
-                # Phase 20: Domain consolidation guard — don't merge nodes from different domains
+                # Phase 20: Domain consolidation guard — don't merge nodes from
+                # different domains
                 if self.cfg.domain_consolidation_guard and node.domain != partner.domain:
                     if partner.id not in node.conflict_with:
                         node.conflict_with.append(partner.id)
@@ -2856,10 +3248,14 @@ class RTMDKField:
                     node.pre_consolidation_pos = node.latent_pos.copy()
 
                 if self.diff_consolidation and mode == ConsolidationMode.DIALECTICAL:
-                    synth = self.diff_consolidation.compute_synthesis(node, partner, gate)
+                    synth = self.diff_consolidation.compute_synthesis(
+                        node, partner, gate)
                     if self.cfg.hyperbolic:
                         node.latent_pos = exp_map_poincare(
-                            log_map_poincare(synth["latent_pos"], node.latent_pos, self.cfg.ball_radius),
+                            log_map_poincare(
+                                synth["latent_pos"],
+                                node.latent_pos,
+                                self.cfg.ball_radius),
                             node.latent_pos,
                             self.cfg.ball_radius,
                         )
@@ -2871,18 +3267,21 @@ class RTMDKField:
                 elif mode == ConsolidationMode.DIALECTICAL:
                     if self.cfg.hyperbolic:
                         node.latent_pos = poincare_midpoint(
-                            node.latent_pos, partner.latent_pos, self.cfg.ball_radius
-                        )
+                            node.latent_pos, partner.latent_pos, self.cfg.ball_radius)
                     else:
-                        node.latent_pos = 0.5 * (node.latent_pos + partner.latent_pos)
-                    node.phase = np.arctan2(0.5*(np.sin(node.phase)+np.sin(partner.phase)),
-                                            0.5*(np.cos(node.phase)+np.cos(partner.phase))) % (2*np.pi)
-                    node.amplitude = min(1.0, 0.8*(node.amplitude+partner.amplitude))
-                    node.salience = min(1.0, 0.7*(node.salience+partner.salience))
+                        node.latent_pos = 0.5 * \
+                            (node.latent_pos + partner.latent_pos)
+                    node.phase = np.arctan2(0.5 * (np.sin(node.phase) + np.sin(partner.phase)), 0.5 * (
+                        np.cos(node.phase) + np.cos(partner.phase))) % (2 * np.pi)
+                    node.amplitude = min(
+                        1.0, 0.8 * (node.amplitude + partner.amplitude))
+                    node.salience = min(
+                        1.0, 0.7 * (node.salience + partner.salience))
 
                 node.tension = 0.0
                 node.soft_gate = 1.0
-                node.lineage = [f"{node.id}+{pid}"] + node.lineage + partner.lineage
+                node.lineage = [f"{node.id}+{pid}"] + \
+                    node.lineage + partner.lineage
                 node.content["synthesis_note"] = f"Consolidated with {pid} at t={time.time():.0f}"
 
                 if self.causal_engine:
@@ -2890,7 +3289,8 @@ class RTMDKField:
                         if parent not in node.causal_strength:
                             node.causal_strength[parent] = strength
                         else:
-                            node.causal_strength[parent] = max(node.causal_strength[parent], strength)
+                            node.causal_strength[parent] = max(
+                                node.causal_strength[parent], strength)
 
                 if self.cfg.use_hnsw and self.hnsw_index:
                     self.hnsw_index.remove(pid)
@@ -2904,7 +3304,8 @@ class RTMDKField:
                 self.stats["consolidations"] += 1
                 processed.add(nid)
 
-        # Fix 2: Apply all deletions after iteration — rebuild node_index once (O(N) instead of O(M×N))
+        # Fix 2: Apply all deletions after iteration — rebuild node_index once
+        # (O(N) instead of O(M×N))
         if pending_deletions:
             self.wal.append_delete(pending_deletions)
         for pid in pending_deletions:
@@ -2934,13 +3335,16 @@ class RTMDKField:
             for nid in updated:
                 if nid in self.nodes and nid in pre_state:
                     o, n = pre_state[nid]["latent_pos"], self.nodes[nid].latent_pos
-                    scores.append(max(0, np.dot(o, n) / (np.linalg.norm(o)*np.linalg.norm(n)+1e-8)))
+                    scores.append(
+                        max(0, np.dot(o, n) / (np.linalg.norm(o) * np.linalg.norm(n) + 1e-8)))
             if scores:
                 self._stability_buffer.append(np.mean(scores))
-                self.stats["field_stability"] = float(np.mean(self._stability_buffer))
+                self.stats["field_stability"] = float(
+                    np.mean(self._stability_buffer))
 
         if self.cfg.enable_rollback and pre_state:
-            self._rollback_history.append({"timestamp": time.time(), "pre_state": pre_state, "updated": updated})
+            self._rollback_history.append(
+                {"timestamp": time.time(), "pre_state": pre_state, "updated": updated})
             if len(self._rollback_history) > self.cfg.max_rollback_history:
                 self._rollback_history.pop(0)
 
@@ -2961,7 +3365,9 @@ class RTMDKField:
                         old_state=pre_state.get(pid)
                     ))
             if deltas:
-                self.version_control.create_version(deltas, message=f"consolidation: {len(updated)} merged, {len(pending_deletions)} deleted")
+                self.version_control.create_version(
+                    deltas,
+                    message=f"consolidation: {len(updated)} merged, {len(pending_deletions)} deleted")
                 self.stats["current_version"] = self.version_control.current_version
                 self.stats["n_versions"] = self.version_control.n_versions
 
@@ -2983,19 +3389,23 @@ class RTMDKField:
         self._dirty = True
         return updated
 
-    def _verify_consistency(self, updated_nodes: List[str], pre_state: Optional[Dict] = None):
+    def _verify_consistency(
+            self,
+            updated_nodes: List[str],
+            pre_state: Optional[Dict] = None):
         """Fix: Use local probe (latent+noise) instead of global zero to preserve semantic meaning."""
         from collections import deque
         # Ensure buffer limits
         if not isinstance(self._stability_buffer, deque):
             self._stability_buffer = deque(self._stability_buffer, maxlen=100)
-            
+
         for nid in updated_nodes:
             if nid not in self.nodes:
                 continue
             node = self.nodes[nid]
             # FIX: Probe around the node's actual position, not np.zeros
-            probe = node.latent_pos + self._rng.normal(0, 0.05, node.latent_pos.shape)
+            probe = node.latent_pos + \
+                self._rng.normal(0, 0.05, node.latent_pos.shape)
             results = self.query(probe, phase=node.phase, top_k=1)
             if results and results[0][0] == nid:
                 node.self_sup_score = max(0.5, results[0][1])
@@ -3012,7 +3422,8 @@ class RTMDKField:
                 continue
             node = self.nodes[nid]
             # FIX: Probe around the node's actual position
-            probe = node.latent_pos + self._rng.normal(0, 0.05, node.latent_pos.shape)
+            probe = node.latent_pos + \
+                self._rng.normal(0, 0.05, node.latent_pos.shape)
             results = self.query(probe, phase=node.phase, top_k=1)
             if results and results[0][0] == nid:
                 node.self_sup_score = max(0.5, results[0][1])
@@ -3054,11 +3465,12 @@ class RTMDKField:
 
     # Phase 11 Track 4: Counterfactual imagination
     def imagine_counterfactual(self, base_query: NDArray,
-                                intervention: Dict[str, float]) -> List[Dict]:
+                               intervention: Dict[str, float]) -> List[Dict]:
         """Generate hypothetical trajectories via do-interventions."""
         if not self.scenario_planner:
             return []
-        return self.scenario_planner.imagine_counterfactual(base_query, intervention)
+        return self.scenario_planner.imagine_counterfactual(
+            base_query, intervention)
 
     def _prune_dead_nodes(self):
         to_remove = [nid for nid in self.node_index
@@ -3103,74 +3515,120 @@ class RTMDKField:
                 issues.append(f"Invalid amplitude in {nid} — will heal")
                 needs_heal = True
                 node.amplitude = self.cfg.min_amplitude
-            # Fix 11: Actually heal NaN positions by resetting to small random values
+            # Fix 11: Actually heal NaN positions by resetting to small random
+            # values
             if needs_heal:
-                node.latent_pos = self._rng.standard_normal(self.cfg.latent_dim).astype(np.float32) * 0.01
+                node.latent_pos = self._rng.standard_normal(
+                    self.cfg.latent_dim).astype(np.float32) * 0.01
                 healed.append(nid)
-                self.stats["field_integrity_issues"] = self.stats.get("field_integrity_issues", 0) + 1
+                self.stats["field_integrity_issues"] = self.stats.get(
+                    "field_integrity_issues", 0) + 1
         return {
             "n_issues": len(issues),
             "n_nan": n_nan,
-            "n_inf": n_inf,
+            "n_in": n_inf,
             "healed": healed,
             "issues": issues[:20],
         }
 
-    def evolve_continuous(self, inputs: Optional[List[Dict]] = None, use_sde: bool = False) -> NDArray:
+    def evolve_continuous(self,
+                          inputs: Optional[List[Dict]] = None,
+                          use_sde: bool = False) -> NDArray:
         if not self.ode_dynamics or not self.nodes:
             return np.array([])
         # Fix 2: Deterministic node order via node_index
-        ordered_nodes = [self.nodes[nid] for nid in self.node_index if nid in self.nodes]
-        initial_state = np.array([n.latent_pos for n in ordered_nodes]).flatten()
+        ordered_nodes = [self.nodes[nid]
+                         for nid in self.node_index if nid in self.nodes]
+        initial_state = np.array(
+            [n.latent_pos for n in ordered_nodes]).flatten()
         input_signal = None
         if inputs:
-            input_signal = np.array([self._project(inp["embedding"]) for inp in inputs]).flatten()
-            # Validate input_signal length matches node count to prevent ODE reshape crash
+            input_signal = np.array(
+                [self._project(inp["embedding"]) for inp in inputs]).flatten()
+            # Validate input_signal length matches node count to prevent ODE
+            # reshape crash
             expected_len = len(ordered_nodes) * self.cfg.latent_dim
             if len(input_signal) != expected_len:
-                logger.warning(f"ODE input_signal length {len(input_signal)} != expected {expected_len} (nodes={len(ordered_nodes)}). Falling back to no input signal.")
+                logger.warning(
+                    f"ODE input_signal length {len(input_signal)} != "
+                    f"expected {expected_len} (nodes={len(ordered_nodes)}). "
+                    f"Falling back to no input signal.")
                 input_signal = None
         topo_grad = self.ode_dynamics.compute_topology_gradient(self.nodes)
         if use_sde:
-            trajectory = self.ode_dynamics.evolve_with_noise(initial_state, input_signal, topo_grad)
+            trajectory = self.ode_dynamics.evolve_with_noise(
+                initial_state, input_signal, topo_grad)
         else:
-            trajectory = self.ode_dynamics.evolve(initial_state, input_signal, topo_grad)
+            trajectory = self.ode_dynamics.evolve(
+                initial_state, input_signal, topo_grad)
         self.stats["ode_steps"] += 1
-        # H2: Validate trajectory size before reshape to prevent silent corruption
+        # H2: Validate trajectory size before reshape to prevent silent
+        # corruption
         expected_size = len(ordered_nodes) * self.cfg.latent_dim
         if trajectory[-1].size != expected_size:
-            logger.warning(f"ODE trajectory size {trajectory[-1].size} != expected {expected_size}. Skipping update.")
+            logger.warning(
+                f"ODE trajectory size {trajectory[-1].size} != expected {expected_size}. Skipping update.")
             return trajectory
-        final_state = trajectory[-1].reshape(len(ordered_nodes), self.cfg.latent_dim)
+        final_state = trajectory[-1].reshape(
+            len(ordered_nodes), self.cfg.latent_dim)
         for i, nid in enumerate(self.node_index):
             if nid in self.nodes and i < len(final_state):
                 old_pos = self.nodes[nid].latent_pos.copy()
                 self.nodes[nid].latent_pos = final_state[i].astype(np.float32)
-                self.nodes[nid].velocity = (self.nodes[nid].latent_pos - old_pos).astype(np.float32)
+                self.nodes[nid].velocity = (
+                    self.nodes[nid].latent_pos -
+                    old_pos).astype(
+                    np.float32)
         return trajectory
 
-    def create_plan(self, goal: str, available_tools: List[str], context: Optional[Dict] = None) -> AgentPlan:
+    def create_plan(
+            self,
+            goal: str,
+            available_tools: List[str],
+            context: Optional[Dict] = None) -> AgentPlan:
         if not self.agent_planner:
-            return AgentPlan(goal=goal, subtasks=[], tools_needed=[],
-                           estimated_steps=0, confidence=0.0, reasoning="Agent orchestration not enabled")
+            return AgentPlan(
+                goal=goal,
+                subtasks=[],
+                tools_needed=[],
+                estimated_steps=0,
+                confidence=0.0,
+                reasoning="Agent orchestration not enabled")
         self.stats["plans_created"] += 1
         ctx = context or {}
         ctx["hypothesis_verification"] = self.cfg.hypothesis_verification
         return self.agent_planner.create_plan(goal, available_tools, ctx)
 
-    def verify_hypothesis(self, hypothesis: str, active_nodes: Optional[List[str]] = None) -> Hypothesis:
+    def verify_hypothesis(self, hypothesis: str,
+                          active_nodes: Optional[List[str]] = None) -> Hypothesis:
         if not self.hypothesis_verifier or not self.causal_engine:
-            return Hypothesis(statement=hypothesis, confidence=0.5, evidence_nodes=[],
-                            causal_path=[], verified=False, verification_score=0.5)
+            return Hypothesis(
+                statement=hypothesis,
+                confidence=0.5,
+                evidence_nodes=[],
+                causal_path=[],
+                verified=False,
+                verification_score=0.5)
         self.stats["hypotheses_verified"] += 1
         nodes = active_nodes or self.node_index
-        return self.hypothesis_verifier.verify(hypothesis, self.causal_engine, nodes)
+        return self.hypothesis_verifier.verify(
+            hypothesis, self.causal_engine, nodes)
 
-    def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> ToolCall:
+    def execute_tool(self,
+                     tool_name: str,
+                     arguments: Dict[str,
+                                     Any]) -> ToolCall:
         if not self.tool_router:
-            return ToolCall(tool_name=tool_name, arguments=arguments, error="Tool router not enabled")
-        if self.agent_planner and not self.agent_planner.can_call_tool(tool_name):
-            return ToolCall(tool_name=tool_name, arguments=arguments, error="Tool call limit reached")
+            return ToolCall(
+                tool_name=tool_name,
+                arguments=arguments,
+                error="Tool router not enabled")
+        if self.agent_planner and not self.agent_planner.can_call_tool(
+                tool_name):
+            return ToolCall(
+                tool_name=tool_name,
+                arguments=arguments,
+                error="Tool call limit reached")
         self.stats["tool_calls"] += 1
         if self.agent_planner:
             self.agent_planner.record_tool_call(tool_name)
@@ -3183,23 +3641,31 @@ class RTMDKField:
         if self.tool_router:
             self.tool_router.register_tool(name, func)
 
-    def evaluate_response(self, question: str, answer: str, contexts: List[str],
-                          ground_truth: Optional[str] = None) -> EvalResult:
+    def evaluate_response(
+            self,
+            question: str,
+            answer: str,
+            contexts: List[str],
+            ground_truth: Optional[str] = None) -> EvalResult:
         if not self.ragas_evaluator:
             return EvalResult()
         self.stats["evaluations"] += 1
         causal_edges = None
         if self.causal_engine:
-            causal_edges = [(k[0], k[1], v.strength) for k, v in self.causal_engine.causal_effects.items()]
-        result = self.ragas_evaluator.evaluate(question, answer, contexts, ground_truth, causal_edges)
+            causal_edges = [(k[0], k[1], v.strength)
+                            for k, v in self.causal_engine.causal_effects.items()]
+        result = self.ragas_evaluator.evaluate(
+            question, answer, contexts, ground_truth, causal_edges)
         self.stats["ragas_overall"] = result.overall_score
         if self.rollback_manager:
-            needs_rollback = self.rollback_manager.record_score(result.overall_score)
+            needs_rollback = self.rollback_manager.record_score(
+                result.overall_score)
             if needs_rollback:
                 self.stats["rollbacks"] += 1
         return result
 
-    def compare_shadow(self, shadow_score: float, production_score: float) -> Dict[str, Any]:
+    def compare_shadow(self, shadow_score: float,
+                       production_score: float) -> Dict[str, Any]:
         if not self.shadow_evaluator:
             return {}
         self.stats["shadow_comparisons"] += 1
@@ -3207,15 +3673,16 @@ class RTMDKField:
 
     def step(self, inputs: Optional[List[Dict]] = None):
         self._step_counter += 1
-        
+
         # Throttle: Skip non-critical heavy tasks if backpressure is high
         backpressure_ok = self._backpressure_events < 3 and not self._heavy_modules_degraded
-        
+
         if self.cfg.continuous_dynamics and self.ode_dynamics:
             # Fix: Safe run for ODE to prevent crashes
-            self._circuit_breakers["ODEEvolve"].call(self.evolve_continuous, inputs, use_sde=self.cfg.sde_noise_level > 0)
+            self._circuit_breakers["ODEEvolve"].call(
+                self.evolve_continuous, inputs, use_sde=self.cfg.sde_noise_level > 0)
             return
-            
+
         if inputs:
             for inp in inputs:
                 emb = inp["embedding"]
@@ -3231,21 +3698,37 @@ class RTMDKField:
                     sot_tokens = self.sot_tokenizer.encode(text)
                     self.sot_tokenizer.record_cooccurrence(sot_tokens)
 
-                # Validate embedding dimension — allow both embedding_dim and latent_dim
+                # Validate embedding dimension — allow both embedding_dim and
+                # latent_dim
                 emb_dim = len(emb)
-                if emb_dim not in (self.cfg.embedding_dim, self.cfg.latent_dim):
-                    logger.warning(f"Embedding dimension mismatch in step(): expected {self.cfg.embedding_dim} or {self.cfg.latent_dim}, got {emb_dim}. Skipping.")
+                if emb_dim not in (
+                        self.cfg.embedding_dim,
+                        self.cfg.latent_dim):
+                    logger.warning(
+                        f"Embedding dimension mismatch in step(): "
+                        f"expected {self.cfg.embedding_dim} or "
+                        f"{self.cfg.latent_dim}, got {emb_dim}. Skipping.")
                     continue
 
-                results = self.query(emb, phase, top_k=max(1, self.cfg.sot_negatives_per_query + 1), modality=modality)
+                results = self.query(
+                    emb,
+                    phase,
+                    top_k=max(
+                        1,
+                        self.cfg.sot_negatives_per_query +
+                        1),
+                    modality=modality)
                 if results and results[0][1] > 0.3:
                     nid, _, node = results[0]
-                    target = emb if emb_dim == self.cfg.latent_dim else self._project(emb)
+                    target = emb if emb_dim == self.cfg.latent_dim else self._project(
+                        emb)
                     if self.cfg.hyperbolic:
-                        # Riemannian SGD: gradient is scaled by conformal factor 1/λ²
+                        # Riemannian SGD: gradient is scaled by conformal
+                        # factor 1/λ²
                         grad_e = target - node.latent_pos
                         norm_sq = np.sum(node.latent_pos ** 2)
-                        conformal = (1.0 - norm_sq / (self.cfg.ball_radius ** 2)) ** 2 / 4.0
+                        conformal = (1.0 - norm_sq /
+                                     (self.cfg.ball_radius ** 2)) ** 2 / 4.0
                         grad_r = conformal * grad_e
                         node.latent_pos = exp_map_poincare(
                             -self.cfg.attraction_lr * grad_r,
@@ -3253,42 +3736,62 @@ class RTMDKField:
                             self.cfg.ball_radius,
                         )
                     else:
-                        node.latent_pos += self.cfg.attraction_lr * (target - node.latent_pos)
-                    pd = (phase - node.phase + np.pi) % (2*np.pi) - np.pi
-                    node.phase = (node.phase + self.cfg.phase_sync_lr * pd) % (2 * np.pi)
+                        node.latent_pos += self.cfg.attraction_lr * \
+                            (target - node.latent_pos)
+                    pd = (phase - node.phase + np.pi) % (2 * np.pi) - np.pi
+                    node.phase = (
+                        node.phase + self.cfg.phase_sync_lr * pd) % (2 * np.pi)
                     node.amplitude = min(1.0, node.amplitude + 0.05)
                     node.salience = min(1.0, node.salience + 0.03)
                 else:
-                    self.add_node(emb, content, phase, session_id=session_id, modality=modality)
+                    self.add_node(
+                        emb,
+                        content,
+                        phase,
+                        session_id=session_id,
+                        modality=modality)
 
                 # Phase 21: Contrastive Hebbian update on field nodes
                 if self.sot_hebbian and results and len(self.node_index) > 1:
-                    snap_id_to_idx = {nid: idx for idx, nid in enumerate(self.node_index)}
+                    snap_id_to_idx = {
+                        nid: idx for idx, nid in enumerate(
+                            self.node_index)}
                     pos_indices = []
                     for nid, _, _ in results:
                         idx = snap_id_to_idx.get(nid)
                         if idx is not None:
                             pos_indices.append(idx)
-                    n_neg = min(self.cfg.sot_negatives_per_query, len(self.node_index) - len(pos_indices))
+                    n_neg = min(
+                        self.cfg.sot_negatives_per_query, len(
+                            self.node_index) - len(pos_indices))
                     neg_indices = []
                     if n_neg > 0:
                         all_idx = set(range(len(self.node_index)))
                         available = list(all_idx - set(pos_indices))
                         if available:
-                            neg_indices = self._rng.choice(available, size=min(n_neg, len(available)), replace=False).tolist()
+                            neg_indices = self._rng.choice(available, size=min(
+                                n_neg, len(available)), replace=False).tolist()
                     if pos_indices:
-                        positions = np.array([self.nodes[self.node_index[i]].latent_pos for i in range(len(self.node_index))], dtype=np.float32)
-                        self.sot_hebbian.field_update(positions, pos_indices, neg_indices)
+                        positions = np.array([self.nodes[self.node_index[i]].latent_pos for i in range(
+                            len(self.node_index))], dtype=np.float32)
+                        self.sot_hebbian.field_update(
+                            positions, pos_indices, neg_indices)
                         # Write back
                         for i in range(len(self.node_index)):
-                            self.nodes[self.node_index[i]].latent_pos = positions[i]
+                            self.nodes[self.node_index[i]
+                                       ].latent_pos = positions[i]
 
                 # Phase 21: Contrastive Hebbian update on token embeddings
-                if self.sot_hebbian and self.sot_tokenizer and sot_tokens and len(sot_tokens) > 1:
-                    vocab_ids = list(self.sot_tokenizer.token_embeddings.keys())
-                    n_neg = min(self.cfg.sot_negatives_per_query, len(vocab_ids) - len(sot_tokens))
+                if self.sot_hebbian and self.sot_tokenizer and sot_tokens and len(
+                        sot_tokens) > 1:
+                    vocab_ids = list(
+                        self.sot_tokenizer.token_embeddings.keys())
+                    n_neg = min(
+                        self.cfg.sot_negatives_per_query,
+                        len(vocab_ids) - len(sot_tokens))
                     if self.cfg.sot_hard_negatives and n_neg > 0:
-                        # Use hard negative mining: closest non-positive embeddings
+                        # Use hard negative mining: closest non-positive
+                        # embeddings
                         self.sot_hebbian.update_with_hard_negatives(
                             self.sot_tokenizer.token_embeddings,
                             sot_tokens,
@@ -3298,20 +3801,26 @@ class RTMDKField:
                     else:
                         negatives = []
                         if n_neg > 0:
-                            available = [v for v in vocab_ids if v not in sot_tokens]
+                            available = [
+                                v for v in vocab_ids if v not in sot_tokens]
                             if available:
-                                negatives = self._rng.choice(available, size=min(n_neg, len(available)), replace=False).tolist()
-                        self.sot_hebbian.update(self.sot_tokenizer.token_embeddings, sot_tokens, negatives)
+                                negatives = self._rng.choice(available, size=min(
+                                    n_neg, len(available)), replace=False).tolist()
+                        self.sot_hebbian.update(
+                            self.sot_tokenizer.token_embeddings, sot_tokens, negatives)
 
                 # Phase 21: SSM sync — smooth momentum for token embeddings
                 if self.sot_ssm and self.sot_tokenizer and sot_tokens and self._sot_field_ema is not None:
                     if len(self.nodes) > 0:
-                        active_positions = np.array([n.latent_pos for n in self.nodes.values()], dtype=np.float32)
+                        active_positions = np.array(
+                            [n.latent_pos for n in self.nodes.values()], dtype=np.float32)
                         field_mean = np.mean(active_positions, axis=0)
                     else:
-                        field_mean = np.zeros(self.cfg.latent_dim, dtype=np.float32)
+                        field_mean = np.zeros(
+                            self.cfg.latent_dim, dtype=np.float32)
                     self._sot_field_ema = 0.9 * self._sot_field_ema + 0.1 * field_mean
-                    momentum = self.sot_ssm.step(sot_tokens, self._sot_field_ema)
+                    momentum = self.sot_ssm.step(
+                        sot_tokens, self._sot_field_ema)
                     self.sot_ssm.sync_embeddings(sot_tokens, momentum)
 
                 # Phase 21: Periodic merge
@@ -3326,7 +3835,8 @@ class RTMDKField:
                                 break  # Max vocab reached
 
         # Consolidation: adaptive frequency based on field size.
-        # Small fields (<1K) consolidate rarely to avoid over-merge and recall loss.
+        # Small fields (<1K) consolidate rarely to avoid over-merge and recall
+        # loss.
         n_nodes = len(self.nodes)
         if n_nodes > 10:
             if n_nodes < 1000:
@@ -3342,7 +3852,8 @@ class RTMDKField:
                             self._circuit_breakers["Consolidate"].call, self.consolidate
                         )
                 else:
-                    self._circuit_breakers["Consolidate"].call(self.consolidate)
+                    self._circuit_breakers["Consolidate"].call(
+                        self.consolidate)
 
         # Self-healing: every N steps
         if self.cfg.self_healing and self._step_counter % self.cfg.healing_check_freq == 0:
@@ -3359,8 +3870,10 @@ class RTMDKField:
                 dk = max(dk, self.learnable_kernel.decay_rate)
             node.amplitude *= dk
             node.salience *= dk
-            node.amplitude = np.clip(node.amplitude, self.cfg.min_amplitude, 1.0)
-            node.salience = np.clip(node.salience, self.cfg.min_amplitude * 0.5, 1.0)
+            node.amplitude = np.clip(
+                node.amplitude, self.cfg.min_amplitude, 1.0)
+            node.salience = np.clip(
+                node.salience, self.cfg.min_amplitude * 0.5, 1.0)
             tier_amplitudes[tier].append(node.amplitude)
         self.stats["tier_distribution"] = dict(tier_counts)
         if tier_amplitudes:
@@ -3370,25 +3883,35 @@ class RTMDKField:
                     coherences.append(1.0 - np.std(amps))
                 else:
                     coherences.append(1.0)
-            self.stats["tier_coherence"] = float(np.mean(coherences)) if coherences else 0.0
+            self.stats["tier_coherence"] = float(
+                np.mean(coherences)) if coherences else 0.0
 
         # Predictive coding: every 5 steps
-        if self.predictor and len(self.nodes) > 0 and self._step_counter % 5 == 0:
+        if self.predictor and len(
+                self.nodes) > 0 and self._step_counter % 5 == 0:
             state = self._encode_field_state()
             self._state_history.append(state)
             if len(self._state_history) >= 2:
-                fe = self._circuit_breakers["PredictorFreeEnergy"].call(self.predictor.compute_free_energy, self._state_history[-2], self._state_history[-1])
+                fe = self._circuit_breakers["PredictorFreeEnergy"].call(
+                    self.predictor.compute_free_energy, self._state_history[-2], self._state_history[-1])
                 self.stats["free_energy"] = fe
-                self.stats["prediction_error"] = float(np.mean((self.predictor.predict(self._state_history[-2]) - self._state_history[-1]) ** 2))
+                self.stats["prediction_error"] = float(np.mean((self.predictor.predict(
+                    self._state_history[-2]) - self._state_history[-1]) ** 2))
                 self.stats["surprise_level"] = float(np.clip(fe, 0, 1))
                 if fe > 0.3 and len(self.nodes) > 10:
-                    self._circuit_breakers["Consolidate"].call(self.consolidate)
+                    self._circuit_breakers["Consolidate"].call(
+                        self.consolidate)
                 if fe > 0.01:
-                    self._circuit_breakers["PredictorUpdate"].call(self.predictor.update, self._state_history[-2], self._state_history[-1], lr=self.cfg.pc_lr)
+                    self._circuit_breakers["PredictorUpdate"].call(
+                        self.predictor.update, self._state_history[-2], self._state_history[-1], lr=self.cfg.pc_lr)
 
         # Max nodes pruning: every 10 steps
-        if self.cfg.max_nodes and len(self.nodes) > self.cfg.max_nodes and self._step_counter % 10 == 0:
-            sorted_nodes = sorted(self.node_index, key=lambda nid: self.nodes[nid].salience * self.nodes[nid].amplitude)
+        if self.cfg.max_nodes and len(
+                self.nodes) > self.cfg.max_nodes and self._step_counter % 10 == 0:
+            sorted_nodes = sorted(
+                self.node_index,
+                key=lambda nid: self.nodes[nid].salience *
+                self.nodes[nid].amplitude)
             n_pruned = len(self.nodes) - self.cfg.max_nodes
             pruned_ids = set(sorted_nodes[:n_pruned])
             if pruned_ids:
@@ -3400,7 +3923,8 @@ class RTMDKField:
                     self.bm25_index.remove_document(nid)
                 del self.nodes[nid]
             # Rebuild index in O(N) instead of O(N²) list.remove calls
-            self.node_index = [nid for nid in self.node_index if nid not in pruned_ids]
+            self.node_index = [
+                nid for nid in self.node_index if nid not in pruned_ids]
             # B1: Invalidate cache on max_nodes pruning
             if n_pruned > 0:
                 self._invalidate_tension_cache()
@@ -3415,16 +3939,20 @@ class RTMDKField:
 
         # Meta-kernel adaptation: every 5 steps
         if self.meta_kernel and self._step_counter % 5 == 0:
-            self._circuit_breakers["MetaKernelAdapt"].call(self.meta_kernel.adapt)
+            self._circuit_breakers["MetaKernelAdapt"].call(
+                self.meta_kernel.adapt)
             self.stats["meta_kurtosis"] = self.meta_kernel.compute_resonance_kurtosis()
             self.stats["meta_bandwidth"] = self.meta_kernel.get_bandwidth()
             self.stats["meta_phase_coupling"] = self.meta_kernel.get_phase_coupling()
 
         # Meta-controller optimization: every N steps (Throttled)
-        if backpressure_ok and self.meta_controller and self.meta_controller.should_optimize() and self._step_counter % self.cfg.meta_opt_freq == 0:
-            best_params = self._circuit_breakers["MetaControllerOptimize"].call(self.meta_controller.optimize, self)
+        if backpressure_ok and self.meta_controller and self.meta_controller.should_optimize(
+        ) and self._step_counter % self.cfg.meta_opt_freq == 0:
+            best_params = self._circuit_breakers["MetaControllerOptimize"].call(
+                self.meta_controller.optimize, self)
             if best_params:
-                self._circuit_breakers["MetaControllerApply"].call(self.meta_controller.apply_params, self, best_params)
+                self._circuit_breakers["MetaControllerApply"].call(
+                    self.meta_controller.apply_params, self, best_params)
                 self.stats["meta_optimizations"] += 1
                 self.stats["meta_best_params"] = best_params
 
@@ -3432,25 +3960,33 @@ class RTMDKField:
         if self.federated and self._step_counter > 0 and self._step_counter % self.cfg.federated_sync_freq == 0:
             local_phases = {nid: n.phase for nid, n in self.nodes.items()}
             local_params = {
-                "decay_rate": self.cfg.decay_rate, "tension_threshold": self.cfg.tension_threshold,
-                "phase_coupling": self.cfg.phase_coupling, "bandwidth": self.cfg.bandwidth,
+                "decay_rate": self.cfg.decay_rate,
+                "tension_threshold": self.cfg.tension_threshold,
+                "phase_coupling": self.cfg.phase_coupling,
+                "bandwidth": self.cfg.bandwidth,
             }
-            self._circuit_breakers["FederatedSync"].call(self.federated.sync_with_peers, local_phases, local_params)
+            self._circuit_breakers["FederatedSync"].call(
+                self.federated.sync_with_peers, local_phases, local_params)
 
         # ODE smoothness: every 10 steps (Throttled)
         if backpressure_ok and self.ode_dynamics and self._step_counter % 10 == 0:
-            self.stats["response_smoothness"] = self._circuit_breakers["ODESmoothness"].call(self.ode_dynamics.compute_response_smoothness)
+            self.stats["response_smoothness"] = self._circuit_breakers["ODESmoothness"].call(
+                self.ode_dynamics.compute_response_smoothness)
 
         # Shard center updates: every 100 steps
-        if self.cfg.sparse_routing and self._step_counter % 100 == 0 and len(self.nodes) > self.cfg.num_shards * 2:
-            self._circuit_breakers["ShardUpdate"].call(self._update_shard_centers)
+        if self.cfg.sparse_routing and self._step_counter % 100 == 0 and len(
+                self.nodes) > self.cfg.num_shards * 2:
+            self._circuit_breakers["ShardUpdate"].call(
+                self._update_shard_centers)
             self.stats["avg_rl_reward"] = self.rl_feedback_loop.get_average_reward()
 
         # Event-driven processing: every 10 steps
         if self.event_scheduler and self._step_counter % 10 == 0:
-            processed = self.event_scheduler.process_pending(self, max_events=5)
+            processed = self.event_scheduler.process_pending(
+                self, max_events=5)
             self.stats["events_processed"] += processed
-            self.stats["event_queue_depth"] = len(self.event_scheduler._event_queue)
+            self.stats["event_queue_depth"] = len(
+                self.event_scheduler._event_queue)
 
         # Low-rank compression: every N steps
         if self.low_rank_compressor and self._step_counter % self.cfg.compression_freq == 0:
@@ -3462,7 +3998,8 @@ class RTMDKField:
 
         # Causal discovery: every N steps
         causal_freq = getattr(self.cfg, "causal_discovery_freq", 50)
-        if self.causal_engine and self._step_counter % max(causal_freq, 1) == 0:
+        if self.causal_engine and self._step_counter % max(
+                causal_freq, 1) == 0:
             self.causal_engine.discover_causal_structure()
             for (cause, effect), edge in self.causal_engine.causal_effects.items():
                 if effect in self.nodes:
@@ -3474,34 +4011,40 @@ class RTMDKField:
                     self.nodes[cause].causal_effects[effect] = edge.strength
             self.stats["causal_edges"] = len(self.causal_engine.causal_effects)
             if self.cfg.contradiction_detection:
-                self.causal_engine.detect_contradictions(self.cfg.contradiction_threshold)
-                self.stats["contradictions"] = len(self.causal_engine.contradictions)
+                self.causal_engine.detect_contradictions(
+                    self.cfg.contradiction_threshold)
+                self.stats["contradictions"] = len(
+                    self.causal_engine.contradictions)
 
         # Phase 14 Track 2: Causal graph integrity check
         if self.security and self.cfg.causal_graph_integrity_check and self._step_counter % 100 == 0:
-            integrity = self.security.validate_causal_graph_integrity(self.causal_engine)
+            integrity = self.security.validate_causal_graph_integrity(
+                self.causal_engine)
             if not integrity["is_valid"]:
                 self.stats["security_violations"] += len(integrity["issues"])
 
         # Phase 14 Track 1: Meta-memory self-reflection
         if self.meta_memory_eval and self.meta_memory_eval.should_reflect():
-            reflection = self.meta_memory_eval.self_reflect(self)
+            self.meta_memory_eval.self_reflect(self)
             self.stats["meta_reflections"] += 1
             # Apply adaptive params
             adaptive = self.meta_memory_eval.get_adaptive_params()
             if adaptive["consolidation_multiplier"] != 1.0:
                 # Adjust tension threshold based on recall accuracy
                 self.cfg.tension_threshold *= adaptive["consolidation_multiplier"]
-                self.cfg.tension_threshold = max(0.05, min(0.5, self.cfg.tension_threshold))
+                self.cfg.tension_threshold = max(
+                    0.05, min(0.5, self.cfg.tension_threshold))
 
         # Phase 14 Track 5: Swarm memory status
         if self.swarm:
             self.stats["swarm_agents"] = len(self.swarm.agents)
-            self.stats["swarm_consensus_events"] = len(self.swarm._consensus_log)
+            self.stats["swarm_consensus_events"] = len(
+                self.swarm._consensus_log)
 
         # Phase 14 Track 2: Security violation stats
         if self.security:
-            self.stats["security_violations"] = len(self.security._violation_log)
+            self.stats["security_violations"] = len(
+                self.security._violation_log)
 
         # Phase 15 Track 4: Entropy Control
         if self.entropy_ctrl:
@@ -3528,15 +4071,19 @@ class RTMDKField:
             causal_edges = None
             if self.causal_engine:
                 causal_edges = self.causal_engine.causal_effects
-            self.symbolic_overlay.extract_rules_from_field(self.nodes, causal_edges)
+            self.symbolic_overlay.extract_rules_from_field(
+                self.nodes, causal_edges)
             self.stats["n_symbolic_rules"] = len(self.symbolic_overlay.rules)
 
         # Phase 16 Track 2: SafetyCertifier — check stability
         if self.safety_certifier and self._step_counter % 10 == 0:
             resonance_scores = []
-            if hasattr(self, '_last_query_results') and self._last_query_results:
+            if hasattr(
+                    self,
+                    '_last_query_results') and self._last_query_results:
                 resonance_scores = [r[1] for r in self._last_query_results]
-            n_contradictions = len(self.causal_engine.contradictions) if self.causal_engine else 0
+            n_contradictions = len(
+                self.causal_engine.contradictions) if self.causal_engine else 0
             cert_result = self.safety_certifier.check_and_regulate(
                 self.nodes, resonance_scores, n_contradictions
             )
@@ -3554,14 +4101,16 @@ class RTMDKField:
             }
             self.stats["role_router_enabled"] = True
             # Cross-shard exchange stats
-            total_exchanges = sum(s.n_cross_shard_exchanges for s in self.role_router.shards.values())
+            total_exchanges = sum(
+                s.n_cross_shard_exchanges for s in self.role_router.shards.values())
             self.stats["cross_shard_exchanges"] = total_exchanges
 
         # Field integrity check every 100 steps — detect NaN/inf
         if self._step_counter % 100 == 0:
             integrity = self._check_field_integrity()
             if integrity["n_issues"] > 0:
-                logger.warning(f"Field integrity issues at step {self._step_counter}: {integrity['n_issues']} issues")
+                logger.warning(
+                    f"Field integrity issues at step {self._step_counter}: {integrity['n_issues']} issues")
                 self.stats["field_integrity_issues"] = integrity["n_issues"]
 
         # B1: Update tension cache stats every 50 steps
@@ -3569,7 +4118,8 @@ class RTMDKField:
             total = self._tension_cache_hits + self._tension_cache_misses
             self.stats["tension_cache_hits"] = self._tension_cache_hits
             self.stats["tension_cache_misses"] = self._tension_cache_misses
-            self.stats["tension_cache_hit_rate"] = (self._tension_cache_hits / total) if total > 0 else 0.0
+            self.stats["tension_cache_hit_rate"] = (
+                self._tension_cache_hits / total) if total > 0 else 0.0
 
     def _self_heal(self) -> List[Dict]:
         if not self.healer or len(self.nodes) < 3:
@@ -3584,21 +4134,30 @@ class RTMDKField:
             return []
         self.stats["field_health"] = FieldHealth.HEALING.value
         if diagnostics.get("dead_zones", 0) > 0:
-            healed.extend(self.healer.heal_dead_zones(self.nodes, diagnostics["dead_zone_nodes"]))
+            healed.extend(
+                self.healer.heal_dead_zones(
+                    self.nodes,
+                    diagnostics["dead_zone_nodes"]))
         if diagnostics.get("hyperconvergence", False):
             healed.extend(self.healer.heal_hyperconvergence(self.nodes))
-        if diagnostics.get("fragmentation", 0) > self.cfg.fragmentation_threshold:
+        if diagnostics.get("fragmentation",
+                           0) > self.cfg.fragmentation_threshold:
             if len(self.nodes) >= 2:
-                positions = np.array([n.latent_pos for n in self.nodes.values()])
+                positions = np.array(
+                    [n.latent_pos for n in self.nodes.values()])
                 tree = cKDTree(positions)
                 neighbors = tree.query_ball_point(positions, 2.0)
-                isolated = [self.node_index[i] for i in range(len(self.node_index)) if len(neighbors[i]) <= 1]
+                isolated = [self.node_index[i] for i in range(
+                    len(self.node_index)) if len(neighbors[i]) <= 1]
                 if isolated:
-                    healed.extend(self.healer.heal_fragmentation(self.nodes, isolated))
+                    healed.extend(
+                        self.healer.heal_fragmentation(
+                            self.nodes, isolated))
         if healed:
             self.stats["healing_events"] += len(healed)
             self.stats["healing_history"].extend(healed)
-            # Fix 3: Trim on every overflow, not just when exceeding 1000 — prevents unbounded growth
+            # Fix 3: Trim on every overflow, not just when exceeding 1000 —
+            # prevents unbounded growth
             if len(self.stats["healing_history"]) > 1000:
                 self.stats["healing_history"] = self.stats["healing_history"][-500:]
         return healed
@@ -3650,13 +4209,23 @@ class RTMDKField:
             return diagnostics
         return {"health": "unknown", "kurtosis": 3.0}
 
-    def counterfactual_query(self, intervention: Dict[str, Any], query_nodes: List[str],
-                             evidence: Optional[Dict[str, Any]] = None) -> CounterfactualResult:
+    def counterfactual_query(self,
+                             intervention: Dict[str,
+                                                Any],
+                             query_nodes: List[str],
+                             evidence: Optional[Dict[str,
+                                                     Any]] = None) -> CounterfactualResult:
         if not self.causal_engine:
-            return CounterfactualResult(query=str(intervention), intervention=intervention,
-                predicted_outcomes=[], confidence=0.0, reasoning_path=["Causal engine not enabled"], assumptions=[])
+            return CounterfactualResult(
+                query=str(intervention),
+                intervention=intervention,
+                predicted_outcomes=[],
+                confidence=0.0,
+                reasoning_path=["Causal engine not enabled"],
+                assumptions=[])
         self.stats["counterfactual_queries"] += 1
-        return self.causal_engine.counterfactual_query(intervention, query_nodes, evidence, self.cfg.counterfactual_max_depth)
+        return self.causal_engine.counterfactual_query(
+            intervention, query_nodes, evidence, self.cfg.counterfactual_max_depth)
 
     def get_causal_summary(self) -> Dict:
         if not self.causal_engine:
@@ -3664,11 +4233,15 @@ class RTMDKField:
         return {
             "enabled": True,
             "causal_edges": len(self.causal_engine.causal_effects),
-            "contradictions": len([c for c in self.causal_engine.contradictions.values() if not c.resolved]),
+            "contradictions": len([
+                c for c in self.causal_engine.contradictions.values()
+                if not c.resolved]),
             "nodes_with_effects": len(set(k[0] for k in self.causal_engine.causal_effects)),
             "nodes_affected": len(set(k[1] for k in self.causal_engine.causal_effects)),
-            "top_effects": sorted([(f"{k[0]}->{k[1]}", v.strength) for k, v in self.causal_engine.causal_effects.items()],
-                                 key=lambda x: x[1], reverse=True)[:10],
+            "top_effects": sorted(
+                [(f"{k[0]}->{k[1]}", v.strength)
+                 for k, v in self.causal_engine.causal_effects.items()],
+                key=lambda x: x[1], reverse=True)[:10],
         }
 
     # Track 10: Cross-modal, Meta-controller, Federated stats
@@ -3707,7 +4280,10 @@ class RTMDKField:
             return shard
         return 0
 
-    def _route_query(self, query_latent: NDArray, top_shards: int = 3) -> List[int]:
+    def _route_query(
+            self,
+            query_latent: NDArray,
+            top_shards: int = 3) -> List[int]:
         """Route query to top_k most relevant shards (softmax-free)."""
         if self.shard_centers is None:
             return list(range(self.cfg.num_shards))
@@ -3723,7 +4299,10 @@ class RTMDKField:
         positions = np.array([n.latent_pos for n in self.nodes.values()])
         if len(positions) < self.cfg.num_shards:
             return
-        kmeans = KMeans(n_clusters=self.cfg.num_shards, n_init=3, random_state=42)
+        kmeans = KMeans(
+            n_clusters=self.cfg.num_shards,
+            n_init=3,
+            random_state=42)
         labels = kmeans.fit_predict(positions)
         self.shard_centers = kmeans.cluster_centers_.astype(np.float32)
         # Update node-shard map
@@ -3735,14 +4314,19 @@ class RTMDKField:
     # PHASE 12 TRACK 2: COGNITIVE CONTEXT COMPRESSION
     # ========================================================================
 
-    def _cognitive_compress(self, results: List[Tuple[str, float, MemoryNode]]) -> str:
+    def _cognitive_compress(
+            self, results: List[Tuple[str, float, MemoryNode]]) -> str:
         """Compress raw memory results into a structured cognitive dump for LLM."""
         if not results:
             return "### COGNITIVE_CONTEXT\nNo relevant structures."
 
-        high_res = [(nid, r, n) for nid, r, n in results if r > self.cfg.high_resonance_threshold]
-        contradictions = [n for _, _, n in results if n.content.get("causal_flag") == "incompatible"]
-        procedural = [n for _, _, n in results if getattr(n, 'tier', 'semantic') == "procedural"]
+        high_res = [(nid, r, n) for nid, r, n in results if r >
+                    self.cfg.high_resonance_threshold]
+        contradictions = [n for _, _, n in results if n.content.get(
+            "causal_flag") == "incompatible"]
+        procedural = [
+            n for _, _, n in results if getattr(
+                n, 'tier', 'semantic') == "procedural"]
 
         lines = ["### COGNITIVE_CONTEXT"]
         if high_res:
@@ -3750,17 +4334,21 @@ class RTMDKField:
             for nid, r, n in high_res:
                 text = n.content.get("text", "unknown")[:60]
                 summaries.append(f"[{text}...](R:{r:.2f},S:{n.salience:.2f})")
-            lines.append(f"• High resonance ({len(high_res)} nodes): " + " | ".join(summaries))
+            lines.append(
+                f"• High resonance ({len(high_res)} nodes): " +
+                " | ".join(summaries))
         if contradictions:
-            texts = [n.content.get("text", "unknown")[:40] for n in contradictions[:3]]
-            lines.append(f"[WARN] Conflicting nodes: " + " | ".join(texts))
+            texts = [n.content.get("text", "unknown")[:40]
+                     for n in contradictions[:3]]
+            lines.append("[WARN] Conflicting nodes: " + " | ".join(texts))
         if procedural:
             lines.append("[TOOL] Procedural patterns available (how-to)")
 
         # Add lineage summary for complex nodes
         lineage_nodes = [(nid, n) for nid, r, n in results if n.lineage]
         if lineage_nodes:
-            lines.append(f"[STATS] Consolidated memories: {len(lineage_nodes)} nodes with synthesis history")
+            lines.append(
+                f"[STATS] Consolidated memories: {len(lineage_nodes)} nodes with synthesis history")
 
         return "\n".join(lines)
 
@@ -3768,12 +4356,17 @@ class RTMDKField:
     # PHASE 12 TRACK 3: CRYSTALLIZATION (episodic → semantic/procedural)
     # ========================================================================
 
-    def _crystallize_recurring(self, window: int = 100, similarity_thresh: float = 0.75):
+    def _crystallize_recurring(
+            self,
+            window: int = 100,
+            similarity_thresh: float = 0.75):
         """Detect recurring episodic patterns and crystallize into semantic nodes."""
         recent_ids = self.node_index[-window:]
-        recent = [self.nodes[nid] for nid in recent_ids
-                  if nid in self.nodes and getattr(self.nodes[nid], 'tier', 'semantic') == "episodic"
-                  and nid not in self._crystallized_nodes]
+        recent = [
+            self.nodes[nid] for nid in recent_ids if nid in self.nodes and getattr(
+                self.nodes[nid],
+                'tier',
+                'semantic') == "episodic" and nid not in self._crystallized_nodes]
         if len(recent) < 5:
             return
 
@@ -3783,26 +4376,39 @@ class RTMDKField:
             return
 
         pos = np.array([n.latent_pos for n in recent])
-        labels = DBSCAN(eps=0.4, min_samples=self.cfg.crystallization_min_cluster).fit_predict(pos)
+        labels = DBSCAN(
+            eps=0.4,
+            min_samples=self.cfg.crystallization_min_cluster).fit_predict(pos)
 
         crystallized_count = 0
         for cluster_id in set(labels):
             if cluster_id == -1:
                 continue
-            members = [recent[i] for i, l in enumerate(labels) if l == cluster_id]
+            members = [recent[i]
+                       for i, l in enumerate(labels) if l == cluster_id]
             if len(members) >= self.cfg.crystallization_min_cluster:
-                new_pos = np.mean([m.latent_pos for m in members], axis=0).astype(np.float32)
+                new_pos = np.mean(
+                    [m.latent_pos for m in members], axis=0).astype(np.float32)
                 # Circular mean for phases: arctan2(mean(sin), mean(cos))
                 phases = np.array([m.phase for m in members])
-                new_phase = float(np.arctan2(np.mean(np.sin(phases)), np.mean(np.cos(phases)))) % (2 * np.pi)
-                combined_text = " ".join([m.content.get("text", "")[:30] for m in members[:3]])
+                new_phase = float(
+                    np.arctan2(
+                        np.mean(
+                            np.sin(phases)),
+                        np.mean(
+                            np.cos(phases)))) % (2 * np.pi)
+                combined_text = " ".join(
+                    [m.content.get("text", "")[:30] for m in members[:3]])
                 new_content = {
                     "text": f"Crystallized: {combined_text}...",
                     "tier": "semantic",
                     "crystallized_from": [m.id for m in members],
                     "crystallized_at": time.time(),
                 }
-                new_id = self.add_node(new_pos, new_content, phase=float(new_phase % (2 * np.pi)), skip_projection=True)
+                new_id = self.add_node(
+                    new_pos, new_content, phase=float(
+                        new_phase %
+                        (2 * np.pi)), skip_projection=True)
                 self.nodes[new_id].tier = "semantic"
                 # Mark originals as archived
                 for m in members:
@@ -3835,10 +4441,10 @@ class RTMDKField:
                 try:
                     payload = await asyncio.wait_for(self.evolve_q.get(), timeout=1.0)
                     inputs = payload.get("inputs", {})
-                    
+
                     # Throttling: Skip heavy meta-ops if backpressure high
                     backpressure_ok = self._backpressure_events < 3
-                    
+
                     loop = asyncio.get_event_loop()
                     await loop.run_in_executor(None, self.step, inputs)
 
@@ -3848,19 +4454,25 @@ class RTMDKField:
                     if backpressure_ok and self.meta_controller:
                         # Safe execution for optimization
                         if self.meta_controller.should_optimize():
-                            self._circuit_breakers["MetaControllerOptimize"].call(self.meta_controller.optimize, self)
+                            self._circuit_breakers["MetaControllerOptimize"].call(
+                                self.meta_controller.optimize, self)
 
-                    # Decay backpressure on success — also check if we can recover from degraded mode
+                    # Decay backpressure on success — also check if we can
+                    # recover from degraded mode
                     if self._backpressure_events > 0:
-                        self._backpressure_events = max(0, self._backpressure_events - 1)
-                        # Fix 10: Recover from degraded mode if backpressure has fully decayed
+                        self._backpressure_events = max(
+                            0, self._backpressure_events - 1)
+                        # Fix 10: Recover from degraded mode if backpressure
+                        # has fully decayed
                         if self._backpressure_events == 0 and self._heavy_modules_degraded:
                             self._heavy_modules_degraded = False
-                            self.stats["backpressure_degraded_mode"] = self.stats.get("backpressure_degraded_mode", 0) + 1
-                            logger.info("Backpressure recovered — heavy modules re-enabled")
+                            self.stats["backpressure_degraded_mode"] = self.stats.get(
+                                "backpressure_degraded_mode", 0) + 1
+                            logger.info(
+                                "Backpressure recovered — heavy modules re-enabled")
                         if self._backpressure_events == 0:
                             self.stats["last_backpressure_recovery"] = time.time()
-                        
+
                     self.evolve_q.task_done()
                 except asyncio.TimeoutError:
                     continue
@@ -3900,6 +4512,7 @@ class RTMDKField:
                     logger.exception("Save worker error")
         except asyncio.CancelledError:
             logger.info("Save worker cancelled cleanly.")
+
     def _track_queue_depth(self):
         """Track async queue depths for monitoring."""
         if self.cfg.async_pipeline and self.evolve_q:
@@ -3918,14 +4531,17 @@ class RTMDKField:
         if not self.low_rank_compressor or len(self.nodes) < 10:
             return
         positions = np.array([n.latent_pos for n in self.nodes.values()])
-        compressed, reconstructed = self.low_rank_compressor.compress(positions)
+        compressed, reconstructed = self.low_rank_compressor.compress(
+            positions)
         ratio = self.low_rank_compressor.get_compression_ratio(positions.shape)
         self.stats["compression_ratio"] = ratio
         self.stats["compression_updates"] = self.low_rank_compressor._update_count
-        # Update node positions with reconstructed (lossy but preserves resonance)
+        # Update node positions with reconstructed (lossy but preserves
+        # resonance)
         for i, nid in enumerate(self.node_index):
             if i < len(reconstructed) and nid in self.nodes:
-                self.nodes[nid].latent_pos = reconstructed[i].astype(np.float32)
+                self.nodes[nid].latent_pos = reconstructed[i].astype(
+                    np.float32)
 
     # ========================================================================
     # PHASE 13 TRACK 1: GOAL MANAGEMENT
@@ -3940,13 +4556,15 @@ class RTMDKField:
                 self.cfg.max_goals, self.cfg.goal_decay,
                 self.cfg.goal_completion_threshold
             )
-        return self.goal_tracker.add_goal(description, goal_id, subgoals, priority)
+        return self.goal_tracker.add_goal(
+            description, goal_id, subgoals, priority)
 
     def update_goal_completion(self, goal_id: str, completion: float,
-                                related_nodes: Optional[List[str]] = None):
+                               related_nodes: Optional[List[str]] = None):
         """Update goal completion progress."""
         if self.goal_tracker:
-            self.goal_tracker.update_completion(goal_id, completion, related_nodes)
+            self.goal_tracker.update_completion(
+                goal_id, completion, related_nodes)
 
     def get_active_goals(self) -> List[Dict]:
         """Get current active goals."""
@@ -3958,13 +4576,17 @@ class RTMDKField:
     # PHASE 13 TRACK 3: RL FEEDBACK
     # ========================================================================
 
-    def apply_rl_feedback(self, response: str, context_node_ids: List[str]) -> float:
+    def apply_rl_feedback(
+            self,
+            response: str,
+            context_node_ids: List[str]) -> float:
         """Apply RL feedback from LLM response."""
         if not self.rl_feedback_loop:
             self.rl_feedback_loop = RLFeedbackLoop(
                 self.cfg.rl_learning_rate, self.cfg.rl_reward_window
             )
-        reward = self.rl_feedback_loop.extract_reward_from_response(response, context_node_ids)
+        reward = self.rl_feedback_loop.extract_reward_from_response(
+            response, context_node_ids)
         self.rl_feedback_loop.apply_field_updates(self)
         self.stats["avg_rl_reward"] = self.rl_feedback_loop.get_average_reward()
         return reward
@@ -3979,7 +4601,6 @@ class RTMDKField:
         """
         if fmt is None:
             try:
-                import msgpack
                 fmt = "msgpack"
             except ImportError:
                 fmt = "json"
@@ -3990,8 +4611,10 @@ class RTMDKField:
             try:
                 existing_size = os.path.getsize(path)
                 if existing_size > 1000:  # File has content (>1KB)
-                    logger.warning(f"export_field blocked: refusing to overwrite {path} ({existing_size/1024:.0f}KB) with empty memory (0 nodes). "
-                                   f"This prevents accidental data loss.")
+                    logger.warning(
+                        f"export_field blocked: refusing to overwrite "
+                        f"{path} ({existing_size / 1024:.0f}KB) with empty "
+                        f"memory (0 nodes). This prevents accidental data loss.")
                     return  # Silently skip export to protect existing data
             except OSError:
                 pass  # If we can't check, proceed with export
@@ -4023,26 +4646,36 @@ class RTMDKField:
         if self.sot_tokenizer and "sot_tokenizer" in state:
             self.sot_tokenizer.load_state(state["sot_tokenizer"])
         if self._sot_field_ema is not None and "sot_field_ema" in state:
-            self._sot_field_ema = np.array(state["sot_field_ema"], dtype=np.float32)
+            self._sot_field_ema = np.array(
+                state["sot_field_ema"], dtype=np.float32)
 
     @classmethod
     def import_field(cls, path: str, embedder: Callable,
-                     wal_path: Optional[str] = None) -> "RTMDKMemory":
+                     wal_path: Optional[str] = None):
         path = _sanitize_path(path)
         from rtmdk.memory.serialization import FieldSerializer
-        return FieldSerializer.field_from_file(path, embedder, wal_path=wal_path)
+        return FieldSerializer.field_from_file(
+            path, embedder, wal_path=wal_path)
 
     def export_to_dict(self) -> Dict:
         """Export field state to a dict (for UMP and other protocols)."""
         cd = self.config.asdict() if hasattr(self, 'config') else self.cfg.asdict()
-        cd["consolidation_mode"] = _enum_value(cd.get("consolidation_mode"), "dialectical")
+        cd["consolidation_mode"] = _enum_value(
+            cd.get("consolidation_mode"), "dialectical")
         cd["backend"] = _enum_value(cd.get("backend"), "numpy")
         cd["context_format"] = _enum_value(cd.get("context_format"), "plain")
         cd["eval_mode"] = _enum_value(cd.get("eval_mode"), "production")
         if "memory_tiers" in cd and isinstance(cd["memory_tiers"], set):
             cd["memory_tiers"] = list(cd["memory_tiers"])
-        nodes_data = list(self.nodes.all_node_dicts()) if hasattr(self.nodes, "all_node_dicts") else [n.to_dict() for n in self.nodes.values()]
-        data = {"_schema_version": "1.0", "config": cd, "nodes": nodes_data, "stats": self.stats}
+        nodes_data = list(
+            self.nodes.all_node_dicts()) if hasattr(
+            self.nodes, "all_node_dicts") else [
+            n.to_dict() for n in self.nodes.values()]
+        data = {
+            "_schema_version": "1.0",
+            "config": cd,
+            "nodes": nodes_data,
+            "stats": self.stats}
         if self.projection_learner:
             data["projection_state"] = self.projection_learner.get_state()
         else:
@@ -4100,11 +4733,12 @@ class RTMDKField:
         return data
 
     @classmethod
-    def import_from_dict(cls, data: Dict, embedder: Callable) -> "RTMDKMemory":
+    def import_from_dict(cls, data: Dict, embedder: Callable):
         """Import field state from a dict (for UMP and other protocols)."""
         cd = data["config"]
         if isinstance(cd.get("consolidation_mode"), str):
-            cd["consolidation_mode"] = ConsolidationMode(cd["consolidation_mode"])
+            cd["consolidation_mode"] = ConsolidationMode(
+                cd["consolidation_mode"])
         if isinstance(cd.get("backend"), str):
             cd["backend"] = Backend(cd["backend"])
         if isinstance(cd.get("context_format"), str):
@@ -4117,15 +4751,19 @@ class RTMDKField:
             cd["causal_topological"] = cd.pop("causal_modeling")
         elif "causal_modeling" in cd:
             cd.pop("causal_modeling")
-        valid_fields = set(f.name for f in RTMDKConfig.__dataclass_fields__.values())
+        valid_fields = set(
+            f.name for f in RTMDKConfig.__dataclass_fields__.values())
         cd = {k: v for k, v in cd.items() if k in valid_fields}
         config = RTMDKConfig(**cd)
+        from rtmdk.memory.core import RTMDKMemory
         memory = RTMDKMemory(config=config, embedder=embedder)
 
         if config.learn_projection and "projection_state" in data:
-            memory.field.projection_learner.load_state(data["projection_state"])
+            memory.field.projection_learner.load_state(
+                data["projection_state"])
         elif "projection" in data:
-            memory.field._raw_projection = np.array(data["projection"], dtype=np.float32)
+            memory.field._raw_projection = np.array(
+                data["projection"], dtype=np.float32)
         if config.differentiable and "learnable_kernel" in data:
             memory.field.learnable_kernel.load_state(data["learnable_kernel"])
         if config.meta_adaptive and "meta_kernel" in data:
@@ -4140,8 +4778,10 @@ class RTMDKField:
             memory.field.ode_dynamics.beta = ode_state.get("beta", 0.05)
             memory.field.ode_dynamics.gamma = ode_state.get("gamma", 0.02)
             if "W" in ode_state:
-                memory.field.ode_dynamics.W = np.array(ode_state["W"], dtype=np.float32)
-            memory.field.ode_dynamics.noise_level = ode_state.get("noise_level", 0.01)
+                memory.field.ode_dynamics.W = np.array(
+                    ode_state["W"], dtype=np.float32)
+            memory.field.ode_dynamics.noise_level = ode_state.get(
+                "noise_level", 0.01)
         if config.meta_controller and "meta_controller" in data:
             memory.field.meta_controller.load_state(data["meta_controller"])
         if config.federated and "federated" in data:
@@ -4164,7 +4804,8 @@ class RTMDKField:
         if "event_scheduler" in data and memory.field.event_scheduler:
             memory.field.event_scheduler.load_state(data["event_scheduler"])
         if "low_rank_compressor" in data and memory.field.low_rank_compressor:
-            memory.field.low_rank_compressor.load_state(data["low_rank_compressor"])
+            memory.field.low_rank_compressor.load_state(
+                data["low_rank_compressor"])
         if "goal_tracker" in data and memory.field.goal_tracker:
             memory.field.goal_tracker.load_state(data["goal_tracker"])
         if "rl_feedback_loop" in data and memory.field.rl_feedback_loop:
@@ -4176,7 +4817,8 @@ class RTMDKField:
         if "engram_manager" in data and memory.field.engram_manager:
             memory.field.engram_manager.load_state(data["engram_manager"])
 
-        # Reset historical metrics to avoid stale accumulated state (matches import_field behavior)
+        # Reset historical metrics to avoid stale accumulated state (matches
+        # import_field behavior)
         reset_keys = [
             "projection_updates", "self_sup_checks", "total_queries",
             "consolidations", "consolidation_validations", "blocked_consolidations",
@@ -4245,4 +4887,3 @@ class RTMDKField:
 # ============================================================================
 # RTMDKMemory v7
 # ============================================================================
-

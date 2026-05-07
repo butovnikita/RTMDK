@@ -18,12 +18,13 @@ import json
 import logging
 from typing import Dict, Any, Callable, Optional
 from enum import Enum
-from dataclasses import asdict
 import numpy as np
 
+from rtmdk.memory.config import (
+    ConsolidationMode, Backend, EvalMode, ContextFormat,
+)
 from rtmdk.memory.core import (
-    RTMDKConfig, RTMDKField, MemoryNode, ContextFormat,
-    ConsolidationMode, Backend, EvalMode,
+    RTMDKConfig, RTMDKField, MemoryNode,
 )
 
 logger = logging.getLogger("rtmdk.serialization")
@@ -35,17 +36,21 @@ class EnumSerializer:
     @staticmethod
     def enum_to_value(val: Any, default: Any) -> Any:
         """Convert enum to its value, or return default."""
-        return val.value if isinstance(val, Enum) else (val if val is not None else default)
+        return val.value if isinstance(
+            val, Enum) else (
+            val if val is not None else default)
 
     @staticmethod
     def serialize_config(cd: Dict[str, Any]) -> Dict[str, Any]:
         """Serialize all enum fields in config dict."""
         cd["consolidation_mode"] = EnumSerializer.enum_to_value(
             cd.get("consolidation_mode"), "dialectical")
-        cd["backend"] = EnumSerializer.enum_to_value(cd.get("backend"), "numpy")
+        cd["backend"] = EnumSerializer.enum_to_value(
+            cd.get("backend"), "numpy")
         cd["context_format"] = EnumSerializer.enum_to_value(
             cd.get("context_format"), "plain")
-        cd["eval_mode"] = EnumSerializer.enum_to_value(cd.get("eval_mode"), "production")
+        cd["eval_mode"] = EnumSerializer.enum_to_value(
+            cd.get("eval_mode"), "production")
         if "memory_tiers" in cd and isinstance(cd["memory_tiers"], set):
             cd["memory_tiers"] = list(cd["memory_tiers"])
         return cd
@@ -54,7 +59,8 @@ class EnumSerializer:
     def deserialize_config(cd: Dict[str, Any]) -> Dict[str, Any]:
         """Deserialize string values back to enums."""
         if isinstance(cd.get("consolidation_mode"), str):
-            cd["consolidation_mode"] = ConsolidationMode(cd["consolidation_mode"])
+            cd["consolidation_mode"] = ConsolidationMode(
+                cd["consolidation_mode"])
         if isinstance(cd.get("backend"), str):
             cd["backend"] = Backend(cd["backend"])
         if isinstance(cd.get("context_format"), str):
@@ -98,7 +104,11 @@ class FieldSerializer:
         # Build data dict
         data = {
             "config": cd,
-            "nodes": list(field.nodes.all_node_dicts()) if hasattr(field.nodes, "all_node_dicts") else [n.to_dict() for n in field.nodes.values()],
+            "nodes": list(
+                field.nodes.all_node_dicts()) if hasattr(
+                field.nodes,
+                "all_node_dicts") else [
+                n.to_dict() for n in field.nodes.values()],
             "stats": field.stats,
         }
 
@@ -131,9 +141,11 @@ class FieldSerializer:
         # Path sanitization
         path = os.path.normpath(str(path))
         if ".." in path.split(os.sep):
-            raise ValueError(f"Invalid path: path traversal not allowed: {path}")
+            raise ValueError(
+                f"Invalid path: path traversal not allowed: {path}")
         if not path.endswith((".json", ".msgpack")):
-            raise ValueError(f"Invalid format: path must end with .json or .msgpack: {path}")
+            raise ValueError(
+                f"Invalid format: path must end with .json or .msgpack: {path}")
 
         data = FieldSerializer.field_to_dict(field)
 
@@ -153,7 +165,8 @@ class FieldSerializer:
                         return int(obj)
                     raise TypeError(f"Cannot serialize {type(obj)}")
 
-                packed = msgpack.packb(data, use_bin_type=True, default=_msgpack_default)
+                packed = msgpack.packb(
+                    data, use_bin_type=True, default=_msgpack_default)
                 compressed = zlib.compress(packed)
                 tmp_path = path + ".tmp"
                 with open(tmp_path, "wb") as f:
@@ -166,7 +179,12 @@ class FieldSerializer:
                 warnings.warn("msgpack not installed, falling back to JSON")
                 tmp_path = path + ".tmp"
                 with open(tmp_path, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2, default=str)
+                    json.dump(
+                        data,
+                        f,
+                        ensure_ascii=False,
+                        indent=2,
+                        default=str)
                     f.flush()
                     os.fsync(f.fileno())
                 os.replace(tmp_path, path)
@@ -203,21 +221,25 @@ class FieldSerializer:
         # Path sanitization
         path = os.path.normpath(str(path))
         if ".." in path.split(os.sep):
-            raise ValueError(f"Invalid path: path traversal not allowed: {path}")
+            raise ValueError(
+                f"Invalid path: path traversal not allowed: {path}")
         if not os.path.exists(path):
             raise FileNotFoundError(f"File not found: {path}")
 
         file_size = os.path.getsize(path)
         max_size = 100 * 1024 * 1024  # 100MB
         if file_size > max_size:
-            raise ValueError(f"File too large: {file_size / 1024 / 1024:.1f}MB (max 100MB)")
+            raise ValueError(
+                f"File too large: {file_size / 1024 / 1024:.1f}MB (max 100MB)")
         if file_size < 10:
-            raise ValueError(f"File too small ({file_size} bytes): possibly corrupted")
+            raise ValueError(
+                f"File too small ({file_size} bytes): possibly corrupted")
 
         # Auto-detect format
         with open(path, "rb") as f:
             header = f.read(2)
-        is_msgpack = header[0:1] == b'\x78' and header[1:2] in (b'\x01', b'\x5e', b'\x9c', b'\xda')
+        is_msgpack = header[0:1] == b'\x78' and header[1:2] in (
+            b'\x01', b'\x5e', b'\x9c', b'\xda')
 
         if is_msgpack:
             logger.info("import_field: detected msgpack+zlib format")
@@ -229,7 +251,8 @@ class FieldSerializer:
                 packed = zlib.decompress(compressed)
                 data = msgpack.unpackb(packed, raw=False)
             except ImportError:
-                raise ImportError("msgpack required for binary import. Install: pip install msgpack")
+                raise ImportError(
+                    "msgpack required for binary import. Install: pip install msgpack")
         else:
             logger.info("import_field: loading JSON format")
             with open(path, "r", encoding="utf-8") as f:
@@ -237,12 +260,13 @@ class FieldSerializer:
 
         # Health check
         if "config" not in data:
-            raise ValueError(f"Invalid memory file: missing 'config' key")
+            raise ValueError("Invalid memory file: missing 'config' key")
         if "nodes" not in data:
-            raise ValueError(f"Invalid memory file: missing 'nodes' key")
+            raise ValueError("Invalid memory file: missing 'nodes' key")
 
         n_file_nodes = len(data["nodes"])
-        logger.info(f"import_field: file contains {n_file_nodes} nodes, {file_size/1024:.0f}KB")
+        logger.info(
+            f"import_field: file contains {n_file_nodes} nodes, {file_size/1024:.0f}KB")
 
         # Deserialize config
         cd = data["config"]
@@ -254,21 +278,28 @@ class FieldSerializer:
         elif "causal_modeling" in cd:
             cd.pop("causal_modeling")
 
-        valid_fields = set(f.name for f in RTMDKConfig.__dataclass_fields__.values())
+        valid_fields = set(
+            f.name for f in RTMDKConfig.__dataclass_fields__.values())
         cd = {k: v for k, v in cd.items() if k in valid_fields}
 
         if config is None:
             config = RTMDKConfig(**cd)
 
-        logger.info(f"import_field: loading config (context_format={cd.get('context_format', '?')})")
+        logger.info(
+            f"import_field: loading config (context_format={cd.get('context_format', '?')})")
 
-        memory = RTMDKMemory(config=config, embedder=embedder, wal_path=wal_path)
+        memory = RTMDKMemory(
+            config=config,
+            embedder=embedder,
+            wal_path=wal_path)
 
         # Load projection
         if config.learn_projection and "projection_state" in data:
-            memory.field.projection_learner.load_state(data["projection_state"])
+            memory.field.projection_learner.load_state(
+                data["projection_state"])
         elif "projection" in data:
-            memory.field._raw_projection = np.array(data["projection"], dtype=np.float32)
+            memory.field._raw_projection = np.array(
+                data["projection"], dtype=np.float32)
 
         # Load submodule states
         if config.differentiable and "learnable_kernel" in data:
@@ -287,8 +318,10 @@ class FieldSerializer:
             memory.field.ode_dynamics.beta = ode_state.get("beta", 0.05)
             memory.field.ode_dynamics.gamma = ode_state.get("gamma", 0.02)
             if "W" in ode_state:
-                memory.field.ode_dynamics.W = np.array(ode_state["W"], dtype=np.float32)
-            memory.field.ode_dynamics.noise_level = ode_state.get("noise_level", 0.01)
+                memory.field.ode_dynamics.W = np.array(
+                    ode_state["W"], dtype=np.float32)
+            memory.field.ode_dynamics.noise_level = ode_state.get(
+                "noise_level", 0.01)
         if config.meta_controller and "meta_controller" in data:
             memory.field.meta_controller.load_state(data["meta_controller"])
         if config.federated and "federated" in data:
@@ -308,7 +341,8 @@ class FieldSerializer:
             memory.field.node_index.append(node.id)
         if "tiered_store" in data and memory.field._tiered_store is not None:
             memory.field._tiered_store.load_state(data["tiered_store"])
-        logger.info(f"import_field: successfully loaded {len(memory.field.nodes)} nodes")
+        logger.info(
+            f"import_field: successfully loaded {len(memory.field.nodes)} nodes")
 
         # Reconcile stats
         saved_stats = data.get("stats", {})
@@ -367,10 +401,13 @@ class FieldSerializer:
         # Recalculate tier_distribution from actual nodes
         tier_dist = {}
         for node in memory.field.nodes.values():
-            tier = node.content.get("tier", node.tier if hasattr(node, 'tier') else "semantic")
+            tier = node.content.get(
+                "tier", node.tier if hasattr(
+                    node, 'tier') else "semantic")
             tier_dist[tier] = tier_dist.get(tier, 0) + 1
         memory.field.stats["tier_distribution"] = tier_dist
         memory.field.stats["avg_response"] = 0.0
 
-        logger.info(f"import_field: complete — {n_nodes} nodes, tier_distribution={tier_dist}")
+        logger.info(
+            f"import_field: complete — {n_nodes} nodes, tier_distribution={tier_dist}")
         return memory

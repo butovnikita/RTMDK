@@ -8,7 +8,7 @@ import logging
 import math
 from enum import Enum
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Tuple, Union, Callable, Any, Set, FrozenSet
+from typing import List, Dict, Optional, Any, Set
 import numpy as np
 
 logger = logging.getLogger(__name__)
@@ -324,318 +324,329 @@ _FIELD_GROUPS: Dict[str, str] = {
     "version_control": "MemorySystemConfig",
 }
 
+
 @dataclass
 class CoreConfig:
-        embedding_dim: int = 768
-        latent_dim: int = 64  # Matches server default — change only if you know the impact
-        resonance_kernel: str = "gaussian_phase"
-        phase_coupling: float = 0.3
-        bandwidth: float = 1.0
-        conformal_prediction: bool = False
-        conformal_alpha: float = 0.10
-        conformal_min_calib: int = 50
-        spectral_consolidation: bool = False
-        spectral_max_clusters: int = 10
-        spectral_sigma: float = 1.0
-        enable_kalman_filter: bool = False
-        kalman_diagonal_approx: bool = True
-        kalman_process_noise: float = 0.01
-        kalman_measurement_noise: float = 0.1
-        kalman_init_variance: float = 1.0
-        attraction_lr: float = 0.02
-        phase_sync_lr: float = 0.01
-        decay_rate: float = 0.997  # Matches server default — half-life ~230 steps
-        min_amplitude: float = 0.05
-        tension_threshold: float = 0.15  # Matches server default — moderate consolidation
-        consolidation_mode: ConsolidationMode = ConsolidationMode.DIALECTICAL
-        consolidation_async: bool = False
-        max_nodes: Optional[int] = 5000
-        top_k: int = 5
-        min_response: float = 0.005  # OPTIMIZED: 20x lower → more results pass filter
-        enable_async: bool = True
-        log_level: str = "INFO"
-        seed: Optional[int] = None
-        context_format: ContextFormat = ContextFormat.PLAIN
-        use_structured_prompt: bool = True
-        adaptive_threshold: bool = False
-        adaptive_window: int = 30
-        learn_projection: bool = True  # OPTIMIZED: IncPCA instead of random matrix
-        projection_lr: float = 0.001
-        projection_update_freq: int = 300  # OPTIMIZED: >= latent_dim for IncPCA first fit
-        pca_n_components: Optional[int] = None
-        bm25_fallback: bool = True  # OPTIMIZED: text search as safety net
-        bm25_k1: float = 1.5
-        bm25_b: float = 0.75
-        hybrid_alpha: float = 1.0  # 1.0 = pure RTMDK, 0.0 = pure BM25, 0.7 = 70/30 blend
-        quantization: str = "none"  # "none" | "fp16"
+    embedding_dim: int = 768
+    latent_dim: int = 64  # Matches server default — change only if you know the impact
+    resonance_kernel: str = "gaussian_phase"
+    phase_coupling: float = 0.3
+    bandwidth: float = 1.0
+    conformal_prediction: bool = False
+    conformal_alpha: float = 0.10
+    conformal_min_calib: int = 50
+    spectral_consolidation: bool = False
+    spectral_max_clusters: int = 10
+    spectral_sigma: float = 1.0
+    enable_kalman_filter: bool = False
+    kalman_diagonal_approx: bool = True
+    kalman_process_noise: float = 0.01
+    kalman_measurement_noise: float = 0.1
+    kalman_init_variance: float = 1.0
+    attraction_lr: float = 0.02
+    phase_sync_lr: float = 0.01
+    decay_rate: float = 0.997  # Matches server default — half-life ~230 steps
+    min_amplitude: float = 0.05
+    tension_threshold: float = 0.15  # Matches server default — moderate consolidation
+    consolidation_mode: ConsolidationMode = ConsolidationMode.DIALECTICAL
+    consolidation_async: bool = False
+    max_nodes: Optional[int] = 5000
+    top_k: int = 5
+    min_response: float = 0.005  # OPTIMIZED: 20x lower → more results pass filter
+    enable_async: bool = True
+    log_level: str = "INFO"
+    seed: Optional[int] = None
+    context_format: ContextFormat = ContextFormat.PLAIN
+    use_structured_prompt: bool = True
+    adaptive_threshold: bool = False
+    adaptive_window: int = 30
+    learn_projection: bool = True  # OPTIMIZED: IncPCA instead of random matrix
+    projection_lr: float = 0.001
+    projection_update_freq: int = 300  # OPTIMIZED: >= latent_dim for IncPCA first fit
+    pca_n_components: Optional[int] = None
+    bm25_fallback: bool = True  # OPTIMIZED: text search as safety net
+    bm25_k1: float = 1.5
+    bm25_b: float = 0.75
+    hybrid_alpha: float = 1.0  # 1.0 = pure RTMDK, 0.0 = pure BM25, 0.7 = 70/30 blend
+    quantization: str = "none"  # "none" | "fp16"
 
 
 @dataclass
 class RetrievalConfig:
-        soft_gates: bool = False
-        gate_temperature: float = 0.15
-        self_supervision: bool = False
-        self_sup_threshold: float = 0.3
-        self_sup_verify_after_consolidate: bool = False
-        backend: Backend = Backend.NUMPY
-        gpu_batch_size: int = 512
-        l2_regularization: float = 0.0001
-        false_merge_threshold: float = 0.4
-        field_stability_window: int = 20
-        enable_rollback: bool = False
-        max_rollback_history: int = 10  # Fix 7: Reduced from 50 — each snapshot stores full node copies, memory intensive
-        multimodal: bool = False
-        modalities: List[str] = field(default_factory=lambda: ["text"])
-        modality_phase_shifts: Dict[str, float] = field(default_factory=dict)
-        use_hnsw: bool = True  # OPTIMIZED: fast approximate nearest neighbor
-        hnsw_m: int = 32
-        hnsw_ef_construction: int = 400
-        tda_monitoring: bool = False
-        tda_check_freq: int = 50
-        attention_bias: bool = False
-        bias_temperature: float = 1.0
-        query_cache_size: int = 0  # 0 = disabled
-        query_cache_ttl: int = 3600  # seconds
-        adaptive_top_k: bool = False
+    soft_gates: bool = False
+    gate_temperature: float = 0.15
+    self_supervision: bool = False
+    self_sup_threshold: float = 0.3
+    self_sup_verify_after_consolidate: bool = False
+    backend: Backend = Backend.NUMPY
+    gpu_batch_size: int = 512
+    l2_regularization: float = 0.0001
+    false_merge_threshold: float = 0.4
+    field_stability_window: int = 20
+    enable_rollback: bool = False
+    # Fix 7: Reduced from 50 — each snapshot stores full node copies, memory
+    # intensive
+    max_rollback_history: int = 10
+    multimodal: bool = False
+    modalities: List[str] = field(default_factory=lambda: ["text"])
+    modality_phase_shifts: Dict[str, float] = field(default_factory=dict)
+    use_hnsw: bool = True  # OPTIMIZED: fast approximate nearest neighbor
+    hnsw_m: int = 32
+    hnsw_ef_construction: int = 400
+    tda_monitoring: bool = False
+    tda_check_freq: int = 50
+    attention_bias: bool = False
+    bias_temperature: float = 1.0
+    query_cache_size: int = 0  # 0 = disabled
+    query_cache_ttl: int = 3600  # seconds
+    adaptive_top_k: bool = False
 
 
 @dataclass
 class LearningConfig:
-        differentiable: bool = False
-        learnable_bandwidth: bool = False
-        learnable_phase_coupling: bool = False
-        learnable_decay: bool = False
-        gradient_clip: float = 1.0
-        consolidation_loss_weight: float = 0.1
-        meta_adaptive: bool = False
-        meta_adaptation_lr: float = 0.005
-        kurtosis_target_min: float = 1.5
-        kurtosis_target_max: float = 4.0
-        self_healing: bool = False
-        healing_check_freq: int = 25
-        dead_zone_threshold: float = 0.15
-        hyperconvergence_threshold: float = 0.05
-        fragmentation_threshold: float = 0.6
-        healing_strength: float = 0.1
-        max_healing_nodes_per_step: int = 5
+    differentiable: bool = False
+    learnable_bandwidth: bool = False
+    learnable_phase_coupling: bool = False
+    learnable_decay: bool = False
+    gradient_clip: float = 1.0
+    consolidation_loss_weight: float = 0.1
+    meta_adaptive: bool = False
+    meta_adaptation_lr: float = 0.005
+    kurtosis_target_min: float = 1.5
+    kurtosis_target_max: float = 4.0
+    self_healing: bool = False
+    healing_check_freq: int = 25
+    dead_zone_threshold: float = 0.15
+    hyperconvergence_threshold: float = 0.05
+    fragmentation_threshold: float = 0.6
+    healing_strength: float = 0.1
+    max_healing_nodes_per_step: int = 5
 
 
 @dataclass
 class DynamicsConfig:
-        continuous_dynamics: bool = False
-        ode_solver: str = "RK45"
-        ode_atol: float = 1e-6
-        ode_rtol: float = 1e-5
-        ode_time_horizon: float = 1.0
-        ode_n_steps: int = 20
-        ode_chunk_size: int = 256
-        sde_noise_level: float = 0.01
-        adjoint_enabled: bool = False
-        response_smoothness_target: float = 0.92
-        predictive_coding: bool = False
-        pc_latent_dim: int = 32
-        pc_lr: float = 0.01
-        counterfactual_imagination: bool = False
-        max_scenarios: int = 5
-        offline_dreaming: bool = True
-        dreaming_freq: int = 50
-        causal_traversal: bool = True
-        causal_max_hops: int = 3
-        ssm_dynamics: bool = False
-        ssm_state_dim: int = 64
+    continuous_dynamics: bool = False
+    ode_solver: str = "RK45"
+    ode_atol: float = 1e-6
+    ode_rtol: float = 1e-5
+    ode_time_horizon: float = 1.0
+    ode_n_steps: int = 20
+    ode_chunk_size: int = 256
+    sde_noise_level: float = 0.01
+    adjoint_enabled: bool = False
+    response_smoothness_target: float = 0.92
+    predictive_coding: bool = False
+    pc_latent_dim: int = 32
+    pc_lr: float = 0.01
+    counterfactual_imagination: bool = False
+    max_scenarios: int = 5
+    offline_dreaming: bool = True
+    dreaming_freq: int = 50
+    causal_traversal: bool = True
+    causal_max_hops: int = 3
+    ssm_dynamics: bool = False
+    ssm_state_dim: int = 64
 
 
 @dataclass
 class InferenceConfig:
-        causal_topological: bool = False
-        causal_discovery_min_samples: int = 20
-        causal_p_threshold: float = 0.05
-        do_calculus_validation: bool = True
-        counterfactual_enabled: bool = False
-        counterfactual_max_depth: int = 3
-        contradiction_detection: bool = True
-        contradiction_threshold: float = 0.3
-        causal_adjustment_sets: bool = True
-        agent_orchestration: bool = False
-        max_plan_depth: int = 3
-        max_tool_calls: int = 5
-        tool_timeout: float = 15.0
-        hypothesis_verification: bool = True
-        verification_confidence_threshold: float = 0.7
-        goal_directed_routing: bool = False
-        meta_controller: bool = False
-        meta_optimization_freq: int = 500
-        meta_n_trials: int = 20
-        meta_optimize_params: List[str] = field(default_factory=lambda: [
-            "decay_rate", "tension_threshold", "phase_coupling", "bandwidth"
-        ])
-        goal_tracking: bool = False
-        max_goals: int = 20
-        goal_decay: float = 0.995
-        goal_completion_threshold: float = 0.8
-        rl_feedback: bool = False
-        rl_learning_rate: float = 0.01
-        rl_reward_window: int = 10
-        event_driven: bool = False
-        low_rank_compression: bool = False
-        compression_rank: int = 32
-        compression_freq: int = 500
-        trust_consensus: bool = False
-        trust_min_reputation: float = 0.3
-        neuro_symbolic_prover: bool = False
-        prover_backend: str = "z3"
-        causal_masking: bool = False
+    causal_topological: bool = False
+    causal_discovery_min_samples: int = 20
+    causal_p_threshold: float = 0.05
+    do_calculus_validation: bool = True
+    counterfactual_enabled: bool = False
+    counterfactual_max_depth: int = 3
+    contradiction_detection: bool = True
+    contradiction_threshold: float = 0.3
+    causal_adjustment_sets: bool = True
+    agent_orchestration: bool = False
+    max_plan_depth: int = 3
+    max_tool_calls: int = 5
+    tool_timeout: float = 15.0
+    hypothesis_verification: bool = True
+    verification_confidence_threshold: float = 0.7
+    goal_directed_routing: bool = False
+    meta_controller: bool = False
+    meta_optimization_freq: int = 500
+    meta_n_trials: int = 20
+    meta_optimize_params: List[str] = field(default_factory=lambda: [
+        "decay_rate", "tension_threshold", "phase_coupling", "bandwidth"
+    ])
+    goal_tracking: bool = False
+    max_goals: int = 20
+    goal_decay: float = 0.995
+    goal_completion_threshold: float = 0.8
+    rl_feedback: bool = False
+    rl_learning_rate: float = 0.01
+    rl_reward_window: int = 10
+    event_driven: bool = False
+    low_rank_compression: bool = False
+    compression_rank: int = 32
+    compression_freq: int = 500
+    trust_consensus: bool = False
+    trust_min_reputation: float = 0.3
+    neuro_symbolic_prover: bool = False
+    prover_backend: str = "z3"
+    causal_masking: bool = False
 
 
 @dataclass
 class MemorySystemConfig:
-        enable_engrams: bool = True
-        engram_min_nodes: int = 2
-        engram_max_nodes: int = 20
-        engram_creation_threshold: float = 0.6
-        engram_decay_rate: float = 0.998
-        engram_pattern_completion: bool = True
-        engram_overlap_threshold: float = 0.7
-        memory_tiers: Set[str] = field(default_factory=lambda: {"episodic", "semantic", "procedural"})
-        tier_decay: Dict[str, float] = field(default_factory=lambda: {
-            "episodic": 0.992, "semantic": 0.999, "procedural": 1.0
-        })
-        tier_tension_thresh: Dict[str, float] = field(default_factory=lambda: {
-            "episodic": 0.10, "semantic": 0.22, "procedural": 0.35
-        })
-        hyperbolic: bool = False
-        ball_radius: float = 0.85
-        curvature: float = -1.0
-        cognitive_compression: bool = False
-        high_resonance_threshold: float = 0.6
-        crystallization: bool = False
-        crystallization_freq: int = 200
-        crystallization_similarity: float = 0.75
-        crystallization_min_cluster: int = 3
-        async_pipeline: bool = False
-        query_queue_size: int = 50
-        save_queue_size: int = 100
-        evolve_queue_size: int = 20
-        meta_memory: bool = False
-        self_reflection_freq: int = 100
-        memory_age_factor: float = 0.001
-        recall_accuracy_threshold: float = 0.6
-        version_control: bool = False
-        max_versions: int = 100
-        proactive_clarification: bool = False
-        clarification_threshold_ratio: float = 0.5
-        attention_tokens: bool = True  # Enabled by default (extends attention_bias)
-        entropy_management: bool = False
-        entropy_high_threshold: float = 3.0
-        entropy_low_threshold: float = 0.5
-        symbolic_overlay: bool = False
-        symbolic_min_self_sup: float = 0.7
-        symbolic_max_tension: float = 0.15
-        symbolic_confidence_threshold: float = 0.65
-        safety_certifier: bool = False
-        safety_mode: str = "soft_regulate"  # monitor_only | soft_regulate | hard_block
-        lyapunov_alpha: float = 0.4
-        lyapunov_beta: float = 0.4
-        lyapunov_gamma: float = 0.2
-        lyapunov_threshold: float = 0.1
-        ump_enabled: bool = False
-        role_sharding: bool = False
-        role_shards: Set[str] = field(default_factory=lambda: {"default"})
-        cross_shard_threshold: float = 0.45
-        auto_role_detection: bool = True
-        domain_aware_retrieval: bool = False
-        domain_consolidation_guard: bool = False
-        cpen_parent_ode: bool = False
-        cpen_child_ode: bool = False
-        hebbian_learning_rate: float = 0.01
-        tiered_storage_enabled: bool = False
-        tiered_storage_path: Optional[str] = None
-        tiered_hot_pct: float = 0.01
-        tiered_warm_pct: float = 0.09
+    enable_engrams: bool = True
+    engram_min_nodes: int = 2
+    engram_max_nodes: int = 20
+    engram_creation_threshold: float = 0.6
+    engram_decay_rate: float = 0.998
+    engram_pattern_completion: bool = True
+    engram_overlap_threshold: float = 0.7
+    memory_tiers: Set[str] = field(
+        default_factory=lambda: {
+            "episodic", "semantic", "procedural"})
+    tier_decay: Dict[str, float] = field(default_factory=lambda: {
+        "episodic": 0.992, "semantic": 0.999, "procedural": 1.0
+    })
+    tier_tension_thresh: Dict[str, float] = field(default_factory=lambda: {
+        "episodic": 0.10, "semantic": 0.22, "procedural": 0.35
+    })
+    hyperbolic: bool = False
+    ball_radius: float = 0.85
+    curvature: float = -1.0
+    cognitive_compression: bool = False
+    high_resonance_threshold: float = 0.6
+    crystallization: bool = False
+    crystallization_freq: int = 200
+    crystallization_similarity: float = 0.75
+    crystallization_min_cluster: int = 3
+    async_pipeline: bool = False
+    query_queue_size: int = 50
+    save_queue_size: int = 100
+    evolve_queue_size: int = 20
+    meta_memory: bool = False
+    self_reflection_freq: int = 100
+    memory_age_factor: float = 0.001
+    recall_accuracy_threshold: float = 0.6
+    version_control: bool = False
+    max_versions: int = 100
+    proactive_clarification: bool = False
+    clarification_threshold_ratio: float = 0.5
+    # Enabled by default (extends attention_bias)
+    attention_tokens: bool = True
+    entropy_management: bool = False
+    entropy_high_threshold: float = 3.0
+    entropy_low_threshold: float = 0.5
+    symbolic_overlay: bool = False
+    symbolic_min_self_sup: float = 0.7
+    symbolic_max_tension: float = 0.15
+    symbolic_confidence_threshold: float = 0.65
+    safety_certifier: bool = False
+    safety_mode: str = "soft_regulate"  # monitor_only | soft_regulate | hard_block
+    lyapunov_alpha: float = 0.4
+    lyapunov_beta: float = 0.4
+    lyapunov_gamma: float = 0.2
+    lyapunov_threshold: float = 0.1
+    ump_enabled: bool = False
+    role_sharding: bool = False
+    role_shards: Set[str] = field(default_factory=lambda: {"default"})
+    cross_shard_threshold: float = 0.45
+    auto_role_detection: bool = True
+    domain_aware_retrieval: bool = False
+    domain_consolidation_guard: bool = False
+    cpen_parent_ode: bool = False
+    cpen_child_ode: bool = False
+    hebbian_learning_rate: float = 0.01
+    tiered_storage_enabled: bool = False
+    tiered_storage_path: Optional[str] = None
+    tiered_hot_pct: float = 0.01
+    tiered_warm_pct: float = 0.09
 
 
 @dataclass
 class ProductionConfig:
-        production_mode: bool = False
-        eval_mode: EvalMode = EvalMode.PRODUCTION
-        shadow_mode: bool = False
-        shadow_fallback_threshold: float = 0.3
-        auto_rollback: bool = False
-        auto_rollback_threshold: float = 0.15
-        eval_frequency: int = 100
-        ragas_enabled: bool = False
-        drift_detection: bool = False
-        drift_window: int = 100
-        drift_threshold: float = 0.05
-        metrics_retention: int = 10000
-        differential_privacy: bool = False
-        dp_epsilon: float = 2.0
-        dp_delta: float = 1e-5
-        dp_max_norm: float = 1.0
-        security_enabled: bool = False
-        max_node_text_length: int = 10000
-        tension_spike_threshold: float = 0.5
-        causal_graph_integrity_check: bool = True
-        prompt_injection_patterns: List[str] = field(default_factory=lambda: [
-            "ignore previous", "system prompt", "you are now", "disregard",
-            "ignore all", "new instruction", "override"
-        ])
-        system_prompt: Optional[str] = "You are a helpful assistant with long-term memory powered by RTMDK (Resonance-Topological Memory)."
+    production_mode: bool = False
+    eval_mode: EvalMode = EvalMode.PRODUCTION
+    shadow_mode: bool = False
+    shadow_fallback_threshold: float = 0.3
+    auto_rollback: bool = False
+    auto_rollback_threshold: float = 0.15
+    eval_frequency: int = 100
+    ragas_enabled: bool = False
+    drift_detection: bool = False
+    drift_window: int = 100
+    drift_threshold: float = 0.05
+    metrics_retention: int = 10000
+    differential_privacy: bool = False
+    dp_epsilon: float = 2.0
+    dp_delta: float = 1e-5
+    dp_max_norm: float = 1.0
+    security_enabled: bool = False
+    max_node_text_length: int = 10000
+    tension_spike_threshold: float = 0.5
+    causal_graph_integrity_check: bool = True
+    prompt_injection_patterns: List[str] = field(default_factory=lambda: [
+        "ignore previous", "system prompt", "you are now", "disregard",
+        "ignore all", "new instruction", "override"
+    ])
+    system_prompt: Optional[
+        str] = "You are a helpful assistant with long-term memory powered by RTMDK (Resonance-Topological Memory)."
 
 
 @dataclass
 class RoutingConfig:
-        cross_modal: bool = False
-        modal_phase_offsets: Dict[str, float] = field(default_factory=lambda: {
-            "text": 0.0,
-            "code": math.pi / 4,
-            "audio": math.pi / 2,
-            "vision": 3 * math.pi / 4,
-            "metrics": math.pi,
-        })
-        cross_modal_kernel_weight: float = 0.35
-        federated: bool = False
-        federated_sync_lr: float = 0.01
-        federated_sync_freq: int = 100
-        federated_min_resonance: float = 0.2
-        node_id: str = "local"
-        sparse_routing: bool = False
-        num_shards: int = 8
-        top_shards: int = 3
-        swarm_memory: bool = False
-        swarm_consensus_threshold: float = 0.5
-        swarm_max_agents: int = 10
-        swarm_vote_weight: float = 0.3
-        triton_backend: bool = False
-        min_nodes_for_gpu: int = 2000
+    cross_modal: bool = False
+    modal_phase_offsets: Dict[str, float] = field(default_factory=lambda: {
+        "text": 0.0,
+        "code": math.pi / 4,
+        "audio": math.pi / 2,
+        "vision": 3 * math.pi / 4,
+        "metrics": math.pi,
+    })
+    cross_modal_kernel_weight: float = 0.35
+    federated: bool = False
+    federated_sync_lr: float = 0.01
+    federated_sync_freq: int = 100
+    federated_min_resonance: float = 0.2
+    node_id: str = "local"
+    sparse_routing: bool = False
+    num_shards: int = 8
+    top_shards: int = 3
+    swarm_memory: bool = False
+    swarm_consensus_threshold: float = 0.5
+    swarm_max_agents: int = 10
+    swarm_vote_weight: float = 0.3
+    triton_backend: bool = False
+    min_nodes_for_gpu: int = 2000
 
 
 @dataclass
 class SOTConfig:
-        sot_enabled: bool = False
-        sot_token_dim: Optional[int] = None  # None = same as latent_dim
-        sot_max_vocab: int = 4096
-        sot_merge_threshold: float = 0.7
-        sot_contrastive_lr: float = 0.01
-        sot_adaptive_lr: bool = True  # Scale lr by sqrt(token_dim / latent_dim)
-        sot_negatives_per_query: int = 5
-        sot_ssm_sync: bool = False
-        sot_diagonal_ssm: bool = True  # O(N*d) instead of O(N*d^2)
-        sot_merge_freq: int = 100
-        sot_min_cooccurrence: int = 5
-        sot_use_for_query: bool = False
-        sot_warm_start_corpus: Optional[str] = None  # Path to JSON corpus for warm-start
-        sot_attention_pooling: bool = False  # IDF + position weighted pooling
-        sot_hard_negatives: bool = False  # Use hardest negatives in contrastive learning
-        sot_retrieval_feedback: bool = False  # Update embeddings from query feedback
-        sot_skipgram_window: int = 1  # 1=adjacent only, >1=skip-gram window
-        sot_subword_seed: bool = False  # Pre-seed with common byte n-grams
-        sot_bootstrap_projection: Optional[str] = None  # Path to .npz bootstrap file
-        sot_bootstrap_corpus: Optional[str] = None  # Path to JSON corpus for auto-bootstrap
-        sot_bootstrap_model: str = "all-MiniLM-L6-v2"  # Teacher model for auto-bootstrap
-        sot_bootstrap_fasttext_model: Optional[str] = None  # Path to gensim model for FastText bootstrap
-        sot_tokenization_mode: str = "word"  # "byte" or "word"
-        sot_max_cooccurrence: int = 100_000  # Max co-occurrence entries before pruning
+    sot_enabled: bool = False
+    sot_token_dim: Optional[int] = None  # None = same as latent_dim
+    sot_max_vocab: int = 4096
+    sot_merge_threshold: float = 0.7
+    sot_contrastive_lr: float = 0.01
+    sot_adaptive_lr: bool = True  # Scale lr by sqrt(token_dim / latent_dim)
+    sot_negatives_per_query: int = 5
+    sot_ssm_sync: bool = False
+    sot_diagonal_ssm: bool = True  # O(N*d) instead of O(N*d^2)
+    sot_merge_freq: int = 100
+    sot_min_cooccurrence: int = 5
+    sot_use_for_query: bool = False
+    # Path to JSON corpus for warm-start
+    sot_warm_start_corpus: Optional[str] = None
+    sot_attention_pooling: bool = False  # IDF + position weighted pooling
+    sot_hard_negatives: bool = False  # Use hardest negatives in contrastive learning
+    sot_retrieval_feedback: bool = False  # Update embeddings from query feedback
+    sot_skipgram_window: int = 1  # 1=adjacent only, >1=skip-gram window
+    sot_subword_seed: bool = False  # Pre-seed with common byte n-grams
+    # Path to .npz bootstrap file
+    sot_bootstrap_projection: Optional[str] = None
+    # Path to JSON corpus for auto-bootstrap
+    sot_bootstrap_corpus: Optional[str] = None
+    sot_bootstrap_model: str = "all-MiniLM-L6-v2"  # Teacher model for auto-bootstrap
+    # Path to gensim model for FastText bootstrap
+    sot_bootstrap_fasttext_model: Optional[str] = None
+    sot_tokenization_mode: str = "word"  # "byte" or "word"
+    sot_max_cooccurrence: int = 100_000  # Max co-occurrence entries before pruning
 
 
 @dataclass(init=False, repr=False, eq=False)

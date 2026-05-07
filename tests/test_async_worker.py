@@ -2,7 +2,6 @@
 
 import asyncio
 import numpy as np
-import pytest
 from rtmdk.memory.core import RTMDKMemory
 from rtmdk.memory.config import RTMDKConfig
 
@@ -70,7 +69,8 @@ class TestAsyncWorker:
         mem = RTMDKMemory(config=cfg, embedder=embedder, wal_path=wal_path)
 
         # Fill the queue without consuming
-        mem.field.save_q.put_nowait({"embeddings": np.zeros((1, 64), dtype=np.float32), "contents": [{"text": "filler"}]})
+        mem.field.save_q.put_nowait({"embeddings": np.zeros(
+            (1, 64), dtype=np.float32), "contents": [{"text": "filler"}]})
 
         n = 3
         embeddings = np.random.randn(n, 64).astype(np.float32)

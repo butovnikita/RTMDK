@@ -12,7 +12,7 @@ Mathematics:
 """
 
 import numpy as np
-from typing import List, Tuple, Optional
+from typing import List, Tuple
 
 
 class ConformalCalibrator:
@@ -20,7 +20,8 @@ class ConformalCalibrator:
 
     def __init__(self, alpha: float = 0.1):
         self.alpha = alpha
-        self.calibration_scores: List[float] = []  # relevance scores from calibration
+        # relevance scores from calibration
+        self.calibration_scores: List[float] = []
 
     def fit(self, scores: List[float]) -> None:
         """Replace calibration scores with a held-out set."""
@@ -41,7 +42,8 @@ class ConformalCalibrator:
         if n == 0:
             return 0.0
         # Non-conformity: lower score = higher non-conformity
-        non_conformity = np.array([1.0 - s for s in self.calibration_scores], dtype=np.float64)
+        non_conformity = np.array(
+            [1.0 - s for s in self.calibration_scores], dtype=np.float64)
         # Quantile level per Shafer-Vovk ICP
         q_level = np.ceil((n + 1) * (1.0 - self.alpha)) / n
         q_level = min(q_level, 1.0)
@@ -49,7 +51,11 @@ class ConformalCalibrator:
         threshold = max(0.0, 1.0 - float(q_hat))
         return threshold
 
-    def predict(self, scores: List[float], node_ids: List[str]) -> Tuple[List[str], float, float]:
+    def predict(self,
+                scores: List[float],
+                node_ids: List[str]) -> Tuple[List[str],
+                                              float,
+                                              float]:
         """Return prediction set, confidence level, and threshold.
 
         Args:
@@ -60,7 +66,9 @@ class ConformalCalibrator:
             (prediction_set, confidence, threshold)
         """
         threshold = self.get_threshold()
-        prediction_set = [nid for nid, s in zip(node_ids, scores) if s >= threshold]
+        prediction_set = [
+            nid for nid, s in zip(
+                node_ids, scores) if s >= threshold]
         confidence = 1.0 - self.alpha
         return prediction_set, confidence, threshold
 

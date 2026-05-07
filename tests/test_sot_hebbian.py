@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from rtmdk.memory.self_organizing_field import ContrastiveHebbian, EmbeddingFieldSSM, SOTokenizer
 
@@ -46,7 +45,8 @@ class TestContrastiveHebbianTokenUpdate:
         embeddings = {
             0: np.array([0.9, 0.4, 0.0], dtype=np.float32),
             1: np.array([0.4, 0.9, 0.0], dtype=np.float32),
-            2: np.array([0.5, 0.0, 0.8], dtype=np.float32),  # slight overlap with 0
+            # slight overlap with 0
+            2: np.array([0.5, 0.0, 0.8], dtype=np.float32),
         }
         for k in embeddings:
             embeddings[k] /= np.linalg.norm(embeddings[k])
@@ -66,13 +66,15 @@ class TestContrastiveHebbianTokenUpdate:
             embeddings[k] /= np.linalg.norm(embeddings[k])
         ch.update(embeddings, positives=[0, 1], negatives=[2])
         for emb in embeddings.values():
-            assert np.abs(np.linalg.norm(emb) - 1.0) < 1e-4, "Embeddings should stay unit norm"
+            assert np.abs(np.linalg.norm(emb) -
+                          1.0) < 1e-4, "Embeddings should stay unit norm"
 
     def test_empty_positives_no_crash(self):
         ch = ContrastiveHebbian(lr=LR)
         embeddings = {0: np.array([1.0, 0.0], dtype=np.float32)}
         ch.update(embeddings, positives=[], negatives=[])
-        assert np.allclose(embeddings[0], np.array([1.0, 0.0], dtype=np.float32))
+        assert np.allclose(embeddings[0], np.array(
+            [1.0, 0.0], dtype=np.float32))
 
     def test_single_positive_no_change(self):
         ch = ContrastiveHebbian(lr=LR)
@@ -131,7 +133,10 @@ class TestContrastiveHebbianFieldUpdate:
 class TestEmbeddingFieldSSMInit:
     def test_init_with_tokenizer(self):
         tok = SOTokenizer(latent_dim=LATENT_DIM, token_dim=TOKEN_DIM)
-        ssm = EmbeddingFieldSSM(latent_dim=LATENT_DIM, tokenizer=tok, diagonal=True)
+        ssm = EmbeddingFieldSSM(
+            latent_dim=LATENT_DIM,
+            tokenizer=tok,
+            diagonal=True)
         assert ssm.latent_dim == LATENT_DIM
         assert ssm.tokenizer is tok
         assert ssm.ssm is not None
@@ -139,15 +144,22 @@ class TestEmbeddingFieldSSMInit:
 
     def test_diagonal_ssm_complexity(self):
         tok = SOTokenizer(latent_dim=LATENT_DIM, token_dim=TOKEN_DIM)
-        ssm = EmbeddingFieldSSM(latent_dim=LATENT_DIM, tokenizer=tok, diagonal=True)
+        ssm = EmbeddingFieldSSM(
+            latent_dim=LATENT_DIM,
+            tokenizer=tok,
+            diagonal=True)
         stats = ssm.ssm.get_stats()
-        assert "O(N*64)" in stats["complexity"] or "diagonal" in str(stats).lower() or stats["diagonal"] is True
+        assert "O(N*64)" in stats["complexity"] or "diagonal" in str(
+            stats).lower() or stats["diagonal"] is True
 
 
 class TestEmbeddingFieldSSMStep:
     def test_step_returns_momentum_vector(self):
         tok = SOTokenizer(latent_dim=LATENT_DIM, token_dim=TOKEN_DIM)
-        ssm = EmbeddingFieldSSM(latent_dim=LATENT_DIM, tokenizer=tok, diagonal=True)
+        ssm = EmbeddingFieldSSM(
+            latent_dim=LATENT_DIM,
+            tokenizer=tok,
+            diagonal=True)
         tokens = tok.encode("hi")
         field_state = np.zeros(LATENT_DIM, dtype=np.float32)
         momentum = ssm.step(tokens, field_state)
@@ -156,33 +168,47 @@ class TestEmbeddingFieldSSMStep:
 
     def test_step_empty_tokens(self):
         tok = SOTokenizer(latent_dim=LATENT_DIM, token_dim=TOKEN_DIM)
-        ssm = EmbeddingFieldSSM(latent_dim=LATENT_DIM, tokenizer=tok, diagonal=True)
+        ssm = EmbeddingFieldSSM(
+            latent_dim=LATENT_DIM,
+            tokenizer=tok,
+            diagonal=True)
         momentum = ssm.step([], np.zeros(LATENT_DIM, dtype=np.float32))
         assert momentum.shape == (LATENT_DIM,)
 
     def test_step_different_field_states_give_different_outputs(self):
         tok = SOTokenizer(latent_dim=LATENT_DIM, token_dim=TOKEN_DIM)
-        ssm = EmbeddingFieldSSM(latent_dim=LATENT_DIM, tokenizer=tok, diagonal=True)
+        ssm = EmbeddingFieldSSM(
+            latent_dim=LATENT_DIM,
+            tokenizer=tok,
+            diagonal=True)
         tokens = tok.encode("abc")
         m1 = ssm.step(tokens, np.zeros(LATENT_DIM, dtype=np.float32))
         m2 = ssm.step(tokens, np.ones(LATENT_DIM, dtype=np.float32) * 0.5)
-        assert not np.allclose(m1, m2), "Different field states should produce different momentum"
+        assert not np.allclose(
+            m1, m2), "Different field states should produce different momentum"
 
 
 class TestEmbeddingFieldSSMSync:
     def test_sync_embeddings_updates_token_embeddings(self):
         tok = SOTokenizer(latent_dim=LATENT_DIM, token_dim=TOKEN_DIM)
-        ssm = EmbeddingFieldSSM(latent_dim=LATENT_DIM, tokenizer=tok, diagonal=True)
+        ssm = EmbeddingFieldSSM(
+            latent_dim=LATENT_DIM,
+            tokenizer=tok,
+            diagonal=True)
         tokens = tok.encode("ab")
         original_embs = [tok.token_embeddings[t].copy() for t in tokens]
         momentum = np.ones(LATENT_DIM, dtype=np.float32) * 0.1
         ssm.sync_embeddings(tokens, momentum)
         for t, orig in zip(tokens, original_embs):
-            assert not np.allclose(tok.token_embeddings[t], orig), "Token embeddings should change after sync"
+            assert not np.allclose(
+                tok.token_embeddings[t], orig), "Token embeddings should change after sync"
 
     def test_sync_embeddings_preserves_shape(self):
         tok = SOTokenizer(latent_dim=LATENT_DIM, token_dim=TOKEN_DIM)
-        ssm = EmbeddingFieldSSM(latent_dim=LATENT_DIM, tokenizer=tok, diagonal=True)
+        ssm = EmbeddingFieldSSM(
+            latent_dim=LATENT_DIM,
+            tokenizer=tok,
+            diagonal=True)
         tokens = tok.encode("test")
         momentum = np.ones(LATENT_DIM, dtype=np.float32) * 0.01
         ssm.sync_embeddings(tokens, momentum)
@@ -192,5 +218,8 @@ class TestEmbeddingFieldSSMSync:
 
     def test_sync_empty_tokens_no_crash(self):
         tok = SOTokenizer(latent_dim=LATENT_DIM, token_dim=TOKEN_DIM)
-        ssm = EmbeddingFieldSSM(latent_dim=LATENT_DIM, tokenizer=tok, diagonal=True)
+        ssm = EmbeddingFieldSSM(
+            latent_dim=LATENT_DIM,
+            tokenizer=tok,
+            diagonal=True)
         ssm.sync_embeddings([], np.zeros(LATENT_DIM, dtype=np.float32))

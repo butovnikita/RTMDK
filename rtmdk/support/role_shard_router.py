@@ -14,11 +14,10 @@ For multi-tenant: shards by user/role with full isolation by default.
 from __future__ import annotations
 import re
 import time
-from dataclasses import dataclass, field, asdict
-from typing import Dict, List, Optional, Any, Set, Tuple
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Any, Set
 from collections import defaultdict
 import numpy as np
-from numpy.typing import NDArray
 
 
 # Role keywords for auto-detection
@@ -145,7 +144,11 @@ class RoleShardRouter:
         for role in (shards or {DEFAULT_ROLE}):
             self.shards[role] = RoleShard(role=role)
 
-    def add_node(self, node_id: str, text: str, role: Optional[str] = None) -> str:
+    def add_node(
+            self,
+            node_id: str,
+            text: str,
+            role: Optional[str] = None) -> str:
         """Add a node to the appropriate shard.
 
         Args:
@@ -181,7 +184,10 @@ class RoleShardRouter:
         """Get the role of a node."""
         return self.node_role_map.get(node_id, DEFAULT_ROLE)
 
-    def get_relevant_shards(self, query_text: str, top_n: int = 2) -> List[str]:
+    def get_relevant_shards(
+            self,
+            query_text: str,
+            top_n: int = 2) -> List[str]:
         """Get the most relevant shards for a query.
 
         Returns top_n shard roles ordered by relevance.
@@ -199,7 +205,8 @@ class RoleShardRouter:
             if detected_role == role:
                 shard_scores[role] = 1.0
             elif role == DEFAULT_ROLE:
-                shard_scores[role] = 0.5  # Default shard is always relevant fallback
+                # Default shard is always relevant fallback
+                shard_scores[role] = 0.5
             else:
                 shard_scores[role] = 0.1
 
@@ -245,7 +252,8 @@ class RoleShardRouter:
                 for other_id, other_phi in new_phases.items():
                     if other_id != nid:
                         coupling += np.sin(other_phi - phi)
-                updated_phases[nid] = (phi + 0.01 * K_over_N * coupling) % (2 * np.pi)
+                updated_phases[nid] = (
+                    phi + 0.01 * K_over_N * coupling) % (2 * np.pi)
 
             # Apply phase updates
             for nid, new_phi in updated_phases.items():
@@ -279,8 +287,11 @@ class RoleShardRouter:
     def get_state(self) -> Dict:
         """Export state for serialization."""
         return {
-            "shards": {role: shard.to_dict() for role, shard in self.shards.items()},
-            "node_role_map": dict(self.node_role_map),
+            "shards": {
+                role: shard.to_dict() for role,
+                shard in self.shards.items()},
+            "node_role_map": dict(
+                self.node_role_map),
             "cross_shard_threshold": self.cross_shard_threshold,
             "auto_role_detection": self.auto_role_detection,
         }

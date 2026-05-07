@@ -9,7 +9,7 @@ Simplified EKF for node position uncertainty tracking.
 
 import numpy as np
 from numpy.typing import NDArray
-from typing import Optional, Tuple
+from typing import Tuple
 
 from rtmdk.memory.geometry import exp_map_poincare, log_map_poincare
 
@@ -41,7 +41,10 @@ class KalmanFilter:
     def init_covariance(self) -> NDArray:
         """Return initial covariance for a new node."""
         if self.diagonal_approx:
-            return np.full(self.latent_dim, self.init_variance, dtype=np.float32)
+            return np.full(
+                self.latent_dim,
+                self.init_variance,
+                dtype=np.float32)
         return np.eye(self.latent_dim, dtype=np.float32) * self.init_variance
 
     def predict(self, covariance: NDArray) -> NDArray:
@@ -64,7 +67,8 @@ class KalmanFilter:
             return self._update_diagonal(x, z, covariance)
         return self._update_full(x, z, covariance)
 
-    def _update_diagonal(self, x: NDArray, z: NDArray, cov: NDArray) -> Tuple[NDArray, NDArray]:
+    def _update_diagonal(self, x: NDArray, z: NDArray,
+                         cov: NDArray) -> Tuple[NDArray, NDArray]:
         """Scalar Kalman update per dimension."""
         # Innovation variance per dimension
         S = cov + self.measurement_noise
@@ -81,7 +85,8 @@ class KalmanFilter:
         cov_new = (1.0 - K) * cov
         return x_new.astype(np.float32), cov_new.astype(np.float32)
 
-    def _update_full(self, x: NDArray, z: NDArray, cov: NDArray) -> Tuple[NDArray, NDArray]:
+    def _update_full(self, x: NDArray, z: NDArray,
+                     cov: NDArray) -> Tuple[NDArray, NDArray]:
         """Full vector Kalman update."""
         # Kalman gain: K = Σ H^T (H Σ H^T + R)^{-1}
         # H = I (direct observation of position)

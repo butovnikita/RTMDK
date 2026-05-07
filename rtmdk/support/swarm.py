@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, Any, Dict
+from typing import TYPE_CHECKING, Any, Dict, List
 
 import numpy as np
 
@@ -21,7 +21,10 @@ class SwarmConsensusProtocol:
         self.agents: Dict[str, Dict] = {}
         self._consensus_log: List[Dict] = []
 
-    def register_agent(self, agent_id: str, specialization: str = "general") -> bool:
+    def register_agent(
+            self,
+            agent_id: str,
+            specialization: str = "general") -> bool:
         if len(self.agents) >= self.max_agents:
             return False
         self.agents[agent_id] = {
@@ -30,7 +33,8 @@ class SwarmConsensusProtocol:
         }
         return True
 
-    def propose_attractor(self, proposer_id: str, attractor: Dict[str, Any]) -> bool:
+    def propose_attractor(self, proposer_id: str,
+                          attractor: Dict[str, Any]) -> bool:
         if proposer_id not in self.agents:
             return False
         total_weight = 0
@@ -70,7 +74,8 @@ class SwarmConsensusProtocol:
         }
 
     def get_state(self) -> Dict:
-        return {"agents": dict(self.agents), "consensus_log": self._consensus_log[-100:]}
+        return {"agents": dict(self.agents),
+                "consensus_log": self._consensus_log[-100:]}
 
     def load_state(self, state: Dict):
         self.agents = state.get("agents", {})

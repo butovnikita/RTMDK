@@ -3,9 +3,12 @@ SOT token_dim scaling benchmark: 64 -> 1536.
 Measures embedding quality, memory, and latency after warm-start + contrastive learning.
 Compares adaptive_lr (scaled by sqrt(token_dim/latent_dim)) vs fixed lr.
 """
-import os, sys, time, numpy as np
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rtmdk.memory.self_organizing_field import SOTokenizer
+import os
+import sys
+import time
+import numpy as np
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 os.environ["RTMDK_ADD_RATE_LIMIT"] = "0"
 np.random.seed(42)
@@ -115,7 +118,8 @@ def main():
             r = benchmark(td, adaptive)
             results.append((td, adaptive, r))
             label = "yes" if adaptive else "no "
-            print(f"{td:9d} | {label}    | {r['mem_mb']:6.2f} | {r['embed_ms']*1000:8.1f} | {r['margin_before']:13.3f} | {r['margin_after']:12.3f} | {r['pos_after']:9.3f} | {r['neg_after']:9.3f}")
+            print(
+                f"{td:9d} | {label}    | {r['mem_mb']:6.2f} | {r['embed_ms']*1000:8.1f} | {r['margin_before']:13.3f} | {r['margin_after']:12.3f} | {r['pos_after']:9.3f} | {r['neg_after']:9.3f}")
 
     print("\n" + "=" * 100)
     print("ADAPTIVE LR IMPACT (delta margin vs fixed lr)")
@@ -124,7 +128,8 @@ def main():
         fixed = next(r for d, a, r in results if d == td and not a)
         adaptive = next(r for d, a, r in results if d == td and a)
         delta = adaptive["margin_after"] - fixed["margin_after"]
-        print(f"  {td:4d}: fixed={fixed['margin_after']:.3f}  adaptive={adaptive['margin_after']:.3f}  delta={delta:+.3f}")
+        print(
+            f"  {td:4d}: fixed={fixed['margin_after']:.3f}  adaptive={adaptive['margin_after']:.3f}  delta={delta:+.3f}")
 
 
 if __name__ == "__main__":

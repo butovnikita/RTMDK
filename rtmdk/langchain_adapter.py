@@ -6,7 +6,6 @@ and as_langchain() helper for use with LangChain chains.
 """
 from __future__ import annotations
 
-import time
 from typing import List, Callable, Optional, Dict, Any
 
 try:
@@ -86,10 +85,10 @@ class RTMDKMemory(BaseChatMessageHistory):
             content = " ".join(str(c) for c in content)
 
         if self._embedder:
-            embedding = self._embedder(str(content))
+            self._embedder(str(content))
         else:
             rng = np.random.default_rng(hash(str(content)) % 2**32)
-            embedding = rng.standard_normal(768).astype(np.float32) * 0.1
+            rng.standard_normal(768).astype(np.float32) * 0.1
 
         role = "user" if isinstance(message, HumanMessage) else "assistant"
         self._core.save_context(

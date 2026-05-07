@@ -3,12 +3,15 @@ A/B benchmark: adaptive_bandwidth on REAL semantic embeddings (SBERT).
 Uses sentence-transformers (no LM Studio needed).
 """
 
-import sys, os, json, time
+from rtmdk.memory.config import RTMDKConfig
+from rtmdk.memory.field import RTMDKField
+import numpy as np
+import sys
+import os
+import json
+import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import numpy as np
-from rtmdk.memory.field import RTMDKField
-from rtmdk.memory.config import RTMDKConfig
 
 os.environ["RTMDK_ADD_RATE_LIMIT"] = "0"
 np.random.seed(42)
@@ -51,14 +54,18 @@ def evaluate(field, records, model, top_k=5):
     correct_k = 0
     total = 0
     for rec in records:
-        q_emb = model.encode(rec["query"], convert_to_numpy=True).astype(np.float32)
+        q_emb = model.encode(
+            rec["query"],
+            convert_to_numpy=True).astype(
+            np.float32)
         results = field.query(q_emb, top_k=top_k)
         if not results:
             continue
         top_text = results[0][2].content.get("text", "")
         if top_text == rec["context"]:
             correct_1 += 1
-        found = any(r[2].content.get("text") == rec["context"] for r in results)
+        found = any(r[2].content.get("text") == rec["context"]
+                    for r in results)
         if found:
             correct_k += 1
         total += 1
@@ -73,7 +80,8 @@ def run(name, cfg, records, model, skip_proj=True):
     field = build_field(records, cfg, model, skip_proj=skip_proj)
     build_t = time.time() - t0
     stats = evaluate(field, records, model, top_k=5)
-    print(f"  Build: {build_t:.1f}s  R@1: {stats['R@1']:.3f}  R@5: {stats['R@5']:.3f}")
+    print(
+        f"  Build: {build_t:.1f}s  R@1: {stats['R@1']:.3f}  R@5: {stats['R@5']:.3f}")
     return field, stats
 
 
@@ -110,7 +118,8 @@ def main():
         resonance_kernel="cosine", phase_coupling=0.0,
         min_response=0.001, use_hnsw=False, learn_projection=False,
     )
-    f3, s3 = run("Proj 384->128, global bw", cfg3, subset, model, skip_proj=False)
+    f3, s3 = run("Proj 384->128, global bw", cfg3,
+                 subset, model, skip_proj=False)
 
     # Test 4: Projection 384->128, adaptive k=5
     cfg4 = RTMDKConfig(
@@ -119,7 +128,8 @@ def main():
         resonance_kernel="cosine", phase_coupling=0.0,
         min_response=0.001, use_hnsw=False, learn_projection=False,
     )
-    f4, s4 = run("Proj 384->128, adaptive k=5", cfg4, subset, model, skip_proj=False)
+    f4, s4 = run("Proj 384->128, adaptive k=5", cfg4,
+                 subset, model, skip_proj=False)
 
     # Test 5: Projection 384->128, adaptive k=20 (more stable density est)
     cfg5 = RTMDKConfig(
@@ -128,11 +138,12 @@ def main():
         resonance_kernel="cosine", phase_coupling=0.0,
         min_response=0.001, use_hnsw=False, learn_projection=False,
     )
-    f5, s5 = run("Proj 384->128, adaptive k=20", cfg5, subset, model, skip_proj=False)
+    f5, s5 = run("Proj 384->128, adaptive k=20",
+                 cfg5, subset, model, skip_proj=False)
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("SUMMARY")
-    print("="*60)
+    print("=" * 60)
     rows = [
         ("No proj, global", s1),
         ("No proj, adaptive k=5", s2),

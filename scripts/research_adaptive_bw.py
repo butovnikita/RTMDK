@@ -10,18 +10,17 @@ Metrics:
 - Median absolute deviation of BW
 """
 
+from rtmdk.memory.config import RTMDKConfig
+from rtmdk.memory.field import RTMDKField
+from sentence_transformers import SentenceTransformer
+from scipy.spatial import cKDTree
+import numpy as np
 import os
 import sys
 import json
-import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import numpy as np
-from scipy.spatial import cKDTree
-from sentence_transformers import SentenceTransformer
-from rtmdk.memory.field import RTMDKField
-from rtmdk.memory.config import RTMDKConfig
 
 os.environ["RTMDK_ADD_RATE_LIMIT"] = "0"
 np.random.seed(42)
@@ -56,7 +55,10 @@ def evaluate(field, records, model, top_k=5):
     correct_k = 0
     total = 0
     for rec in records:
-        q_emb = model.encode(rec["query"], convert_to_numpy=True).astype(np.float32)
+        q_emb = model.encode(
+            rec["query"],
+            convert_to_numpy=True).astype(
+            np.float32)
         results = field.query(q_emb, top_k=top_k)
         if not results:
             continue
@@ -106,13 +108,18 @@ def compute_bw(positions, global_bw, k, transform, clip_range):
 
 def run_grid_search(field, records, model, base_stats):
     """Grid search over k, transform, clip_range."""
-    configs = []
 
     # k values
     ks = [5, 10, 15, 20, 30, 50]
 
     # transforms
-    transforms = ["sqrt", "linear", "log", "power1_3", "power2_3", "percentile"]
+    transforms = [
+        "sqrt",
+        "linear",
+        "log",
+        "power1_3",
+        "power2_3",
+        "percentile"]
 
     # clip ranges: (lo, hi) or None
     clips = [
@@ -145,11 +152,13 @@ def run_grid_search(field, records, model, base_stats):
 
                 field._cached_bw = bw
                 stats = evaluate(field, records, model, top_k=5)
-                spread = float(np.percentile(bw, 99) / max(np.percentile(bw, 1), 1e-8))
+                spread = float(np.percentile(bw, 99) /
+                               max(np.percentile(bw, 1), 1e-8))
                 delta_r1 = stats["R@1"] - base_stats["R@1"]
 
                 clip_str = f"{clip_range[0]}-{clip_range[1]}" if clip_range else "none"
-                print(f"{k:>3} {transform:>12} {clip_str:>16} {stats['R@1']:>6.3f} {stats['R@5']:>6.3f} {spread:>8.1f}x {delta_r1:>+7.3f}")
+                print(
+                    f"{k:>3} {transform:>12} {clip_str:>16} {stats['R@1']:>6.3f} {stats['R@5']:>6.3f} {spread:>8.1f}x {delta_r1:>+7.3f}")
 
                 if stats["R@1"] > best["R@1"]:
                     best = {
@@ -164,7 +173,8 @@ def run_grid_search(field, records, model, base_stats):
     k, transform, clip_range = best["config"]
     clip_str = f"{clip_range[0]}-{clip_range[1]}" if clip_range else "none"
     print(f"  k={k}, transform={transform}, clip={clip_str}")
-    print(f"  R@1={best['stats']['R@1']:.3f} (baseline={base_stats['R@1']:.3f})")
+    print(
+        f"  R@1={best['stats']['R@1']:.3f} (baseline={base_stats['R@1']:.3f})")
     print(f"  spread={best['spread']:.1f}x")
 
     return best
@@ -191,7 +201,8 @@ def main():
     field = build_field(records, cfg, model)
     field._build_node_cache()
     base_stats = evaluate(field, records, model, top_k=5)
-    print(f"Baseline R@1: {base_stats['R@1']:.3f}  R@5: {base_stats['R@5']:.3f}")
+    print(
+        f"Baseline R@1: {base_stats['R@1']:.3f}  R@5: {base_stats['R@5']:.3f}")
 
     # Enable adaptive flag so field uses _cached_bw
     field.cfg.adaptive_bandwidth = True
@@ -219,11 +230,13 @@ def main():
 
     field_proj.cfg.adaptive_bandwidth = True
     k, transform, clip_range = best["config"]
-    bw_proj = compute_bw(field_proj._cached_positions, 1.0, k, transform, clip_range)
+    bw_proj = compute_bw(field_proj._cached_positions,
+                         1.0, k, transform, clip_range)
     if bw_proj is not None:
         field_proj._cached_bw = bw_proj
         proj_stats = evaluate(field_proj, records, model, top_k=5)
-        print(f"Projection adaptive  R@1: {proj_stats['R@1']:.3f}  delta={proj_stats['R@1'] - base_proj['R@1']:+.3f}")
+        print(
+            f"Projection adaptive  R@1: {proj_stats['R@1']:.3f}  delta={proj_stats['R@1'] - base_proj['R@1']:+.3f}")
 
 
 if __name__ == "__main__":

@@ -62,7 +62,8 @@ class MemoryNode:
     evidence_spans: List[Dict] = field(default_factory=list)
     fact_state: str = "active"  # active | expired | superseded
     superseded_by: Optional[str] = None
-    covariance: Optional[NDArray[np.float32]] = None  # P2.2: Kalman uncertainty
+    covariance: Optional[NDArray[np.float32]
+                         ] = None  # P2.2: Kalman uncertainty
 
     def to_dict(self) -> Dict:
         d = asdict(self)
@@ -88,15 +89,19 @@ class MemoryNode:
     def from_dict(cls, data: Dict) -> "MemoryNode":
         data["latent_pos"] = np.array(data["latent_pos"], dtype=np.float32)
         if data.get("pre_consolidation_pos"):
-            data["pre_consolidation_pos"] = np.array(data["pre_consolidation_pos"], dtype=np.float32)
+            data["pre_consolidation_pos"] = np.array(
+                data["pre_consolidation_pos"], dtype=np.float32)
         if data.get("gradient_cache"):
-            data["gradient_cache"] = np.array(data["gradient_cache"], dtype=np.float32)
+            data["gradient_cache"] = np.array(
+                data["gradient_cache"], dtype=np.float32)
         if data.get("velocity"):
             data["velocity"] = np.array(data["velocity"], dtype=np.float32)
         if data.get("acceleration"):
-            data["acceleration"] = np.array(data["acceleration"], dtype=np.float32)
+            data["acceleration"] = np.array(
+                data["acceleration"], dtype=np.float32)
         if data.get("modal_embedding"):
-            data["modal_embedding"] = np.array(data["modal_embedding"], dtype=np.float32)
+            data["modal_embedding"] = np.array(
+                data["modal_embedding"], dtype=np.float32)
         if data.get("covariance"):
             data["covariance"] = np.array(data["covariance"], dtype=np.float32)
         for k, v in data.get("do_interventions", {}).items():
@@ -136,9 +141,13 @@ class ContradictionRecord:
 
     def to_dict(self) -> Dict:
         return {
-            "id": self.id, "effect_node": self.effect_node, "causes": self.causes,
-            "timestamp": self.timestamp, "resolved": self.resolved,
-            "resolution": self.resolution, "contradiction_reason": self.contradiction_reason,
+            "id": self.id,
+            "effect_node": self.effect_node,
+            "causes": self.causes,
+            "timestamp": self.timestamp,
+            "resolved": self.resolved,
+            "resolution": self.resolution,
+            "contradiction_reason": self.contradiction_reason,
         }
 
 
@@ -152,12 +161,15 @@ class CounterfactualResult:
     assumptions: List[str]
 
     def to_dict(self) -> Dict:
-        return {
-            "query": self.query, "intervention": self.intervention,
-            "predicted_outcomes": [{"node": n, "probability": p} for n, p in self.predicted_outcomes],
-            "confidence": self.confidence, "reasoning_path": self.reasoning_path,
-            "assumptions": self.assumptions,
-        }
+        return {"query": self.query,
+                "intervention": self.intervention,
+                "predicted_outcomes": [{"node": n,
+                                        "probability": p} for n,
+                                       p in self.predicted_outcomes],
+                "confidence": self.confidence,
+                "reasoning_path": self.reasoning_path,
+                "assumptions": self.assumptions,
+                }
 
 
 @dataclass

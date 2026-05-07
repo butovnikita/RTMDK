@@ -2,13 +2,16 @@
 from __future__ import annotations
 
 from collections import deque
-from typing import Optional
 
 import numpy as np
 
 
 class AdaptiveThreshold:
-    def __init__(self, window_size: int = 30, base_threshold: float = 0.25, sensitivity: float = 0.5):
+    def __init__(
+            self,
+            window_size: int = 30,
+            base_threshold: float = 0.25,
+            sensitivity: float = 0.5):
         self.window: deque = deque(maxlen=window_size)
         self.base_threshold = base_threshold
         self.sensitivity = sensitivity
@@ -17,7 +20,13 @@ class AdaptiveThreshold:
     def record_tension(self, tension: float):
         self.window.append(tension)
         if len(self.window) >= 5:
-            self.current_threshold = max(0.01, np.mean(self.window) + self.sensitivity * np.std(self.window))
+            self.current_threshold = max(
+                0.01,
+                np.mean(
+                    self.window) +
+                self.sensitivity *
+                np.std(
+                    self.window))
 
     def get_threshold(self) -> float:
         return self.current_threshold

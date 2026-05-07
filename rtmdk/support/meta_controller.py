@@ -8,11 +8,13 @@ import numpy as np
 from scipy.spatial.distance import cdist
 
 if TYPE_CHECKING:
-    from rtmdk.nodes import MemoryNode
+    pass
 
 
 class MetaController:
-    def __init__(self, n_trials: int = 20, optimize_params: Optional[List[str]] = None,
+    def __init__(self,
+                 n_trials: int = 20,
+                 optimize_params: Optional[List[str]] = None,
                  optimization_freq: int = 500):
         self.n_trials = n_trials
         self.optimize_params = optimize_params or [
@@ -46,17 +48,27 @@ class MetaController:
         def objective(trial):
             params = {}
             if "decay_rate" in self.optimize_params:
-                params["decay_rate"] = trial.suggest_float("decay_rate", 0.95, 0.9999)
+                params["decay_rate"] = trial.suggest_float(
+                    "decay_rate", 0.95, 0.9999)
             if "tension_threshold" in self.optimize_params:
-                params["tension_threshold"] = trial.suggest_float("tension_threshold", 0.1, 0.5)
+                params["tension_threshold"] = trial.suggest_float(
+                    "tension_threshold", 0.1, 0.5)
             if "phase_coupling" in self.optimize_params:
-                params["phase_coupling"] = trial.suggest_float("phase_coupling", 0.05, 0.8)
+                params["phase_coupling"] = trial.suggest_float(
+                    "phase_coupling", 0.05, 0.8)
             if "bandwidth" in self.optimize_params:
-                params["bandwidth"] = trial.suggest_float("bandwidth", 0.3, 5.0)
+                params["bandwidth"] = trial.suggest_float(
+                    "bandwidth", 0.3, 5.0)
             return self._evaluate_params(field, params)
 
-        study = self.optuna.create_study(direction="maximize", sampler=self.optuna.samplers.TPESampler(seed=42))
-        study.optimize(objective, n_trials=self.n_trials, show_progress_bar=False)
+        study = self.optuna.create_study(
+            direction="maximize",
+            sampler=self.optuna.samplers.TPESampler(
+                seed=42))
+        study.optimize(
+            objective,
+            n_trials=self.n_trials,
+            show_progress_bar=False)
         best_params = study.best_params
         self._best_params = best_params
         self._total_optimizations += 1
@@ -74,7 +86,9 @@ class MetaController:
             "phase_coupling": [0.1, 0.2, 0.3, 0.4, 0.5],
             "bandwidth": [0.5, 1.0, 1.5, 2.0, 3.0],
         }
-        filtered_grid = {k: v for k, v in grid.items() if k in self.optimize_params}
+        filtered_grid = {
+            k: v for k,
+            v in grid.items() if k in self.optimize_params}
         best_score = -float("inf")
         best_params = {}
         keys = list(filtered_grid.keys())
@@ -82,7 +96,8 @@ class MetaController:
         n_trials = min(50, max(len(v) for v in values) ** len(keys))
 
         for _ in range(n_trials):
-            params = {k: values[i][np.random.randint(len(values[i]))] for i, k in enumerate(keys)}
+            params = {k: values[i][np.random.randint(
+                len(values[i]))] for i, k in enumerate(keys)}
             score = self._evaluate_params(field, params)
             if score > best_score:
                 best_score = score
@@ -118,7 +133,8 @@ class MetaController:
         alive_ratio = np.mean(amplitudes > field.cfg.min_amplitude)
         score += alive_ratio * 0.3
         if "decay_rate" in params:
-            decay_penalty = abs(params["decay_rate"] - field.cfg.decay_rate) * 10
+            decay_penalty = abs(
+                params["decay_rate"] - field.cfg.decay_rate) * 10
             score -= decay_penalty * 0.1
         if field.stats.get("avg_response", 0) > 0:
             score += min(0.5, field.stats["avg_response"] * 0.5)

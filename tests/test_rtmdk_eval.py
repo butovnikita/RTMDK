@@ -7,8 +7,7 @@ Covers:
 3. Conversion tracking
 """
 
-import pytest
-import numpy as np
+import json
 import os
 import tempfile
 
@@ -50,6 +49,3 @@ class TestAnalyticsStore:
             assert store.fire_conversion("signup", "sess_1") is True
             assert store.fire_conversion("signup", "sess_1") is False
             assert store.fire_conversion("signup", "sess_2") is True
-
-
-import json

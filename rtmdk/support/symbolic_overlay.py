@@ -14,10 +14,9 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass, field, asdict
-from typing import Dict, List, Optional, Any, Tuple, Set
+from typing import Dict, List, Optional, Tuple, Set
 from collections import defaultdict
 import numpy as np
-from numpy.typing import NDArray
 
 
 @dataclass
@@ -66,9 +65,11 @@ class ConflictDetector:
 
     def __init__(self, conflict_threshold: float = 0.15):
         self.conflict_threshold = conflict_threshold
-        self._conflicts: List[Tuple[str, str, float]] = []  # (rule_a, rule_b, confidence_diff)
+        # (rule_a, rule_b, confidence_diff)
+        self._conflicts: List[Tuple[str, str, float]] = []
 
-    def detect_conflicts(self, rules: List[SymbolicRule]) -> List[Tuple[str, str]]:
+    def detect_conflicts(
+            self, rules: List[SymbolicRule]) -> List[Tuple[str, str]]:
         """Find rules with same head but opposite confidence trends."""
         self._conflicts = []
         head_rules: Dict[str, List[SymbolicRule]] = defaultdict(list)
@@ -81,8 +82,9 @@ class ConflictDetector:
                 continue
             # Check for opposing bodies
             for i, r1 in enumerate(rls):
-                for r2 in rls[i+1:]:
-                    # Conflict if bodies are mutually exclusive (contain negation or different contexts)
+                for r2 in rls[i + 1:]:
+                    # Conflict if bodies are mutually exclusive (contain
+                    # negation or different contexts)
                     if self._bodies_conflict(r1.body, r2.body):
                         conf_diff = abs(r1.weight - r2.weight)
                         if conf_diff < self.conflict_threshold:
@@ -92,7 +94,8 @@ class ConflictDetector:
                             r1.conflict_with = r2.rule_id
                             r2.conflict_with = r1.rule_id
                             conflicts.append((r1.rule_id, r2.rule_id))
-                            self._conflicts.append((r1.rule_id, r2.rule_id, conf_diff))
+                            self._conflicts.append(
+                                (r1.rule_id, r2.rule_id, conf_diff))
         return conflicts
 
     @staticmethod
@@ -136,7 +139,10 @@ class SymbolicOverlay:
         self._total_extractions: int = 0
         self._inference_history: List[Dict] = []
 
-    def extract_rules_from_field(self, nodes: Dict, causal_edges: Optional[Dict] = None) -> List[SymbolicRule]:
+    def extract_rules_from_field(
+            self,
+            nodes: Dict,
+            causal_edges: Optional[Dict] = None) -> List[SymbolicRule]:
         """Extract Horn clauses from memory field nodes.
 
         Criteria: tier ∈ {semantic, procedural} ∧ self_sup_score > min ∧ tension < max
@@ -166,13 +172,17 @@ class SymbolicOverlay:
 
             # Create rules from concept co-occurrence
             # Single-body rules: concept_i → concept_j
-            for i, head_concept in enumerate(concepts[:3]):  # Limit to first 3 concepts as head
-                body_concepts = [c for j, c in enumerate(concepts) if j != i][:2]  # Up to 2 body terms
+            for i, head_concept in enumerate(
+                    concepts[:3]):  # Limit to first 3 concepts as head
+                body_concepts = [c for j, c in enumerate(
+                    concepts) if j != i][:2]  # Up to 2 body terms
                 if not body_concepts:
                     continue
 
                 # Weight from self_sup_score, salience, and causal strength
-                causal_boost = sum(node.causal_strength.values()) if hasattr(node, 'causal_strength') else 0
+                causal_boost = sum(
+                    node.causal_strength.values()) if hasattr(
+                    node, 'causal_strength') else 0
                 weight = (node.self_sup_score * 0.5 +
                           node.salience * 0.3 +
                           min(1.0, causal_boost) * 0.2)
@@ -215,7 +225,10 @@ class SymbolicOverlay:
         self._total_extractions += 1
         return new_rules
 
-    def forward_chain(self, facts: List[str], max_depth: int = 3) -> List[SymbolicInference]:
+    def forward_chain(
+            self,
+            facts: List[str],
+            max_depth: int = 3) -> List[SymbolicInference]:
         """Perform weighted forward-chaining inference.
 
         Args:
@@ -233,8 +246,11 @@ class SymbolicOverlay:
             new_facts: Dict[str, float] = {}
             for rule in self.rules.values():
                 # Check if all body facts are active
-                body_confidences = [active_facts.get(b, 0.0) for b in rule.body]
-                if all(bc >= self.confidence_threshold for bc in body_confidences):
+                body_confidences = [
+                    active_facts.get(
+                        b, 0.0) for b in rule.body]
+                if all(
+                        bc >= self.confidence_threshold for bc in body_confidences):
                     # Rule fires
                     rule_confidence = rule.weight * min(body_confidences)
                     if rule_confidence >= self.confidence_threshold:
@@ -244,7 +260,8 @@ class SymbolicOverlay:
                         conflict_rules = []
                         if is_conflict:
                             note = f"Contextual exception (conflicts with {rule.conflict_with})"
-                            conflict_rules = [rule.rule_id, rule.conflict_with] if rule.conflict_with else []
+                            conflict_rules = [
+                                rule.rule_id, rule.conflict_with] if rule.conflict_with else []
 
                         inference = SymbolicInference(
                             conclusion=rule.head,
@@ -258,7 +275,8 @@ class SymbolicOverlay:
                         used_rules.add(rule.rule_id)
 
                         # Add to active facts with rule confidence
-                        if rule.head not in active_facts or rule_confidence > active_facts[rule.head]:
+                        if rule.head not in active_facts or rule_confidence > active_facts[
+                                rule.head]:
                             new_facts[rule.head] = rule_confidence
 
             active_facts.update(new_facts)
@@ -274,14 +292,18 @@ class SymbolicOverlay:
 
         return inferences
 
-    def get_symbolic_context(self, facts: List[str], max_depth: int = 3) -> str:
+    def get_symbolic_context(
+            self,
+            facts: List[str],
+            max_depth: int = 3) -> str:
         """Generate symbolic context string for LLM injection."""
         inferences = self.forward_chain(facts, max_depth)
         if not inferences:
             return ""
 
         lines = ["### SYMBOLIC_CONTEXT"]
-        lines.append(f"Extracted rules: {len(self.rules)}, Inferences: {len(inferences)}")
+        lines.append(
+            f"Extracted rules: {len(self.rules)}, Inferences: {len(inferences)}")
         lines.append("")
 
         # Non-conflicting inferences
@@ -294,7 +316,8 @@ class SymbolicOverlay:
                     rule = self.rules.get(rid)
                     if rule:
                         body_str = " ∧ ".join(rule.body)
-                        lines.append(f"    via: W:{rule.weight:.2f} :: {body_str} → {rule.head}")
+                        lines.append(
+                            f"    via: W:{rule.weight:.2f} :: {body_str} → {rule.head}")
 
         # Conflicting inferences
         conflicts = [i for i in inferences if i.is_conflict]
@@ -302,23 +325,26 @@ class SymbolicOverlay:
             lines.append("")
             lines.append("Contextual exceptions (competing interpretations):")
             for inf in conflicts:
-                lines.append(f"  [WARN] [CF:{inf.confidence:.2f}] {inf.conclusion}: {inf.contextual_note}")
+                lines.append(
+                    f"  [WARN] [CF:{inf.confidence:.2f}] {inf.conclusion}: {inf.contextual_note}")
 
         return "\n".join(lines)
 
     def _extract_concepts(self, text: str) -> List[str]:
         """Extract concept tokens from text."""
         # Simple tokenization: lowercase, split on whitespace/punctuation
-        tokens = re.findall(r'[а-яА-Яa-zA-Z_][а-яА-Яa-zA-Z0-9_]{2,}', text.lower())
+        tokens = re.findall(
+            r'[а-яА-Яa-zA-Z_][а-яА-Яa-zA-Z0-9_]{2,}',
+            text.lower())
         # Filter stopwords
         stopwords = {
             "это", "как", "что", "для", "или", "если", "но", "и", "в", "на",
             "the", "is", "are", "was", "were", "be", "been", "being", "have",
             "has", "had", "do", "does", "did", "will", "would", "could", "should",
             "may", "might", "shall", "can", "need", "dare", "ought", "used",
-            "to", "of", "in", "for", "on", "with", "at", "by", "from", "as",
+            "to", "o", "in", "for", "on", "with", "at", "by", "from", "as",
             "into", "through", "during", "before", "after", "above", "below",
-            "between", "out", "off", "over", "under", "again", "further", "then",
+            "between", "out", "of", "over", "under", "again", "further", "then",
             "once", "here", "there", "when", "where", "why", "how", "all", "both",
             "each", "few", "more", "most", "other", "some", "such", "no", "nor",
             "not", "only", "own", "same", "so", "than", "too", "very", "just",
@@ -330,7 +356,8 @@ class SymbolicOverlay:
         concepts = [t for t in tokens if t not in stopwords]
         # Normalize: replace spaces with underscores
         concepts = [c.replace(" ", "_") for c in concepts]
-        return list(dict.fromkeys(concepts))[:5]  # Limit to 5 concepts per node
+        # Limit to 5 concepts per node
+        return list(dict.fromkeys(concepts))[:5]
 
     def get_stats(self) -> Dict:
         return {
@@ -349,6 +376,10 @@ class SymbolicOverlay:
         }
 
     def load_state(self, data: Dict):
-        self.rules = {k: SymbolicRule.from_dict(v) for k, v in data.get("rules", {}).items()}
+        self.rules = {
+            k: SymbolicRule.from_dict(v) for k,
+            v in data.get(
+                "rules",
+                {}).items()}
         self._rule_counter = data.get("rule_counter", 0)
         self._total_extractions = data.get("total_extractions", 0)

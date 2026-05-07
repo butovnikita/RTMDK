@@ -2,9 +2,11 @@
 SOT token_dim vs latent_dim sweep.
 Tests whether token_dim > latent_dim improves embedding quality.
 """
-import os, sys, numpy as np
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rtmdk.memory.self_organizing_field import SOTokenizer
+import os
+import sys
+import numpy as np
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 os.environ["RTMDK_ADD_RATE_LIMIT"] = "0"
 np.random.seed(42)

@@ -2,11 +2,8 @@
 
 import json
 import numpy as np
-import pytest
-from rtmdk.memory.field import RTMDKField
 from rtmdk.memory.core import RTMDKMemory
 from rtmdk.memory.config import RTMDKConfig
-from rtmdk.memory.wal import WAL
 
 
 def _make_embedder(dim: int = 64):
@@ -21,10 +18,16 @@ def _make_embedder(dim: int = 64):
 class TestWALReplay:
     def test_replay_add_node(self, tmp_path):
         wal_path = str(tmp_path / "wal.jsonl")
-        cfg = RTMDKConfig(latent_dim=64, use_hnsw=False, hyperbolic=False, quantization="none", enable_engrams=False)
+        cfg = RTMDKConfig(
+            latent_dim=64,
+            use_hnsw=False,
+            hyperbolic=False,
+            quantization="none",
+            enable_engrams=False)
         embedder = _make_embedder(64)
         mem1 = RTMDKMemory(config=cfg, embedder=embedder, wal_path=wal_path)
-        mem1.save_context({"input": "hello world", "session_id": "s1"}, {"output": ""})
+        mem1.save_context(
+            {"input": "hello world", "session_id": "s1"}, {"output": ""})
         n1 = len(mem1.field.nodes)
         assert n1 == 1
 
@@ -37,7 +40,12 @@ class TestWALReplay:
 
     def test_replay_add_nodes_batch(self, tmp_path):
         wal_path = str(tmp_path / "wal.jsonl")
-        cfg = RTMDKConfig(latent_dim=64, use_hnsw=False, hyperbolic=False, quantization="none", enable_engrams=False)
+        cfg = RTMDKConfig(
+            latent_dim=64,
+            use_hnsw=False,
+            hyperbolic=False,
+            quantization="none",
+            enable_engrams=False)
         embedder = _make_embedder(64)
         mem1 = RTMDKMemory(config=cfg, embedder=embedder, wal_path=wal_path)
         n = 5
@@ -51,11 +59,18 @@ class TestWALReplay:
 
     def test_replay_delete(self, tmp_path):
         wal_path = str(tmp_path / "wal.jsonl")
-        cfg = RTMDKConfig(latent_dim=64, use_hnsw=False, hyperbolic=False, quantization="none", enable_engrams=False)
+        cfg = RTMDKConfig(
+            latent_dim=64,
+            use_hnsw=False,
+            hyperbolic=False,
+            quantization="none",
+            enable_engrams=False)
         embedder = _make_embedder(64)
         mem1 = RTMDKMemory(config=cfg, embedder=embedder, wal_path=wal_path)
-        mem1.save_context({"input": "keep me", "session_id": "s1"}, {"output": ""})
-        mem1.save_context({"input": "delete me", "session_id": "s1"}, {"output": ""})
+        mem1.save_context(
+            {"input": "keep me", "session_id": "s1"}, {"output": ""})
+        mem1.save_context(
+            {"input": "delete me", "session_id": "s1"}, {"output": ""})
         nids = list(mem1.field.nodes.keys())
         assert len(nids) == 2
         mem1.field.delete_nodes([nids[1]])
@@ -67,17 +82,28 @@ class TestWALReplay:
         assert nids[1] not in mem2.field.nodes
 
     def test_replay_no_wal(self):
-        cfg = RTMDKConfig(latent_dim=64, use_hnsw=False, hyperbolic=False, quantization="none", enable_engrams=False)
+        cfg = RTMDKConfig(
+            latent_dim=64,
+            use_hnsw=False,
+            hyperbolic=False,
+            quantization="none",
+            enable_engrams=False)
         embedder = _make_embedder(64)
         mem = RTMDKMemory(config=cfg, embedder=embedder, wal_path=None)
         assert len(mem.field.nodes) == 0
 
     def test_replay_corrupted_line(self, tmp_path):
         wal_path = str(tmp_path / "wal.jsonl")
-        cfg = RTMDKConfig(latent_dim=64, use_hnsw=False, hyperbolic=False, quantization="none", enable_engrams=False)
+        cfg = RTMDKConfig(
+            latent_dim=64,
+            use_hnsw=False,
+            hyperbolic=False,
+            quantization="none",
+            enable_engrams=False)
         embedder = _make_embedder(64)
         mem1 = RTMDKMemory(config=cfg, embedder=embedder, wal_path=wal_path)
-        mem1.save_context({"input": "valid", "session_id": "s1"}, {"output": ""})
+        mem1.save_context(
+            {"input": "valid", "session_id": "s1"}, {"output": ""})
         # Append corrupted line
         with open(wal_path, "a", encoding="utf-8") as f:
             f.write("this is not json\n")
@@ -88,7 +114,12 @@ class TestWALReplay:
     def test_replay_old_format_without_embedding(self, tmp_path):
         """WAL records without embedding should fallback to embedder."""
         wal_path = str(tmp_path / "wal.jsonl")
-        cfg = RTMDKConfig(latent_dim=64, use_hnsw=False, hyperbolic=False, quantization="none", enable_engrams=False)
+        cfg = RTMDKConfig(
+            latent_dim=64,
+            use_hnsw=False,
+            hyperbolic=False,
+            quantization="none",
+            enable_engrams=False)
         embedder = _make_embedder(64)
         # Write old-format WAL manually
         with open(wal_path, "w", encoding="utf-8") as f:
@@ -112,18 +143,27 @@ class TestWALReplay:
         """WAL replay after snapshot load should only add post-snapshot nodes."""
         wal_path = str(tmp_path / "wal.jsonl")
         snapshot_path = str(tmp_path / "snapshot.json")
-        cfg = RTMDKConfig(latent_dim=64, use_hnsw=False, hyperbolic=False, quantization="none", enable_engrams=False)
+        cfg = RTMDKConfig(
+            latent_dim=64,
+            use_hnsw=False,
+            hyperbolic=False,
+            quantization="none",
+            enable_engrams=False)
         embedder = _make_embedder(64)
         mem1 = RTMDKMemory(config=cfg, embedder=embedder, wal_path=wal_path)
-        mem1.save_context({"input": "before snapshot", "session_id": "s1"}, {"output": ""})
+        mem1.save_context({"input": "before snapshot",
+                          "session_id": "s1"}, {"output": ""})
         mem1.export_field(snapshot_path)
 
         # Add more nodes after snapshot
-        mem1.save_context({"input": "after snapshot", "session_id": "s1"}, {"output": ""})
+        mem1.save_context({"input": "after snapshot",
+                          "session_id": "s1"}, {"output": ""})
 
         # Load snapshot + WAL replay
-        mem2 = RTMDKMemory.import_field(snapshot_path, embedder, wal_path=wal_path)
+        mem2 = RTMDKMemory.import_field(
+            snapshot_path, embedder, wal_path=wal_path)
         assert len(mem2.field.nodes) == 2
-        texts = [n.content.get("input_text", "") for n in mem2.field.nodes.values()]
+        texts = [n.content.get("input_text", "")
+                 for n in mem2.field.nodes.values()]
         assert "before snapshot" in texts
         assert "after snapshot" in texts

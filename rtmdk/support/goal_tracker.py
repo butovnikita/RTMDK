@@ -29,7 +29,8 @@ class GoalTracker:
             id=gid, description=description,
             subgoals=subgoals or [], priority=priority
         )
-        self._history.append({"action": "add", "goal_id": gid, "time": time.time()})
+        self._history.append(
+            {"action": "add", "goal_id": gid, "time": time.time()})
         self._enforce_max_goals()
         return gid
 
@@ -40,7 +41,8 @@ class GoalTracker:
             goal.completion = min(1.0, max(0.0, completion))
             goal.last_updated = time.time()
             if related_nodes:
-                goal.related_nodes = list(set(goal.related_nodes + related_nodes))
+                goal.related_nodes = list(
+                    set(goal.related_nodes + related_nodes))
             if goal.completion >= self.completion_threshold:
                 goal.status = "completed"
             self._history.append({

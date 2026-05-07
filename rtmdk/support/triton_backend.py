@@ -6,25 +6,28 @@ The class has been renamed to GPUBackend to reflect its actual implementation.
 TritonBackend remains available as a backward-compatible alias.
 """
 from __future__ import annotations
-from typing import Optional, List
+from typing import Optional
 import numpy as np
 from numpy.typing import NDArray
 
 TRITON_AVAILABLE = False
 _triton = None
 try:
-    import triton
-    import triton.language as tl
     TRITON_AVAILABLE = True
 except ImportError:
     pass
 
 
-def sparse_resonance_kernel(query_latents: NDArray, query_phases: NDArray,
-                            node_positions: NDArray, node_phases: NDArray,
-                            node_amplitudes: NDArray, node_saliences: NDArray,
-                            bandwidth: float, phase_coupling: float,
-                            candidate_mask: Optional[NDArray] = None) -> NDArray:
+def sparse_resonance_kernel(
+        query_latents: NDArray,
+        query_phases: NDArray,
+        node_positions: NDArray,
+        node_phases: NDArray,
+        node_amplitudes: NDArray,
+        node_saliences: NDArray,
+        bandwidth: float,
+        phase_coupling: float,
+        candidate_mask: Optional[NDArray] = None) -> NDArray:
     """Compute sparse resonance responses.
 
     If candidate_mask is provided, only compute for masked entries.
@@ -57,26 +60,35 @@ def sparse_resonance_kernel(query_latents: NDArray, query_phases: NDArray,
     )
 
 
-def _numpy_resonance(query_latents, query_phases, node_positions, node_phases,
-                     node_amplitudes, node_saliences, bandwidth, phase_coupling,
-                     candidate_mask=None):
+def _numpy_resonance(
+        query_latents,
+        query_phases,
+        node_positions,
+        node_phases,
+        node_amplitudes,
+        node_saliences,
+        bandwidth,
+        phase_coupling,
+        candidate_mask=None):
     """Numpy fallback — dense or sparse via mask."""
     from scipy.spatial.distance import cdist
 
-    Q = len(query_latents)
-    N = len(node_positions)
+    len(query_latents)
+    len(node_positions)
 
     # Compute distances
     dists = cdist(query_latents, node_positions)  # (Q, N)
     spatial = np.exp(-dists / bandwidth)  # (Q, N)
 
     # Phase alignment
-    phase_diff = query_phases[:, np.newaxis] - node_phases[np.newaxis, :]  # (Q, N)
+    phase_diff = query_phases[:, np.newaxis] - \
+        node_phases[np.newaxis, :]  # (Q, N)
     phase_align = 0.5 + 0.5 * np.cos(phase_diff)
 
     # Full resonance
     response = spatial * ((1 - phase_coupling) + phase_coupling * phase_align)
-    response = response * node_amplitudes[np.newaxis, :] * node_saliences[np.newaxis, :]
+    response = response * \
+        node_amplitudes[np.newaxis, :] * node_saliences[np.newaxis, :]
 
     # Apply mask if provided
     if candidate_mask is not None:
@@ -85,9 +97,16 @@ def _numpy_resonance(query_latents, query_phases, node_positions, node_phases,
     return response.astype(np.float32)
 
 
-def _triton_resonance(query_latents, query_phases, node_positions, node_phases,
-                      node_amplitudes, node_saliences, bandwidth, phase_coupling,
-                      candidate_mask=None):
+def _triton_resonance(
+        query_latents,
+        query_phases,
+        node_positions,
+        node_phases,
+        node_amplitudes,
+        node_saliences,
+        bandwidth,
+        phase_coupling,
+        candidate_mask=None):
     """Triton kernel for sparse resonance computation."""
     # Note: This is a simplified Triton kernel. For production use,
     # a more sophisticated implementation with proper block tiling

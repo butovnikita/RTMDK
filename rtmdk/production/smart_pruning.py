@@ -18,18 +18,18 @@ from pathlib import Path
 
 class SmartPruner:
     """Automatically prunes old and irrelevant memory nodes.
-    
+
     Usage:
         pruner = SmartPruner(memory, max_age_days=90, min_salience=0.05)
-        
+
         # Run pruning manually:
         result = pruner.prune()
-        
+
         # Or integrate with OfflineDreamer for background pruning:
         dreamer = OfflineDreamer(field=memory.field, ...)
         dreamer.on_step()  # Includes pruning
     """
-    
+
     def __init__(
         self,
         memory,  # RTMDKMemory instance
@@ -50,24 +50,24 @@ class SmartPruner:
         self.export_before_prune = export_before_prune
         self.export_dir = Path(export_dir).expanduser()
         self.on_prune = on_prune
-        
+
         # Per-tier overrides
         self.tier_overrides = tier_overrides or {
             "episodic": {"max_age_days": 30, "min_salience": 0.1},
             "semantic": {"max_age_days": 365, "min_salience": 0.02},
             "procedural": {"max_age_days": 730, "min_salience": 0.01},
         }
-        
+
         self._stats = {
             "total_prunes": 0,
             "total_nodes_pruned": 0,
             "last_prune": None,
             "last_pruned_nodes": 0,
         }
-    
+
     def prune(self) -> Dict[str, Any]:
         """Run pruning. Returns dict with pruning stats.
-        
+
         Returns:
             {
                 "nodes_before": int,
@@ -80,11 +80,11 @@ class SmartPruner:
         """
         nodes_before = len(self.memory.field.nodes)
         nodes_to_prune = []
-        
+
         for nid, node in self.memory.field.nodes.items():
             if self._should_prune(node, nid):
                 nodes_to_prune.append(nid)
-        
+
         if not nodes_to_prune:
             return {
                 "nodes_before": nodes_before,
@@ -94,12 +94,12 @@ class SmartPruner:
                 "dry_run": self.dry_run,
                 "exported_to": None,
             }
-        
+
         # Export before pruning (safety net)
         exported_to = None
         if self.export_before_prune and not self.dry_run:
             exported_to = self._export_nodes(nodes_to_prune)
-        
+
         # Actually prune (or just report if dry_run)
         if not self.dry_run:
             for nid in nodes_to_prune:
@@ -107,16 +107,16 @@ class SmartPruner:
                     del self.memory.field.nodes[nid]
                 if nid in self.memory.field.node_index:
                     self.memory.field.node_index.remove(nid)
-        
+
         # Estimate RAM saved (~2KB per node)
         ram_saved = len(nodes_to_prune) * 2 / 1024  # MB
-        
+
         # Update stats
         self._stats["total_prunes"] += 1
         self._stats["total_nodes_pruned"] += len(nodes_to_prune)
         self._stats["last_prune"] = time.time()
         self._stats["last_pruned_nodes"] = len(nodes_to_prune)
-        
+
         result = {
             "nodes_before": nodes_before,
             "nodes_after": nodes_before - len(nodes_to_prune),
@@ -125,24 +125,24 @@ class SmartPruner:
             "dry_run": self.dry_run,
             "exported_to": exported_to,
         }
-        
+
         # Callback
         if self.on_prune and not self.dry_run:
             self.on_prune(result)
-        
+
         return result
-    
+
     def _should_prune(self, node, node_id: str) -> bool:
         """Check if a node should be pruned."""
         # Check age
         age = time.time() - node.created_at
         tier = getattr(node, 'tier', 'semantic')
-        
+
         # Get tier-specific thresholds
         tier_config = self.tier_overrides.get(tier, {})
         max_age = tier_config.get("max_age_days", 90) * 86400
         min_sal = tier_config.get("min_salience", self.min_salience)
-        
+
         # Node must be BOTH old AND unimportant
         if age < max_age:
             return False
@@ -150,18 +150,18 @@ class SmartPruner:
             return False
         if node.amplitude > self.min_amplitude:
             return False
-        
+
         return True
-    
+
     def _export_nodes(self, node_ids: List[str]) -> Optional[str]:
         """Export nodes about to be pruned to a backup file."""
         if not node_ids:
             return None
-        
+
         self.export_dir.mkdir(parents=True, exist_ok=True)
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         filepath = self.export_dir / f"prune_backup_{timestamp}.json"
-        
+
         data = []
         for nid in node_ids:
             node = self.memory.field.nodes.get(nid)
@@ -174,12 +174,12 @@ class SmartPruner:
                     "tier": getattr(node, 'tier', 'unknown'),
                     "created_at": node.created_at,
                 })
-        
+
         with open(filepath, 'w') as f:
             json.dump(data, f, indent=2)
-        
+
         return str(filepath)
-    
+
     def get_stats(self) -> Dict[str, Any]:
         """Get pruning statistics."""
         return {

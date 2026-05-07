@@ -14,9 +14,12 @@ from numpy.typing import NDArray
 from typing import List, Tuple, Optional, Dict
 
 
-def _build_affinity(positions: NDArray, phases: NDArray, sigma: float = 1.0) -> NDArray:
+def _build_affinity(
+        positions: NDArray,
+        phases: NDArray,
+        sigma: float = 1.0) -> NDArray:
     """Build affinity matrix using spatial distance and phase coupling."""
-    n = positions.shape[0]
+    positions.shape[0]
     # Pairwise squared distances
     diff = positions[:, np.newaxis, :] - positions[np.newaxis, :, :]
     dists_sq = np.sum(diff ** 2, axis=2)
@@ -65,7 +68,7 @@ def _eigengap_k(vals: NDArray, max_k: int = 10) -> int:
     m = min(max_k, len(vals) - 1)
     if m < 2:
         return 2
-    gaps = vals[1:m+1] - vals[:m]
+    gaps = vals[1:m + 1] - vals[:m]
     # Ignore k=1 if gap is tiny (indicates no structure)
     best_k = int(np.argmax(gaps[1:]) + 2)  # +2 because we skip k=1
     if best_k < 2:
@@ -73,7 +76,8 @@ def _eigengap_k(vals: NDArray, max_k: int = 10) -> int:
     return min(best_k, m)
 
 
-def _kmeans_1d(embeddings: NDArray, k: int, max_iter: int = 20, rng: Optional[np.random.Generator] = None) -> NDArray:
+def _kmeans_1d(embeddings: NDArray, k: int, max_iter: int = 20,
+               rng: Optional[np.random.Generator] = None) -> NDArray:
     """Simple k-means on spectral embedding (k is small, dims <= k).
 
     Returns cluster labels (0..k-1).
@@ -84,14 +88,16 @@ def _kmeans_1d(embeddings: NDArray, k: int, max_iter: int = 20, rng: Optional[np
     centers = np.zeros((k, dim))
     centers[0] = embeddings[rng.integers(n)]
     for i in range(1, k):
-        dists = np.min(np.sum((embeddings[:, np.newaxis, :] - centers[np.newaxis, :i, :]) ** 2, axis=2), axis=1)
+        dists = np.min(np.sum(
+            (embeddings[:, np.newaxis, :] - centers[np.newaxis, :i, :]) ** 2, axis=2), axis=1)
         probs = dists / (dists.sum() + 1e-10)
         centers[i] = embeddings[rng.choice(n, p=probs)]
 
     labels = np.zeros(n, dtype=int)
     for _ in range(max_iter):
         # Assignment
-        dists = np.sum((embeddings[:, np.newaxis, :] - centers[np.newaxis, :, :]) ** 2, axis=2)
+        dists = np.sum((embeddings[:, np.newaxis, :] -
+                        centers[np.newaxis, :, :]) ** 2, axis=2)
         new_labels = np.argmin(dists, axis=1)
         if np.array_equal(new_labels, labels):
             break

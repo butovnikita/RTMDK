@@ -2,16 +2,16 @@
 Benchmark MetaAdaptiveKernel with explicit adaptation cycles.
 """
 
+from rtmdk.memory.config import RTMDKConfig
+from rtmdk.memory.field import RTMDKField
+from sentence_transformers import SentenceTransformer
+import numpy as np
 import os
 import sys
 import json
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import numpy as np
-from sentence_transformers import SentenceTransformer
-from rtmdk.memory.field import RTMDKField
-from rtmdk.memory.config import RTMDKConfig
 
 os.environ["RTMDK_ADD_RATE_LIMIT"] = "0"
 np.random.seed(42)
@@ -44,7 +44,10 @@ def evaluate(field, records, model, top_k=5):
     correct_k = 0
     total = 0
     for rec in records:
-        q_emb = model.encode(rec["query"], convert_to_numpy=True).astype(np.float32)
+        q_emb = model.encode(
+            rec["query"],
+            convert_to_numpy=True).astype(
+            np.float32)
         results = field.query(q_emb, top_k=top_k)
         if not results:
             continue
@@ -62,7 +65,10 @@ def adapt_meta_kernel(field, records, model, n_cycles=10):
     """Run queries to populate response history, then call adapt()."""
     for cycle in range(n_cycles):
         for rec in records:
-            q_emb = model.encode(rec["query"], convert_to_numpy=True).astype(np.float32)
+            q_emb = model.encode(
+                rec["query"],
+                convert_to_numpy=True).astype(
+                np.float32)
             results = field.query(q_emb, top_k=5)
         if field.meta_kernel:
             field.meta_kernel.adapt()
@@ -84,7 +90,8 @@ def run(name, cfg, records, model, do_adapt=False):
 
     stats = evaluate(field, records, model, top_k=5)
     bw_final = field.meta_kernel.get_bandwidth() if field.meta_kernel else cfg.bandwidth
-    print(f"  R@1: {stats['R@1']:.3f}  R@5: {stats['R@5']:.3f}  final_bw: {bw_final:.3f}")
+    print(
+        f"  R@1: {stats['R@1']:.3f}  R@5: {stats['R@5']:.3f}  final_bw: {bw_final:.3f}")
     return field, stats
 
 
@@ -109,18 +116,22 @@ def main():
         resonance_kernel="cosine", phase_coupling=0.3,
         min_response=0.001, use_hnsw=False,
     )
-    f2, s2 = run("MetaAdaptiveKernel (with adapt cycles)", cfg_meta, records, model, do_adapt=True)
+    f2, s2 = run("MetaAdaptiveKernel (with adapt cycles)",
+                 cfg_meta, records, model, do_adapt=True)
 
     # 3. MetaAdaptiveKernel without adapt cycles (just queries)
-    f3, s3 = run("MetaAdaptiveKernel (no adapt)", cfg_meta, records, model, do_adapt=False)
+    f3, s3 = run("MetaAdaptiveKernel (no adapt)",
+                 cfg_meta, records, model, do_adapt=False)
 
     # Summary
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("SUMMARY")
-    print("="*60)
+    print("=" * 60)
     print(f"  Global BW (baseline)       R@1={s1['R@1']:.3f}")
-    print(f"  MetaAdaptive + adapt       R@1={s2['R@1']:.3f}  delta={s2['R@1']-s1['R@1']:+.3f}")
-    print(f"  MetaAdaptive no adapt      R@1={s3['R@1']:.3f}  delta={s3['R@1']-s1['R@1']:+.3f}")
+    print(
+        f"  MetaAdaptive + adapt       R@1={s2['R@1']:.3f}  delta={s2['R@1']-s1['R@1']:+.3f}")
+    print(
+        f"  MetaAdaptive no adapt      R@1={s3['R@1']:.3f}  delta={s3['R@1']-s1['R@1']:+.3f}")
 
 
 if __name__ == "__main__":

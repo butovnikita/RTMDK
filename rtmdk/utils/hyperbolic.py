@@ -39,7 +39,10 @@ def mobius_add(x: NDArray, y: NDArray, ball_radius: float = 0.85) -> NDArray:
     return _clip_norm(result, ball_radius).astype(np.float32)
 
 
-def exp_map_poincare(tangent: NDArray, base: NDArray, ball_radius: float = 0.85) -> NDArray:
+def exp_map_poincare(
+        tangent: NDArray,
+        base: NDArray,
+        ball_radius: float = 0.85) -> NDArray:
     """Exponential map on Poincaré ball of radius R."""
     base = _clip_norm(base, ball_radius)
     tangent_norm = np.linalg.norm(tangent)
@@ -60,7 +63,10 @@ def exp_map_poincare(tangent: NDArray, base: NDArray, ball_radius: float = 0.85)
     return result.astype(np.float32)
 
 
-def log_map_poincare(point: NDArray, base: NDArray, ball_radius: float = 0.85) -> NDArray:
+def log_map_poincare(
+        point: NDArray,
+        base: NDArray,
+        ball_radius: float = 0.85) -> NDArray:
     """Logarithmic map on Poincaré ball of radius R."""
     base = _clip_norm(base, ball_radius)
     point = _clip_norm(point, ball_radius)
@@ -76,6 +82,7 @@ def log_map_poincare(point: NDArray, base: NDArray, ball_radius: float = 0.85) -
     # factor = 2R · arctanh(||diff||/R) / (λ_base · ||diff||)
     ratio = diff_norm / ball_radius
     ratio = min(ratio, 1.0 - 1e-8)  # keep inside domain
-    factor = (2.0 * ball_radius * np.arctanh(ratio)) / (lambda_base * diff_norm)
+    factor = (2.0 * ball_radius * np.arctanh(ratio)) / \
+        (lambda_base * diff_norm)
     tangent = diff * factor
     return tangent.astype(np.float32)

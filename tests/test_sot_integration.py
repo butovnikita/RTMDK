@@ -105,12 +105,14 @@ class TestSOTStep:
         assert len(field_sot.nodes) > initial_nodes
 
     def test_step_triggers_contrastive_update(self, field_sot):
-        # Pre-populate field with similar embeddings so query retrieves something
+        # Pre-populate field with similar embeddings so query retrieves
+        # something
         base = np.random.randn(LATENT_DIM).astype(np.float32)
         for i in range(5):
             emb = base + np.random.randn(LATENT_DIM).astype(np.float32) * 0.1
             field_sot.add_node(emb, {"text": f"node_{i}"})
-        latent_before = {nid: n.latent_pos.copy() for nid, n in field_sot.nodes.items()}
+        latent_before = {nid: n.latent_pos.copy()
+                         for nid, n in field_sot.nodes.items()}
         # Run step with text that will query and retrieve nodes
         query_emb = base.copy()
         field_sot.step([{
@@ -129,7 +131,8 @@ class TestSOTStep:
 
     def test_step_ssm_sync_changes_token_embeddings(self, field_sot):
         tokens = field_sot.sot_tokenizer.encode("abc")
-        embs_before = {t: field_sot.sot_tokenizer.token_embeddings[t].copy() for t in tokens}
+        embs_before = {
+            t: field_sot.sot_tokenizer.token_embeddings[t].copy() for t in tokens}
         field_sot.step([{
             "embedding": np.random.randn(LATENT_DIM).astype(np.float32),
             "content": {"text": "abc"},
@@ -154,7 +157,9 @@ class TestSOTQuery:
         for i in range(10):
             emb = np.zeros(LATENT_DIM, dtype=np.float32)
             emb[i % LATENT_DIM] = 1.0
-            field_sot.add_node(emb, {"text": f"topic alpha" if i < 5 else "topic beta"})
+            field_sot.add_node(
+                emb, {
+                    "text": "topic alpha" if i < 5 else "topic beta"})
         results = field_sot.query_by_text("topic alpha", top_k=5)
         assert len(results) <= 5
 
@@ -169,15 +174,16 @@ class TestSOTMerge:
                 "content": {"text": "ab ab ab"},
                 "phase": 0.0,
             }])
-        vocab_before = len(field_sot.sot_tokenizer.token_embeddings)
+        len(field_sot.sot_tokenizer.token_embeddings)
         # 5th step should trigger merge check
         field_sot.step([{
             "embedding": np.random.randn(LATENT_DIM).astype(np.float32),
             "content": {"text": "ab ab ab"},
             "phase": 0.0,
         }])
-        vocab_after = len(field_sot.sot_tokenizer.token_embeddings)
-        # Vocab may or may not grow depending on threshold, but merge logic should run
+        len(field_sot.sot_tokenizer.token_embeddings)
+        # Vocab may or may not grow depending on threshold, but merge logic
+        # should run
         assert field_sot._step_counter == 5
 
 
@@ -203,7 +209,9 @@ class TestSOTStatePersistence:
         field2 = RTMDKField(config=RTMDKConfig(sot_enabled=True))
         field2.load_state(state)
         assert field2.sot_tokenizer is not None
-        assert len(field2.sot_tokenizer.token_embeddings) == len(field_sot.sot_tokenizer.token_embeddings)
+        assert len(
+            field2.sot_tokenizer.token_embeddings) == len(
+            field_sot.sot_tokenizer.token_embeddings)
 
 
 class TestSOTContrastiveField:
@@ -215,7 +223,8 @@ class TestSOTContrastiveField:
             lr=0.05,
         )
         # After contrastive step, embeddings should still be valid
-        emb = field_sot.sot_tokenizer.embed(field_sot.sot_tokenizer.encode("query text"))
+        emb = field_sot.sot_tokenizer.embed(
+            field_sot.sot_tokenizer.encode("query text"))
         assert emb.shape == (LATENT_DIM,)
         assert np.linalg.norm(emb) > 0.9
 
@@ -226,7 +235,8 @@ class TestSOTContrastiveField:
             negative_texts=["foo bar", "baz qux"],
             lr=0.05,
         )
-        emb = field_sot.sot_tokenizer.embed(field_sot.sot_tokenizer.encode("hello world"))
+        emb = field_sot.sot_tokenizer.embed(
+            field_sot.sot_tokenizer.encode("hello world"))
         assert emb.shape == (LATENT_DIM,)
 
 

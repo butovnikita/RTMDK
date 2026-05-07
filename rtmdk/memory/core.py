@@ -18,70 +18,46 @@ KuramotoSync, FederatedRTMDK, FederatedNode, detect_modality, cross_modal_resona
 """
 
 from __future__ import annotations
+from rtmdk.memory.field import RTMDKField
+from rtmdk.memory.config import (
+    ContextFormat, RTMDKConfig,
+)
+from rtmdk.nodes import (
+    MemoryNode, ContradictionRecord, CounterfactualResult, AgentPlan,
+    ToolCall, Hypothesis, EvalResult,
+)
 import asyncio
 import functools
 import json
-import math
-import threading
 import re
 import time
 import os
-from concurrent.futures import ThreadPoolExecutor
 import copy
-import hashlib
-from collections import deque, defaultdict
-from dataclasses import dataclass, field, asdict
-from typing import List, Dict, Optional, Tuple, Union, Callable, Any, Set, FrozenSet
+from typing import List, Dict, Optional, Tuple, Callable, Any
 from enum import Enum
 import numpy as np
 from numpy.typing import NDArray
-from scipy.spatial.distance import cdist, pdist, squareform
-from scipy.spatial import cKDTree
-from scipy.integrate import odeint, solve_ivp
-from scipy import stats as scipy_stats
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 import logging
 
 # Extracted engine classes (kept in sync with rtmdk/support/ modules)
-from rtmdk.support.kuramoto import KuramotoSync, FederatedRTMDK
-from rtmdk.support.hnsw import NaiveGraphIndex, HNSWIndex
 try:
-    from rtmdk.support.hnsw_lib import HNSWLibIndex
     _HNSWLIB_AVAILABLE = True
 except ImportError:
     _HNSWLIB_AVAILABLE = False
-from rtmdk.support.bm25 import BM25Index
-from rtmdk.memory.conformal import ConformalCalibrator
-from rtmdk.memory.spectral import spectral_cluster_nodes
-from rtmdk.memory.kalman import KalmanFilter
-from rtmdk.engines.counterfactual import ScenarioPlanner
-from rtmdk.support.goal_tracker import GoalTracker
-from rtmdk.support.rl_feedback import RLFeedbackLoop
-from rtmdk.support.event_driven import LowRankCompressor, EventDrivenScheduler
-from rtmdk.support.meta_memory import MetaMemoryEvaluator
-from rtmdk.support.security import SecurityValidator
-from rtmdk.support.swarm import SwarmConsensusProtocol
-from rtmdk.support.threshold import AdaptiveThreshold
-from rtmdk.support.tda import TDAMonitor
-from rtmdk.memory.utils import SecurityViolationError, detect_modality, cross_modal_resonance
+from rtmdk.memory.utils import SecurityViolationError, detect_modality
 
 logger = logging.getLogger(__name__)
 
 # Phase 5: dataclass nodes extracted to rtmdk.nodes
-from rtmdk.nodes import (
-    MemoryNode, CausalEdge, ContradictionRecord, CounterfactualResult,
-    AgentPlan, ToolCall, Hypothesis, EvalResult, GoalNode, FederatedNode,
-)
 
 # Phase 15: New modules
 try:
-    from rtmdk.support.version_control import VersionControl, NodeDelta, Version, DiffResult
     VC_AVAILABLE = True
 except ImportError:
     VC_AVAILABLE = False
 
 try:
-    from rtmdk.support.entropy_controller import EntropyController
     ENTROPY_AVAILABLE = True
 except ImportError:
     ENTROPY_AVAILABLE = False
@@ -95,26 +71,24 @@ except ImportError:
 
 # Phase 16: New modules
 try:
-    from rtmdk.support.symbolic_overlay import SymbolicOverlay, SymbolicRule, SymbolicInference
     SYMBOLIC_AVAILABLE = True
 except ImportError:
     SYMBOLIC_AVAILABLE = False
 
 try:
-    from rtmdk.support.safety_certifier import SafetyCertifier, LyapunovFunction
     SAFETY_AVAILABLE = True
 except ImportError:
     SAFETY_AVAILABLE = False
 
 try:
-    from rtmdk.support.ump import UniversalMemoryProtocol, UMP_VERSION, UMP_SCHEMA
+    from rtmdk.support.ump import UniversalMemoryProtocol
     UMP_AVAILABLE = True
 except ImportError:
     UMP_AVAILABLE = False
 
 # Phase 17: RoleShardRouter
 try:
-    from rtmdk.support.role_shard_router import RoleShardRouter, RoleShard, RoleDetector, DEFAULT_ROLE
+    from rtmdk.support.role_shard_router import DEFAULT_ROLE
     ROLE_SHARD_AVAILABLE = True
 except ImportError:
     ROLE_SHARD_AVAILABLE = False
@@ -171,7 +145,7 @@ MAX_NODES_PRUNE_CHECK_FREQ = 10
 
 def _sanitize_path(path: str) -> str:
     """Sanitize file path to prevent directory traversal attacks.
-    
+
     Rejects paths containing '..' (path traversal).
     Returns normalized path.
     """
@@ -189,40 +163,20 @@ def _safe_json_load(path: str) -> Dict:
     """Load JSON with size limit to prevent memory exhaustion."""
     file_size = os.path.getsize(path)
     if file_size > MAX_FILE_SIZE_BYTES:
-        raise ValueError(f"File too large: {file_size / (1024*1024):.1f}MB (max {MAX_FILE_SIZE_BYTES / (1024*1024):.0f}MB)")
+        raise ValueError(
+            f"File too large: {file_size / (1024*1024):.1f}MB (max {MAX_FILE_SIZE_BYTES / (1024*1024):.0f}MB)")
     with open(path, "r", encoding="utf-8") as f:
         raw = f.read()
     if len(raw.encode("utf-8")) > MAX_FILE_SIZE_BYTES:
-        raise ValueError("File exceeds maximum allowed size after encoding check")
+        raise ValueError(
+            "File exceeds maximum allowed size after encoding check")
     return json.loads(raw)
 
 
 # ============================================================================
 # CONFIGURATION v7 — extracted to rtmdk/memory/config.py (P0 refactor)
 # ============================================================================
-from rtmdk.memory.config import (
-    ConsolidationMode, Backend, ContextFormat, FieldHealth, EvalMode,
-    RTMDKConfig,
-)
-from rtmdk.memory.geometry import (
-    poincare_dist, exp_map_poincare, log_map_poincare, mobius_add,
-    poincare_midpoint,
-)
 # Extracted engine classes (P0 refactor � imported from canonical modules)
-from rtmdk.engines.predictive import PredictiveCodingModel
-from rtmdk.engines.privacy import DifferentialPrivacy
-from rtmdk.engines.neural_ode import NeuralODEDynamics
-from rtmdk.engines.causal import CausalInferenceEngine
-from rtmdk.support.meta_adaptive import MetaAdaptiveKernel
-from rtmdk.support.healer import TopologyHealer
-from rtmdk.support.agents import AgentPlanner, HypothesisVerifier, ToolRouter
-from rtmdk.support.production import ShadowModeEvaluator, RAGASPlusEvaluator, AutoRollbackManager
-from rtmdk.support.projection import IncPCAProjection
-from rtmdk.support.torch_backend import TorchBackend
-from rtmdk.support.learnable import LearnableKernel, DifferentiableConsolidation
-from rtmdk.support.meta_controller import MetaController
-from rtmdk.support.circuit_breaker import CircuitBreaker
-
 
 
 # ============================================================================
@@ -231,7 +185,9 @@ from rtmdk.support.circuit_breaker import CircuitBreaker
 
 def _enum_value(val, default):
     """Safely extract enum value for serialization."""
-    return val.value if isinstance(val, Enum) else (val if val is not None else default)
+    return val.value if isinstance(
+        val, Enum) else (
+        val if val is not None else default)
 
 
 def detect_tier(text: str, context: Optional[Dict] = None) -> str:
@@ -241,12 +197,27 @@ def detect_tier(text: str, context: Optional[Dict] = None) -> str:
     # Procedural: how-to, tool usage
     if context.get("tool_used"):
         return "procedural"
-    if any(p in text_lower for p in ["how to", "how do", "how can", "steps to", "tutorial", "guide"]):
+    if any(
+        p in text_lower for p in [
+            "how to",
+            "how do",
+            "how can",
+            "steps to",
+            "tutorial",
+            "guide"]):
         return "procedural"
     # Episodic: dates, temporal markers
     if re.search(r"\d{4}-\d{2}-\d{2}|\d{2}/\d{2}/\d{4}", text):
         return "episodic"
-    if any(p in text_lower for p in ["yesterday", "last week", "last month", "ago", "вчера", "на прошлой", "неделю назад"]):
+    if any(
+        p in text_lower for p in [
+            "yesterday",
+            "last week",
+            "last month",
+            "ago",
+            "вчера",
+            "на прошлой",
+            "неделю назад"]):
         return "episodic"
     return "semantic"
 
@@ -282,7 +253,9 @@ def apply_attention_bias(results: List[Tuple[str, float, MemoryNode]],
         # Base resonance
         score = resp
         # Causal boost
-        causal_boost = sum(node.causal_strength.values()) if hasattr(node, 'causal_strength') else 0
+        causal_boost = sum(
+            node.causal_strength.values()) if hasattr(
+            node, 'causal_strength') else 0
         score *= (1.0 + 0.2 * min(1.0, causal_boost))
         # Tension penalty (high tension = less reliable)
         score *= max(0.5, 1.0 - node.tension)
@@ -311,7 +284,7 @@ def apply_attention_bias(results: List[Tuple[str, float, MemoryNode]],
 def format_cognitive_context(results: List[Tuple[str, float, MemoryNode]],
                              bias_applied: bool = False) -> str:
     """Format memory results with structural attention signals for LLM.
-    
+
     Handles both structured nodes (v2: input_text, output_text, emotion, tags)
     and legacy nodes (v1: text).
     """
@@ -321,7 +294,7 @@ def format_cognitive_context(results: List[Tuple[str, float, MemoryNode]],
     lines = ["### COGNITIVE_CONTEXT"]
     for nid, score, node in results:
         content = node.content
-        
+
         # Check for structured node (v2)
         if content.get("version") == "2.0":
             input_text = content.get("input_text", "")
@@ -329,15 +302,16 @@ def format_cognitive_context(results: List[Tuple[str, float, MemoryNode]],
             emotion = content.get("emotion", "neutral")
             tags = content.get("tags", [])
             session = content.get("session", "")
-            
+
             # Format structured context
             text_parts = []
             if input_text:
                 text_parts.append(f"User: {input_text[:80]}")
             if output_text:
                 text_parts.append(f"AI: {output_text[:80]}")
-            text = " | ".join(text_parts) if text_parts else content.get("text", "unknown")[:80]
-            
+            text = " | ".join(text_parts) if text_parts else content.get(
+                "text", "unknown")[:80]
+
             tier = content.get("tier", getattr(node, 'tier', 'semantic'))
             tokens = f"[SCORE:{score:.3f}]"
             tokens += f"[TIER:{tier[0].upper()}]"
@@ -354,10 +328,12 @@ def format_cognitive_context(results: List[Tuple[str, float, MemoryNode]],
             tokens = f"[SCORE:{score:.3f}]"
             tokens += f"[TIER:{tier[0].upper()}]"
 
-        causal = len(node.causal_strength) if hasattr(node, 'causal_strength') else 0
+        causal = len(
+            node.causal_strength) if hasattr(
+            node, 'causal_strength') else 0
         tension = node.tension
         lineage = len(node.lineage) if node.lineage else 0
-        
+
         if causal > 0:
             tokens += f"[CAUSAL:{causal}]"
         if tension > 0.3:
@@ -395,17 +371,9 @@ def format_cognitive_context(results: List[Tuple[str, float, MemoryNode]],
 # ============================================================================
 
 
-
-
-
-
-
-
-
 # ============================================================================
 # CONTEXT FORMATTING
 # ============================================================================
-
 SYSTEM_PROMPT_TEMPLATES = {
     ContextFormat.PLAIN: (
         "You are a helpful assistant with long-term memory.\n"
@@ -445,12 +413,13 @@ SYSTEM_PROMPT_TEMPLATES = {
 }
 
 
-def format_context(results: List[Tuple[str, float, MemoryNode]], fmt: ContextFormat) -> str:
+def format_context(
+        results: List[Tuple[str, float, MemoryNode]], fmt: ContextFormat) -> str:
     if fmt == ContextFormat.JSON:
         items = []
         for nid, resp, node in results:
             content = node.content
-            
+
             # Check for structured node (v2)
             if content.get("version") == "2.0":
                 item = {
@@ -482,8 +451,11 @@ def format_context(results: List[Tuple[str, float, MemoryNode]], fmt: ContextFor
                 if meta:
                     item["metadata"] = meta
             items.append(item)
-        return json.dumps(items, ensure_ascii=False, indent=2) if items else "[]"
-    
+        return json.dumps(
+            items,
+            ensure_ascii=False,
+            indent=2) if items else "[]"
+
     elif fmt == ContextFormat.YAML:
         lines = []
         for nid, resp, node in results:
@@ -492,8 +464,8 @@ def format_context(results: List[Tuple[str, float, MemoryNode]], fmt: ContextFor
                 lines.extend([
                     f"- resonance: {resp:.4f}",
                     f"  salience: {node.salience:.4f}",
-                    f"  input: \"{content.get('input_text', '')}\"",
-                    f"  output: \"{content.get('output_text', '')}\"",
+                    "  input: \"{content.get('input_text', '')}\"",
+                    "  output: \"{content.get('output_text', '')}\"",
                     f"  role: {content.get('role', '')}",
                     f"  emotion: {content.get('emotion', '')}",
                     f"  tier: {content.get('tier', '')}",
@@ -502,21 +474,24 @@ def format_context(results: List[Tuple[str, float, MemoryNode]], fmt: ContextFor
                 lines.extend([
                     f"- resonance: {resp:.4f}",
                     f"  salience: {node.salience:.4f}",
-                    f"  text: \"{content.get('text', '')}\"",
+                    "  text: \"{content.get('text', '')}\"",
                     f"  lineage: {node.lineage}",
                     f"  modality: {node.modality}",
                     f"  cross_modal_score: {node.cross_modal_score:.4f}",
                 ])
         return "\n".join(lines) if lines else "No relevant memory."
-    
+
     elif fmt == ContextFormat.ATTENTION:
         lines = ["### ATTENTION_CONTEXT"]
         for nid, resp, node in results:
             content = node.content
-            causal = len(node.causal_strength) if hasattr(node, 'causal_strength') else 0
+            causal = len(
+                node.causal_strength) if hasattr(
+                node, 'causal_strength') else 0
             goal_rel = getattr(node, 'goal_relevance', 0.0)
-            tokens = (f"[ATTN:{resp:.3f}][SAL:{node.salience:.3f}]"
-                      f"[TIER:{content.get('tier', getattr(node, 'tier', 'semantic'))[0].upper()}]")
+            tokens = (
+                f"[ATTN:{resp:.3f}][SAL:{node.salience:.3f}]"
+                f"[TIER:{content.get('tier', getattr(node, 'tier', 'semantic'))[0].upper()}]")
             # Phase 20: Domain & State tokens
             domain = getattr(node, 'domain', 'general')
             if domain and domain != 'general':
@@ -528,7 +503,7 @@ def format_context(results: List[Tuple[str, float, MemoryNode]], fmt: ContextFor
                 tokens += f"[CAUSAL:{causal}]"
             if goal_rel > 0.3:
                 tokens += f"[GOAL:{goal_rel:.2f}]"
-            
+
             # Extract text from structured or legacy node
             if content.get("version") == "2.0":
                 input_t = content.get("input_text", "")[:60]
@@ -550,7 +525,7 @@ def format_context(results: List[Tuple[str, float, MemoryNode]], fmt: ContextFor
                     text += f" #{','.join(tags[:2])}"
             else:
                 text = node.content.get("text", "unknown")[:100]
-            
+
             lines.append(f"{tokens} {text}")
         return "\n".join(lines) if len(lines) > 1 else "No relevant memory."
     else:
@@ -560,17 +535,24 @@ def format_context(results: List[Tuple[str, float, MemoryNode]], fmt: ContextFor
             if content.get("version") == "2.0":
                 input_t = content.get("input_text", "")[:50]
                 output_t = content.get("output_text", "")[:50]
-                text = f"U:{input_t} | AI:{output_t}" if input_t and output_t else (input_t or output_t or "unknown")
+                text = f"U:{input_t} | AI:{output_t}" if input_t and output_t else (
+                    input_t or output_t or "unknown")
             else:
                 text = n.content.get('text', '')
-            parts.append(f"[R:{r:.2f}|S:{n.salience:.2f}|CM:{n.cross_modal_score:.2f}] {text}")
+            parts.append(
+                f"[R:{r:.2f}|S:{n.salience:.2f}|CM:{n.cross_modal_score:.2f}] {text}")
         return "\n".join(parts) if parts else "No relevant memory."
 
 
-def build_system_prompt(context: str, fmt: ContextFormat, use_structured: bool) -> str:
-    if not use_structured or not context or context in ("No relevant memory.", "[]"):
+def build_system_prompt(
+        context: str,
+        fmt: ContextFormat,
+        use_structured: bool) -> str:
+    if not use_structured or not context or context in (
+            "No relevant memory.", "[]"):
         return "You are a helpful assistant with long-term memory."
-    return SYSTEM_PROMPT_TEMPLATES.get(fmt, SYSTEM_PROMPT_TEMPLATES[ContextFormat.PLAIN]).format(context=context)
+    return SYSTEM_PROMPT_TEMPLATES.get(
+        fmt, SYSTEM_PROMPT_TEMPLATES[ContextFormat.PLAIN]).format(context=context)
 
 
 # ============================================================================
@@ -612,8 +594,6 @@ def _copy_node(node):
     return n
 
 
-from rtmdk.memory.field import RTMDKField
-
 class RTMDKMemory(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
@@ -635,7 +615,9 @@ class RTMDKMemory(BaseModel):
 
     def model_post_init(self, __context):
         if self.field is None:
-            object.__setattr__(self, "field", RTMDKField(self.config, wal_path=self.wal_path))
+            object.__setattr__(
+                self, "field", RTMDKField(
+                    self.config, wal_path=self.wal_path))
         # Track 5: Replay WAL mutations for durability
         self._replay_wal()
         # Fix 4: Auto-start async workers if async_pipeline is enabled
@@ -658,7 +640,9 @@ class RTMDKMemory(BaseModel):
                     overlap_threshold=self.config.engram_overlap_threshold,
                 ))
             except Exception:
-                logger.warning("Engram manager initialization failed, disabling", exc_info=True)
+                logger.warning(
+                    "Engram manager initialization failed, disabling",
+                    exc_info=True)
                 object.__setattr__(self, "engram_manager", None)
         else:
             object.__setattr__(self, "engram_manager", None)
@@ -683,8 +667,13 @@ class RTMDKMemory(BaseModel):
     ) -> List[str]:
         """Batch add nodes. Delegates to RTMDKField.add_nodes_batch."""
         return self.field.add_nodes_batch(
-            embeddings, contents, phases, node_ids, session_ids, modalities, skip_projection
-        )
+            embeddings,
+            contents,
+            phases,
+            node_ids,
+            session_ids,
+            modalities,
+            skip_projection)
 
     def _replay_wal(self) -> None:
         """Replay WAL mutations to recover durability after restart.
@@ -713,7 +702,8 @@ class RTMDKMemory(BaseModel):
                         content = payload.get("content", {})
                         modality = payload.get("modality", "text")
                         node_id = payload.get("node_id")
-                        # Use stored embedding if available (Track 5), else re-embed
+                        # Use stored embedding if available (Track 5), else
+                        # re-embed
                         emb_list = payload.get("embedding")
                         if emb_list is not None:
                             embedding = np.array(emb_list, dtype=np.float32)
@@ -722,10 +712,12 @@ class RTMDKMemory(BaseModel):
                             if not text:
                                 text = content.get("input_text", "")
                             if not text:
-                                logger.warning(f"WAL replay add_node: no text for {node_id}")
+                                logger.warning(
+                                    f"WAL replay add_node: no text for {node_id}")
                                 continue
                             embedding = self.embedder(text)
-                        phase = self._get_phase(payload.get("session_id"), embedding)
+                        phase = self._get_phase(
+                            payload.get("session_id"), embedding)
                         self.field.add_node(
                             embedding, content, phase=phase,
                             node_id=node_id, modality=modality,
@@ -737,7 +729,8 @@ class RTMDKMemory(BaseModel):
                         node_ids = payload.get("node_ids")
                         embeddings_list = payload.get("embeddings")
                         if embeddings_list is not None:
-                            embeddings = np.array(embeddings_list, dtype=np.float32)
+                            embeddings = np.array(
+                                embeddings_list, dtype=np.float32)
                         else:
                             # Fallback: re-embed each content
                             texts = []
@@ -746,7 +739,8 @@ class RTMDKMemory(BaseModel):
                                 if not t:
                                     t = c.get("input_text", "")
                                 texts.append(t)
-                            embeddings = np.array([self.embedder(t) for t in texts], dtype=np.float32)
+                            embeddings = np.array(
+                                [self.embedder(t) for t in texts], dtype=np.float32)
                         if len(embeddings) == len(contents):
                             self.field.add_nodes_batch(
                                 embeddings, contents,
@@ -763,12 +757,17 @@ class RTMDKMemory(BaseModel):
                         # re-running consolidate would be non-deterministic.
                         pass
                 except Exception:
-                    logger.warning(f"WAL replay failed for {op}: {payload}", exc_info=True)
+                    logger.warning(
+                        f"WAL replay failed for {op}: {payload}",
+                        exc_info=True)
         finally:
             self.field.wal.enabled = was_enabled
         logger.info(f"WAL replay complete: {replayed} items recovered")
 
-    def _get_phase(self, session_id: Optional[str] = None, embedding: Optional[NDArray] = None) -> float:
+    def _get_phase(
+            self,
+            session_id: Optional[str] = None,
+            embedding: Optional[NDArray] = None) -> float:
         if session_id and session_id in self.session_phases:
             return self.session_phases[session_id]
         phase = (time.time() * 0.01) % (2 * np.pi)
@@ -776,7 +775,11 @@ class RTMDKMemory(BaseModel):
             self.session_phases[session_id] = phase
         return phase
 
-    def _retrieve_and_format(self, query: str, embedding: NDArray, session_id: str) -> str:
+    def _retrieve_and_format(
+            self,
+            query: str,
+            embedding: NDArray,
+            session_id: str) -> str:
         """Core retrieval pipeline shared by load_memory_variables and with_embedding."""
         phase = self._get_phase(session_id, embedding)
 
@@ -798,11 +801,20 @@ class RTMDKMemory(BaseModel):
                 )
                 self.field.stats["engram_retrievals"] += 1
             else:
-                results = self.field.query(embedding, phase, top_k=self.field.cfg.top_k, session_id=session_id)
+                results = self.field.query(
+                    embedding,
+                    phase,
+                    top_k=self.field.cfg.top_k,
+                    session_id=session_id)
         else:
-            results = self.field.query(embedding, phase, top_k=self.field.cfg.top_k, session_id=session_id)
+            results = self.field.query(
+                embedding,
+                phase,
+                top_k=self.field.cfg.top_k,
+                session_id=session_id)
 
-        # Session-scoped retrieval: filter results by session_id, with global fallback
+        # Session-scoped retrieval: filter results by session_id, with global
+        # fallback
         if session_id and session_id != "default" and results:
             session_results = [
                 (nid, score, node) for nid, score, node in results
@@ -822,16 +834,21 @@ class RTMDKMemory(BaseModel):
                 boosted.append((nid, score, node))
             boosted.sort(key=lambda x: x[1], reverse=True)
             results = boosted[:self.field.cfg.top_k]
-            self.field.stats["session_scoped_retrievals"] = self.field.stats.get("session_scoped_retrievals", 0) + 1
+            self.field.stats["session_scoped_retrievals"] = self.field.stats.get(
+                "session_scoped_retrievals", 0) + 1
 
-        # Phase 1: Hybrid retrieval — blend RTMDK resonance with BM25 text scores
+        # Phase 1: Hybrid retrieval — blend RTMDK resonance with BM25 text
+        # scores
         if self.field.cfg.hybrid_alpha < 1.0 and self.field.bm25_index is not None and results:
-            bm25_results = self.field.bm25_index.search(query, self.field.cfg.top_k * 2)
+            bm25_results = self.field.bm25_index.search(
+                query, self.field.cfg.top_k * 2)
             if bm25_results:
                 bm25_scores = {nid: score for nid, score in bm25_results}
                 max_bm25 = max(bm25_scores.values()) if bm25_scores else 1.0
                 if max_bm25 > 0:
-                    bm25_scores = {nid: s / max_bm25 for nid, s in bm25_scores.items()}
+                    bm25_scores = {
+                        nid: s / max_bm25 for nid,
+                        s in bm25_scores.items()}
 
                 alpha = self.field.cfg.hybrid_alpha
                 blended = []
@@ -841,20 +858,24 @@ class RTMDKMemory(BaseModel):
                     blended.append((nid, blended_score, node))
 
                 for nid, bm25_score in bm25_scores.items():
-                    if nid not in [n[0] for n in blended] and bm25_score > self.field.cfg.min_response:
+                    if nid not in [
+                            n[0] for n in blended] and bm25_score > self.field.cfg.min_response:
                         node = self.field.nodes.get(nid)
                         if node:
-                            blended_score = alpha * 0.0 + (1 - alpha) * bm25_score
+                            blended_score = alpha * 0.0 + \
+                                (1 - alpha) * bm25_score
                             blended.append((nid, blended_score, node))
 
                 blended.sort(key=lambda x: x[1], reverse=True)
                 results = blended[:self.field.cfg.top_k]
-                self.field.stats["hybrid_retrievals"] = self.field.stats.get("hybrid_retrievals", 0) + 1
+                self.field.stats["hybrid_retrievals"] = self.field.stats.get(
+                    "hybrid_retrievals", 0) + 1
 
         # Phase 15 Track 2: Proactive Clarification
         if self.config.proactive_clarification and results:
             max_score = results[0][1] if results else 0.0
-            threshold = self.field.cfg.min_response * self.config.clarification_threshold_ratio
+            threshold = self.field.cfg.min_response * \
+                self.config.clarification_threshold_ratio
             if 0 < max_score < threshold:
                 clarification = self._generate_clarification(results, query)
                 self.field.stats["clarifications_generated"] += 1
@@ -883,12 +904,13 @@ class RTMDKMemory(BaseModel):
                 concepts = self.field.symbolic_overlay._extract_concepts(text)
                 facts.extend(concepts)
             if facts:
-                symbolic_ctx = self.field.symbolic_overlay.get_symbolic_context(facts, max_depth=2)
+                symbolic_ctx = self.field.symbolic_overlay.get_symbolic_context(
+                    facts, max_depth=2)
                 if symbolic_ctx:
                     context += "\n\n" + symbolic_ctx
                     self.field.stats["n_symbolic_inferences"] += 1
-                    n_conflicts = sum(1 for r in self.field.symbolic_overlay.rules.values()
-                                     if r.is_contextual_exception)
+                    n_conflicts = sum(
+                        1 for r in self.field.symbolic_overlay.rules.values() if r.is_contextual_exception)
                     self.field.stats["n_symbolic_conflicts"] = n_conflicts
 
         return context
@@ -899,7 +921,9 @@ class RTMDKMemory(BaseModel):
         if not query:
             return {"rtmdk_context": ""}
         embedding = self.embedder(query)
-        return {"rtmdk_context": self._retrieve_and_format(query, embedding, session_id)}
+        return {
+            "rtmdk_context": self._retrieve_and_format(
+                query, embedding, session_id)}
 
     def load_memory_variables_with_embedding(
         self, inputs: Dict[str, str], embedding: NDArray
@@ -921,12 +945,16 @@ class RTMDKMemory(BaseModel):
         session_id = inputs.get("session_id", "default")
         if not query:
             return {"rtmdk_context": ""}
-        return {"rtmdk_context": self._retrieve_and_format(query, embedding, session_id)}
+        return {
+            "rtmdk_context": self._retrieve_and_format(
+                query, embedding, session_id)}
 
     def _get_node_embedding(self, nid: str, node) -> Optional[np.ndarray]:
         """Retrieve stored embedding for a node, or approximate from latent position."""
         # Check if node has modal_embedding (cross-modal)
-        if hasattr(node, 'modal_embedding') and node.modal_embedding is not None:
+        if hasattr(
+                node,
+                'modal_embedding') and node.modal_embedding is not None:
             return node.modal_embedding
         # Fallback: approximate embedding by inverse-projection from latent_pos
         # This is lossy but better than nothing for engram similarity
@@ -946,53 +974,125 @@ class RTMDKMemory(BaseModel):
         """Auto-detect memory tags from text content."""
         tags = []
         lower = text.lower()
-        
+
         # Greeting/name tags
-        if any(w in lower for w in ["hello", "hi ", "hey", "привет", "здравствуй", "hi,", "hey,"]):
+        if any(
+            w in lower for w in [
+                "hello",
+                "hi ",
+                "hey",
+                "привет",
+                "здравствуй",
+                "hi,",
+                "hey,"]):
             tags.append("greeting")
-        if any(w in lower for w in ["my name is", "i'm ", "i am ", "меня зовут", "мое имя"]):
+        if any(
+            w in lower for w in [
+                "my name is",
+                "i'm ",
+                "i am ",
+                "меня зовут",
+                "мое имя"]):
             tags.append("name")
-        
+
         # Topic tags
-        if any(w in lower for w in ["code", "program", "python", "java", "javascript", "функци", "код", "програм"]):
+        if any(
+            w in lower for w in [
+                "code",
+                "program",
+                "python",
+                "java",
+                "javascript",
+                "функци",
+                "код",
+                "програм"]):
             tags.append("coding")
-        if any(w in lower for w in ["coffee", "tea", "food", "drink", "кофе", "чай", "еда"]):
+        if any(
+            w in lower for w in [
+                "coffee",
+                "tea",
+                "food",
+                "drink",
+                "кофе",
+                "чай",
+                "еда"]):
             tags.append("food_drink")
-        if any(w in lower for w in ["love", "like", "prefer", "enjoy", "люб", "нрав", "предпочита"]):
+        if any(
+            w in lower for w in [
+                "love",
+                "like",
+                "prefer",
+                "enjoy",
+                "люб",
+                "нрав",
+                "предпочита"]):
             tags.append("preference")
-        if any(w in lower for w in ["work", "job", "career", "работ", "карьер", "професс"]):
+        if any(
+            w in lower for w in [
+                "work",
+                "job",
+                "career",
+                "работ",
+                "карьер",
+                "професс"]):
             tags.append("work")
-        if any(w in lower for w in ["live", "city", "country", "home", "жив", "город", "стран", "дом"]):
+        if any(
+            w in lower for w in [
+                "live",
+                "city",
+                "country",
+                "home",
+                "жив",
+                "город",
+                "стран",
+                "дом"]):
             tags.append("location")
-        if any(w in lower for w in ["family", "friend", "dog", "cat", "pet", "семь", "друг", "собак", "кот", "питом"]):
+        if any(
+            w in lower for w in [
+                "family",
+                "friend",
+                "dog",
+                "cat",
+                "pet",
+                "семь",
+                "друг",
+                "собак",
+                "кот",
+                "питом"]):
             tags.append("relationships")
-        
+
         return tags[:5]  # Limit to 5 tags
 
     def _generate_clarification(self, results: List, query: str) -> str:
         """Generate a clarification prompt from weak-resonance nodes."""
-        lines = [f"[CLARIFICATION] Не нашёл точных воспоминаний по запросу: \"{query[:80]}\""]
+        lines = [
+            "[CLARIFICATION] Не нашёл точных воспоминаний по запросу: \"{query[:80]}\""]
         lines.append("Полусовпадения (низкий резонанс):")
         for nid, score, node in results[:3]:
             text = node.content.get("text", "")[:60]
             lines.append(f"  [R:{score:.2f}] {text}")
-        lines.append("Уточните запрос или предоставьте дополнительный контекст.")
+        lines.append(
+            "Уточните запрос или предоставьте дополнительный контекст.")
         return "\n".join(lines)
 
     def get_system_prompt(self, context: str) -> str:
-        return build_system_prompt(context, self.config.context_format, self.config.use_structured_prompt)
+        return build_system_prompt(
+            context,
+            self.config.context_format,
+            self.config.use_structured_prompt)
 
-    def save_context(self, inputs: Dict[str, str], outputs: Dict[str, str]) -> None:
+    def save_context(
+            self, inputs: Dict[str, str], outputs: Dict[str, str]) -> None:
         """Save a conversation turn to memory with structured node format.
-        
+
         Args:
             inputs: {"input": "user text", "session_id": "...", ...}
             outputs: {"output": "assistant text", ...}
-        
+
         Node structure:
             input_text: User's message
             output_text: Assistant's response (empty if only input)
-            role: "user" or "assistant"  
+            role: "user" or "assistant"
             session: Session/character ID
             timestamp: Unix timestamp
             emotion: Detected emotion (neutral by default)
@@ -1002,33 +1102,49 @@ class RTMDKMemory(BaseModel):
         """
         input_text = inputs.get("input", "")
         output_text = outputs.get("output", "")
-        
+
         # If output is empty, still save the input
         if not output_text.strip():
             if not input_text.strip():
                 return
             text_for_embedding = input_text
         else:
-            text_for_embedding = output_text if len(output_text) > len(input_text) else input_text
-        
+            text_for_embedding = output_text if len(
+                output_text) > len(input_text) else input_text
+
         session_id = inputs.get("session_id", "default")
         timestamp = time.time()
-        
+
         # Detect emotion from text
         emotion = "neutral"
         if input_text:
             lower_input = input_text.lower()
-            if any(w in lower_input for w in ["happy", "love", "great", "wonderful", "amazing", "рад", "люб", "отличн", "прекрасн"]):
+            if any(
+                w in lower_input for w in [
+                    "happy",
+                    "love",
+                    "great",
+                    "wonderful",
+                    "amazing",
+                    "рад",
+                    "люб",
+                    "отличн",
+                    "прекрасн"]):
                 emotion = "positive"
-            elif any(w in lower_input for w in ["sad", "hate", "bad", "terrible", "angry", "грустн", "ненавиж", "плох", "зл"]):
+            elif any(w in lower_input for w in [
+                    "sad", "hate", "bad", "terrible", "angry",
+                    "грустн", "ненавиж", "плох", "зл"]):
                 emotion = "negative"
-            elif any(w in lower_input for w in ["?", "what", "why", "how", "when", "где", "что", "как", "когда", "почему"]):
+            elif any(w in lower_input for w in [
+                    "?", "what", "why", "how", "when",
+                    "где", "что", "как", "когда", "почему"]):
+                emotion = "negative"
                 emotion = "questioning"
-        
+
         # Auto-detect tags from text
         all_text = f"{input_text} {output_text}"
         tags = self._detect_tags(all_text)
-        
+
         # Build structured node content
         content = {
             "input_text": input_text,
@@ -1040,22 +1156,28 @@ class RTMDKMemory(BaseModel):
             "tags": tags,
             "tier": "episodic",  # Will be refined by tier detection
             "context": {
-                k: v for k, v in inputs.items() 
+                k: v for k, v in inputs.items()
                 if k not in ["input", "query", "session_id", "embedding"]
             },
             "version": "2.0",  # Structured node version
         }
-        
+
         embedding = self.embedder(text_for_embedding)
         phase = self._get_phase(session_id, embedding)
-        modality = detect_modality(text_for_embedding) if self.config.cross_modal else "text"
-        
+        modality = detect_modality(
+            text_for_embedding) if self.config.cross_modal else "text"
+
         # Detect memory tier
         tier = detect_tier(text_for_embedding, inputs)
         content["tier"] = tier
 
         try:
-            nid = self.field.add_node(embedding, content, phase, session_id=session_id, modality=modality)
+            nid = self.field.add_node(
+                embedding,
+                content,
+                phase,
+                session_id=session_id,
+                modality=modality)
         except SecurityViolationError:
             return
 
@@ -1067,21 +1189,26 @@ class RTMDKMemory(BaseModel):
         if self.engram_manager is not None:
             related_nodes = []
             for existing_nid, existing_node in self.field.nodes.items():
-                existing_emb = self._get_node_embedding(existing_nid, existing_node)
+                existing_emb = self._get_node_embedding(
+                    existing_nid, existing_node)
                 if existing_emb is not None:
-                    sim = float(np.dot(embedding, existing_emb) / (
-                        (np.linalg.norm(embedding) + 1e-8) * (np.linalg.norm(existing_emb) + 1e-8)))
+                    sim = float(np.dot(embedding, existing_emb) /
+                                ((np.linalg.norm(embedding) +
+                                  1e-8) *
+                                 (np.linalg.norm(existing_emb) +
+                                  1e-8)))
                     if sim > 0.5:
                         related_nodes.append((existing_nid, sim))
             related_nodes.append((nid, 1.0))
-            
+
             if len(related_nodes) >= self.config.engram_min_nodes:
                 node_embs = {}
                 for nid, _ in related_nodes:
-                    emb = self._get_node_embedding(nid, self.field.nodes.get(nid))
+                    emb = self._get_node_embedding(
+                        nid, self.field.nodes.get(nid))
                     if emb is not None:
                         node_embs[nid] = emb
-                
+
                 self.engram_manager.create_engram_from_nodes(
                     activated_nodes=related_nodes[:self.config.engram_max_nodes],
                     node_embeddings=node_embs,
@@ -1127,16 +1254,29 @@ class RTMDKMemory(BaseModel):
         if node_id not in self.field.nodes:
             return None
         node = self.field.nodes[node_id]
-        info = {"id": node.id, "phase": node.phase, "amplitude": node.amplitude,
-                "salience": node.salience, "tension": node.tension, "soft_gate": node.soft_gate,
-                "self_sup_score": node.self_sup_score, "modal_weight": node.modal_weight,
-                "modality": node.modality, "lineage": node.lineage, "content": node.content,
-                "created_at": node.created_at, "last_resonated": node.last_resonated,
-                "causal_parents": node.causal_parents, "causal_strength": node.causal_strength,
-                "causal_effects": node.causal_effects, "is_causal_root": node.is_causal_root,
-                "is_healing": node.is_healing, "healing_origin": node.healing_origin,
-                "local_density": node.local_density, "goal_tags": node.goal_tags,
-                "cross_modal_score": node.cross_modal_score}
+        info = {
+            "id": node.id,
+            "phase": node.phase,
+            "amplitude": node.amplitude,
+            "salience": node.salience,
+            "tension": node.tension,
+            "soft_gate": node.soft_gate,
+            "self_sup_score": node.self_sup_score,
+            "modal_weight": node.modal_weight,
+            "modality": node.modality,
+            "lineage": node.lineage,
+            "content": node.content,
+            "created_at": node.created_at,
+            "last_resonated": node.last_resonated,
+            "causal_parents": node.causal_parents,
+            "causal_strength": node.causal_strength,
+            "causal_effects": node.causal_effects,
+            "is_causal_root": node.is_causal_root,
+            "is_healing": node.is_healing,
+            "healing_origin": node.healing_origin,
+            "local_density": node.local_density,
+            "goal_tags": node.goal_tags,
+            "cross_modal_score": node.cross_modal_score}
         if node.pre_consolidation_pos is not None:
             info["pre_consolidation_pos"] = node.pre_consolidation_pos.tolist()
         if node.velocity is not None:
@@ -1149,8 +1289,8 @@ class RTMDKMemory(BaseModel):
         return self.field.rollback_consolidation(n_steps)
 
     def get_rollback_history(self) -> List[Dict]:
-        return [{"timestamp": s["timestamp"], "updated": s["updated"], "n_nodes": len(s["pre_state"])}
-                for s in self.field._rollback_history]
+        return [{"timestamp": s["timestamp"], "updated": s["updated"], "n_nodes": len(
+            s["pre_state"])} for s in self.field._rollback_history]
 
     def do_intervention(self, node_id: str, text: str):
         emb = self.embedder(text)
@@ -1168,9 +1308,14 @@ class RTMDKMemory(BaseModel):
     def trigger_healing(self) -> List[Dict]:
         return self.field._self_heal()
 
-    def counterfactual_query(self, intervention: Dict[str, Any], query_nodes: List[str],
-                             evidence: Optional[Dict[str, Any]] = None) -> CounterfactualResult:
-        return self.field.counterfactual_query(intervention, query_nodes, evidence)
+    def counterfactual_query(self,
+                             intervention: Dict[str,
+                                                Any],
+                             query_nodes: List[str],
+                             evidence: Optional[Dict[str,
+                                                     Any]] = None) -> CounterfactualResult:
+        return self.field.counterfactual_query(
+            intervention, query_nodes, evidence)
 
     def get_causal_summary(self) -> Dict:
         return self.field.get_causal_summary()
@@ -1180,44 +1325,69 @@ class RTMDKMemory(BaseModel):
             return list(self.field.causal_engine.contradictions.values())
         return []
 
-    def resolve_contradiction(self, contradiction_id: str, resolution: str) -> bool:
+    def resolve_contradiction(
+            self,
+            contradiction_id: str,
+            resolution: str) -> bool:
         if self.field.causal_engine and contradiction_id in self.field.causal_engine.contradictions:
             self.field.causal_engine.contradictions[contradiction_id].resolved = True
             self.field.causal_engine.contradictions[contradiction_id].resolution = resolution
             return True
         return False
 
-    def validate_consolidation(self, node_a: str, node_b: str) -> Dict[str, Any]:
+    def validate_consolidation(
+            self, node_a: str, node_b: str) -> Dict[str, Any]:
         if self.field.causal_engine:
-            return self.field.causal_engine.validate_consolidation(node_a, node_b)
-        return {"safe": True, "reasons": [], "causal_conflicts": [], "recommendation": "proceed"}
+            return self.field.causal_engine.validate_consolidation(
+                node_a, node_b)
+        return {
+            "safe": True,
+            "reasons": [],
+            "causal_conflicts": [],
+            "recommendation": "proceed"}
 
     # Phase 7: ODE
-    def evolve_continuous(self, inputs: Optional[List[Dict]] = None, use_sde: bool = False) -> NDArray:
+    def evolve_continuous(self,
+                          inputs: Optional[List[Dict]] = None,
+                          use_sde: bool = False) -> NDArray:
         return self.field.evolve_continuous(inputs, use_sde)
 
     def get_response_smoothness(self) -> float:
         return self.field.stats.get("response_smoothness", 1.0)
 
     # Phase 8: Agent
-    def create_plan(self, goal: str, available_tools: List[str], context: Optional[Dict] = None) -> AgentPlan:
+    def create_plan(
+            self,
+            goal: str,
+            available_tools: List[str],
+            context: Optional[Dict] = None) -> AgentPlan:
         return self.field.create_plan(goal, available_tools, context)
 
-    def verify_hypothesis(self, hypothesis: str, active_nodes: Optional[List[str]] = None) -> Hypothesis:
+    def verify_hypothesis(self, hypothesis: str,
+                          active_nodes: Optional[List[str]] = None) -> Hypothesis:
         return self.field.verify_hypothesis(hypothesis, active_nodes)
 
-    def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> ToolCall:
+    def execute_tool(self,
+                     tool_name: str,
+                     arguments: Dict[str,
+                                     Any]) -> ToolCall:
         return self.field.execute_tool(tool_name, arguments)
 
     def register_tool(self, name: str, func: Callable):
         self.field.register_tool(name, func)
 
     # Phase 9: Production
-    def evaluate_response(self, question: str, answer: str, contexts: List[str],
-                          ground_truth: Optional[str] = None) -> EvalResult:
-        return self.field.evaluate_response(question, answer, contexts, ground_truth)
+    def evaluate_response(
+            self,
+            question: str,
+            answer: str,
+            contexts: List[str],
+            ground_truth: Optional[str] = None) -> EvalResult:
+        return self.field.evaluate_response(
+            question, answer, contexts, ground_truth)
 
-    def compare_shadow(self, shadow_score: float, production_score: float) -> Dict[str, Any]:
+    def compare_shadow(self, shadow_score: float,
+                       production_score: float) -> Dict[str, Any]:
         return self.field.compare_shadow(shadow_score, production_score)
 
     def get_ragas_trend(self) -> Dict[str, float]:
@@ -1240,11 +1410,15 @@ class RTMDKMemory(BaseModel):
         if self.field.tda_monitor:
             self.field.stats["tda_trend"] = self.field.tda_monitor.get_trend()
         if self.field.dp:
-            self.field.stats["privacy_budget_spent"] = self.field.dp.get_privacy_spent()
+            self.field.stats["privacy_budget_spent"] = self.field.dp.get_privacy_spent(
+            )
         return {**self.field.stats, "config": self.config.asdict()}
 
     # Phase 11 Track 4: Counterfactual imagination
-    def imagine_counterfactual(self, base_query: str, intervention: Dict[str, float]) -> List[Dict]:
+    def imagine_counterfactual(self,
+                               base_query: str,
+                               intervention: Dict[str,
+                                                  float]) -> List[Dict]:
         """Generate hypothetical scenarios."""
         embedding = self.embedder(base_query)
         return self.field.imagine_counterfactual(embedding, intervention)
@@ -1262,8 +1436,10 @@ class RTMDKMemory(BaseModel):
         """Export to Universal Memory Protocol format."""
         path = _sanitize_path(path)
         if not UMP_AVAILABLE:
-            raise ImportError("Universal Memory Protocol not available. Install rtmdk.support.ump")
-        ump = UniversalMemoryProtocol.export(self.field, self, source=source, comment=comment)
+            raise ImportError(
+                "Universal Memory Protocol not available. Install rtmdk.support.ump")
+        ump = UniversalMemoryProtocol.export(
+            self.field, self, source=source, comment=comment)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(ump, f, ensure_ascii=False, indent=2)
 
@@ -1272,9 +1448,11 @@ class RTMDKMemory(BaseModel):
         """Import from Universal Memory Protocol format."""
         path = _sanitize_path(path)
         if not UMP_AVAILABLE:
-            raise ImportError("Universal Memory Protocol not available. Install rtmdk.support.ump")
+            raise ImportError(
+                "Universal Memory Protocol not available. Install rtmdk.support.ump")
         ump = _safe_json_load(path)
-        return UniversalMemoryProtocol.import_ump(ump, embedder, memory_class=cls)
+        return UniversalMemoryProtocol.import_ump(
+            ump, embedder, memory_class=cls)
 
     def validate_ump(self, path: str) -> Dict:
         """Validate a UMP file."""

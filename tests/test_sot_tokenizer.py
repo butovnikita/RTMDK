@@ -22,7 +22,10 @@ class TestSOTokenizerInit:
         assert tok.next_token_id == 256
 
     def test_token_dim_different(self):
-        tok = SOTokenizer(latent_dim=LATENT_DIM, token_dim=TOKEN_DIM, max_vocab=MAX_VOCAB)
+        tok = SOTokenizer(
+            latent_dim=LATENT_DIM,
+            token_dim=TOKEN_DIM,
+            max_vocab=MAX_VOCAB)
         assert tok.latent_dim == LATENT_DIM
         assert tok.token_dim == TOKEN_DIM
         assert tok.projection.shape == (TOKEN_DIM, LATENT_DIM)
@@ -33,7 +36,8 @@ class TestSOTokenizerInit:
     def test_embeddings_have_correct_shape(self):
         tok = SOTokenizer(latent_dim=LATENT_DIM, token_dim=TOKEN_DIM)
         for tid, emb in tok.token_embeddings.items():
-            assert emb.shape == (TOKEN_DIM,), f"Token {tid} has wrong shape {emb.shape}"
+            assert emb.shape == (
+                TOKEN_DIM,), f"Token {tid} has wrong shape {emb.shape}"
             assert emb.dtype == np.float32
 
     def test_byte_tokens_cover_0_to_255(self):
@@ -70,7 +74,6 @@ class TestSOTokenizerEncodeDecode:
 
     def test_after_merge_uses_merged_tokens(self):
         tok = SOTokenizer(latent_dim=LATENT_DIM, token_dim=TOKEN_DIM)
-        text = "ababab"
         a_byte = ord("a")
         b_byte = ord("b")
         for _ in range(10):
@@ -101,7 +104,8 @@ class TestSOTokenizerEmbed:
         tok = SOTokenizer(latent_dim=LATENT_DIM, token_dim=TOKEN_DIM)
         tokens = [0, 1, 2]
         emb = tok.embed(tokens)
-        manual = np.mean([tok.token_embeddings[t] for t in tokens], axis=0) @ tok.projection
+        manual = np.mean([tok.token_embeddings[t]
+                         for t in tokens], axis=0) @ tok.projection
         norm = np.linalg.norm(manual)
         if norm > 0:
             manual = manual / norm
@@ -137,7 +141,10 @@ class TestSOTokenizerCooccurrence:
             assert len(merges[0]) == 2
 
     def test_merge_creates_new_token(self):
-        tok = SOTokenizer(latent_dim=LATENT_DIM, token_dim=TOKEN_DIM, max_vocab=300)
+        tok = SOTokenizer(
+            latent_dim=LATENT_DIM,
+            token_dim=TOKEN_DIM,
+            max_vocab=300)
         tok.record_cooccurrence([5, 6])
         initial_len = len(tok.token_embeddings)
         tok.merge((5, 6))
@@ -145,55 +152,84 @@ class TestSOTokenizerCooccurrence:
         assert tok.next_token_id == initial_len + 1
 
     def test_merge_embedding_is_weighted_average(self):
-        tok = SOTokenizer(latent_dim=LATENT_DIM, token_dim=TOKEN_DIM, max_vocab=300)
+        tok = SOTokenizer(
+            latent_dim=LATENT_DIM,
+            token_dim=TOKEN_DIM,
+            max_vocab=300)
         tok.record_cooccurrence([5, 6], weight=3.0)
         tok.record_cooccurrence([5, 7], weight=1.0)
         tok.merge((5, 6))
         new_id = 256
-        raw = (3.0 * tok.token_embeddings[5] + 3.0 * tok.token_embeddings[6]) / (3.0 + 3.0)
+        raw = (3.0 * tok.token_embeddings[5] + 3.0 *
+               tok.token_embeddings[6]) / (3.0 + 3.0)
         expected = raw / np.linalg.norm(raw)
         assert np.allclose(tok.token_embeddings[new_id], expected, atol=1e-5)
 
     def test_merge_respects_max_vocab(self):
-        tok = SOTokenizer(latent_dim=LATENT_DIM, token_dim=TOKEN_DIM, max_vocab=257)
+        tok = SOTokenizer(
+            latent_dim=LATENT_DIM,
+            token_dim=TOKEN_DIM,
+            max_vocab=257)
         tok.merge((0, 1))
         assert len(tok.token_embeddings) == 257
         with pytest.raises(RuntimeError):
             tok.merge((2, 3))
 
     def test_merge_adds_to_merge_table(self):
-        tok = SOTokenizer(latent_dim=LATENT_DIM, token_dim=TOKEN_DIM, max_vocab=300)
+        tok = SOTokenizer(
+            latent_dim=LATENT_DIM,
+            token_dim=TOKEN_DIM,
+            max_vocab=300)
         tok.merge((1, 2))
         assert tok.merges[(1, 2)] == 256
 
 
 class TestSOTokenizerState:
     def test_get_state_roundtrip(self):
-        tok = SOTokenizer(latent_dim=LATENT_DIM, token_dim=TOKEN_DIM, max_vocab=300)
+        tok = SOTokenizer(
+            latent_dim=LATENT_DIM,
+            token_dim=TOKEN_DIM,
+            max_vocab=300)
         tok.record_cooccurrence([1, 2])
         tok.merge((1, 2))
         state = tok.get_state()
-        tok2 = SOTokenizer(latent_dim=LATENT_DIM, token_dim=TOKEN_DIM, max_vocab=300)
+        tok2 = SOTokenizer(
+            latent_dim=LATENT_DIM,
+            token_dim=TOKEN_DIM,
+            max_vocab=300)
         tok2.load_state(state)
         assert tok2.merges == tok.merges
-        assert set(tok2.token_embeddings.keys()) == set(tok.token_embeddings.keys())
+        assert set(
+            tok2.token_embeddings.keys()) == set(
+            tok.token_embeddings.keys())
         for k in tok.token_embeddings:
-            assert np.allclose(tok2.token_embeddings[k], tok.token_embeddings[k])
+            assert np.allclose(
+                tok2.token_embeddings[k],
+                tok.token_embeddings[k])
         assert np.allclose(tok2.projection, tok.projection)
         assert tok2.next_token_id == tok.next_token_id
 
     def test_load_state_restores_encode_behavior(self):
-        tok = SOTokenizer(latent_dim=LATENT_DIM, token_dim=TOKEN_DIM, max_vocab=300)
+        tok = SOTokenizer(
+            latent_dim=LATENT_DIM,
+            token_dim=TOKEN_DIM,
+            max_vocab=300)
         tok.record_cooccurrence([65, 66])  # 'A', 'B'
         tok.merge((65, 66))
         state = tok.get_state()
-        tok2 = SOTokenizer(latent_dim=LATENT_DIM, token_dim=TOKEN_DIM, max_vocab=300)
+        tok2 = SOTokenizer(
+            latent_dim=LATENT_DIM,
+            token_dim=TOKEN_DIM,
+            max_vocab=300)
         tok2.load_state(state)
         text = "AB"
         assert tok2.encode(text) == tok.encode(text)
 
     def test_projection_update(self):
-        tok = SOTokenizer(latent_dim=LATENT_DIM, token_dim=TOKEN_DIM, max_vocab=300)
+        tok = SOTokenizer(
+            latent_dim=LATENT_DIM,
+            token_dim=TOKEN_DIM,
+            max_vocab=300)
         # Positive pair should move projections closer
         p_before_0 = tok.token_embeddings[0] @ tok.projection
         p_before_1 = tok.token_embeddings[1] @ tok.projection
@@ -207,7 +243,10 @@ class TestSOTokenizerState:
 
 class TestSOTokenizerGreedyEncoding:
     def test_prefers_longer_merged_tokens(self):
-        tok = SOTokenizer(latent_dim=LATENT_DIM, token_dim=TOKEN_DIM, max_vocab=300)
+        tok = SOTokenizer(
+            latent_dim=LATENT_DIM,
+            token_dim=TOKEN_DIM,
+            max_vocab=300)
         a, b = ord("a"), ord("b")
         tok.record_cooccurrence([a, b])
         tok.merge((a, b))
@@ -281,5 +320,9 @@ class TestSOTokenizerContrastive:
         sim_qn_before = float(np.dot(q_emb_before, n_emb_before))
         sim_qn_after = float(np.dot(q_emb_after, n_emb_after))
 
-        assert sim_qp_after > sim_qp_before, f"Query-positive similarity should increase: {sim_qp_after:.3f} vs {sim_qp_before:.3f}"
-        assert sim_qn_after < sim_qn_before, f"Query-negative similarity should decrease: {sim_qn_after:.3f} vs {sim_qn_before:.3f}"
+        assert sim_qp_after > sim_qp_before, (
+            f"Query-positive similarity should increase: "
+            f"{sim_qp_after:.3f} vs {sim_qp_before:.3f}")
+        assert sim_qn_after < sim_qn_before, (
+            f"Query-negative similarity should decrease: "
+            f"{sim_qn_after:.3f} vs {sim_qn_before:.3f}")

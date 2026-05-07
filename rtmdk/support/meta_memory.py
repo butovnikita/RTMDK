@@ -14,8 +14,11 @@ if TYPE_CHECKING:
 class MetaMemoryEvaluator:
     """Evaluates recall accuracy, memory age, and self-reflection."""
 
-    def __init__(self, recall_threshold: float = 0.6, age_factor: float = 0.001,
-                 reflection_freq: int = 100):
+    def __init__(
+            self,
+            recall_threshold: float = 0.6,
+            age_factor: float = 0.001,
+            reflection_freq: int = 100):
         self.recall_threshold = recall_threshold
         self.age_factor = age_factor
         self.reflection_freq = reflection_freq
@@ -49,8 +52,12 @@ class MetaMemoryEvaluator:
         """Introspective analysis of memory field health."""
         recall_acc = self.evaluate_recall_accuracy()
         n_nodes = len(field.nodes) if hasattr(field, 'nodes') else 0
-        n_consolidations = field.stats.get("consolidations", 0) if hasattr(field, 'stats') else 0
-        false_merges = field.stats.get("false_merges", 0) if hasattr(field, 'stats') else 0
+        n_consolidations = field.stats.get(
+            "consolidations", 0) if hasattr(
+            field, 'stats') else 0
+        false_merges = field.stats.get(
+            "false_merges", 0) if hasattr(
+            field, 'stats') else 0
 
         recommendations = []
         if recall_acc < self.recall_threshold:
@@ -88,6 +95,7 @@ class MetaMemoryEvaluator:
         }
 
     def load_state(self, state: Dict):
-        self._recall_history = deque(state.get("recall_history", []), maxlen=100)
+        self._recall_history = deque(
+            state.get("recall_history", []), maxlen=100)
         self._reflection_log = state.get("reflection_log", [])
         self._step_counter = state.get("step_counter", 0)

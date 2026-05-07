@@ -35,7 +35,8 @@ SYSTEM_PROMPT_TEMPLATES = {
 }
 
 
-def format_context(results: List[Tuple[str, float, "MemoryNode"]], fmt: ContextFormat) -> str:
+def format_context(
+        results: List[Tuple[str, float, "MemoryNode"]], fmt: ContextFormat) -> str:
     if fmt == ContextFormat.JSON:
         items = []
         for nid, resp, node in results:
@@ -47,19 +48,26 @@ def format_context(results: List[Tuple[str, float, "MemoryNode"]], fmt: ContextF
             if meta:
                 item["metadata"] = meta
             items.append(item)
-        return json.dumps(items, ensure_ascii=False, indent=2) if items else "[]"
+        return json.dumps(
+            items,
+            ensure_ascii=False,
+            indent=2) if items else "[]"
     elif fmt == ContextFormat.YAML:
         lines = []
         for nid, resp, node in results:
-            lines.extend([f"- resonance: {resp:.4f}", f"  salience: {node.salience:.4f}",
-                          f"  text: \"{node.content.get('text', '')}\"",
-                          f"  lineage: {node.lineage}", f"  modality: {node.modality}",
+            lines.extend([f"- resonance: {resp:.4f}",
+                          f"  salience: {node.salience:.4f}",
+                          "  text: \"{node.content.get('text', '')}\"",
+                          f"  lineage: {node.lineage}",
+                          f"  modality: {node.modality}",
                           f"  cross_modal_score: {node.cross_modal_score:.4f}"])
         return "\n".join(lines) if lines else "No relevant memory."
     elif fmt == ContextFormat.ATTENTION:
         lines = ["### ATTENTION_CONTEXT"]
         for nid, resp, node in results:
-            causal = len(node.causal_strength) if hasattr(node, 'causal_strength') else 0
+            causal = len(
+                node.causal_strength) if hasattr(
+                node, 'causal_strength') else 0
             goal_rel = getattr(node, 'goal_relevance', 0.0)
             tokens = (f"[ATTN:{resp:.3f}][SAL:{node.salience:.3f}]"
                       f"[TIER:{getattr(node, 'tier', 'semantic')[0].upper()}]")
@@ -71,11 +79,19 @@ def format_context(results: List[Tuple[str, float, "MemoryNode"]], fmt: ContextF
             lines.append(f"{tokens} {text}")
         return "\n".join(lines) if len(lines) > 1 else "No relevant memory."
     else:
-        parts = [f"[R:{r:.2f}|S:{n.salience:.2f}|CM:{n.cross_modal_score:.2f}] {n.content.get('text', '')}" for _, r, n in results]
+        parts = [
+            f"[R:{r:.2f}|S:{n.salience:.2f}|CM:{n.cross_modal_score:.2f}] {n.content.get('text', '')}" for _,
+            r,
+            n in results]
         return "\n".join(parts) if parts else "No relevant memory."
 
 
-def build_system_prompt(context: str, fmt: ContextFormat, use_structured: bool) -> str:
-    if not use_structured or not context or context in ("No relevant memory.", "[]"):
+def build_system_prompt(
+        context: str,
+        fmt: ContextFormat,
+        use_structured: bool) -> str:
+    if not use_structured or not context or context in (
+            "No relevant memory.", "[]"):
         return "You are a helpful assistant with long-term memory."
-    return SYSTEM_PROMPT_TEMPLATES.get(fmt, SYSTEM_PROMPT_TEMPLATES[ContextFormat.PLAIN]).format(context=context)
+    return SYSTEM_PROMPT_TEMPLATES.get(
+        fmt, SYSTEM_PROMPT_TEMPLATES[ContextFormat.PLAIN]).format(context=context)

@@ -14,8 +14,8 @@ import os
 import tempfile
 
 from rtmdk.memory.core import (
-    RTMDKMemory, RTMDKConfig, RTMDKField,
-    SecurityViolationError, _sanitize_path, _safe_json_load,
+    RTMDKMemory, RTMDKConfig, SecurityViolationError,
+    _sanitize_path, _safe_json_load,
 )
 
 
@@ -29,11 +29,13 @@ class TestPathSanitization:
             _sanitize_path("data/../secret.txt")
 
     def test_allows_absolute_unix_path(self):
-        # Absolute paths are allowed (blocked by OS/container policy, not by us)
+        # Absolute paths are allowed (blocked by OS/container policy, not by
+        # us)
         assert _sanitize_path("/etc/passwd") == "\\etc\\passwd"
 
     def test_allows_absolute_windows_path(self):
-        assert _sanitize_path("C:\\Windows\\system.ini") == "C:\\Windows\\system.ini"
+        assert _sanitize_path(
+            "C:\\Windows\\system.ini") == "C:\\Windows\\system.ini"
 
     def test_allows_safe_relative_path(self):
         assert _sanitize_path("memory/state.json") == "memory\\state.json"

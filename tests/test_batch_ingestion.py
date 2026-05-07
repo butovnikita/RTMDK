@@ -44,14 +44,18 @@ class TestAddNodesBatch:
         n = 20
         embeddings = np.random.randn(n, cfg.latent_dim).astype(np.float32)
         contents = [{"text": f"node {i}"} for i in range(n)]
-        nids = field.add_nodes_batch(embeddings, contents)
+        field.add_nodes_batch(embeddings, contents)
         if field.hnsw_index:
             assert len(field.hnsw_index.positions) == n
 
     def test_batch_cache_incremental(self, cfg):
         field = RTMDKField(cfg)
         # Pre-populate to build cache
-        field.add_node(np.random.randn(cfg.latent_dim).astype(np.float32), {"text": "seed"})
+        field.add_node(
+            np.random.randn(
+                cfg.latent_dim).astype(
+                np.float32), {
+                "text": "seed"})
         # Trigger cache build by a query
         field.query(np.random.randn(cfg.latent_dim).astype(np.float32))
         assert field._cached_positions is not None
@@ -116,7 +120,7 @@ class TestAddNodesBatch:
         contents = [{"text": f"node {i}"} for i in range(n)]
 
         # Batch
-        nids_batch = field1.add_nodes_batch(embeddings, contents)
+        field1.add_nodes_batch(embeddings, contents)
 
         # Loop
         nids_loop = []
@@ -191,7 +195,8 @@ class TestAddNodesBatch:
         n = 3
         embeddings = np.random.randn(n, cfg.latent_dim).astype(np.float32)
         contents = [{"text": f"node {i}"} for i in range(n)]
-        nids = field.add_nodes_batch(embeddings, contents, skip_projection=True)
+        nids = field.add_nodes_batch(
+            embeddings, contents, skip_projection=True)
         assert len(nids) == n
 
     def test_batch_skip_projection_wrong_dim(self, cfg):

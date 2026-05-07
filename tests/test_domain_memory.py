@@ -16,14 +16,13 @@ Tests cover:
 
 import pytest
 import json
-import time
 import numpy as np
 import tempfile
 import os
 
-from rtmdk import RTMDKMemory, RTMDKConfig, RTMDKField, MemoryNode
+from rtmdk import RTMDKMemory, RTMDKConfig, MemoryNode
 from rtmdk.memory.core import ContextFormat, format_context
-from rtmdk.utils.domain_classifier import detect_domain, get_domain_stats
+from rtmdk.utils.domain_classifier import detect_domain
 
 
 def make_embedder(dim=768):
@@ -42,7 +41,12 @@ class TestNewFieldsSerialization:
     def test_memory_node_has_new_fields(self):
         """MemoryNode should have all Phase 20 fields with defaults."""
         emb = np.random.randn(64).astype(np.float32)
-        node = MemoryNode(id="n1", latent_pos=emb, phase=0.0, amplitude=1.0, salience=1.0)
+        node = MemoryNode(
+            id="n1",
+            latent_pos=emb,
+            phase=0.0,
+            amplitude=1.0,
+            salience=1.0)
 
         # Phase 20 Track 1: Domain Hierarchy
         assert node.domain == "general"
@@ -126,7 +130,7 @@ class TestBackwardCompatibility:
         emb = make_embedder(64)("test text")
         content = {"text": "old node", "tier": "semantic"}
         # Simulate old-style data (no domain, state, etc.)
-        nid = memory.field.add_node(emb, content, phase=0.0, session_id="test")
+        _ = memory.field.add_node(emb, content, phase=0.0, session_id="test")
 
         # Export
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
@@ -137,9 +141,19 @@ class TestBackwardCompatibility:
         with open(temp_path, 'r') as f:
             data = json.load(f)
         for node_data in data.get("nodes", []):
-            for key in ["domain", "subdomain", "topic", "state", "confidence",
-                        "revision_count", "conflict_with", "evidence_spans",
-                        "valid_from", "valid_until", "fact_state", "superseded_by"]:
+            for key in [
+                "domain",
+                "subdomain",
+                "topic",
+                "state",
+                "confidence",
+                "revision_count",
+                "conflict_with",
+                "evidence_spans",
+                "valid_from",
+                "valid_until",
+                "fact_state",
+                    "superseded_by"]:
                 node_data.pop(key, None)
         with open(temp_path, 'w') as f:
             json.dump(data, f)
@@ -164,12 +178,14 @@ class TestBackwardCompatibility:
 
 class TestDomainDetection:
     def test_it_databases(self):
-        domain, subdomain, topic = detect_domain("How to create a SQL index on PostgreSQL?")
+        domain, subdomain, topic = detect_domain(
+            "How to create a SQL index on PostgreSQL?")
         assert domain == "IT"
         assert subdomain == "Databases"
 
     def test_it_programming(self):
-        domain, subdomain, topic = detect_domain("Write a Python function with async/await")
+        domain, subdomain, topic = detect_domain(
+            "Write a Python function with async/await")
         assert domain == "IT"
         assert subdomain == "Programming"
 
@@ -223,16 +239,19 @@ class TestDomainAwareRetrieval:
 
         # Add IT node
         emb_it = make_embedder(64)("SQL database query")
-        nid_it = memory.field.add_node(emb_it, {"text": "SQL query"}, phase=0.0)
+        nid_it = memory.field.add_node(
+            emb_it, {"text": "SQL query"}, phase=0.0)
         memory.field.nodes[nid_it].domain = "IT"
 
         # Add Law node
         emb_law = make_embedder(64)("contract liability clause")
-        nid_law = memory.field.add_node(emb_law, {"text": "contract clause"}, phase=0.5)
+        nid_law = memory.field.add_node(
+            emb_law, {"text": "contract clause"}, phase=0.5)
         memory.field.nodes[nid_law].domain = "Law"
 
         # Query with IT domain
-        ctx = memory.load_memory_variables({"input": "SQL database optimization", "session_id": "test"})
+        ctx = memory.load_memory_variables(
+            {"input": "SQL database optimization", "session_id": "test"})
         # Should return results — domain filtering is best-effort
         assert "rtmdk_context" in ctx
 
@@ -253,10 +272,12 @@ class TestCrossDomainConsolidationGuard:
 
         # Add two nodes with SAME position (high tension) but DIFFERENT domains
         emb = make_embedder(64)("test")
-        nid1 = memory.field.add_node(emb.copy(), {"text": "IT node"}, phase=0.0)
+        nid1 = memory.field.add_node(
+            emb.copy(), {"text": "IT node"}, phase=0.0)
         memory.field.nodes[nid1].domain = "IT"
 
-        nid2 = memory.field.add_node(emb.copy(), {"text": "Law node"}, phase=0.1)
+        nid2 = memory.field.add_node(
+            emb.copy(), {"text": "Law node"}, phase=0.1)
         memory.field.nodes[nid2].domain = "Law"
 
         # Ensure high tension to trigger consolidation path
@@ -292,9 +313,12 @@ class TestBiTemporalFacts:
         emb = np.random.randn(64).astype(np.float32)
         for state in ["active", "stale", "disputed", "rejected", "archived"]:
             node = MemoryNode(
-                id="n1", latent_pos=emb, phase=0.0, amplitude=1.0, salience=1.0,
-                fact_state=state
-            )
+                id="n1",
+                latent_pos=emb,
+                phase=0.0,
+                amplitude=1.0,
+                salience=1.0,
+                fact_state=state)
             assert node.fact_state == state
 
 
@@ -306,11 +330,20 @@ class TestConceptStateTransitions:
     def test_state_field(self):
         """Node should support different concept states."""
         emb = np.random.randn(64).astype(np.float32)
-        for state in ["stable", "weakened", "disputed", "broken", "stale", "archived"]:
+        for state in [
+            "stable",
+            "weakened",
+            "disputed",
+            "broken",
+            "stale",
+                "archived"]:
             node = MemoryNode(
-                id="n1", latent_pos=emb, phase=0.0, amplitude=1.0, salience=1.0,
-                state=state
-            )
+                id="n1",
+                latent_pos=emb,
+                phase=0.0,
+                amplitude=1.0,
+                salience=1.0,
+                state=state)
             assert node.state == state
 
     def test_confidence_field(self):
@@ -318,9 +351,12 @@ class TestConceptStateTransitions:
         emb = np.random.randn(64).astype(np.float32)
         for conf in [0.0, 0.5, 1.0]:
             node = MemoryNode(
-                id="n1", latent_pos=emb, phase=0.0, amplitude=1.0, salience=1.0,
-                confidence=conf
-            )
+                id="n1",
+                latent_pos=emb,
+                phase=0.0,
+                amplitude=1.0,
+                salience=1.0,
+                confidence=conf)
             assert node.confidence == conf
 
 

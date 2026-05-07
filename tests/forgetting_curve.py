@@ -8,15 +8,13 @@ Usage:
     python tests/test_forgetting_curve.py
 """
 
+from rtmdk.memory.core import RTMDKConfig, RTMDKMemory
 import os
 import sys
 import json
-import time
-from typing import Dict, List
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from rtmdk.memory.core import RTMDKConfig, RTMDKMemory
 
 # Try real embedder first, fallback to hash
 try:
@@ -25,8 +23,9 @@ try:
     USING_REAL_EMBEDDER = getattr(embedder_fn, 'is_real', False)
 except Exception as e:
     print(f"  Real embedder unavailable: {e}")
-    print(f"  Using hash-based fallback")
+    print("  Using hash-based fallback")
     USING_REAL_EMBEDDER = False
+
     def make_hash_embedder(dim=768):
         def embed(text):
             rng = np.random.default_rng(42)
@@ -74,15 +73,19 @@ def create_memory(decay_rate, bm25=True, latent_dim=128):
 
 def store(mem, facts):
     for item in facts:
-        mem.save_context({"input": item["fact"], "session_id": "fc"}, {"output": item["fact"]})
-        mem.save_context({"input": item["query"], "session_id": "fc"}, {"output": item["fact"]})
-        mem.save_context({"input": item["keyword"], "session_id": "fc"}, {"output": item["fact"]})
+        mem.save_context({"input": item["fact"], "session_id": "fc"}, {
+                         "output": item["fact"]})
+        mem.save_context({"input": item["query"], "session_id": "fc"}, {
+                         "output": item["fact"]})
+        mem.save_context({"input": item["keyword"], "session_id": "fc"}, {
+                         "output": item["fact"]})
 
 
 def recall(mem, facts):
     n = 0
     for item in facts:
-        ctx = mem.load_memory_variables({"input": item["query"], "session_id": "fc"})
+        ctx = mem.load_memory_variables(
+            {"input": item["query"], "session_id": "fc"})
         c = ctx.get("rtmdk_context", "").lower()
         if item["keyword"] in c:
             n += 1
@@ -90,7 +93,8 @@ def recall(mem, facts):
 
 
 def run_experiment():
-    print(f"  Embedder: {'LM Studio (nomic-embed-text-v1.5)' if USING_REAL_EMBEDDER else 'hash-based fallback'}")
+    print(
+        f"  Embedder: {'LM Studio (nomic-embed-text-v1.5)' if USING_REAL_EMBEDDER else 'hash-based fallback'}")
     decay_rates = [0.999, 0.995, 0.990, 0.980]
     checkpoints = [0, 50, 100, 200, 500]
     facts = generate_facts(100)
@@ -104,12 +108,13 @@ def run_experiment():
         print(f"{'='*60}")
 
         # With BM25
-        print(f"\n  [BM25 ON]")
+        print("\n  [BM25 ON]")
         mem = create_memory(dr, bm25=True)
         store(mem, facts)
         dr_results_bm25 = {}
         for cp in checkpoints:
-            steps = cp - max([k for k in dr_results_bm25] + [0]) if cp > 0 else 0
+            steps = cp - max([k for k in dr_results_bm25] +
+                             [0]) if cp > 0 else 0
             for _ in range(steps):
                 mem.field.step()
             r = recall(mem, test_facts)
@@ -119,12 +124,13 @@ def run_experiment():
         results[f"decay_{dr}_bm25"] = dr_results_bm25
 
         # Without BM25
-        print(f"\n  [BM25 OFF — resonance only]")
+        print("\n  [BM25 OFF — resonance only]")
         mem = create_memory(dr, bm25=False)
         store(mem, facts)
         dr_results_no_bm25 = {}
         for cp in checkpoints:
-            steps = cp - max([k for k in dr_results_no_bm25] + [0]) if cp > 0 else 0
+            steps = cp - max([k for k in dr_results_no_bm25] +
+                             [0]) if cp > 0 else 0
             for _ in range(steps):
                 mem.field.step()
             r = recall(mem, test_facts)
@@ -135,7 +141,7 @@ def run_experiment():
 
     # Print summary table
     print(f"\n{'='*80}")
-    print(f"  FORGETTING CURVE SUMMARY")
+    print("  FORGETTING CURVE SUMMARY")
     print(f"{'='*80}")
     print(f"  {'decay_rate':>10} {'BM25':>5} {'@0':>7} {'@50':>7} {'@100':>7} {'@200':>7} {'@500':>7}")
     print(f"  {'-'*10} {'-'*5} {'-'*7} {'-'*7} {'-'*7} {'-'*7} {'-'*7}")
@@ -144,14 +150,18 @@ def run_experiment():
             key = f"decay_{dr}{suffix}"
             d = results[key]
             vals = [f"{d.get(cp, 0):.2%}" for cp in checkpoints]
-            print(f"  {dr:>10.3f} {label:>5} {vals[0]:>7} {vals[1]:>7} {vals[2]:>7} {vals[3]:>7} {vals[4]:>7}")
+            print(
+                f"  {dr:>10.3f} {label:>5} {vals[0]:>7} {vals[1]:>7} {vals[2]:>7} {vals[3]:>7} {vals[4]:>7}")
     print(f"{'='*80}")
 
     # Save report
-    report = {"decay_rates": decay_rates, "checkpoints": checkpoints, "results": results}
+    report = {
+        "decay_rates": decay_rates,
+        "checkpoints": checkpoints,
+        "results": results}
     with open("forgetting_curve_report.json", "w") as f:
         json.dump(report, f, indent=2, default=str)
-    print(f"\n  Report saved to forgetting_curve_report.json")
+    print("\n  Report saved to forgetting_curve_report.json")
     return report
 
 

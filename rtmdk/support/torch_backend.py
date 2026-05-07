@@ -17,7 +17,8 @@ class TorchBackend:
         try:
             import torch
             self.torch = torch
-            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            self.device = torch.device(
+                "cuda" if torch.cuda.is_available() else "cpu")
         except ImportError:
             pass
 
@@ -31,13 +32,21 @@ class TorchBackend:
             return self._numpy(ql, qp, np_, nph, na, ns, bw, pc)
         tq = self.torch.from_numpy(ql).to(self.device)
         tqp = self.torch.from_numpy(np.asarray(qp)).to(self.device)
-        dists = self.torch.cdist(tq, self.torch.from_numpy(np_).to(self.device))
+        dists = self.torch.cdist(
+            tq, self.torch.from_numpy(np_).to(
+                self.device))
         # Bug #1 FIX: Gaussian kernel — matches numpy physics
         spatial = self.torch.exp(-dists ** 2 / (2 * bw ** 2))
-        pd = tqp.unsqueeze(1) - self.torch.from_numpy(nph).to(self.device).unsqueeze(0)
+        pd = tqp.unsqueeze(
+            1) - self.torch.from_numpy(nph).to(self.device).unsqueeze(0)
         pa = 0.5 + 0.5 * self.torch.cos(pd)
         r = spatial * ((1 - pc) + pc * pa)
-        return (r * self.torch.from_numpy(na).to(self.device).unsqueeze(0) * self.torch.from_numpy(ns).to(self.device).unsqueeze(0)).cpu().numpy()
+        return (
+            r *
+            self.torch.from_numpy(na).to(
+                self.device).unsqueeze(0) *
+            self.torch.from_numpy(ns).to(
+                self.device).unsqueeze(0)).cpu().numpy()
 
     @staticmethod
     def _numpy(ql, qp, np_, nph, na, ns, bw, pc):
@@ -47,4 +56,5 @@ class TorchBackend:
         spatial = np.exp(-dists ** 2 / (2 * bw ** 2))
         pd = qp[:, np.newaxis] - nph[np.newaxis, :]
         pa = 0.5 + 0.5 * np.cos(pd)
-        return spatial * ((1 - pc) + pc * pa) * na[np.newaxis, :] * ns[np.newaxis, :]
+        return spatial * ((1 - pc) + pc * pa) * \
+            na[np.newaxis, :] * ns[np.newaxis, :]

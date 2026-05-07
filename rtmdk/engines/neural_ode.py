@@ -26,15 +26,22 @@ class NeuralODEDynamics:
         self.alpha = 0.1
         self.beta = 0.05
         self.gamma = 0.02
-        self.W = np.random.randn(latent_dim, latent_dim).astype(np.float32) * 0.01
+        self.W = np.random.randn(
+            latent_dim,
+            latent_dim).astype(
+            np.float32) * 0.01
         self._response_history: deque = deque(maxlen=100)
         self._state_history: List[NDArray] = []
 
     def _sigma(self, x: NDArray) -> NDArray:
         return np.tanh(x)
 
-    def _dynamics(self, t: float, state: NDArray, input_signal: Optional[NDArray] = None,
-                  topology_gradient: Optional[NDArray] = None) -> NDArray:
+    def _dynamics(
+            self,
+            t: float,
+            state: NDArray,
+            input_signal: Optional[NDArray] = None,
+            topology_gradient: Optional[NDArray] = None) -> NDArray:
         n_nodes = len(state) // self.latent_dim
         if n_nodes == 0:
             return state
@@ -48,20 +55,26 @@ class NeuralODEDynamics:
         else:
             attraction = 0.0
         if topology_gradient is not None:
-            topo = self.gamma * topology_gradient.reshape(n_nodes, self.latent_dim)
+            topo = self.gamma * \
+                topology_gradient.reshape(n_nodes, self.latent_dim)
         else:
             topo = 0.0
         dX = damping + nonlinear + attraction + topo
         return dX.flatten()
 
-    def evolve(self, initial_state: NDArray, input_signal: Optional[NDArray] = None,
-               topology_gradient: Optional[NDArray] = None,
-               t_span: Optional[NDArray] = None) -> NDArray:
+    def evolve(
+            self,
+            initial_state: NDArray,
+            input_signal: Optional[NDArray] = None,
+            topology_gradient: Optional[NDArray] = None,
+            t_span: Optional[NDArray] = None) -> NDArray:
         if t_span is None:
             t_span = np.linspace(0, self.time_horizon, self.n_steps)
         n_nodes = len(initial_state) // self.latent_dim
         if n_nodes > self.chunk_size:
-            return self._evolve_chunked(initial_state, input_signal, topology_gradient, t_span)
+            return self._evolve_chunked(
+                initial_state, input_signal, topology_gradient, t_span)
+
         def ode_func(t, state):
             return self._dynamics(t, state, input_signal, topology_gradient)
         solution = solve_ivp(
@@ -76,40 +89,66 @@ class NeuralODEDynamics:
         self._state_history.append(trajectory[-1].copy())
         return trajectory
 
-    def _evolve_chunked(self, initial_state: NDArray, input_signal: Optional[NDArray],
-                        topology_gradient: Optional[NDArray], t_span: NDArray) -> NDArray:
+    def _evolve_chunked(
+            self,
+            initial_state: NDArray,
+            input_signal: Optional[NDArray],
+            topology_gradient: Optional[NDArray],
+            t_span: NDArray) -> NDArray:
         n_nodes = len(initial_state) // self.latent_dim
         chunks = []
         for i in range(0, n_nodes, self.chunk_size):
             end = min(i + self.chunk_size, n_nodes)
-            chunk_state = initial_state[i * self.latent_dim:end * self.latent_dim]
-            chunk_input = input_signal[i * self.latent_dim:end * self.latent_dim] if input_signal is not None else None
-            chunk_topo = topology_gradient[i * self.latent_dim:end * self.latent_dim] if topology_gradient is not None else None
+            chunk_state = initial_state[i *
+                                        self.latent_dim:end * self.latent_dim]
+            chunk_input = input_signal[i * self.latent_dim:end *
+                                       self.latent_dim] if input_signal is not None else None
+            chunk_topo = topology_gradient[i * self.latent_dim:end *
+                                           self.latent_dim] if topology_gradient is not None else None
+
             def ode_func(t, state, ci=chunk_input, ct=chunk_topo):
                 return self._dynamics(t, state, ci, ct)
-            sol = solve_ivp(ode_func, [t_span[0], t_span[-1]], chunk_state.flatten(),
-                            t_eval=t_span, method=self.solver, atol=self.atol, rtol=self.rtol)
+            sol = solve_ivp(ode_func,
+                            [t_span[0],
+                             t_span[-1]],
+                            chunk_state.flatten(),
+                            t_eval=t_span,
+                            method=self.solver,
+                            atol=self.atol,
+                            rtol=self.rtol)
             if sol.success:
                 chunks.append(sol.y.T)
             else:
-                chunks.append(odeint(ode_func, chunk_state.flatten(), t_span, atol=self.atol, rtol=self.rtol))
+                chunks.append(
+                    odeint(
+                        ode_func,
+                        chunk_state.flatten(),
+                        t_span,
+                        atol=self.atol,
+                        rtol=self.rtol))
         return np.concatenate(chunks, axis=1)
 
-    def evolve_with_noise(self, initial_state: NDArray, input_signal: Optional[NDArray] = None,
-                          topology_gradient: Optional[NDArray] = None,
-                          dt: float = 0.05) -> NDArray:
+    def evolve_with_noise(
+            self,
+            initial_state: NDArray,
+            input_signal: Optional[NDArray] = None,
+            topology_gradient: Optional[NDArray] = None,
+            dt: float = 0.05) -> NDArray:
         n_steps = int(self.time_horizon / dt)
         state = initial_state.flatten().copy()
         trajectory = [state.copy()]
         for _ in range(n_steps):
-            deterministic = self._dynamics(0, state, input_signal, topology_gradient) * dt
-            noise = self.noise_level * np.random.randn(len(state)) * np.sqrt(dt)
+            deterministic = self._dynamics(
+                0, state, input_signal, topology_gradient) * dt
+            noise = self.noise_level * \
+                np.random.randn(len(state)) * np.sqrt(dt)
             state = state + deterministic + noise
             trajectory.append(state.copy())
         self._state_history.append(trajectory[-1].copy())
         return np.array(trajectory)
 
-    def compute_topology_gradient(self, nodes: Dict[str, Any]) -> Optional[NDArray]:
+    def compute_topology_gradient(
+            self, nodes: Dict[str, Any]) -> Optional[NDArray]:
         if len(nodes) < 2:
             return None
         node_ids = list(nodes.keys())
@@ -121,7 +160,8 @@ class NeuralODEDynamics:
         for i in range(n):
             for j in range(i + 1, n):
                 if dists[i, j] < 2.0:
-                    direction = (positions[i] - positions[j]) / (dists[i, j] + 1e-8)
+                    direction = (positions[i] - positions[j]
+                                 ) / (dists[i, j] + 1e-8)
                     gradient[i] += direction * 0.01
                     gradient[j] -= direction * 0.01
         return gradient.flatten()

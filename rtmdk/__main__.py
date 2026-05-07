@@ -8,9 +8,16 @@ Usage:
 
 import sys
 
-if len(sys.argv) > 1 and sys.argv[1] in {
-    "status", "query", "stats", "export", "recommend", "presets", "bootstrap", "bootstrap-fasttext"
-}:
+if len(
+        sys.argv) > 1 and sys.argv[1] in {
+            "status",
+            "query",
+            "stats",
+            "export",
+            "recommend",
+            "presets",
+            "bootstrap",
+        "bootstrap-fasttext"}:
     from rtmdk.cli import main as cli_main
     cli_main()
 else:

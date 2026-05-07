@@ -44,7 +44,9 @@ class SecurityValidator:
             r"pretend\s*(?:you\s*)?(?:are|were)", r"roleplay\s*as",
             r"sudo\s", r"admin\s*(?:mode)?",
         ]
-        self._compiled_patterns = [re.compile(p, re.IGNORECASE) for p in self.injection_patterns]
+        self._compiled_patterns = [
+            re.compile(
+                p, re.IGNORECASE) for p in self.injection_patterns]
         self._violation_log: List[Dict] = []
         self._tension_history: deque = deque(maxlen=100)
 
@@ -64,12 +66,14 @@ class SecurityValidator:
         """Validate node text for injection patterns and length."""
         violations = []
         if len(text) > self.max_text_length:
-            violations.append({"type": "text_too_long", "length": len(text), "max": self.max_text_length})
+            violations.append({"type": "text_too_long", "length": len(
+                text), "max": self.max_text_length})
         # Fix 7: Sanitize text before pattern matching
         sanitized = self._sanitize_text(text)
         for pattern_re in self._compiled_patterns:
             if pattern_re.search(sanitized):
-                violations.append({"type": "prompt_injection", "pattern": pattern_re.pattern})
+                violations.append(
+                    {"type": "prompt_injection", "pattern": pattern_re.pattern})
         is_safe = len(violations) == 0
         if violations:
             self._violation_log.append({
@@ -85,7 +89,8 @@ class SecurityValidator:
             return True
         mean_t = np.mean(self._tension_history)
         std_t = np.std(self._tension_history)
-        if std_t > 0 and (current_tension - mean_t) / std_t > self.tension_spike_threshold:
+        if std_t > 0 and (current_tension - mean_t) / \
+                std_t > self.tension_spike_threshold:
             self._violation_log.append({
                 "type": "tension_spike", "current": current_tension,
                 "mean": float(mean_t), "std": float(std_t), "timestamp": time.time(),
@@ -93,7 +98,8 @@ class SecurityValidator:
             return False
         return True
 
-    def validate_causal_graph_integrity(self, causal_engine: Any) -> Dict[str, Any]:
+    def validate_causal_graph_integrity(
+            self, causal_engine: Any) -> Dict[str, Any]:
         """Check causal graph for anomalies."""
         if not causal_engine or not hasattr(causal_engine, 'causal_effects'):
             return {"is_valid": True, "issues": []}
@@ -103,24 +109,34 @@ class SecurityValidator:
             if src == tgt:
                 issues.append({"type": "self_loop", "node": src})
             if edge.strength < 0 or edge.strength > 1.0:
-                issues.append({"type": "invalid_strength", "edge": f"{src}->{tgt}", "strength": edge.strength})
+                issues.append({"type": "invalid_strength",
+                               "edge": f"{src}->{tgt}",
+                               "strength": edge.strength})
         is_valid = len(issues) == 0
         if issues:
             self._violation_log.append({
                 "type": "causal_graph_integrity", "issues": issues, "timestamp": time.time(),
             })
-        return {"is_valid": is_valid, "issues": issues, "n_edges": len(effects)}
+        return {
+            "is_valid": is_valid,
+            "issues": issues,
+            "n_edges": len(effects)}
 
     def get_violation_summary(self) -> Dict:
         return {
             "total_violations": len(self._violation_log),
             "recent_violations": self._violation_log[-10:],
-            "tension_spike_rate": sum(1 for v in self._violation_log if v["type"] == "tension_spike") / max(len(self._tension_history), 1),
+            "tension_spike_rate": sum(
+                1 for v in self._violation_log
+                if v["type"] == "tension_spike") / max(
+                len(self._tension_history), 1),
         }
 
     def get_state(self) -> Dict:
-        return {"violation_log": self._violation_log[-100:], "tension_history": list(self._tension_history)}
+        return {"violation_log": self._violation_log[-100:],
+                "tension_history": list(self._tension_history)}
 
     def load_state(self, state: Dict):
         self._violation_log = state.get("violation_log", [])
-        self._tension_history = deque(state.get("tension_history", []), maxlen=100)
+        self._tension_history = deque(
+            state.get("tension_history", []), maxlen=100)

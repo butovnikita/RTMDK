@@ -4,13 +4,13 @@ Test different adaptive bandwidth transforms to find one that:
 2. Does NOT destroy ranking (R@1 close to baseline)
 """
 
-import sys, os
+from rtmdk.memory.config import RTMDKConfig
+from rtmdk.memory.field import RTMDKField
+import numpy as np
+import sys
+import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import numpy as np
-from rtmdk.memory.field import RTMDKField
-from rtmdk.memory.config import RTMDKConfig
-from scipy.spatial.distance import cdist
 
 np.random.seed(42)
 
@@ -62,7 +62,14 @@ def evaluate(field, centers, labels, top_k=5):
     return {"R@1": correct_1 / total, "R@5": correct_k / total}
 
 
-def compute_bw_custom(positions, global_bw, k, transform="sqrt", clip_range=(0.1, 10.0)):
+def compute_bw_custom(
+    positions,
+    global_bw,
+    k,
+    transform="sqrt",
+    clip_range=(
+        0.1,
+        10.0)):
     """Compute adaptive bw with custom transform."""
     from scipy.spatial import cKDTree
     tree = cKDTree(positions)
@@ -101,7 +108,12 @@ def run_custom(name, X, labels, centers, transform, clip_range):
     # Force build cache then override _cached_bw with custom computation
     field._build_node_cache()
     # Compute custom bw
-    bw = compute_bw_custom(field._cached_positions, 1.0, 5, transform, clip_range)
+    bw = compute_bw_custom(
+        field._cached_positions,
+        1.0,
+        5,
+        transform,
+        clip_range)
     field._cached_bw = bw
 
     stats = evaluate(field, centers, labels, top_k=5)
@@ -131,9 +143,9 @@ def main():
     base = evaluate(field, centers, labels, top_k=5)
     print(f"\nBaseline (global bw=1.0): R@1={base['R@1']:.3f}")
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("A/B: Transform + Clip Range")
-    print("="*60)
+    print("=" * 60)
     configs = [
         ("sqrt clip[0.2,5.0]", "sqrt", (0.2, 5.0)),
         ("sqrt clip[0.1,10.0]", "sqrt", (0.1, 10.0)),

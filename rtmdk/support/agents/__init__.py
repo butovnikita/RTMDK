@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import time
 from collections import deque
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Set
 
 if TYPE_CHECKING:
     from rtmdk.nodes import AgentPlan, Hypothesis, ToolCall
@@ -30,12 +30,18 @@ class AgentPlanner:
             reasoning=f"Decomposed goal into {len(subtasks)} subtasks"
         )
 
-    def _decompose_goal(self, goal: str, context: Dict) -> List[Dict[str, Any]]:
+    def _decompose_goal(
+            self, goal: str, context: Dict) -> List[Dict[str, Any]]:
         subtasks = []
-        subtasks.append({"type": "retrieve", "description": f"Find memories related to: {goal}", "priority": 1})
+        subtasks.append({"type": "retrieve",
+                         "description": f"Find memories related to: {goal}",
+                         "priority": 1})
         if context.get("hypothesis_verification", False):
-            subtasks.append({"type": "verify", "description": "Verify causal hypotheses", "priority": 2})
-        subtasks.append({"type": "synthesize", "description": f"Synthesize response for: {goal}", "priority": 3})
+            subtasks.append(
+                {"type": "verify", "description": "Verify causal hypotheses", "priority": 2})
+        subtasks.append({"type": "synthesize",
+                         "description": f"Synthesize response for: {goal}",
+                         "priority": 3})
         return subtasks[:self.max_depth]
 
     def _select_tools(self, goal: str, subtasks: List[Dict],
@@ -85,8 +91,10 @@ class HypothesisVerifier:
                 if cause in active_nodes or effect in active_nodes:
                     evidence_nodes.append(cause)
                     evidence_nodes.append(effect)
-                    causal_path.append(f"{cause} -> {effect} (P={edge.strength:.2f})")
-                    confidence = max(confidence, edge.strength * edge.confidence)
+                    causal_path.append(
+                        f"{cause} -> {effect} (P={edge.strength:.2f})")
+                    confidence = max(
+                        confidence, edge.strength * edge.confidence)
         verified = confidence >= self.confidence_threshold
         return Hypothesis(
             statement=hypothesis, confidence=confidence,

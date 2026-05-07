@@ -2,10 +2,12 @@
 Quantization recall vs dimension sweep.
 Tests fp16 and int8 across 64d … 1536d.
 """
-import os, sys, numpy as np
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from rtmdk.memory.field import RTMDKField
 from rtmdk.memory.config import RTMDKConfig
+from rtmdk.memory.field import RTMDKField
+import os
+import sys
+import numpy as np
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 os.environ["RTMDK_ADD_RATE_LIMIT"] = "0"
 np.random.seed(42)
@@ -27,7 +29,13 @@ def build_field(dim, quantization="none"):
     positions = np.random.randn(N_NODES, dim).astype(np.float32)
     positions /= np.linalg.norm(positions, axis=1, keepdims=True)
     for i in range(N_NODES):
-        field.add_node(positions[i], content={"id": i}, phase=0.0, node_id=f"n{i}", skip_projection=True)
+        field.add_node(
+            positions[i],
+            content={
+                "id": i},
+            phase=0.0,
+            node_id=f"n{i}",
+            skip_projection=True)
         field.nodes[f"n{i}"].amplitude = 1.0
         field.nodes[f"n{i}"].salience = 1.0
     return field
@@ -40,7 +48,8 @@ def recall_r1(field, queries):
         if not r:
             continue
         # brute-force top1 for ground truth
-        dots = np.array([np.dot(field.nodes[nid].latent_pos.astype(np.float32), q) for nid in field.node_index])
+        dots = np.array([np.dot(field.nodes[nid].latent_pos.astype(
+            np.float32), q) for nid in field.node_index])
         true_top = field.node_index[int(np.argmax(dots))]
         if r[0][0] == true_top:
             hits += 1
@@ -71,27 +80,43 @@ def main():
         fp16_r1 = recall_r1(fp16, queries)
         fp16_mem = estimate_emb_mem_mb(fp16)
 
-        # manual int8 (positions passed pre-quantized; field stores fp32 because mode=none)
+        # manual int8 (positions passed pre-quantized; field stores fp32
+        # because mode=none)
         positions = np.random.randn(N_NODES, dim).astype(np.float32)
         positions /= np.linalg.norm(positions, axis=1, keepdims=True)
         # int8 global
         scale = 1.0 / 127.0
-        pos_ig = np.round(positions / scale).clip(-127, 127).astype(np.int8).astype(np.float32) * scale
+        pos_ig = np.round(positions / scale).clip(-127,
+                                                  127).astype(np.int8).astype(np.float32) * scale
         # int8 per-dim
         mins = positions.min(axis=0)
         maxs = positions.max(axis=0)
         scales = (maxs - mins) / 255.0
         scales = np.maximum(scales, 1e-8)
-        pos_ipd = np.round((positions - mins) / scales).clip(0, 255).astype(np.uint8).astype(np.float32) * scales + mins
+        pos_ipd = np.round((positions - mins) / scales).clip(0,
+                                                             255).astype(np.uint8).astype(np.float32) * scales + mins
 
         def field_from_pos(p):
-            cfg = RTMDKConfig(latent_dim=dim, top_k=TOP_K, min_response=0.001,
-                              decay_rate=0.999, use_hnsw=False, learn_projection=False,
-                              bm25_fallback=False, enable_async=False,
-                              resonance_kernel="cosine", phase_coupling=0.0)
+            cfg = RTMDKConfig(
+                latent_dim=dim,
+                top_k=TOP_K,
+                min_response=0.001,
+                decay_rate=0.999,
+                use_hnsw=False,
+                learn_projection=False,
+                bm25_fallback=False,
+                enable_async=False,
+                resonance_kernel="cosine",
+                phase_coupling=0.0)
             f = RTMDKField(cfg)
             for i in range(N_NODES):
-                f.add_node(p[i], content={"id": i}, phase=0.0, node_id=f"n{i}", skip_projection=True)
+                f.add_node(
+                    p[i],
+                    content={
+                        "id": i},
+                    phase=0.0,
+                    node_id=f"n{i}",
+                    skip_projection=True)
                 f.nodes[f"n{i}"].amplitude = 1.0
                 f.nodes[f"n{i}"].salience = 1.0
             return f

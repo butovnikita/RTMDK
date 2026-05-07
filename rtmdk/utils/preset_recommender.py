@@ -4,7 +4,7 @@ rtmdk/utils/preset_recommender.py — Auto-select Best Config Preset.
 Recommends optimal preset based on user requirements.
 """
 
-from typing import Dict, Optional
+from typing import Dict
 
 
 def recommend_preset(
@@ -14,13 +14,13 @@ def recommend_preset(
     use_case: str = "general",
 ) -> Dict[str, any]:
     """Recommend optimal RTMDK preset.
-    
+
     Args:
         expected_nodes: Expected number of memory nodes
         available_ram_mb: Available RAM in MB
         max_latency_ms: Maximum acceptable latency
         use_case: 'general', 'chat', 'search', 'agent', 'legal', 'medical'
-        
+
     Returns:
         Dict with recommended preset name and config overrides
     """
@@ -39,19 +39,19 @@ def recommend_preset(
         preset = "enterprise"
     else:
         preset = "enterprise"
-    
+
     # Use-case overrides
     if use_case == "research":
         preset = "research"
     elif use_case == "agent":
         preset = "agent"
-    
+
     overrides = {}
     if max_latency_ms < 20:
         overrides["offline_dreaming"] = False
         overrides["causal_traversal"] = False
         overrides["attention_bias"] = False
-    
+
     return {
         "preset": preset,
         "overrides": overrides,

@@ -11,14 +11,12 @@ Covers:
 - Unknown field AttributeError
 - Serialization round-trip preserves flat dict
 """
-import os
 import pytest
 import numpy as np
 from rtmdk.memory.config import (
     RTMDKConfig, CoreConfig, RetrievalConfig, LearningConfig,
     DynamicsConfig, InferenceConfig, MemorySystemConfig,
     ProductionConfig, RoutingConfig, SOTConfig,
-    ConsolidationMode, ContextFormat,
 )
 from rtmdk.memory.core import RTMDKField
 from rtmdk.memory.serialization import FieldSerializer

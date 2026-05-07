@@ -5,16 +5,16 @@ Tests the ORIGINAL v8 adaptive bandwidth concept (MetaAdaptiveKernel),
 not the broken P1.2 k-NN local bandwidth.
 """
 
+from rtmdk.memory.config import RTMDKConfig
+from rtmdk.memory.field import RTMDKField
+from sentence_transformers import SentenceTransformer
+import numpy as np
 import os
 import sys
 import json
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import numpy as np
-from sentence_transformers import SentenceTransformer
-from rtmdk.memory.field import RTMDKField
-from rtmdk.memory.config import RTMDKConfig
 
 os.environ["RTMDK_ADD_RATE_LIMIT"] = "0"
 np.random.seed(42)
@@ -47,7 +47,10 @@ def evaluate(field, records, model, top_k=5):
     correct_k = 0
     total = 0
     for rec in records:
-        q_emb = model.encode(rec["query"], convert_to_numpy=True).astype(np.float32)
+        q_emb = model.encode(
+            rec["query"],
+            convert_to_numpy=True).astype(
+            np.float32)
         results = field.query(q_emb, top_k=top_k)
         if not results:
             continue
@@ -68,7 +71,8 @@ def run(name, cfg, records, model):
     field = build_field(records, cfg, model)
     stats = evaluate(field, records, model, top_k=5)
     bw_final = field.meta_kernel.get_bandwidth() if field.meta_kernel else cfg.bandwidth
-    print(f"  R@1: {stats['R@1']:.3f}  R@5: {stats['R@5']:.3f}  final_bw: {bw_final:.3f}")
+    print(
+        f"  R@1: {stats['R@1']:.3f}  R@5: {stats['R@5']:.3f}  final_bw: {bw_final:.3f}")
     return field, stats
 
 
@@ -105,17 +109,20 @@ def main():
     f3, s3 = run("P1.2 Local Adaptive BW", cfg_local, records, model)
 
     # Summary
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("SUMMARY")
-    print("="*60)
+    print("=" * 60)
     print(f"  Global BW (baseline)       R@1={s1['R@1']:.3f}")
-    print(f"  MetaAdaptiveKernel         R@1={s2['R@1']:.3f}  delta={s2['R@1']-s1['R@1']:+.3f}")
-    print(f"  P1.2 Local Adaptive BW     R@1={s3['R@1']:.3f}  delta={s3['R@1']-s1['R@1']:+.3f}")
+    print(
+        f"  MetaAdaptiveKernel         R@1={s2['R@1']:.3f}  delta={s2['R@1']-s1['R@1']:+.3f}")
+    print(
+        f"  P1.2 Local Adaptive BW     R@1={s3['R@1']:.3f}  delta={s3['R@1']-s1['R@1']:+.3f}")
 
     if s2['R@1'] >= s1['R@1'] * 0.95:
         print("\n  MetaAdaptiveKernel: SAFE (no significant degradation)")
     else:
-        print(f"\n  MetaAdaptiveKernel: DEGRADES by {1-s2['R@1']/s1['R@1']:.1%}")
+        print(
+            f"\n  MetaAdaptiveKernel: DEGRADES by {1-s2['R@1']/s1['R@1']:.1%}")
 
 
 if __name__ == "__main__":

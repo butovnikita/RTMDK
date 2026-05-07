@@ -18,17 +18,15 @@ Run with pytest (if installed):
     pytest tests/test_memory_stability.py -v
 """
 
+from rtmdk.memory.core import RTMDKConfig, RTMDKMemory
 import os
 import sys
 import json
 import time
 import random
-from typing import List, Dict, Tuple
-from collections import defaultdict
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from rtmdk.memory.core import RTMDKConfig, RTMDKMemory
 
 # Try real embedder first
 try:
@@ -37,13 +35,15 @@ try:
     USING_REAL_EMBEDDER = getattr(_embedder_fn, 'is_real', False)
 except Exception:
     USING_REAL_EMBEDDER = False
+
     def _make_hash_embedder(dim=768):
         def embed(text):
             rng = np.random.default_rng(42)
             base = rng.standard_normal(dim).astype(np.float32) * 0.01
             tokens = text.lower().split()
             for tok in tokens[:20]:
-                tok_rng = np.random.default_rng(hash(tok + "stab_seed") % 2**32)
+                tok_rng = np.random.default_rng(
+                    hash(tok + "stab_seed") % 2**32)
                 d = tok_rng.standard_normal(dim).astype(np.float32)
                 d = d / (np.linalg.norm(d) + 1e-8)
                 base += d * 0.5
@@ -60,6 +60,7 @@ def make_embedder(dim=768):
     # Use the shared embedder (real if available, hash fallback)
     return _embedder_fn
 
+
 def generate_stable_facts(n=100, seed=42):
     random.seed(seed)
     facts = []
@@ -72,6 +73,7 @@ def generate_stable_facts(n=100, seed=42):
             "keyword": keyword,
         })
     return facts
+
 
 def create_memory(latent_dim=128):
     config = RTMDKConfig(
@@ -86,18 +88,24 @@ def create_memory(latent_dim=128):
     )
     return RTMDKMemory(config=config, embedder=make_embedder())
 
+
 def store_facts(memory, facts):
     for item in facts:
-        memory.save_context({"input": item["fact"], "session_id": "stab"}, {"output": item["fact"]})
-        memory.save_context({"input": item["query"], "session_id": "stab"}, {"output": item["fact"]})
-        memory.save_context({"input": item["keyword"], "session_id": "stab"}, {"output": item["fact"]})
+        memory.save_context({"input": item["fact"], "session_id": "stab"}, {
+                            "output": item["fact"]})
+        memory.save_context({"input": item["query"], "session_id": "stab"}, {
+                            "output": item["fact"]})
+        memory.save_context({"input": item["keyword"], "session_id": "stab"}, {
+                            "output": item["fact"]})
+
 
 def test_recall(memory, facts):
     n_correct = 0
     latencies = []
     for item in facts:
         t0 = time.perf_counter()
-        ctx = memory.load_memory_variables({"input": item["query"], "session_id": "stab"})
+        ctx = memory.load_memory_variables(
+            {"input": item["query"], "session_id": "stab"})
         latencies.append((time.perf_counter() - t0) * 1000)
         context = ctx.get("rtmdk_context", "").lower()
         # Use multiple matching criteria for robust recall measurement
@@ -109,13 +117,24 @@ def test_recall(memory, facts):
             n_correct += 0.5  # Partial credit for topic match
     return n_correct / max(len(facts), 1), np.mean(latencies)
 
+
 def check_integrity(memory):
-    r = {"nan": 0, "inf": 0, "neg_amp": 0, "neg_sal": 0, "total": len(memory.field.nodes)}
+    r = {
+        "nan": 0,
+        "in": 0,
+        "neg_amp": 0,
+        "neg_sal": 0,
+        "total": len(
+            memory.field.nodes)}
     for node in memory.field.nodes.values():
-        if np.any(np.isnan(node.latent_pos)): r["nan"] += 1
-        if np.any(np.isinf(node.latent_pos)): r["inf"] += 1
-        if node.amplitude < 0: r["neg_amp"] += 1
-        if node.salience < 0: r["neg_sal"] += 1
+        if np.any(np.isnan(node.latent_pos)):
+            r["nan"] += 1
+        if np.any(np.isinf(node.latent_pos)):
+            r["in"] += 1
+        if node.amplitude < 0:
+            r["neg_amp"] += 1
+        if node.salience < 0:
+            r["neg_sal"] += 1
     return r
 
 
@@ -140,32 +159,37 @@ def run_all_tests():
     recalls = {}
     for steps in [0, 50, 100, 200]:
         n_steps = steps - max([k for k in recalls] + [0]) if steps > 0 else 0
-        for _ in range(n_steps): mem.field.step()
+        for _ in range(n_steps):
+            mem.field.step()
         r, _ = test_recall(mem, facts[:50])
         recalls[steps] = r
         print(f"  Steps {steps:5d}: recall = {r:.2%}")
     results["longterm_retention"] = recalls
     if recalls.get(200, 0) >= 0.15:
-        print(f"  [OK] PASS: Retention at 200 steps = {recalls[200]:.2%} (>= 15%)")
+        print(
+            f"  [OK] PASS: Retention at 200 steps = {recalls[200]:.2%} (>= 15%)")
         passed += 1
     else:
-        print(f"  [FAIL] FAIL: Retention at 500 steps = {recalls.get(500, 0):.2%} (< 20%)")
+        print(
+            f"  [FAIL] FAIL: Retention at 500 steps = {recalls.get(500, 0):.2%} (< 20%)")
         failed += 1
 
     # Test 2: Field Stability (NaN/Inf check)
     print("\n[Test 2] Field Stability (500 steps, integrity check)...")
     mem = create_memory()
     store_facts(mem, generate_stable_facts(100))
-    for _ in range(200): mem.field.step()
+    for _ in range(200):
+        mem.field.step()
     integrity = check_integrity(mem)
-    print(f"  Nodes: {integrity['total']}, NaN: {integrity['nan']}, "
-          f"Inf: {integrity['inf']}, NegAmp: {integrity['neg_amp']}, NegSal: {integrity['neg_sal']}")
+    print(
+        f"  Nodes: {integrity['total']}, NaN: {integrity['nan']}, "
+        f"Inf: {integrity['inf']}, NegAmp: {integrity['neg_amp']}, NegSal: {integrity['neg_sal']}")
     results["field_stability"] = integrity
-    if integrity["nan"] == 0 and integrity["inf"] == 0 and integrity["neg_amp"] == 0 and integrity["neg_sal"] == 0:
-        print(f"  [OK] PASS: No NaN/Inf/negative values after 500 steps")
+    if integrity["nan"] == 0 and integrity["in"] == 0 and integrity["neg_amp"] == 0 and integrity["neg_sal"] == 0:
+        print("  [OK] PASS: No NaN/Inf/negative values after 500 steps")
         passed += 1
     else:
-        print(f"  [FAIL] FAIL: Found integrity issues")
+        print("  [FAIL] FAIL: Found integrity issues")
         failed += 1
 
     # Test 3: Interference Resistance
@@ -176,7 +200,8 @@ def run_all_tests():
     r0, _ = test_recall(mem, initial[:25])
     noise = generate_stable_facts(100, seed=999)
     store_facts(mem, noise)
-    for _ in range(10): mem.field.step()
+    for _ in range(10):
+        mem.field.step()
     r1, _ = test_recall(mem, initial[:25])
     print(f"  Before interference: {r0:.2%}")
     print(f"  After interference:  {r1:.2%}")
@@ -185,7 +210,8 @@ def run_all_tests():
         print(f"  [OK] PASS: Recall retained {r1/r0:.0%} of original (>= 40%)")
         passed += 1
     else:
-        print(f"  [FAIL] FAIL: Recall dropped to {r1/r0:.0%} of original (< 40%)")
+        print(
+            f"  [FAIL] FAIL: Recall dropped to {r1/r0:.0%} of original (< 40%)")
         failed += 1
 
     # Test 4: Consolidation Quality
@@ -194,16 +220,19 @@ def run_all_tests():
     facts = generate_stable_facts(100)
     store_facts(mem, facts)
     r_before, _ = test_recall(mem, facts[:30])
-    for _ in range(30): mem.field.step()
+    for _ in range(30):
+        mem.field.step()
     r_after, _ = test_recall(mem, facts[:30])
     print(f"  Before consolidation: {r_before:.2%}")
     print(f"  After consolidation:  {r_after:.2%}")
     results["consolidation"] = {"before": r_before, "after": r_after}
     if r_after >= r_before * 0.5:
-        print(f"  [OK] PASS: Recall after consolidation = {r_after/r_before:.0%} of before (>= 50%)")
+        print(
+            f"  [OK] PASS: Recall after consolidation = {r_after/r_before:.0%} of before (>= 50%)")
         passed += 1
     else:
-        print(f"  [FAIL] FAIL: Recall dropped to {r_after/r_before:.0%} of before (< 50%)")
+        print(
+            f"  [FAIL] FAIL: Recall dropped to {r_after/r_before:.0%} of before (< 50%)")
         failed += 1
 
     # Test 5: Graceful Degradation
@@ -216,16 +245,19 @@ def run_all_tests():
     ids = list(mem.field.nodes.keys())
     random.shuffle(ids)
     for nid in ids[:n_remove]:
-        if nid in mem.field.nodes: del mem.field.nodes[nid]
+        if nid in mem.field.nodes:
+            del mem.field.nodes[nid]
     r1, _ = test_recall(mem, facts[:50])
     print(f"  Initial (0% loss):  {r0:.2%}")
     print(f"  After 25% loss:     {r1:.2%}")
     results["graceful_degradation"] = {"initial": r0, "after_25pct": r1}
     if r1 >= r0 * 0.3:
-        print(f"  [OK] PASS: Recall retained {r1/r0:.0%} after 25% node loss (>= 30%)")
+        print(
+            f"  [OK] PASS: Recall retained {r1/r0:.0%} after 25% node loss (>= 30%)")
         passed += 1
     else:
-        print(f"  [FAIL] FAIL: Recall dropped to {r1/r0:.0%} after 25% node loss (< 30%)")
+        print(
+            f"  [FAIL] FAIL: Recall dropped to {r1/r0:.0%} after 25% node loss (< 30%)")
         failed += 1
 
     # Test 6: Cross-Session Persistence
@@ -233,19 +265,22 @@ def run_all_tests():
     mem = create_memory()
     facts = generate_stable_facts(50)
     for item in facts:
-        mem.save_context({"input": item["fact"], "session_id": "s1"}, {"output": item["fact"]})
-    for _ in range(20): mem.field.step()
+        mem.save_context({"input": item["fact"], "session_id": "s1"}, {
+                         "output": item["fact"]})
+    for _ in range(20):
+        mem.field.step()
     r_s2, _ = test_recall(mem, facts[:25])
-    for _ in range(50): mem.field.step()
+    for _ in range(50):
+        mem.field.step()
     r_s3, _ = test_recall(mem, facts[:25])
     print(f"  Session 2 recall: {r_s2:.2%}")
     print(f"  Session 3 recall: {r_s3:.2%}")
     results["cross_session"] = {"session_2": r_s2, "session_3": r_s3}
     if r_s2 >= 0.10 or r_s3 >= 0.10:
-        print(f"  [OK] PASS: Memories persisted across sessions")
+        print("  [OK] PASS: Memories persisted across sessions")
         passed += 1
     else:
-        print(f"  [FAIL] FAIL: All memories lost between sessions")
+        print("  [FAIL] FAIL: All memories lost between sessions")
         failed += 1
 
     # Test 7: Scalability Stability
@@ -260,10 +295,11 @@ def run_all_tests():
         print(f"  N={n:5d}: recall = {r:.2%}")
     results["scalability"] = scale_recalls
     if scale_recalls[50] > 0 and scale_recalls[200] >= scale_recalls[50] * 0.3:
-        print(f"  [OK] PASS: Recall at N=200 is {scale_recalls[200]/scale_recalls[50]:.0%} of N=50 (>= 30%)")
+        print(
+            f"  [OK] PASS: Recall at N=200 is {scale_recalls[200]/scale_recalls[50]:.0%} of N=50 (>= 30%)")
         passed += 1
     else:
-        print(f"  [FAIL] FAIL: Recall collapsed at scale")
+        print("  [FAIL] FAIL: Recall collapsed at scale")
         failed += 1
 
     # Summary
@@ -272,10 +308,14 @@ def run_all_tests():
     print(f"  RESULTS: {passed}/{total} passed, {failed}/{total} failed")
     print("=" * 70)
 
-    report = {"tests_passed": passed, "tests_failed": failed, "total": total, "details": results}
+    report = {
+        "tests_passed": passed,
+        "tests_failed": failed,
+        "total": total,
+        "details": results}
     with open("stability_report.json", "w") as f:
         json.dump(report, f, indent=2, default=str)
-    print(f"\n  Report saved to stability_report.json")
+    print("\n  Report saved to stability_report.json")
     return report
 
 

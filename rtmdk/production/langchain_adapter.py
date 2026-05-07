@@ -25,8 +25,11 @@ except ImportError:
     Document = dict  # type: ignore[misc,assignment]
     BaseChatMessageHistory = object  # type: ignore[misc,assignment]
     BaseMessage = Any  # type: ignore[misc,assignment]
-    HumanMessage = AIMessage = SystemMessage = None  # type: ignore[misc,assignment]
-    Field = lambda *a, **kw: None  # type: ignore[assignment]
+    # type: ignore[misc,assignment]
+    HumanMessage = AIMessage = SystemMessage = None
+
+    def Field(*a, **kw):  # type: ignore[no-redef]
+        return None
     ConfigDict = dict  # type: ignore[misc,assignment]
     LANGCHAIN_AVAILABLE = False
 
@@ -83,7 +86,8 @@ class RTMDKRetriever(BaseRetriever if LANGCHAIN_AVAILABLE else object):
         self, query: str, *, run_manager: "AsyncCallbackManagerForRetrieverRun"
     ) -> List["Document"]:
         """Async retrieval — called by ainvoke(), abatch(), astream()."""
-        return self._get_relevant_documents(query, run_manager=run_manager)  # type: ignore[arg-type]
+        return self._get_relevant_documents(
+            query, run_manager=run_manager)  # type: ignore[arg-type]
 
     # --- Internal helpers ---
 
@@ -158,7 +162,8 @@ class RTMDKRetriever(BaseRetriever if LANGCHAIN_AVAILABLE else object):
         return "rtmdk"
 
 
-class RTMDKChatMessageHistory(BaseChatMessageHistory if LANGCHAIN_AVAILABLE else object):
+class RTMDKChatMessageHistory(
+        BaseChatMessageHistory if LANGCHAIN_AVAILABLE else object):
     """LangChain-compatible chat message history backed by RTMDK.
 
     Implements BaseChatMessageHistory with full message persistence into
@@ -182,7 +187,8 @@ class RTMDKChatMessageHistory(BaseChatMessageHistory if LANGCHAIN_AVAILABLE else
     session_id: str = Field(default="default")  # type: ignore[valid-type]
 
     def __init__(self, memory: Any = None, session_id: str = "default"):
-        # BaseChatMessageHistory is ABC (not Pydantic), so we set attrs directly
+        # BaseChatMessageHistory is ABC (not Pydantic), so we set attrs
+        # directly
         self.memory = memory
         self.session_id = session_id
         self._messages: List["BaseMessage"] = []
@@ -232,7 +238,9 @@ class RTMDKChatMessageHistory(BaseChatMessageHistory if LANGCHAIN_AVAILABLE else
     def add_user_message(self, message: Any) -> None:
         """Add a user message."""
         if LANGCHAIN_AVAILABLE and HumanMessage is not None:
-            msg = message if isinstance(message, HumanMessage) else HumanMessage(content=message)
+            msg = message if isinstance(
+                message, HumanMessage) else HumanMessage(
+                content=message)
         else:
             msg = message
         self.add_messages([msg])  # type: ignore[list-item]
@@ -240,7 +248,9 @@ class RTMDKChatMessageHistory(BaseChatMessageHistory if LANGCHAIN_AVAILABLE else
     def add_ai_message(self, message: Any) -> None:
         """Add an AI message."""
         if LANGCHAIN_AVAILABLE and AIMessage is not None:
-            msg = message if isinstance(message, AIMessage) else AIMessage(content=message)
+            msg = message if isinstance(
+                message, AIMessage) else AIMessage(
+                content=message)
         else:
             msg = message
         self.add_messages([msg])  # type: ignore[list-item]

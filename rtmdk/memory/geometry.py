@@ -29,7 +29,10 @@ def poincare_dist(u: NDArray, v: NDArray, ball_radius: float = 0.85) -> float:
     return float(ball_radius * np.arccosh(np.clip(arg, 1.0, None)))
 
 
-def exp_map_poincare(tangent: NDArray, base: NDArray, ball_radius: float = 0.85) -> NDArray:
+def exp_map_poincare(
+        tangent: NDArray,
+        base: NDArray,
+        ball_radius: float = 0.85) -> NDArray:
     """Exponential map on Poincaré ball of radius R."""
     base = _clip_norm(base, ball_radius)
     tangent_norm = np.linalg.norm(tangent)
@@ -44,7 +47,10 @@ def exp_map_poincare(tangent: NDArray, base: NDArray, ball_radius: float = 0.85)
     return result.astype(np.float32)
 
 
-def log_map_poincare(point: NDArray, base: NDArray, ball_radius: float = 0.85) -> NDArray:
+def log_map_poincare(
+        point: NDArray,
+        base: NDArray,
+        ball_radius: float = 0.85) -> NDArray:
     """Logarithmic map on Poincaré ball of radius R."""
     base = _clip_norm(base, ball_radius)
     point = _clip_norm(point, ball_radius)
@@ -56,7 +62,8 @@ def log_map_poincare(point: NDArray, base: NDArray, ball_radius: float = 0.85) -
     lambda_base = 2.0 / (1.0 - base_norm_sq / (ball_radius ** 2))
     ratio = diff_norm / ball_radius
     ratio = min(ratio, 1.0 - 1e-8)
-    factor = (2.0 * ball_radius * np.arctanh(ratio)) / (lambda_base * diff_norm)
+    factor = (2.0 * ball_radius * np.arctanh(ratio)) / \
+        (lambda_base * diff_norm)
     tangent = diff * factor
     return tangent.astype(np.float32)
 
@@ -73,7 +80,10 @@ def mobius_add(x: NDArray, y: NDArray, ball_radius: float = 0.85) -> NDArray:
     return _clip_norm(result, ball_radius).astype(np.float32)
 
 
-def mobius_scalar_mul(r: float, x: NDArray, ball_radius: float = 0.85) -> NDArray:
+def mobius_scalar_mul(
+        r: float,
+        x: NDArray,
+        ball_radius: float = 0.85) -> NDArray:
     """Scalar multiplication r ⊗ x in Poincaré ball of radius R."""
     norm = np.linalg.norm(x)
     if norm < 1e-8:
@@ -84,7 +94,10 @@ def mobius_scalar_mul(r: float, x: NDArray, ball_radius: float = 0.85) -> NDArra
     return _clip_norm(result, ball_radius).astype(np.float32)
 
 
-def poincare_midpoint(a: NDArray, b: NDArray, ball_radius: float = 0.85) -> NDArray:
+def poincare_midpoint(
+    a: NDArray,
+    b: NDArray,
+        ball_radius: float = 0.85) -> NDArray:
     """Hyperbolic midpoint of two points in Poincaré ball.
 
     Computes m = exp_a(0.5 * log_a(b)).

@@ -7,7 +7,6 @@ Covers:
 3. Retrieval accuracy not degraded by meta-adaptation
 """
 
-import pytest
 import numpy as np
 
 from rtmdk.memory.field import RTMDKField
@@ -64,7 +63,8 @@ class TestMetaAdaptiveBasics:
         field.meta_kernel.adapt()
         new_bw = field.meta_kernel.get_bandwidth()
         # Bandwidth should change after adaptation (kurtosis != target)
-        assert new_bw != initial_bw or len(field.meta_kernel._response_history) < 4
+        assert new_bw != initial_bw or len(
+            field.meta_kernel._response_history) < 4
 
     def test_bandwidth_clipped_to_bounds(self):
         field = _make_field(meta_adaptive=True)

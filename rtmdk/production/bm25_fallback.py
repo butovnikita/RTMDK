@@ -6,7 +6,7 @@ LLM/Embedder independent: works with any text regardless of source format.
 
 import re
 import math
-from typing import List, Dict, Tuple, Optional, Set
+from typing import List, Dict, Tuple, Optional
 from collections import defaultdict
 
 # Multi-language stopword sets
@@ -14,15 +14,15 @@ STOPWORDS = {
     "en": {'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been',
            'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will',
            'would', 'could', 'should', 'may', 'might', 'shall', 'can',
-           'of', 'in', 'to', 'for', 'with', 'on', 'at', 'by', 'from',
-           'and', 'or', 'but', 'if', 'then', 'than', 'so', 'as', 'that',
+           'o', 'in', 'to', 'for', 'with', 'on', 'at', 'by', 'from',
+           'and', 'or', 'but', 'i', 'then', 'than', 'so', 'as', 'that',
            'this', 'these', 'those', 'it', 'its', 'i', 'me', 'my', 'we',
            'our', 'you', 'your', 'he', 'him', 'his', 'she', 'her', 'they',
            'them', 'their', 'what', 'which', 'who', 'whom', 'when', 'where',
            'why', 'how', 'not', 'no', 'all', 'each', 'every', 'both', 'few',
            'more', 'most', 'other', 'some', 'such', 'only', 'own', 'same',
            'about', 'into', 'through', 'during', 'before', 'after', 'above',
-           'below', 'between', 'out', 'off', 'over', 'under', 'again',
+           'below', 'between', 'out', 'of', 'over', 'under', 'again',
            'further', 'once', 'here', 'there', 'very', 'just', 'because'},
     "ru": {'и', 'в', 'на', 'с', 'по', 'к', 'у', 'о', 'из', 'за', 'до',
            'от', 'для', 'не', 'но', 'или', 'а', 'то', 'как', 'что', 'кто',
@@ -45,18 +45,23 @@ def _detect_language(text: str) -> str:
 
 class BM25FallbackRetriever:
     """BM25 text retrieval as fallback when RTMDK resonance is too low.
-    
+
     Multi-language: auto-detects EN/RU and uses appropriate stopwords.
     LLM/Embedder independent: works with any text format.
     """
 
-    def __init__(self, k1: float = 1.5, b: float = 0.75, min_score: float = 0.1):
+    def __init__(
+        self,
+        k1: float = 1.5,
+        b: float = 0.75,
+            min_score: float = 0.1):
         self.k1 = k1
         self.b = b
         self.min_score = min_score
         self._documents: Dict[str, str] = {}
         self._doc_lengths: Dict[str, int] = {}
-        self._term_freqs: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+        self._term_freqs: Dict[str, Dict[str, int]
+                               ] = defaultdict(lambda: defaultdict(int))
         self._doc_freqs: Dict[str, int] = defaultdict(int)
         self._avg_doc_length = 0.0
         self._total_docs = 0
@@ -64,21 +69,21 @@ class BM25FallbackRetriever:
     @staticmethod
     def tokenize(text: str, language: Optional[str] = None) -> List[str]:
         """Tokenize text with multi-language stopword removal.
-        
+
         Args:
             text: Input text
             language: 'en', 'ru', or None for auto-detect
-            
+
         Returns:
             List of significant tokens
         """
         if language is None:
             language = _detect_language(text)
-        
+
         text = text.lower()
         # Keep letters (including Cyrillic) and digits
         text = re.sub(r'[^\w\s]', ' ', text, flags=re.UNICODE)
-        
+
         stopwords = STOPWORDS.get(language, STOPWORDS["en"])
         tokens = [t for t in text.split() if t not in stopwords and len(t) > 2]
         return tokens
@@ -94,7 +99,8 @@ class BM25FallbackRetriever:
             if self._term_freqs[doc_id][token] == 1:
                 self._doc_freqs[token] += 1
 
-        self._avg_doc_length = sum(self._doc_lengths.values()) / max(self._total_docs, 1)
+        self._avg_doc_length = sum(
+            self._doc_lengths.values()) / max(self._total_docs, 1)
 
     def remove_document(self, doc_id: str):
         if doc_id not in self._documents:
@@ -106,7 +112,8 @@ class BM25FallbackRetriever:
             self._doc_freqs[token] = max(0, self._doc_freqs[token] - 1)
         del self._doc_lengths[doc_id]
         self._total_docs -= 1
-        self._avg_doc_length = sum(self._doc_lengths.values()) / max(self._total_docs, 1)
+        self._avg_doc_length = sum(
+            self._doc_lengths.values()) / max(self._total_docs, 1)
 
     def search(self, query: str, top_k: int = 5) -> List[Tuple[str, float]]:
         if not self._documents:
@@ -133,10 +140,12 @@ class BM25FallbackRetriever:
                     continue
                 doc_len = self._doc_lengths[doc_id]
                 numerator = term_count * (self.k1 + 1)
-                denominator = term_count + self.k1 * (1 - self.b + self.b * doc_len / max(self._avg_doc_length, 1))
+                denominator = term_count + self.k1 * \
+                    (1 - self.b + self.b * doc_len / max(self._avg_doc_length, 1))
                 scores[doc_id] += idf * numerator / denominator
 
-        results = [(doc_id, score) for doc_id, score in scores.items() if score >= self.min_score]
+        results = [(doc_id, score)
+                   for doc_id, score in scores.items() if score >= self.min_score]
         results.sort(key=lambda x: x[1], reverse=True)
         return results[:top_k]
 

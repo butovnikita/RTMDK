@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import hashlib
 import time
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from dataclasses import dataclass, field, asdict
 
 
@@ -36,7 +36,8 @@ class UMPHeader:
 
     @classmethod
     def from_dict(cls, data: Dict) -> "UMPHeader":
-        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+        return cls(**{k: v for k, v in data.items()
+                   if k in cls.__dataclass_fields__})
 
 
 @dataclass
@@ -57,7 +58,8 @@ class UMPTopology:
 
     @classmethod
     def from_dict(cls, data: Dict) -> "UMPTopology":
-        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+        return cls(**{k: v for k, v in data.items()
+                   if k in cls.__dataclass_fields__})
 
 
 @dataclass
@@ -76,7 +78,8 @@ class UMPKernelParams:
 
     @classmethod
     def from_dict(cls, data: Dict) -> "UMPKernelParams":
-        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+        return cls(**{k: v for k, v in data.items()
+                   if k in cls.__dataclass_fields__})
 
 
 def compute_sha256(data: Dict) -> str:
@@ -96,7 +99,11 @@ class UniversalMemoryProtocol:
     """UMP v1: Schema + integrity check + export/import."""
 
     @staticmethod
-    def export(field: Any, memory: Any, source: str = "", comment: str = "") -> Dict:
+    def export(
+            field: Any,
+            memory: Any,
+            source: str = "",
+            comment: str = "") -> Dict:
         """Export RTMDK memory to UMP format.
 
         Args:
@@ -187,15 +194,17 @@ class UniversalMemoryProtocol:
         expected_hash = ump.get("header", {}).get("sha256", "")
         if expected_hash:
             if not verify_sha256(ump, expected_hash):
-                raise ValueError(f"UMP integrity check failed: SHA-256 mismatch. "
-                                 f"Expected: {expected_hash[:16]}...")
+                raise ValueError(
+                    "UMP integrity check failed: SHA-256 mismatch. "
+                    f"Expected: {expected_hash[:16]}...")
 
         # Validate schema
         ump_ver = ump.get("ump_version", "unknown")
         schema = ump.get("schema", "unknown")
         if schema != UMP_SCHEMA:
-            raise ValueError(f"UMP schema mismatch: expected {UMP_SCHEMA}, got {schema}. "
-                             f"UMP version: {ump_ver}")
+            raise ValueError(
+                f"UMP schema mismatch: expected {UMP_SCHEMA}, got {schema}. "
+                f"UMP version: {ump_ver}")
 
         # Import field state
         field_state = ump.get("field_state", {})
@@ -213,14 +222,21 @@ class UniversalMemoryProtocol:
         warnings = []
 
         # Check required fields
-        required = ["ump_version", "schema", "header", "topology", "kernel_params", "field_state"]
+        required = [
+            "ump_version",
+            "schema",
+            "header",
+            "topology",
+            "kernel_params",
+            "field_state"]
         for field_name in required:
             if field_name not in ump:
                 issues.append(f"Missing required field: {field_name}")
 
         # Check schema version
         if ump.get("schema") != UMP_SCHEMA:
-            warnings.append(f"Schema version mismatch: expected {UMP_SCHEMA}, got {ump.get('schema')}")
+            warnings.append(
+                f"Schema version mismatch: expected {UMP_SCHEMA}, got {ump.get('schema')}")
 
         # Verify SHA-256
         if "header" in ump and "sha256" in ump["header"]:

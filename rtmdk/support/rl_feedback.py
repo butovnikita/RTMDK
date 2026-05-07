@@ -21,13 +21,19 @@ class RLFeedbackLoop:
         self._node_rewards: Dict[str, List[float]] = defaultdict(list)
 
     def extract_reward_from_response(self, response: str,
-                                      context_nodes: List[str]) -> float:
+                                     context_nodes: List[str]) -> float:
         """Extract reward signal from LLM response text."""
         reward = 0.5  # baseline
 
         # Confidence markers
-        confidence_phrases = ["certainly", "definitely", "clearly", "obviously",
-                              "безусловно", "очевидно", "точно"]
+        confidence_phrases = [
+            "certainly",
+            "definitely",
+            "clearly",
+            "obviously",
+            "безусловно",
+            "очевидно",
+            "точно"]
         uncertainty_phrases = ["not sure", "might be", "could be", "perhaps",
                                "не уверен", "возможно", "кажется", "probably"]
 
@@ -39,7 +45,8 @@ class RLFeedbackLoop:
             reward -= 0.1
 
         # Fallback: punctuation-based uncertainty estimation
-        uncertainty_penalty = (response.count("?") + response.count("возможно")) * 0.15
+        uncertainty_penalty = (response.count(
+            "?") + response.count("возможно")) * 0.15
         reward -= min(0.3, uncertainty_penalty)
 
         # Length-based signal (too short = unhelpful)
@@ -71,7 +78,7 @@ class RLFeedbackLoop:
         if len(self._rewards) < 3:
             return
 
-        avg_reward = self.get_average_reward()
+        self.get_average_reward()
         reward_trend = 0.0
         if len(self._rewards) >= 2:
             recent = list(self._rewards)[-5:]
@@ -85,9 +92,11 @@ class RLFeedbackLoop:
                 node.rl_reward = node_rl
                 # Update goal_relevance based on reward
                 if reward_trend > 0.1:
-                    node.goal_relevance = min(1.0, node.goal_relevance + self.lr)
+                    node.goal_relevance = min(
+                        1.0, node.goal_relevance + self.lr)
                 elif reward_trend < -0.1:
-                    node.goal_relevance = max(0.0, node.goal_relevance - self.lr)
+                    node.goal_relevance = max(
+                        0.0, node.goal_relevance - self.lr)
 
     def get_state(self) -> Dict:
         return {
@@ -96,5 +105,6 @@ class RLFeedbackLoop:
         }
 
     def load_state(self, state: Dict):
-        self._rewards = deque(state.get("rewards", []), maxlen=self.reward_window)
+        self._rewards = deque(state.get("rewards", []),
+                              maxlen=self.reward_window)
         self._node_rewards = defaultdict(list, state.get("node_rewards", {}))

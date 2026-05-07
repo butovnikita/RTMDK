@@ -8,6 +8,9 @@ Usage:
     python start_production.py
 """
 
+from rtmdk.utils.lru_cache import LRUCache
+import signal
+import atexit
 import asyncio
 import json
 import logging
@@ -16,12 +19,11 @@ import os
 import sys
 import time
 from contextlib import asynccontextmanager
-from pathlib import Path
 from typing import Dict, List, Optional
 
 import httpx
 import numpy as np
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
@@ -46,15 +48,34 @@ except ImportError:
 if _PROMETHEUS_AVAILABLE:
     _metric_nodes = Gauge("rtmdk_nodes_total", "Number of memory nodes")
     _metric_queries = Counter("rtmdk_queries_total", "Total memory queries")
-    _metric_query_dur = Histogram("rtmdk_query_duration_seconds", "Query duration")
-    _metric_consolidations = Counter("rtmdk_consolidations_total", "Total consolidations")
-    _metric_security = Counter("rtmdk_security_violations_total", "Security violations")
-    _metric_lm_requests = Counter("rtmdk_lm_requests_total", "LM Studio requests", ["endpoint"])
-    _metric_lm_errors = Counter("rtmdk_lm_errors_total", "LM Studio errors", ["endpoint"])
+    _metric_query_dur = Histogram(
+        "rtmdk_query_duration_seconds",
+        "Query duration")
+    _metric_consolidations = Counter(
+        "rtmdk_consolidations_total",
+        "Total consolidations")
+    _metric_security = Counter(
+        "rtmdk_security_violations_total",
+        "Security violations")
+    _metric_lm_requests = Counter(
+        "rtmdk_lm_requests_total",
+        "LM Studio requests",
+        ["endpoint"])
+    _metric_lm_errors = Counter(
+        "rtmdk_lm_errors_total",
+        "LM Studio errors",
+        ["endpoint"])
     # SOT-specific metrics
-    _metric_sot_vocab = Gauge("rtmdk_sot_vocab_size", "SOT vocabulary size", ["mode"])
-    _metric_sot_cooccurrence = Gauge("rtmdk_sot_cooccurrence_size", "SOT cooccurrence store entries")
-    _metric_sot_bootstrap_time = Gauge("rtmdk_sot_bootstrap_time_seconds", "SOT bootstrap duration")
+    _metric_sot_vocab = Gauge(
+        "rtmdk_sot_vocab_size",
+        "SOT vocabulary size",
+        ["mode"])
+    _metric_sot_cooccurrence = Gauge(
+        "rtmdk_sot_cooccurrence_size",
+        "SOT cooccurrence store entries")
+    _metric_sot_bootstrap_time = Gauge(
+        "rtmdk_sot_bootstrap_time_seconds",
+        "SOT bootstrap duration")
 
 
 # ============================================================================
@@ -75,10 +96,19 @@ async def run_sync(func, *args, **kwargs):
 SERVER_HOST = os.getenv("RTMDK_HOST", "0.0.0.0")
 SERVER_PORT = int(os.getenv("RTMDK_PORT", "8080"))
 LM_STUDIO_URL = os.getenv("LM_STUDIO_URL", "http://localhost:12345/v1")
-MEMORY_FILE = os.getenv("RTMDK_MEMORY_FILE", os.path.join(os.path.expanduser("~"), ".rtmdk", "memory.json"))
-EMBED_MODEL = os.getenv("RTMDK_EMBED_MODEL", "nomic-ai/nomic-embed-text-v1.5-GGUF")
+MEMORY_FILE = os.getenv(
+    "RTMDK_MEMORY_FILE",
+    os.path.join(
+        os.path.expanduser("~"),
+        ".rtmdk",
+        "memory.json"))
+EMBED_MODEL = os.getenv(
+    "RTMDK_EMBED_MODEL",
+    "nomic-ai/nomic-embed-text-v1.5-GGUF")
 API_KEY = os.getenv("RTMDK_API_KEY", "rtmdk-local")
-ENABLE_LM_STUDIO = os.getenv("RTMDK_ENABLE_LM_STUDIO", "true").lower() == "true"
+ENABLE_LM_STUDIO = os.getenv(
+    "RTMDK_ENABLE_LM_STUDIO",
+    "true").lower() == "true"
 ENABLE_API_AUTH = os.getenv("RTMDK_ENABLE_API_AUTH", "true").lower() == "true"
 MAX_PAYLOAD_SIZE = int(os.getenv("RTMDK_MAX_PAYLOAD_SIZE", "1048576"))
 ALLOWED_ORIGINS = os.getenv("RTMDK_ALLOWED_ORIGINS", "*").split(",")
@@ -90,8 +120,6 @@ http_client = httpx.AsyncClient()
 # SIGNAL / LIFECYCLE HANDLERS
 # ============================================================================
 
-import atexit
-import signal
 
 _memory_ref = None  # set in startup_event
 
@@ -150,13 +178,31 @@ _log_handler = logging.StreamHandler()
 if os.getenv("RTMDK_LOG_FORMAT", "").lower() == "json":
     _log_handler.setFormatter(JsonFormatter())
 else:
-    _log_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+    _log_handler.setFormatter(logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
 logging.basicConfig(level=log_level, handlers=[_log_handler])
 logger = logging.getLogger("rtmdk_production")
 
 # ============================================================================
 # APP INITIALIZATION
 # ============================================================================
+
+
+async def _health_check_loop():
+    """Background task that runs health checks periodically."""
+    while True:
+        await asyncio.sleep(60)
+        if health_monitor:
+            health_monitor.check_health()
+
+
+async def _auto_save_loop():
+    """Background task that auto-saves memory periodically."""
+    interval = int(os.getenv("RTMDK_AUTO_SAVE_INTERVAL", "60"))
+    while True:
+        await asyncio.sleep(interval)
+        auto_save()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -176,19 +222,24 @@ async def lifespan(app: FastAPI):
     # Initialize production performance modules
     query_cache = QueryCache(max_size=10000, ttl_seconds=3600)
     embedding_cache = EmbeddingCache(
-        cache_dir=os.path.join(os.path.expanduser("~"), ".rtmdk", "embedding_cache"),
+        cache_dir=os.path.join(
+            os.path.expanduser("~"),
+            ".rtmdk",
+            "embedding_cache"),
         max_size=100000,
         ttl_seconds=86400,
         memory_cache_size=4096,
     )
-    context_optimizer = ContextOptimizer(model="default", min_tokens=50, max_tokens=300)
+    context_optimizer = ContextOptimizer(
+        model="default", min_tokens=50, max_tokens=300)
     health_monitor = HealthMonitor(memory=memory, check_interval=60)
     asyncio.create_task(_health_check_loop())
     asyncio.create_task(_auto_save_loop())
 
     logger.info(f"Server ready on {SERVER_HOST}:{SERVER_PORT}")
     logger.info(f"Memory nodes: {len(memory.field.nodes)}")
-    logger.info("Production modules: QueryCache, EmbeddingCache, ContextOptimizer, HealthMonitor enabled")
+    logger.info(
+        "Production modules: QueryCache, EmbeddingCache, ContextOptimizer, HealthMonitor enabled")
 
     yield
 
@@ -208,7 +259,8 @@ async def lifespan(app: FastAPI):
             save_path = _get_save_path(MEMORY_FILE)
             os.makedirs(os.path.dirname(save_path), exist_ok=True)
             await run_sync(memory.export_field, save_path)
-            logger.info(f"Memory saved to {save_path} ({len(memory.field.nodes)} nodes)")
+            logger.info(
+                f"Memory saved to {save_path} ({len(memory.field.nodes)} nodes)")
         except Exception:
             logger.exception("Failed to save memory on shutdown")
 
@@ -237,21 +289,34 @@ app.add_middleware(
 @app.middleware("http")
 async def security_middleware(request: Request, call_next):
     """Enforce API key authentication and payload limits."""
-    skip_auth_paths = ["/health", "/v1/models", "/docs", "/openapi.json", "/redoc", "/dashboard"]
-    if request.url.path in skip_auth_paths or request.url.path.startswith("/api/"):
+    skip_auth_paths = [
+        "/health",
+        "/v1/models",
+        "/docs",
+        "/openapi.json",
+        "/redoc",
+        "/dashboard"]
+    if request.url.path in skip_auth_paths or request.url.path.startswith(
+            "/api/"):
         return await call_next(request)
 
     content_length = request.headers.get("content-length")
     if content_length and int(content_length) > MAX_PAYLOAD_SIZE:
-        return JSONResponse(status_code=413, content={"error": "Payload too large"})
+        return JSONResponse(
+            status_code=413, content={
+                "error": "Payload too large"})
 
     if ENABLE_API_AUTH:
         auth_header = request.headers.get("authorization", "")
-        api_key = auth_header.replace("Bearer ", "").replace("bearer ", "") if auth_header else ""
+        api_key = auth_header.replace(
+            "Bearer ", "").replace(
+            "bearer ", "") if auth_header else ""
         if not api_key:
             api_key = request.headers.get("x-api-key", "")
         if not api_key or api_key != API_KEY:
-            return JSONResponse(status_code=401, content={"error": "Unauthorized. Provide valid API key."})
+            return JSONResponse(
+                status_code=401, content={
+                    "error": "Unauthorized. Provide valid API key."})
 
     return await call_next(request)
 
@@ -267,19 +332,39 @@ rate_limiter = RateLimiter(
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
     """Enforce per-client rate limits."""
-    skip_paths = {"/health", "/v1/models", "/docs", "/openapi.json", "/redoc", "/dashboard", "/metrics"}
+    skip_paths = {
+        "/health",
+        "/v1/models",
+        "/docs",
+        "/openapi.json",
+        "/redoc",
+        "/dashboard",
+        "/metrics"}
     if request.url.path in skip_paths or request.url.path.startswith("/api/"):
         return await call_next(request)
-    client_id = request.headers.get("x-api-key", request.client.host if request.client else "unknown")
+    client_id = request.headers.get(
+        "x-api-key", request.client.host if request.client else "unknown")
     if not rate_limiter.allow_request(client_id):
         remaining = rate_limiter.get_remaining(client_id)
-        return JSONResponse(status_code=429, content={"error": "Rate limit exceeded", "remaining": remaining})
+        return JSONResponse(
+            status_code=429,
+            content={
+                "error": "Rate limit exceeded",
+                "remaining": remaining})
     return await call_next(request)
 
 
 # Phase 4: Circuit breakers for external calls
-llm_chat_circuit = AsyncCircuitBreaker("llm_chat", failure_threshold=3, recovery_timeout=30.0, default=None)
-llm_embed_circuit = AsyncCircuitBreaker("llm_embed", failure_threshold=3, recovery_timeout=30.0, default=None)
+llm_chat_circuit = AsyncCircuitBreaker(
+    "llm_chat",
+    failure_threshold=3,
+    recovery_timeout=30.0,
+    default=None)
+llm_embed_circuit = AsyncCircuitBreaker(
+    "llm_embed",
+    failure_threshold=3,
+    recovery_timeout=30.0,
+    default=None)
 
 
 # ============================================================================
@@ -287,7 +372,6 @@ llm_embed_circuit = AsyncCircuitBreaker("llm_embed", failure_threshold=3, recove
 # ============================================================================
 
 memory: Optional[RTMDKMemory] = None
-from rtmdk.utils.lru_cache import LRUCache
 
 embedder_cache = LRUCache(maxsize=4096)
 lm_studio_available: bool = False
@@ -359,7 +443,10 @@ async def check_lm_studio() -> bool:
             logger.info(f"LM Studio detected: {chat_model}")
             return True
     except Exception:
-        logger.warning("LM Studio not available at %s", LM_STUDIO_URL, exc_info=True)
+        logger.warning(
+            "LM Studio not available at %s",
+            LM_STUDIO_URL,
+            exc_info=True)
     return False
 
 
@@ -380,7 +467,7 @@ async def _get_embedding_cached(text: str, model: str = None) -> np.ndarray:
     """Get embedding with disk+memory caching."""
     if embedding_cache is None:
         return await get_embedding(text, model)
-    
+
     # Check caches synchronously first
     key = embedding_cache._make_key(text)
     if key in embedding_cache.memory_cache:
@@ -391,13 +478,13 @@ async def _get_embedding_cached(text: str, model: str = None) -> np.ndarray:
             return emb
         else:
             del embedding_cache.memory_cache[key]
-    
+
     emb = embedding_cache._load_from_disk(key)
     if emb is not None:
         embedding_cache._hits += 1
         embedding_cache._save_to_memory_cache(key, emb)
         return emb
-    
+
     # Miss — compute async
     embedding_cache._misses += 1
     emb = await get_embedding(text, model)
@@ -419,7 +506,8 @@ async def get_embedding(text: str, model: str = None) -> np.ndarray:
         if _PROMETHEUS_AVAILABLE:
             _metric_lm_errors.labels(endpoint="embeddings").inc()
         logger.warning("Embedding fallback for: %s...", text[:50])
-        # Deterministic fallback: stable for same text, low amplitude to minimize field distortion
+        # Deterministic fallback: stable for same text, low amplitude to
+        # minimize field distortion
         rng = np.random.default_rng(hash(text) & 0xFFFFFFFF)
         emb = rng.standard_normal(768).astype(np.float32)
         emb = emb / (np.linalg.norm(emb) + 1e-8) * 0.01
@@ -428,11 +516,13 @@ async def get_embedding(text: str, model: str = None) -> np.ndarray:
 
     expected_dim = 768
     if len(embedding) != expected_dim:
-        logger.warning(f"Embedding dimension mismatch: got {len(embedding)}, expected {expected_dim}. Resizing.")
+        logger.warning(
+            f"Embedding dimension mismatch: got {len(embedding)}, expected {expected_dim}. Resizing.")
         if len(embedding) > expected_dim:
             embedding = embedding[:expected_dim]
         else:
-            embedding = np.pad(embedding, (0, expected_dim - len(embedding)), "constant")
+            embedding = np.pad(
+                embedding, (0, expected_dim - len(embedding)), "constant")
 
     embedder_cache.set(text, embedding)
     return embedding
@@ -447,7 +537,8 @@ def init_memory() -> RTMDKMemory:
     preset_name = os.getenv("RTMDK_PRESET", "production")
     preset_fn = getattr(RTMDKConfig, preset_name, None)
     if preset_fn is None:
-        logger.warning(f"Unknown preset '{preset_name}', falling back to 'production'")
+        logger.warning(
+            f"Unknown preset '{preset_name}', falling back to 'production'")
         preset_fn = RTMDKConfig.production
 
     # Preset creates the base config, env vars override individual fields
@@ -465,11 +556,16 @@ def init_memory() -> RTMDKMemory:
 
     if os.path.exists(load_path):
         try:
-            mem = RTMDKMemory.import_field(load_path, get_embedding, wal_path=load_path + ".wal")
-            logger.info(f"Loaded memory from {load_path}: {len(mem.field.nodes)} nodes")
+            mem = RTMDKMemory.import_field(
+                load_path, get_embedding, wal_path=load_path + ".wal")
+            logger.info(
+                f"Loaded memory from {load_path}: {len(mem.field.nodes)} nodes")
             return mem
         except Exception:
-            logger.warning("Failed to load memory from %s", load_path, exc_info=True)
+            logger.warning(
+                "Failed to load memory from %s",
+                load_path,
+                exc_info=True)
             import shutil
 
             backup_path = load_path + f".corrupted.{int(time.time())}"
@@ -480,7 +576,10 @@ def init_memory() -> RTMDKMemory:
                 pass
 
     save_path = _get_save_path(MEMORY_FILE)
-    mem = RTMDKMemory(config=config, embedder=get_embedding, wal_path=save_path + ".wal")
+    mem = RTMDKMemory(
+        config=config,
+        embedder=get_embedding,
+        wal_path=save_path + ".wal")
     try:
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         mem.export_field(save_path)
@@ -492,7 +591,9 @@ def init_memory() -> RTMDKMemory:
     return mem
 
 
-def build_system_prompt(user_messages: List[ChatMessage], session_id: str) -> str:
+def build_system_prompt(
+        user_messages: List[ChatMessage],
+        session_id: str) -> str:
     """Build system prompt with RTMDK context."""
     last_user = ""
     for msg in reversed(user_messages):
@@ -503,7 +604,8 @@ def build_system_prompt(user_messages: List[ChatMessage], session_id: str) -> st
     ctx = {"rtmdk_context": ""}
     if last_user and memory:
         try:
-            ctx = memory.load_memory_variables({"input": last_user, "session_id": session_id})
+            ctx = memory.load_memory_variables(
+                {"input": last_user, "session_id": session_id})
         except Exception:
             logger.warning("Memory query failed", exc_info=True)
 
@@ -528,7 +630,8 @@ def build_system_prompt(user_messages: List[ChatMessage], session_id: str) -> st
             base_prompt = None
 
     system_prompt = base_prompt or ""
-    if ctx["rtmdk_context"] and ctx["rtmdk_context"] not in ("No relevant memory.", "[]"):
+    if ctx["rtmdk_context"] and ctx["rtmdk_context"] not in (
+            "No relevant memory.", "[]"):
         system_prompt += (
             f"\n\nRelevant memories:\n{ctx['rtmdk_context']}\n\n"
             "Use these memories to provide accurate, context-aware answers."
@@ -539,7 +642,7 @@ def build_system_prompt(user_messages: List[ChatMessage], session_id: str) -> st
 def _get_save_path(base_path: str) -> str:
     """Select msgpack path if available, otherwise json."""
     try:
-        import msgpack
+        pass
 
         if not base_path.endswith(".msgpack"):
             return os.path.splitext(base_path)[0] + ".msgpack"
@@ -559,7 +662,8 @@ def auto_save():
         save_path = _get_save_path(MEMORY_FILE)
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         memory.export_field(save_path)
-        logger.debug(f"Auto-saved memory: {len(memory.field.nodes)} nodes to {save_path}")
+        logger.debug(
+            f"Auto-saved memory: {len(memory.field.nodes)} nodes to {save_path}")
     except Exception:
         logger.exception("Auto-save failed")
 
@@ -576,7 +680,6 @@ context_optimizer: Optional[ContextOptimizer] = None
 health_monitor: Optional[HealthMonitor] = None
 
 
-
 # ============================================================================
 # OPENAI-COMPATIBLE ENDPOINTS
 # ============================================================================
@@ -586,17 +689,23 @@ health_monitor: Optional[HealthMonitor] = None
 async def list_models():
     """List available models."""
     if chat_model:
-        return {
-            "object": "list",
-            "data": [
-                {"id": chat_model, "object": "model", "created": int(time.time()), "owned_by": "lm-studio"},
-                {"id": "rtmdk", "object": "model", "created": int(time.time()), "owned_by": "rtmdk"},
-            ],
-        }
-    return {
-        "object": "list",
-        "data": [{"id": "rtmdk", "object": "model", "created": int(time.time()), "owned_by": "rtmdk"}],
-    }
+        return {"object": "list",
+                "data": [{"id": chat_model,
+                          "object": "model",
+                          "created": int(time.time()),
+                          "owned_by": "lm-studio"},
+                         {"id": "rtmdk",
+                          "object": "model",
+                          "created": int(time.time()),
+                          "owned_by": "rtmdk"},
+                         ],
+                }
+    return {"object": "list",
+            "data": [{"id": "rtmdk",
+                      "object": "model",
+                      "created": int(time.time()),
+                      "owned_by": "rtmdk"}],
+            }
 
 
 @app.post("/v1/chat/completions")
@@ -614,7 +723,9 @@ async def chat_completions(req: ChatCompletionRequest):
 
     # Save user input to memory
     if memory and req.messages:
-        last_user = next((m.content for m in reversed(req.messages) if m.role == "user"), "")
+        last_user = next(
+            (m.content for m in reversed(
+                req.messages) if m.role == "user"), "")
         if last_user:
             try:
                 await run_sync(memory.save_context, {"input": last_user, "session_id": req.session_id}, {"output": ""})
@@ -645,7 +756,8 @@ async def chat_completions(req: ChatCompletionRequest):
     if resp is None:
         if _PROMETHEUS_AVAILABLE:
             _metric_lm_errors.labels(endpoint="chat").inc()
-        raise HTTPException(status_code=503, detail="LM Studio unavailable (circuit open)")
+        raise HTTPException(status_code=503,
+                            detail="LM Studio unavailable (circuit open)")
 
     if req.stream:
 
@@ -660,7 +772,9 @@ async def chat_completions(req: ChatCompletionRequest):
             finally:
                 if memory:
                     try:
-                        last_user = next((m.content for m in reversed(req.messages) if m.role == "user"), "")
+                        last_user = next(
+                            (m.content for m in reversed(
+                                req.messages) if m.role == "user"), "")
                         if last_user:
                             await run_sync(
                                 memory.save_context,
@@ -673,7 +787,10 @@ async def chat_completions(req: ChatCompletionRequest):
         return StreamingResponse(
             stream_generator(),
             media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"},
         )
 
     data = resp.json()
@@ -682,7 +799,9 @@ async def chat_completions(req: ChatCompletionRequest):
 
     if memory and req.messages:
         try:
-            last_user = next((m.content for m in reversed(req.messages) if m.role == "user"), "")
+            last_user = next(
+                (m.content for m in reversed(
+                    req.messages) if m.role == "user"), "")
             if last_user:
                 await run_sync(
                     memory.save_context,
@@ -730,7 +849,11 @@ class MemoryQueryRequest(BaseModel):
 
     query: str = Field(..., min_length=1, description="Search query")
     top_k: int = Field(5, ge=1, le=50, description="Number of results")
-    threshold: float = Field(0.0, ge=0.0, le=1.0, description="Minimum similarity score")
+    threshold: float = Field(
+        0.0,
+        ge=0.0,
+        le=1.0,
+        description="Minimum similarity score")
 
     model_config = {
         "json_schema_extra": {
@@ -746,9 +869,18 @@ class MemoryQueryRequest(BaseModel):
 class BatchQueryRequest(BaseModel):
     """Batch query the memory field."""
 
-    queries: List[str] = Field(..., min_length=1, description="List of search queries")
-    top_k: int = Field(5, ge=1, le=50, description="Number of results per query")
-    threshold: float = Field(0.0, ge=0.0, le=1.0, description="Minimum similarity score")
+    queries: List[str] = Field(..., min_length=1,
+                               description="List of search queries")
+    top_k: int = Field(
+        5,
+        ge=1,
+        le=50,
+        description="Number of results per query")
+    threshold: float = Field(
+        0.0,
+        ge=0.0,
+        le=1.0,
+        description="Minimum similarity score")
 
     model_config = {
         "json_schema_extra": {
@@ -825,7 +957,8 @@ async def memory_batch_query(req: BatchQueryRequest):
             if query_cache is not None:
                 cached = query_cache.get(q)
                 if cached is not None:
-                    responses.append({"query": q, "results": cached.get("results", []), "cached": True})
+                    responses.append(
+                        {"query": q, "results": cached.get("results", []), "cached": True})
                     continue
 
             embedding = await _get_embedding_cached(q)
@@ -847,10 +980,17 @@ async def memory_batch_query(req: BatchQueryRequest):
                 )
             resp = {"query": q, "results": formatted}
             if query_cache is not None:
-                query_cache.put(q, {"query": q, "results": formatted, "total": len(formatted)})
+                query_cache.put(
+                    q, {"query": q, "results": formatted, "total": len(formatted)})
             responses.append(resp)
         _metric_query_dur.observe(time.time() - t0)
-        return {"queries": len(req.queries), "results": responses, "latency_ms": round((time.time() - t0) * 1000, 2)}
+        return {
+            "queries": len(
+                req.queries),
+            "results": responses,
+            "latency_ms": round(
+                (time.time() - t0) * 1000,
+                2)}
     except Exception as exc:
         _metric_query_dur.observe(time.time() - t0)
         logger.warning("Batch memory query failed: %s", exc)
@@ -889,7 +1029,8 @@ async def health():
 async def metrics():
     """Prometheus-compatible metrics endpoint."""
     if not _PROMETHEUS_AVAILABLE:
-        raise HTTPException(status_code=501, detail="prometheus-client not installed")
+        raise HTTPException(status_code=501,
+                            detail="prometheus-client not installed")
     if memory:
         _metric_nodes.set(len(memory.field.nodes))
         sot = getattr(memory.field, "sot_tokenizer", None)
@@ -928,9 +1069,18 @@ def create_dashboard_router(memory_fn, config: Dict) -> "APIRouter":
 
 
 _ux_config = {
-    "RTMDK_BACKUP_DIR": os.path.join(os.path.expanduser("~"), ".rtmdk", "backups"),
-    "RTMDK_SESSION_DIR": os.path.join(os.path.expanduser("~"), ".rtmdk", "sessions"),
-    "RTMDK_CACHE_DIR": os.path.join(os.path.expanduser("~"), ".rtmdk", "embedding_cache"),
+    "RTMDK_BACKUP_DIR": os.path.join(
+        os.path.expanduser("~"),
+        ".rtmdk",
+        "backups"),
+    "RTMDK_SESSION_DIR": os.path.join(
+        os.path.expanduser("~"),
+        ".rtmdk",
+        "sessions"),
+    "RTMDK_CACHE_DIR": os.path.join(
+        os.path.expanduser("~"),
+        ".rtmdk",
+        "embedding_cache"),
     "RTMDK_CACHE_MAX_SIZE": "100000",
 }
 

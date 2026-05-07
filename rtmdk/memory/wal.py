@@ -39,9 +39,16 @@ class WAL:
         self._file.flush()
         os.fsync(self._file.fileno())
 
-    def append_add_node(self, node_id: str, content: Dict[str, Any], modality: str = "text",
-                         embedding: Optional[List[float]] = None):
-        payload = {"node_id": node_id, "content": content, "modality": modality}
+    def append_add_node(self,
+                        node_id: str,
+                        content: Dict[str,
+                                      Any],
+                        modality: str = "text",
+                        embedding: Optional[List[float]] = None):
+        payload = {
+            "node_id": node_id,
+            "content": content,
+            "modality": modality}
         if embedding is not None:
             payload["embedding"] = embedding
         self.append("add_node", payload)

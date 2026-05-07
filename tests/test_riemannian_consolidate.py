@@ -6,7 +6,6 @@ from rtmdk.memory.geometry import (
     poincare_dist,
     exp_map_poincare,
     log_map_poincare,
-    mobius_add,
     mobius_scalar_mul,
     poincare_midpoint,
 )
@@ -92,7 +91,9 @@ class TestRiemannianConsolidation:
         rng = np.random.default_rng(seed)
         for i in range(n):
             # Small-amplitude embeddings project to interior of Poincaré ball
-            emb = rng.standard_normal(field.cfg.embedding_dim).astype(np.float32) * scale
+            emb = rng.standard_normal(
+                field.cfg.embedding_dim).astype(
+                np.float32) * scale
             field.add_node(
                 embedding=emb,
                 content={"text": f"node_{i}"},
@@ -107,7 +108,8 @@ class TestRiemannianConsolidation:
         hyperbolic_field.consolidate()
         clamped = 0
         for node in hyperbolic_field.nodes.values():
-            if np.linalg.norm(node.latent_pos) >= 0.99 * hyperbolic_field.cfg.ball_radius:
+            if np.linalg.norm(node.latent_pos) >= 0.99 * \
+                    hyperbolic_field.cfg.ball_radius:
                 clamped += 1
         ratio = clamped / max(len(hyperbolic_field.nodes), 1)
         assert ratio < 0.01, f"{ratio*100:.1f}% nodes boundary-clamped"
@@ -121,10 +123,12 @@ class TestRiemannianConsolidation:
             hyperbolic_field.nodes[ids[0]].tension = 1.0
             hyperbolic_field.nodes[ids[1]].tension = 1.0
             # Ensure they are close in space
-            hyperbolic_field.nodes[ids[1]].latent_pos = hyperbolic_field.nodes[ids[0]].latent_pos + 0.05
+            hyperbolic_field.nodes[ids[1]
+                                   ].latent_pos = hyperbolic_field.nodes[ids[0]].latent_pos + 0.05
         hyperbolic_field.consolidate()
         for node in hyperbolic_field.nodes.values():
-            assert np.linalg.norm(node.latent_pos) < hyperbolic_field.cfg.ball_radius
+            assert np.linalg.norm(
+                node.latent_pos) < hyperbolic_field.cfg.ball_radius
 
     def test_euclidean_mode_unchanged(self):
         """With hyperbolic=False, consolidate should still work (backward compat)."""
@@ -146,8 +150,12 @@ class TestRiemannianConsolidation:
         import time
         rng = np.random.default_rng(42)
         # Add an anchor node
-        emb = rng.standard_normal(hyperbolic_field.cfg.embedding_dim).astype(np.float32)
-        hyperbolic_field.add_node(embedding=emb, content={"text": "anchor"}, phase=0.0)
+        emb = rng.standard_normal(
+            hyperbolic_field.cfg.embedding_dim).astype(
+            np.float32)
+        hyperbolic_field.add_node(
+            embedding=emb, content={
+                "text": "anchor"}, phase=0.0)
         time.sleep(0.02)
         # Call step with a similar embedding to trigger attraction update
         hyperbolic_field.step([{
@@ -157,7 +165,8 @@ class TestRiemannianConsolidation:
             "modality": "text",
         }])
         for node in hyperbolic_field.nodes.values():
-            assert np.linalg.norm(node.latent_pos) < hyperbolic_field.cfg.ball_radius
+            assert np.linalg.norm(
+                node.latent_pos) < hyperbolic_field.cfg.ball_radius
 
     def test_consolidate_performance_regression(self, hyperbolic_field):
         """Consolidate on 100 nodes should not be >20% slower than baseline."""
@@ -166,5 +175,6 @@ class TestRiemannianConsolidation:
         t0 = time.perf_counter()
         hyperbolic_field.consolidate()
         t1 = time.perf_counter()
-        # Very loose bound: 100 nodes should consolidate in <1s even with Riemannian ops
+        # Very loose bound: 100 nodes should consolidate in <1s even with
+        # Riemannian ops
         assert (t1 - t0) < 1.0

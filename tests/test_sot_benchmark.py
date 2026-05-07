@@ -12,17 +12,16 @@ SOT is a lightweight fallback when no external embedder is available.
 With word-level tokenization it retains near-baseline accuracy.
 """
 
+from rtmdk.memory.config import RTMDKConfig
+from rtmdk.memory.field import RTMDKField
 import os
 import sys
 import json
-import time
 
 import numpy as np
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from rtmdk.memory.field import RTMDKField
-from rtmdk.memory.config import RTMDKConfig
 
 os.environ["RTMDK_ADD_RATE_LIMIT"] = "0"
 
@@ -114,7 +113,10 @@ def test_sot_vs_sbert_baseline():
 
     base_hits = 0
     for rec in data:
-        q_emb = teacher.encode(rec["query"], convert_to_numpy=True).astype(np.float32)
+        q_emb = teacher.encode(
+            rec["query"],
+            convert_to_numpy=True).astype(
+            np.float32)
         result = field_base.query(q_emb, top_k=1)
         if result and rec["answer"] in result[0][2].content.get("text", ""):
             base_hits += 1
@@ -125,7 +127,8 @@ def test_sot_vs_sbert_baseline():
     # With word-level tokenization, SOT should achieve >80% of SBERT baseline
     assert base_r1 >= 0.95, f"SBERT baseline too low: {base_r1:.1%}"
     assert sot_r1 >= 0.80, f"SOT R@1 too low: {sot_r1:.1%} (expected >=80%)"
-    assert sot_r1 >= base_r1 * 0.80, f"SOT degradation too large: {sot_r1:.1%} vs {base_r1:.1%}"
+    assert sot_r1 >= base_r1 * \
+        0.80, f"SOT degradation too large: {sot_r1:.1%} vs {base_r1:.1%}"
 
 
 if __name__ == "__main__":

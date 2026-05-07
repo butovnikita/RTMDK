@@ -7,12 +7,15 @@ Previous test_sot_benchmark.py was broken because:
 - Different embedding spaces => ~random results (9% R@1)
 """
 
-import os, sys, json, time
+from rtmdk.memory.config import RTMDKConfig
+from rtmdk.memory.field import RTMDKField
+import numpy as np
+import os
+import sys
+import json
+import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import numpy as np
-from rtmdk.memory.field import RTMDKField
-from rtmdk.memory.config import RTMDKConfig
 
 os.environ["RTMDK_ADD_RATE_LIMIT"] = "0"
 
@@ -112,7 +115,10 @@ def run_correct_sot_benchmark(n_records=300):
 
     hits2 = 0
     for rec in data:
-        q_emb = teacher.encode(rec["query"], convert_to_numpy=True).astype(np.float32)
+        q_emb = teacher.encode(
+            rec["query"],
+            convert_to_numpy=True).astype(
+            np.float32)
         result = field2.query(q_emb, top_k=1)
         if result:
             top_ctx = result[0][2].content.get("text", "")

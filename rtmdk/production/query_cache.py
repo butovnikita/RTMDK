@@ -7,7 +7,7 @@ Reduces latency from 130ms to 5ms for cache hits.
 import time
 import hashlib
 from collections import OrderedDict
-from typing import Optional, List, Tuple, Any
+from typing import Optional, Tuple, Any
 
 
 class QueryCache:

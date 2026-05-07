@@ -31,8 +31,10 @@ class TDAMonitor:
                 if dists[i, j] < threshold:
                     ci = cj = -1
                     for c_idx, c in enumerate(connected):
-                        if i in c: ci = c_idx
-                        if j in c: cj = c_idx
+                        if i in c:
+                            ci = c_idx
+                        if j in c:
+                            cj = c_idx
                     if ci != cj and ci >= 0 and cj >= 0:
                         connected[ci].extend(connected[cj])
                         connected.pop(cj)

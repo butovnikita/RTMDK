@@ -29,8 +29,10 @@ _DOMAIN_PATTERNS = {
     "IT": {
         "subdomains": {
             "Databases": [
-                r"\b(sql|database|query|index|table|join|schema|relational|nosql|mongodb|postgres|mysql|oracle|sqlite)\b",
-                r"\b(select|insert|update|delete|create table|alter|drop|transaction|commit|rollback)\b",
+                r"\b(sql|database|query|index|table|join|schema|"
+                r"relational|nosql|mongodb|postgres|mysql|oracle|sqlite)\b",
+                r"\b(select|insert|update|delete|create table|alter|"
+                r"drop|transaction|commit|rollback)\b",
             ],
             "Programming": [
                 r"\b(python|java|javascript|typescript|c\+\+|rust|go(lang)?|ruby|swift|kotlin|react|angular|vue)\b",
@@ -234,23 +236,38 @@ def _extract_topic(text: str, domain: str, subdomain: str) -> str:
 
     # 3. Extract domain-specific keywords (simplified)
     if domain == "IT" and subdomain == "Databases":
-        m = re.search(r'\b(sql|nosql|mongodb|postgres|mysql|redis|elasticsearch)\b', text, re.IGNORECASE)
+        m = re.search(
+            r'\b(sql|nosql|mongodb|postgres|mysql|redis|elasticsearch)\b',
+            text,
+            re.IGNORECASE)
         if m:
             return m.group(1).upper()
     elif domain == "IT" and subdomain == "Programming":
-        m = re.search(r'\b(python|java|javascript|typescript|rust|go|ruby|swift|react|django|flask)\b', text, re.IGNORECASE)
+        m = re.search(
+            r'\b(python|java|javascript|typescript|rust|go|ruby|swift|react|django|flask)\b',
+            text,
+            re.IGNORECASE)
         if m:
             return m.group(1).capitalize()
     elif domain == "Law" and subdomain == "Contracts":
-        m = re.search(r'\b(nda|msa|sla|sla|contract|agreement|clause)\b', text, re.IGNORECASE)
+        m = re.search(
+            r'\b(nda|msa|sla|sla|contract|agreement|clause)\b',
+            text,
+            re.IGNORECASE)
         if m:
             return m.group(1).upper()
     elif domain == "Medicine" and subdomain == "Cardiology":
-        m = re.search(r'\b(heart|cardiac|ecg|ekg|stroke|infarction|cholesterol)\b', text, re.IGNORECASE)
+        m = re.search(
+            r'\b(heart|cardiac|ecg|ekg|stroke|infarction|cholesterol)\b',
+            text,
+            re.IGNORECASE)
         if m:
             return m.group(1).capitalize()
     elif domain == "Finance" and subdomain == "Investing":
-        m = re.search(r'\b(stock|bond|etf|mutual fund|portfolio|dividend|ipo)\b', text, re.IGNORECASE)
+        m = re.search(
+            r'\b(stock|bond|etf|mutual fund|portfolio|dividend|ipo)\b',
+            text,
+            re.IGNORECASE)
         if m:
             return m.group(1).capitalize()
 
@@ -297,8 +314,10 @@ def get_domain_stats(field) -> dict:
         "domains": {
             domain: {
                 "count": count,
-                "percentage": round(count / total * 100, 1)
-            }
-            for domain, count in sorted(domain_counts.items(), key=lambda x: x[1], reverse=True)
-        }
-    }
+                "percentage": round(
+                    count / total * 100,
+                    1)} for domain,
+            count in sorted(
+                domain_counts.items(),
+                key=lambda x: x[1],
+                reverse=True)}}

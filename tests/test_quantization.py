@@ -1,15 +1,14 @@
 """tests/test_quantization.py — Quantization integration tests."""
 
+from rtmdk.memory.quantization import QuantizationHelper
+from rtmdk.memory.config import RTMDKConfig
+from rtmdk.memory.field import RTMDKField
 import os
 import sys
 import numpy as np
-import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from rtmdk.memory.field import RTMDKField
-from rtmdk.memory.config import RTMDKConfig
-from rtmdk.memory.quantization import QuantizationHelper
 
 os.environ["RTMDK_ADD_RATE_LIMIT"] = "0"
 
@@ -61,7 +60,13 @@ class TestFieldQuantization:
         pos = np.random.randn(100, 64).astype(np.float32)
         pos /= np.linalg.norm(pos, axis=1, keepdims=True)
         for i in range(100):
-            field.add_node(pos[i], content={"id": i}, phase=0.0, node_id=f"n{i}", skip_projection=True)
+            field.add_node(
+                pos[i],
+                content={
+                    "id": i},
+                phase=0.0,
+                node_id=f"n{i}",
+                skip_projection=True)
         # All node latent positions should be fp16
         for nid in field.node_index:
             assert field.nodes[nid].latent_pos.dtype == np.float16
@@ -88,7 +93,13 @@ class TestFieldQuantization:
         )
         base_field = RTMDKField(base_cfg)
         for i in range(n_nodes):
-            base_field.add_node(positions[i], content={"id": i}, phase=0.0, node_id=f"n{i}", skip_projection=True)
+            base_field.add_node(
+                positions[i],
+                content={
+                    "id": i},
+                phase=0.0,
+                node_id=f"n{i}",
+                skip_projection=True)
             base_field.nodes[f"n{i}"].amplitude = 1.0
             base_field.nodes[f"n{i}"].salience = 1.0
 
@@ -101,7 +112,13 @@ class TestFieldQuantization:
         )
         q_field = RTMDKField(q_cfg)
         for i in range(n_nodes):
-            q_field.add_node(positions[i], content={"id": i}, phase=0.0, node_id=f"n{i}", skip_projection=True)
+            q_field.add_node(
+                positions[i],
+                content={
+                    "id": i},
+                phase=0.0,
+                node_id=f"n{i}",
+                skip_projection=True)
             q_field.nodes[f"n{i}"].amplitude = 1.0
             q_field.nodes[f"n{i}"].salience = 1.0
 

@@ -57,7 +57,8 @@ class CircuitBreaker:
         if self.state == CircuitState.OPEN:
             if self._should_attempt_reset():
                 self.state = CircuitState.HALF_OPEN
-                logger.info(f"[CircuitBreaker:{self.name}] HALF_OPEN — probing recovery")
+                logger.info(
+                    f"[CircuitBreaker:{self.name}] HALF_OPEN — probing recovery")
             else:
                 logger.debug(
                     f"[CircuitBreaker:{self.name}] OPEN — fast-fail ({self._failure_count} failures)"
@@ -77,7 +78,8 @@ class CircuitBreaker:
 
     def _on_success(self):
         if self.state == CircuitState.HALF_OPEN:
-            logger.info(f"[CircuitBreaker:{self.name}] CLOSED — recovery confirmed")
+            logger.info(
+                f"[CircuitBreaker:{self.name}] CLOSED — recovery confirmed")
         self.state = CircuitState.CLOSED
         self._failure_count = 0
         self._last_failure_time = None
@@ -115,7 +117,8 @@ class AsyncCircuitBreaker(CircuitBreaker):
         if self.state == CircuitState.OPEN:
             if self._should_attempt_reset():
                 self.state = CircuitState.HALF_OPEN
-                logger.info(f"[CircuitBreaker:{self.name}] HALF_OPEN — probing recovery")
+                logger.info(
+                    f"[CircuitBreaker:{self.name}] HALF_OPEN — probing recovery")
             else:
                 logger.debug(
                     f"[CircuitBreaker:{self.name}] OPEN — fast-fail ({self._failure_count} failures)"

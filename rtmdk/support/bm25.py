@@ -27,7 +27,8 @@ class BM25Index:
         self.doc_lengths[doc_id] = len(tokens)
         for token in set(tokens):
             self.doc_freq[token] = self.doc_freq.get(token, 0) + 1
-        self.avg_doc_length = np.mean(list(self.doc_lengths.values())) if self.doc_lengths else 0.0
+        self.avg_doc_length = np.mean(
+            list(self.doc_lengths.values())) if self.doc_lengths else 0.0
 
     def remove_document(self, doc_id: str):
         if doc_id in self.documents:
@@ -53,6 +54,8 @@ class BM25Index:
             for doc_id, text in self.documents.items():
                 tf = text.lower().count(token)
                 doc_len = max(self.doc_lengths.get(doc_id, 1), 1)
-                denom = tf + self.k1 * (1 - self.b + self.b * doc_len / max(self.avg_doc_length, 1))
+                denom = tf + self.k1 * \
+                    (1 - self.b + self.b * doc_len / max(self.avg_doc_length, 1))
                 scores[doc_id] += idf * tf * (self.k1 + 1) / max(denom, 1e-8)
-        return [(d, s) for d, s in sorted(scores.items(), key=lambda x: x[1], reverse=True)[:top_k] if s > 0]
+        return [(d, s) for d, s in sorted(scores.items(),
+                                          key=lambda x: x[1], reverse=True)[:top_k] if s > 0]

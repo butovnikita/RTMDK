@@ -1,5 +1,6 @@
 """Tests for LangChain integration (Track 9)."""
 
+from rtmdk.production.langchain_adapter import RTMDKRetriever, RTMDKChatMessageHistory, RTMDKDocument
 import pytest
 import numpy as np
 from rtmdk.memory.core import RTMDKMemory
@@ -17,8 +18,6 @@ def _make_embedder(dim: int = 64):
 # Skip entire module if langchain-core is not installed
 pytest.importorskip("langchain_core", reason="langchain-core not installed")
 
-from rtmdk.production.langchain_adapter import RTMDKRetriever, RTMDKChatMessageHistory, RTMDKDocument
-
 
 @pytest.fixture
 def memory():
@@ -31,8 +30,10 @@ def memory():
 
 class TestRTMDKRetriever:
     def test_get_relevant_documents(self, memory):
-        memory.save_context({"input": "coffee is delicious", "session_id": "s1"}, {"output": ""})
-        memory.save_context({"input": "tea is warm", "session_id": "s1"}, {"output": ""})
+        memory.save_context({"input": "coffee is delicious",
+                            "session_id": "s1"}, {"output": ""})
+        memory.save_context(
+            {"input": "tea is warm", "session_id": "s1"}, {"output": ""})
         retriever = RTMDKRetriever(memory=memory, top_k=2)
         docs = retriever.get_relevant_documents("coffee")
         assert len(docs) > 0
@@ -40,21 +41,25 @@ class TestRTMDKRetriever:
         assert "coffee" in docs[0].page_content.lower()
 
     def test_score_threshold(self, memory):
-        memory.save_context({"input": "very specific topic xyz", "session_id": "s1"}, {"output": ""})
-        retriever = RTMDKRetriever(memory=memory, top_k=5, score_threshold=0.99)
+        memory.save_context(
+            {"input": "very specific topic xyz", "session_id": "s1"}, {"output": ""})
+        retriever = RTMDKRetriever(
+            memory=memory, top_k=5, score_threshold=0.99)
         docs = retriever.get_relevant_documents("completely unrelated query")
         assert len(docs) == 0
 
     def test_top_k_limit(self, memory):
         for i in range(5):
-            memory.save_context({"input": f"doc {i}", "session_id": "s1"}, {"output": ""})
+            memory.save_context(
+                {"input": f"doc {i}", "session_id": "s1"}, {"output": ""})
         retriever = RTMDKRetriever(memory=memory, top_k=2)
         docs = retriever.get_relevant_documents("doc")
         assert len(docs) <= 2
 
     @pytest.mark.asyncio
     async def test_aget_relevant_documents(self, memory):
-        memory.save_context({"input": "async test", "session_id": "s1"}, {"output": ""})
+        memory.save_context(
+            {"input": "async test", "session_id": "s1"}, {"output": ""})
         retriever = RTMDKRetriever(memory=memory)
         docs = await retriever.aget_relevant_documents("async")
         assert len(docs) >= 1
@@ -64,17 +69,20 @@ class TestRTMDKRetrieverLCEL:
     """LCEL compatibility: invoke, ainvoke, batch, abatch."""
 
     def test_invoke(self, memory):
-        memory.save_context({"input": "LCEL test query", "session_id": "lcel"}, {"output": ""})
+        memory.save_context({"input": "LCEL test query",
+                            "session_id": "lcel"}, {"output": ""})
         retriever = RTMDKRetriever(memory=memory, top_k=3)
         docs = retriever.invoke("LCEL test")
         assert isinstance(docs, list)
         assert len(docs) >= 1
-        # Documents returned by BaseRetriever.invoke() are langchain_core Document objects
+        # Documents returned by BaseRetriever.invoke() are langchain_core
+        # Document objects
         assert hasattr(docs[0], "page_content")
 
     @pytest.mark.asyncio
     async def test_ainvoke(self, memory):
-        memory.save_context({"input": "async LCEL test", "session_id": "lcel"}, {"output": ""})
+        memory.save_context({"input": "async LCEL test",
+                            "session_id": "lcel"}, {"output": ""})
         retriever = RTMDKRetriever(memory=memory)
         docs = await retriever.ainvoke("async LCEL")
         assert isinstance(docs, list)
@@ -82,9 +90,11 @@ class TestRTMDKRetrieverLCEL:
 
     def test_batch(self, memory):
         for i in range(3):
-            memory.save_context({"input": f"batch doc {i}", "session_id": "lcel"}, {"output": ""})
+            memory.save_context(
+                {"input": f"batch doc {i}", "session_id": "lcel"}, {"output": ""})
         retriever = RTMDKRetriever(memory=memory, top_k=2)
-        results = retriever.batch(["batch doc 0", "batch doc 1", "batch doc 2"])
+        results = retriever.batch(
+            ["batch doc 0", "batch doc 1", "batch doc 2"])
         assert len(results) == 3
         for docs in results:
             assert isinstance(docs, list)
@@ -92,7 +102,8 @@ class TestRTMDKRetrieverLCEL:
 
     @pytest.mark.asyncio
     async def test_abatch(self, memory):
-        memory.save_context({"input": "abatch test", "session_id": "lcel"}, {"output": ""})
+        memory.save_context(
+            {"input": "abatch test", "session_id": "lcel"}, {"output": ""})
         retriever = RTMDKRetriever(memory=memory)
         results = await retriever.abatch(["abatch test", "nothing"])
         assert len(results) == 2
@@ -101,7 +112,8 @@ class TestRTMDKRetrieverLCEL:
     def test_pipe_composition(self, memory):
         """Test that retriever can be composed with RunnableLambda (| operator)."""
         from langchain_core.runnables import RunnableLambda
-        memory.save_context({"input": "pipe test", "session_id": "lcel"}, {"output": ""})
+        memory.save_context(
+            {"input": "pipe test", "session_id": "lcel"}, {"output": ""})
         retriever = RTMDKRetriever(memory=memory)
 
         def pick_first(docs):

@@ -1,15 +1,14 @@
 """tests/test_query_cache.py — Query cache and adaptive top-k tests."""
 
+from rtmdk.memory.config import RTMDKConfig
+from rtmdk.memory.field import RTMDKField
 import os
 import sys
 import time
 import numpy as np
-import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from rtmdk.memory.field import RTMDKField
-from rtmdk.memory.config import RTMDKConfig
 
 os.environ["RTMDK_ADD_RATE_LIMIT"] = "0"
 
@@ -32,7 +31,13 @@ class TestQueryCache:
         for i in range(50):
             emb = np.random.randn(16).astype(np.float32)
             emb /= np.linalg.norm(emb)
-            field.add_node(emb, content={"id": i}, phase=0.0, node_id=f"n{i}", skip_projection=True)
+            field.add_node(
+                emb,
+                content={
+                    "id": i},
+                phase=0.0,
+                node_id=f"n{i}",
+                skip_projection=True)
 
         q = np.random.randn(16).astype(np.float32)
         q /= np.linalg.norm(q)
@@ -59,15 +64,28 @@ class TestQueryCache:
         for i in range(20):
             emb = np.random.randn(16).astype(np.float32)
             emb /= np.linalg.norm(emb)
-            field.add_node(emb, content={"id": i}, phase=0.0, node_id=f"n{i}", skip_projection=True)
+            field.add_node(
+                emb,
+                content={
+                    "id": i},
+                phase=0.0,
+                node_id=f"n{i}",
+                skip_projection=True)
 
         q = np.random.randn(16).astype(np.float32)
         q /= np.linalg.norm(q)
-        r1 = field.query(q, top_k=3)
+        field.query(q, top_k=3)
         assert field.query_cache.size == 1
 
         # Add new node — cache should be cleared
-        field.add_node(np.random.randn(16).astype(np.float32), content={"id": "new"}, phase=0.0, node_id="n_new", skip_projection=True)
+        field.add_node(
+            np.random.randn(16).astype(
+                np.float32),
+            content={
+                "id": "new"},
+            phase=0.0,
+            node_id="n_new",
+            skip_projection=True)
         assert field.query_cache.size == 0
 
     def test_cache_ttl_expiration(self):
@@ -82,7 +100,13 @@ class TestQueryCache:
         for i in range(10):
             emb = np.random.randn(16).astype(np.float32)
             emb /= np.linalg.norm(emb)
-            field.add_node(emb, content={"id": i}, phase=0.0, node_id=f"n{i}", skip_projection=True)
+            field.add_node(
+                emb,
+                content={
+                    "id": i},
+                phase=0.0,
+                node_id=f"n{i}",
+                skip_projection=True)
 
         q = np.random.randn(16).astype(np.float32)
         q /= np.linalg.norm(q)
@@ -106,7 +130,13 @@ class TestAdaptiveTopK:
         # Add a node that is very close to query
         target = np.random.randn(16).astype(np.float32)
         target /= np.linalg.norm(target)
-        field.add_node(target, content={"id": 0}, phase=0.0, node_id="n0", skip_projection=True)
+        field.add_node(
+            target,
+            content={
+                "id": 0},
+            phase=0.0,
+            node_id="n0",
+            skip_projection=True)
         field.nodes["n0"].amplitude = 1.0
         field.nodes["n0"].salience = 1.0
 
@@ -117,7 +147,13 @@ class TestAdaptiveTopK:
             # Make them orthogonal to target
             emb = emb - np.dot(emb, target) * target
             emb /= np.linalg.norm(emb) + 1e-8
-            field.add_node(emb, content={"id": i}, phase=0.0, node_id=f"n{i}", skip_projection=True)
+            field.add_node(
+                emb,
+                content={
+                    "id": i},
+                phase=0.0,
+                node_id=f"n{i}",
+                skip_projection=True)
             field.nodes[f"n{i}"].amplitude = 1.0
             field.nodes[f"n{i}"].salience = 1.0
 
@@ -137,7 +173,13 @@ class TestAdaptiveTopK:
         # Add one close node (will be top-1 with high score)
         base = np.random.randn(16).astype(np.float32)
         base /= np.linalg.norm(base)
-        field.add_node(base.copy(), content={"id": 0}, phase=0.0, node_id="n0", skip_projection=True)
+        field.add_node(
+            base.copy(),
+            content={
+                "id": 0},
+            phase=0.0,
+            node_id="n0",
+            skip_projection=True)
         field.nodes["n0"].amplitude = 1.0
         field.nodes["n0"].salience = 1.0
 
@@ -145,7 +187,13 @@ class TestAdaptiveTopK:
         for i in range(1, 5):
             emb = base * 0.7 + np.random.randn(16).astype(np.float32) * 0.7
             emb /= np.linalg.norm(emb)
-            field.add_node(emb, content={"id": i}, phase=0.0, node_id=f"n{i}", skip_projection=True)
+            field.add_node(
+                emb,
+                content={
+                    "id": i},
+                phase=0.0,
+                node_id=f"n{i}",
+                skip_projection=True)
             field.nodes[f"n{i}"].amplitude = 1.0
             field.nodes[f"n{i}"].salience = 1.0
 
@@ -165,7 +213,13 @@ class TestAdaptiveTopK:
         for i in range(10):
             emb = np.random.randn(16).astype(np.float32)
             emb /= np.linalg.norm(emb)
-            field.add_node(emb, content={"id": i}, phase=0.0, node_id=f"n{i}", skip_projection=True)
+            field.add_node(
+                emb,
+                content={
+                    "id": i},
+                phase=0.0,
+                node_id=f"n{i}",
+                skip_projection=True)
             field.nodes[f"n{i}"].amplitude = 1.0
             field.nodes[f"n{i}"].salience = 1.0
 

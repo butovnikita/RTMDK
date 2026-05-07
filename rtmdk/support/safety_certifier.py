@@ -9,19 +9,22 @@ Key design:
 - Hooks into RTMDKField.step() before consolidation and meta-adaptation
 """
 from __future__ import annotations
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Any
 from collections import deque
 import math
 import time
 import numpy as np
-from numpy.typing import NDArray
 
 
 class LyapunovFunction:
     """Computes V = α·tension² + β·entropy(responses) + γ·causal_conflict."""
 
-    def __init__(self, alpha: float = 0.4, beta: float = 0.4, gamma: float = 0.2,
-                 window_size: int = 20):
+    def __init__(
+            self,
+            alpha: float = 0.4,
+            beta: float = 0.4,
+            gamma: float = 0.2,
+            window_size: int = 20):
         self.alpha = alpha    # tension weight
         self.beta = beta      # entropy weight
         self.gamma = gamma    # causal conflict weight
@@ -89,9 +92,15 @@ class LyapunovFunction:
         return {
             "V": self.compute_V(),
             "dV_dt": self.compute_dV_dt(),
-            "mean_tension": float(np.mean(self._tension_history)) if self._tension_history else 0.0,
-            "mean_entropy": float(np.mean(self._response_history)) if self._response_history else 0.0,
-            "mean_conflict": float(np.mean(self._conflict_history)) if self._conflict_history else 0.0,
+            "mean_tension": float(
+                np.mean(
+                    self._tension_history)) if self._tension_history else 0.0,
+            "mean_entropy": float(
+                np.mean(
+                    self._response_history)) if self._response_history else 0.0,
+            "mean_conflict": float(
+                np.mean(
+                    self._conflict_history)) if self._conflict_history else 0.0,
         }
 
 
@@ -157,7 +166,8 @@ class SafetyCertifier:
             elif self.mode == "soft_regulate":
                 # Soft regulation: exp(-|dV|/clamp)
                 reg_factor = math.exp(-abs(dV_dt) / self.clamp_value)
-                reg_factor = max(0.1, min(1.0, reg_factor))  # Clamp to [0.1, 1.0]
+                reg_factor = max(0.1, min(1.0, reg_factor)
+                                 )  # Clamp to [0.1, 1.0]
                 result["safe"] = True  # Still allow updates, just slower
                 result["regulation_factor"] = reg_factor
                 self._regulation_events += 1
@@ -182,7 +192,8 @@ class SafetyCertifier:
     def get_regulation_factor(self) -> float:
         """Get current regulation factor for scaling learning rates."""
         dV_dt = self.lyapunov.compute_dV_dt()
-        if self.mode == "soft_regulate" and abs(dV_dt) > self.lyapunov_threshold:
+        if self.mode == "soft_regulate" and abs(
+                dV_dt) > self.lyapunov_threshold:
             return math.exp(-abs(dV_dt) / self.clamp_value)
         return 1.0
 
@@ -221,12 +232,20 @@ class SafetyCertifier:
 
     def load_state(self, data: Dict):
         self.mode = data.get("mode", self.mode)
-        self.lyapunov_threshold = data.get("lyapunov_threshold", self.lyapunov_threshold)
+        self.lyapunov_threshold = data.get(
+            "lyapunov_threshold", self.lyapunov_threshold)
         self.clamp_value = data.get("clamp_value", self.clamp_value)
-        self.lyapunov._tension_history = deque(data.get("tension_history", []), maxlen=self.lyapunov.window_size)
-        self.lyapunov._response_history = deque(data.get("response_history", []), maxlen=self.lyapunov.window_size)
-        self.lyapunov._conflict_history = deque(data.get("conflict_history", []), maxlen=self.lyapunov.window_size)
-        self.lyapunov._v_history = deque(data.get("v_history", []), maxlen=self.lyapunov.window_size)
+        self.lyapunov._tension_history = deque(
+            data.get("tension_history", []), maxlen=self.lyapunov.window_size)
+        self.lyapunov._response_history = deque(
+            data.get("response_history", []), maxlen=self.lyapunov.window_size)
+        self.lyapunov._conflict_history = deque(
+            data.get("conflict_history", []), maxlen=self.lyapunov.window_size)
+        self.lyapunov._v_history = deque(
+            data.get(
+                "v_history",
+                []),
+            maxlen=self.lyapunov.window_size)
         self._warnings = data.get("warnings", [])
         self._regulation_events = data.get("regulation_events", 0)
         self._block_events = data.get("block_events", 0)

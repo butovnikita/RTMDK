@@ -30,6 +30,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-prod.txt -r requirements-sot.txt -r requirements-dev.txt
 
+      - name: Lint with flake8
+        run: flake8 rtmdk tests --max-line-length=120
+
       - name: Run tests (fast)
         run: pytest tests/ -v --tb=short -q -m "not slow"
 

@@ -25,10 +25,6 @@ Presets:
 from rtmdk.memory.core import RTMDKConfig
 
 # Re-export enums
-from rtmdk.memory.config import (
-    ConsolidationMode, Backend, ContextFormat,
-    FieldHealth, EvalMode,
-)
 
 
 def _local() -> RTMDKConfig:
@@ -65,7 +61,8 @@ def _production() -> RTMDKConfig:
         neuro_symbolic_prover=False,
         # Performance & accuracy modules (previously disabled)
         conformal_prediction=True, conformal_alpha=0.10, conformal_min_calib=50,
-        meta_adaptive=True,  # Adaptive bandwidth via MetaAdaptiveKernel (global kurtosis-based)
+        meta_adaptive=True,
+        # Adaptive bandwidth via MetaAdaptiveKernel (global kurtosis-based)
         enable_kalman_filter=True, kalman_diagonal_approx=True,
         # Accuracy tuning (post-benchmark optimization)
         resonance_kernel="cosine",

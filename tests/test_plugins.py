@@ -9,14 +9,19 @@ class TestFieldPlugin:
     def test_protocol_can_be_implemented(self):
         class MyPlugin:
             name = "my_plugin"
+
             def on_node_added(self, node_id, latent_pos, content):
                 pass
+
             def on_query(self, query_latent, results):
                 return results
+
             def on_consolidate(self, updated_nodes):
                 pass
+
             def get_state(self):
                 return {}
+
             def load_state(self, state):
                 pass
 
@@ -33,14 +38,19 @@ class TestMemoryPort:
         class DummyPort(MemoryPort):
             def add(self, embedding, content, **kwargs):
                 return "n1"
+
             def query(self, embedding, top_k=10, session_id=None):
                 return []
+
             def delete(self, node_id):
                 return True
+
             def export(self, path, fmt=None):
                 pass
+
             def import_(self, path):
                 pass
+
             def stats(self):
                 return {}
 

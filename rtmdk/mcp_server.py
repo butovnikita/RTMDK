@@ -35,17 +35,21 @@ logger = logging.getLogger(__name__)
 # Embedder factory
 # ---------------------------------------------------------------------------
 
+
 def _get_embedder(dim: int = 384):
     embedder_type = os.environ.get("RTMDK_MCP_EMBEDDER", "local").lower()
     if embedder_type == "openai":
-        api_key = os.environ.get("RTMDK_OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY")
+        api_key = os.environ.get(
+            "RTMDK_OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY")
         if not api_key:
-            raise RuntimeError("OpenAI embedder selected but RTMDK_OPENAI_API_KEY not set")
+            raise RuntimeError(
+                "OpenAI embedder selected but RTMDK_OPENAI_API_KEY not set")
         import openai
         client = openai.OpenAI(api_key=api_key)
 
         def _openai_embed(text: str) -> np.ndarray:
-            resp = client.embeddings.create(input=text, model="text-embedding-3-small")
+            resp = client.embeddings.create(
+                input=text, model="text-embedding-3-small")
             return np.array(resp.data[0].embedding, dtype=np.float32)
 
         return _openai_embed
@@ -56,11 +60,16 @@ def _get_embedder(dim: int = 384):
         model = SentenceTransformer("all-MiniLM-L6-v2")
 
         def _local_embed(text: str) -> np.ndarray:
-            return model.encode(text, convert_to_numpy=True, normalize_embeddings=True).astype(np.float32)
+            return model.encode(
+                text,
+                convert_to_numpy=True,
+                normalize_embeddings=True).astype(
+                np.float32)
 
         return _local_embed
     except ImportError:
-        logger.warning("sentence-transformers not installed; using mock embedder")
+        logger.warning(
+            "sentence-transformers not installed; using mock embedder")
 
         def _mock_embed(text: str) -> np.ndarray:
             h = hash(text) % (2 ** 32)
@@ -76,9 +85,9 @@ def _get_embedder(dim: int = 384):
 
 try:
     from mcp.server.fastmcp import FastMCP
-    from mcp.types import TextContent
 except ImportError as exc:
-    raise ImportError("mcp package required. Install: pip install mcp") from exc
+    raise ImportError(
+        "mcp package required. Install: pip install mcp") from exc
 
 
 class _MemoryContext:
@@ -113,7 +122,10 @@ async def _lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
             snapshot_path, embedder=embedder, config=cfg, wal_path=wal_path
         )
     else:
-        _ctx.memory = RTMDKMemory(config=cfg, embedder=embedder, wal_path=wal_path)
+        _ctx.memory = RTMDKMemory(
+            config=cfg,
+            embedder=embedder,
+            wal_path=wal_path)
 
     # Graceful shutdown handler
     def _on_sigterm(signum, frame):
@@ -142,7 +154,10 @@ mcp = FastMCP("rtmdk", lifespan=_lifespan)
 # ---------------------------------------------------------------------------
 
 @mcp.tool()
-def add_memory(text: str, session_id: str = "default", modality: str = "text") -> str:
+def add_memory(
+        text: str,
+        session_id: str = "default",
+        modality: str = "text") -> str:
     """Add a text memory to the resonance-topological field.
 
     Args:
@@ -160,7 +175,10 @@ def add_memory(text: str, session_id: str = "default", modality: str = "text") -
 
 
 @mcp.tool()
-def query_memory(query: str, top_k: int = 5, session_id: str = "default") -> str:
+def query_memory(
+        query: str,
+        top_k: int = 5,
+        session_id: str = "default") -> str:
     """Query the memory field for relevant context.
 
     Args:
@@ -290,13 +308,25 @@ def main():
         "--transport", choices=["stdio", "sse", "streamable-http"],
         default="stdio", help="Transport protocol"
     )
-    parser.add_argument("--port", type=int, default=8080, help="Port for SSE/HTTP")
-    parser.add_argument("--host", default="127.0.0.1", help="Host for SSE/HTTP")
-    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8080,
+        help="Port for SSE/HTTP")
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Host for SSE/HTTP")
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug logging")
     args = parser.parse_args()
 
     level = logging.DEBUG if args.debug else logging.INFO
-    logging.basicConfig(level=level, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
 
     if args.transport == "stdio":
         mcp.run(transport="stdio")

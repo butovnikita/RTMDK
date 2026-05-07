@@ -1,6 +1,5 @@
 """Tests for rtmdk.support.hnsw (NaiveGraphIndex / HNSWIndex alias)."""
 import numpy as np
-import pytest
 
 from rtmdk.support.hnsw import NaiveGraphIndex, HNSWIndex
 
