@@ -4,7 +4,7 @@ rtmdk/production/replay.py — Conversation Replay.
 Replays past conversations with different configurations.
 """
 
-from typing import Dict, List
+from typing import Any, Dict, List
 
 
 class ConversationReplay:
@@ -18,7 +18,7 @@ class ConversationReplay:
         results = replay.replay_with_new_config(new_config)
     """
 
-    def __init__(self, memory):
+    def __init__(self, memory: Any):
         self.memory = memory
         self._history: List[Dict] = []
 
@@ -35,7 +35,7 @@ class ConversationReplay:
             "timestamp": __import__('time').time(),
         })
 
-    def replay_queries(self, queries: List[str], embedder) -> List[Dict]:
+    def replay_queries(self, queries: List[str], embedder: Any) -> List[Dict]:
         """Replay queries against current memory."""
         results = []
         for query in queries:

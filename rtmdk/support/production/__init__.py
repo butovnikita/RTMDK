@@ -54,7 +54,7 @@ class ShadowModeEvaluator:
 
 
 class RAGASPlusEvaluator:
-    def __init__(self):
+    def __init__(self) -> None:
         self._eval_history: List["EvalResult"] = []
 
     def evaluate(self,
@@ -187,12 +187,12 @@ class AutoRollbackManager:
     def __init__(self, threshold: float = 0.15):
         self.threshold = threshold
         self._baseline_score: Optional[float] = None
-        self._recent_scores: deque = deque(maxlen=50)
+        self._recent_scores: deque[float] = deque(maxlen=50)
         self._rollback_count = 0
         self._last_rollback_time: float = 0
         self._cooldown_period: float = 300.0
 
-    def set_baseline(self, score: float):
+    def set_baseline(self, score: float) -> None:
         self._baseline_score = score
 
     def record_score(self, score: float) -> bool:
@@ -212,7 +212,7 @@ class AutoRollbackManager:
     def get_rollback_rate(self) -> float:
         return self._rollback_count / max(len(self._recent_scores), 1)
 
-    def get_state(self) -> Dict:
+    def get_state(self) -> Dict[str, Any]:
         return {
             "baseline_score": self._baseline_score,
             "recent_mean": float(

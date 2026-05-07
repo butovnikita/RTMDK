@@ -68,7 +68,7 @@ class LowRankCompressor:
 class EventDrivenScheduler:
     """Event-driven triggers instead of periodic step()."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._event_queue: deque[Dict[str, Any]] = deque(maxlen=1000)
         self._event_counts: Dict[str, int] = defaultdict(int)
 

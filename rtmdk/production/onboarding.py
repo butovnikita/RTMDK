@@ -50,14 +50,14 @@ class OnboardingWizard:
         # Guide user through each step
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._completed_steps: Dict[int, Dict] = {}
 
     def get_steps(self) -> List[Dict]:
         """Get all onboarding steps."""
         return ONBOARDING_STEPS.copy()
 
-    def complete_step(self, step: int, choices: Dict):
+    def complete_step(self, step: int, choices: Dict) -> None:
         """Mark a step as completed."""
         self._completed_steps[step] = choices
 

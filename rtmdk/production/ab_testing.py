@@ -25,7 +25,7 @@ class ABTesting:
         results = ab.get_results()
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._variants: Dict[str, Dict] = {}
         self._assignments: Dict[str, str] = {}  # user_id → variant
         self._metrics: Dict[str, Dict[str, List[float]]

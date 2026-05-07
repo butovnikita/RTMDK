@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
 
 class TDAMonitor:
-    def __init__(self):
+    def __init__(self) -> None:
         self.history: List[Dict[str, Any]] = []
 
     def compute_persistence(self, nodes: Dict[str, "MemoryNode"]) -> Dict[str, Any]:

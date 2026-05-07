@@ -93,7 +93,7 @@ except ImportError as exc:
 class _MemoryContext:
     """Shared context between lifespan and request handlers."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.memory: Optional[RTMDKMemory] = None
 
 

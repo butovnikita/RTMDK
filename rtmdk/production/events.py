@@ -24,18 +24,18 @@ class EventSystem:
         events.add_webhook("https://example.com/hook", events=["node_added", "memory_full"])
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._handlers: Dict[str, List[Callable]] = {}
         self._webhooks: List[Dict[str, Any]] = []
         self._event_log: List[Dict] = []
 
-    def on(self, event_name: str, handler: Callable):
+    def on(self, event_name: str, handler: Callable) -> None:
         """Register event handler."""
         if event_name not in self._handlers:
             self._handlers[event_name] = []
         self._handlers[event_name].append(handler)
 
-    def emit(self, event_name: str, data: Optional[Dict] = None):
+    def emit(self, event_name: str, data: Optional[Dict] = None) -> None:
         """Emit an event."""
         event = {
             "name": event_name,
@@ -60,7 +60,7 @@ class EventSystem:
                 except Exception:
                     pass
 
-    def add_webhook(self, url: str, events: Optional[List[str]] = None):
+    def add_webhook(self, url: str, events: Optional[List[str]] = None) -> None:
         """Add webhook URL."""
         self._webhooks.append({"url": url, "events": events or []})
 

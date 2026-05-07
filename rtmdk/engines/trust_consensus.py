@@ -13,7 +13,7 @@ Algorithm:
 Based on: Byzantine consensus protocols + DAG trust models.
 """
 
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from collections import defaultdict
 import numpy as np
 
@@ -21,13 +21,13 @@ import numpy as np
 class TrustDAG:
     """DAG structure for tracking trust relationships."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.edges: Dict[str, Dict[str, float]] = defaultdict(
             dict)  # from → {to: weight}
         self.reputation: Dict[str, float] = defaultdict(lambda: 0.5)
-        self.update_history: List[Dict] = []
+        self.update_history: List[Dict[str, Any]] = []
 
-    def add_trust_edge(self, from_peer: str, to_peer: str, weight: float):
+    def add_trust_edge(self, from_peer: str, to_peer: str, weight: float) -> None:
         """Add/update trust edge."""
         self.edges[from_peer][to_peer] = max(0.0, min(1.0, weight))
 
@@ -37,7 +37,7 @@ class TrustDAG:
             return 0.5  # Default for unknown peers
         return self.reputation.get(peer, 0.5)
 
-    def update_reputation(self, peer: str, delta: float):
+    def update_reputation(self, peer: str, delta: float) -> None:
         """Update reputation based on consistency."""
         current = self.get_reputation(peer)
         new_rep = max(0.0, min(1.0, current + delta))
@@ -166,7 +166,7 @@ class TrustConsensusEngine:
 
         return suspicious
 
-    def get_trust_stats(self) -> Dict:
+    def get_trust_stats(self) -> Dict[str, Any]:
         return {
             **self._stats,
             "n_peers": len(
