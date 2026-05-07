@@ -18,7 +18,7 @@ Usage:
 from __future__ import annotations
 import re
 from functools import lru_cache
-from typing import Tuple
+from typing import Any, Dict, List, Tuple
 
 # ============================================================================
 # DOMAIN PATTERNS
@@ -163,7 +163,7 @@ _DOMAIN_PATTERNS = {
 }
 
 # Precompile all patterns for performance
-_COMPILED_PATTERNS = {}
+_COMPILED_PATTERNS: Dict[str, Dict[str, List[Any]]] = {}
 for domain, data in _DOMAIN_PATTERNS.items():
     _COMPILED_PATTERNS[domain] = {}
     for subdomain, patterns in data["subdomains"].items():
@@ -300,7 +300,7 @@ def get_domain_stats(field) -> dict:
     Returns:
         Dict with domain counts and percentages.
     """
-    domain_counts = {}
+    domain_counts: Dict[str, int] = {}
     total = len(field.nodes)
     if total == 0:
         return {"total": 0, "domains": {}}

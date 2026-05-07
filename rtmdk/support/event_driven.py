@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import time
 from collections import defaultdict, deque
-from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -45,7 +45,7 @@ class LowRankCompressor:
         compressed_size = self.rank * (original_shape[0] + original_shape[1])
         return compressed_size / max(original_size, 1)
 
-    def get_state(self) -> Dict:
+    def get_state(self) -> Dict[str, Any]:
         return {
             "rank": self.rank,
             "update_count": self._update_count,
@@ -54,7 +54,7 @@ class LowRankCompressor:
             "Vt": self.Vt.tolist() if self.Vt is not None else None,
         }
 
-    def load_state(self, state: Dict):
+    def load_state(self, state: Dict[str, Any]) -> None:
         self.rank = state.get("rank", self.rank)
         self._update_count = state.get("update_count", 0)
         if state.get("U"):
@@ -69,7 +69,7 @@ class EventDrivenScheduler:
     """Event-driven triggers instead of periodic step()."""
 
     def __init__(self):
-        self._event_queue: deque = deque(maxlen=1000)
+        self._event_queue: deque[Dict[str, Any]] = deque(maxlen=1000)
         self._event_counts: Dict[str, int] = defaultdict(int)
 
     def enqueue(self, event_type: str, payload: Dict[str, Any]):
@@ -106,7 +106,7 @@ class EventDrivenScheduler:
 
         return processed
 
-    def get_stats(self) -> Dict:
+    def get_stats(self) -> Dict[str, Any]:
         return {
             "queue_depth": len(self._event_queue),
             "event_counts": dict(self._event_counts),

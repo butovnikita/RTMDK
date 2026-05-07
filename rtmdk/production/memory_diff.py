@@ -34,7 +34,7 @@ class MemoryDiff:
             b_node = self.before.field.nodes[nid]
             a_node = self.after.field.nodes[nid]
 
-            changes = {}
+            changes: Dict[str, Any] = {}
             if b_node.salience != a_node.salience:
                 changes["salience"] = {
                     "before": b_node.salience,

@@ -74,7 +74,7 @@ class TopologyHealer:
             diagnostics["avg_pairwise_dist"] = float(np.mean(valid))
             diagnostics["std_pairwise_dist"] = float(np.std(valid))
             diagnostics["density_cv"] = float(
-                np.std(valid) / float(max(np.mean(valid), 1e-8)))
+                np.std(valid) / float(max(np.mean(valid), 1e-8)))  # type: ignore[arg-type]
         else:
             diagnostics["avg_pairwise_dist"] = 0.0
             diagnostics["density_cv"] = 0.0
@@ -137,8 +137,10 @@ class TopologyHealer:
             norm = np.linalg.norm(direction)
             if norm < 1e-8:
                 direction = np.random.randn(len(centroid)).astype(np.float32)
-                norm: float = 1.0
-            direction = direction / norm
+                norm_val: float = 1.0
+            else:
+                norm_val = float(norm)
+            direction = direction / norm_val
             old_pos = node.latent_pos.copy()
             node.latent_pos = (
                 old_pos +

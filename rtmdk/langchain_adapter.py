@@ -67,7 +67,7 @@ class RTMDKMemory(BaseChatMessageHistory):
         self._messages: List[BaseMessage] = []
 
     @property
-    def messages(self) -> List[BaseMessage]:
+    def messages(self) -> List[BaseMessage]:  # type: ignore[override]
         """Return chat history as list of LangChain messages."""
         return list(self._messages)
 
@@ -100,12 +100,12 @@ class RTMDKMemory(BaseChatMessageHistory):
         """Clear the conversation history."""
         self._messages.clear()
 
-    def add_user_message(self, content: str) -> None:
+    def add_user_message(self, content: str) -> None:  # type: ignore[override]
         """Convenience: add a user message."""
         if HumanMessage is not None:
             self.add_message(HumanMessage(content=content))
 
-    def add_ai_message(self, content: str) -> None:
+    def add_ai_message(self, content: str) -> None:  # type: ignore[override]
         """Convenience: add an AI message."""
         if AIMessage is not None:
             self.add_message(AIMessage(content=content))

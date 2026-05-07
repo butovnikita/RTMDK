@@ -183,7 +183,7 @@ class LLMEvaluator:
         expected_words = set(w for w in expected_lower.split() if len(w) > 3)
         actual_words = set(w for w in actual_lower.split() if len(w) > 3)
 
-        exact_match = 0
+        exact_match = 0.0
         if expected_words and actual_words:
             overlap = expected_words & actual_words
             exact_match = len(overlap) / len(expected_words)

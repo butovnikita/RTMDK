@@ -120,7 +120,7 @@ async def _lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
         logger.info(f"Loading snapshot from {snapshot_path}")
         _ctx.memory = RTMDKMemory.import_field(
             snapshot_path, embedder=embedder, config=cfg, wal_path=wal_path
-        )
+        )  # type: ignore[call-arg]
     else:
         _ctx.memory = RTMDKMemory(
             config=cfg,
@@ -174,6 +174,7 @@ def add_memory(
     return f"Memory added: {text[:80]}..."
 
 
+
 @mcp.tool()
 def query_memory(
         query: str,
@@ -189,7 +190,10 @@ def query_memory(
     if _ctx.memory is None:
         return "Error: memory not initialized"
     embedding = _ctx.memory.embedder(query)
-    results = _ctx.memory.field.query(embedding, top_k=top_k)
+    field = _ctx.memory.field
+    if field is None:
+        return "Error: field not initialized"
+    results = field.query(embedding, top_k=top_k)
     lines = []
     for nid, score, node in results:
         text = node.content.get("text") or node.content.get("input_text", "")
@@ -206,9 +210,12 @@ def delete_memory(node_id: str) -> str:
     """
     if _ctx.memory is None:
         return "Error: memory not initialized"
-    if node_id not in _ctx.memory.field.nodes:
+    field = _ctx.memory.field
+    if field is None:
+        return "Error: field not initialized"
+    if node_id not in field.nodes:
         return f"Node {node_id} not found"
-    _ctx.memory.field.delete_nodes([node_id])
+    field.delete_nodes([node_id])
     return f"Deleted {node_id}"
 
 
@@ -217,9 +224,12 @@ def consolidate_memory() -> str:
     """Run memory consolidation (merge similar nodes, prune weak ones)."""
     if _ctx.memory is None:
         return "Error: memory not initialized"
-    before = len(_ctx.memory.field.nodes)
-    _ctx.memory.field.consolidate()
-    after = len(_ctx.memory.field.nodes)
+    field = _ctx.memory.field
+    if field is None:
+        return "Error: field not initialized"
+    before = len(field.nodes)
+    field.consolidate()
+    after = len(field.nodes)
     return f"Consolidation complete: {before} → {after} nodes"
 
 
@@ -228,8 +238,11 @@ def get_memory_stats() -> str:
     """Return memory field statistics as JSON."""
     if _ctx.memory is None:
         return "Error: memory not initialized"
-    stats = dict(_ctx.memory.field.stats)
-    stats["active_nodes"] = len(_ctx.memory.field.nodes)
+    field = _ctx.memory.field
+    if field is None:
+        return "Error: field not initialized"
+    stats = dict(field.stats)
+    stats["active_nodes"] = len(field.nodes)
     return json.dumps(stats, indent=2, default=str)
 
 
@@ -248,7 +261,10 @@ def memory_nodes() -> str:
     """List of active node IDs."""
     if _ctx.memory is None:
         return "[]"
-    return json.dumps(list(_ctx.memory.field.nodes.keys()))
+    field = _ctx.memory.field
+    if field is None:
+        return "[]"
+    return json.dumps(list(field.nodes.keys()))
 
 
 @mcp.resource("memory://node/{node_id}")
@@ -256,7 +272,10 @@ def memory_node(node_id: str) -> str:
     """Single node content."""
     if _ctx.memory is None:
         return "{}"
-    node = _ctx.memory.field.nodes.get(node_id)
+    field = _ctx.memory.field
+    if field is None:
+        return "{}"
+    node = field.nodes.get(node_id)
     if node is None:
         return f'{{"error": "Node {node_id} not found"}}'
     return json.dumps(
@@ -284,7 +303,10 @@ def memory_context_prompt(query: str = "") -> str:
     if _ctx.memory is None or not query:
         return "You are a helpful assistant with long-term memory."
     embedding = _ctx.memory.embedder(query)
-    results = _ctx.memory.field.query(embedding, top_k=5)
+    field = _ctx.memory.field
+    if field is None:
+        return "You are a helpful assistant with long-term memory."
+    results = field.query(embedding, top_k=5)
     context_parts = []
     for nid, score, node in results:
         text = node.content.get("text") or node.content.get("input_text", "")

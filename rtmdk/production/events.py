@@ -5,7 +5,7 @@ Emits events for important memory operations with webhook support.
 """
 
 import time
-from typing import Dict, List, Callable
+from typing import Dict, List, Callable, Any, Optional
 
 
 class EventSystem:
@@ -26,7 +26,7 @@ class EventSystem:
 
     def __init__(self):
         self._handlers: Dict[str, List[Callable]] = {}
-        self._webhooks: List[Dict] = []
+        self._webhooks: List[Dict[str, Any]] = []
         self._event_log: List[Dict] = []
 
     def on(self, event_name: str, handler: Callable):
@@ -35,7 +35,7 @@ class EventSystem:
             self._handlers[event_name] = []
         self._handlers[event_name].append(handler)
 
-    def emit(self, event_name: str, data: Dict = None):
+    def emit(self, event_name: str, data: Optional[Dict] = None):
         """Emit an event."""
         event = {
             "name": event_name,
@@ -60,7 +60,7 @@ class EventSystem:
                 except Exception:
                     pass
 
-    def add_webhook(self, url: str, events: List[str] = None):
+    def add_webhook(self, url: str, events: Optional[List[str]] = None):
         """Add webhook URL."""
         self._webhooks.append({"url": url, "events": events or []})
 

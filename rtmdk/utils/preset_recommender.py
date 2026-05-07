@@ -4,7 +4,7 @@ rtmdk/utils/preset_recommender.py — Auto-select Best Config Preset.
 Recommends optimal preset based on user requirements.
 """
 
-from typing import Dict
+from typing import Any, Dict
 
 
 def recommend_preset(
@@ -12,7 +12,7 @@ def recommend_preset(
     available_ram_mb: float = 256,
     max_latency_ms: float = 100,
     use_case: str = "general",
-) -> Dict[str, any]:
+) -> Dict[str, Any]:
     """Recommend optimal RTMDK preset.
 
     Args:

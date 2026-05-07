@@ -4,7 +4,7 @@ rtmdk/production/tagging.py — Memory Tagging System.
 Allows adding custom tags to memory nodes for organization.
 """
 
-from typing import Dict, List, Set
+from typing import Any, Dict, List, Set
 from collections import defaultdict
 
 
@@ -25,7 +25,7 @@ class TaggingSystem:
         all_tags = tags.list_tags()
     """
 
-    def __init__(self, memory):
+    def __init__(self, memory: Any):
         self.memory = memory
         self._node_tags: Dict[str, Set[str]] = defaultdict(set)
         self._tag_nodes: Dict[str, Set[str]] = defaultdict(set)

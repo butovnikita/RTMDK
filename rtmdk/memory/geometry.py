@@ -25,7 +25,7 @@ def poincare_dist(u: NDArray, v: NDArray, ball_radius: float = 0.85) -> float:
     sq_delta: float = float(np.sum(delta ** 2))
     r_sq = ball_radius ** 2
     denom = ((r_sq - u_norm ** 2) * (r_sq - v_norm ** 2)) / max(r_sq, 1e-8)
-    arg = 1 + 2 * sq_delta / float(max(denom, 1e-8))
+    arg = 1 + 2 * sq_delta / float(max(denom, 1e-8))  # type: ignore[arg-type]
     return float(ball_radius * np.arccosh(np.clip(arg, 1.0, None)))
 
 
@@ -61,7 +61,7 @@ def log_map_poincare(
     base_norm_sq: float = float(np.sum(base ** 2))
     lambda_base = 2.0 / (1.0 - base_norm_sq / (ball_radius ** 2))
     ratio = diff_norm / ball_radius
-    ratio = min(ratio, 1.0 - 1e-8)  # type: ignore[assignment]
+    ratio = min(ratio, 1.0 - 1e-8)  # type: ignore[arg-type]
     factor = (2.0 * ball_radius * np.arctanh(ratio)) / \
         (lambda_base * diff_norm)
     tangent = diff * factor

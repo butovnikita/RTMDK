@@ -110,9 +110,9 @@ class TenantRouter:
         memory = create_rtmdk(
             preset="production",
             embedder=embedder,
-            max_nodes=tenant_config.max_nodes,
-            enable_engrams=tenant_config.enable_engrams,
-            offline_dreaming=tenant_config.enable_dreaming,
+            max_nodes=tenant_config.max_nodes,  # type: ignore[call-arg]
+            enable_engrams=tenant_config.enable_engrams,  # type: ignore[call-arg]
+            offline_dreaming=tenant_config.enable_dreaming,  # type: ignore[call-arg]
         )
 
         self._memories[tenant_id] = memory

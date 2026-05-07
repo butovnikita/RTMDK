@@ -237,7 +237,8 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(_auto_save_loop())
 
     logger.info(f"Server ready on {SERVER_HOST}:{SERVER_PORT}")
-    logger.info(f"Memory nodes: {len(memory.field.nodes)}")
+    if memory.field is not None:
+        logger.info(f"Memory nodes: {len(memory.field.nodes)}")
     logger.info(
         "Production modules: QueryCache, EmbeddingCache, ContextOptimizer, HealthMonitor enabled")
 
@@ -246,21 +247,24 @@ async def lifespan(app: FastAPI):
     logger.info("RTMDK server shutting down...")
     if memory:
         # Gracefully stop background workers
-        for task in memory.field._workers:
-            if not task.done():
-                task.cancel()
-                try:
-                    await asyncio.wait_for(task, timeout=10.0)
-                except (asyncio.CancelledError, asyncio.TimeoutError):
-                    pass
-        memory.field._workers.clear()
+        field = memory.field
+        if field is not None:
+            for task in field._workers:
+                if not task.done():
+                    task.cancel()
+                    try:
+                        await asyncio.wait_for(task, timeout=10.0)
+                    except (asyncio.CancelledError, asyncio.TimeoutError):
+                        pass
+            field._workers.clear()
 
         try:
             save_path = _get_save_path(MEMORY_FILE)
             os.makedirs(os.path.dirname(save_path), exist_ok=True)
             await run_sync(memory.export_field, save_path)
-            logger.info(
-                f"Memory saved to {save_path} ({len(memory.field.nodes)} nodes)")
+            if memory.field is not None:
+                logger.info(
+                    f"Memory saved to {save_path} ({len(memory.field.nodes)} nodes)")
         except Exception:
             logger.exception("Failed to save memory on shutdown")
 
@@ -479,11 +483,11 @@ async def _get_embedding_cached(text: str, model: str = None) -> np.ndarray:
         else:
             del embedding_cache.memory_cache[key]
 
-    emb = embedding_cache._load_from_disk(key)
-    if emb is not None:
+    cached_emb = embedding_cache._load_from_disk(key)
+    if cached_emb is not None:
         embedding_cache._hits += 1
-        embedding_cache._save_to_memory_cache(key, emb)
-        return emb
+        embedding_cache._save_to_memory_cache(key, cached_emb)
+        return cached_emb
 
     # Miss — compute async
     embedding_cache._misses += 1
@@ -542,7 +546,8 @@ def init_memory() -> RTMDKMemory:
         preset_fn = RTMDKConfig.production
 
     # Preset creates the base config, env vars override individual fields
-    config = preset_fn()
+    from typing import Callable, cast
+    config = cast(Callable[[], RTMDKConfig], preset_fn)()
 
     logger.info(f"Memory config preset: {preset_name}")
     logger.info(f"  latent_dim={config.latent_dim}, decay={config.decay_rate}")
@@ -558,8 +563,9 @@ def init_memory() -> RTMDKMemory:
         try:
             mem = RTMDKMemory.import_field(
                 load_path, get_embedding, wal_path=load_path + ".wal")
-            logger.info(
-                f"Loaded memory from {load_path}: {len(mem.field.nodes)} nodes")
+            if mem.field is not None:
+                logger.info(
+                    f"Loaded memory from {load_path}: {len(mem.field.nodes)} nodes")
             return mem
         except Exception:
             logger.warning(
@@ -612,6 +618,7 @@ def build_system_prompt(
     # Check for custom system prompt (env var file)
     prompt_file = os.getenv("RTMDK_SYSTEM_PROMPT_FILE")
 
+    base_prompt: Optional[str] = None
     # Priority: env var file > env var text > config.system_prompt > None
     if prompt_file and os.path.exists(prompt_file):
         try:
@@ -910,6 +917,7 @@ async def memory_query(req: MemoryQueryRequest):
                 return cached
 
         embedding = await _get_embedding_cached(req.query)
+        assert memory.field is not None
         results = await run_sync(memory.field.query, embedding, top_k=req.top_k)
         # Filter by threshold and format
         formatted = []
@@ -962,6 +970,7 @@ async def memory_batch_query(req: BatchQueryRequest):
                     continue
 
             embedding = await _get_embedding_cached(q)
+            assert memory.field is not None
             results = await run_sync(memory.field.query, embedding, top_k=req.top_k)
             formatted = []
             for nid, score, node in results:

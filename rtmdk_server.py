@@ -411,7 +411,7 @@ def init_memory() -> RTMDKMemory:
     preset_fn = getattr(RTMDKConfig, preset_name, None)
     if preset_fn is None:
         logger.warning(f"Unknown preset '{preset_name}', falling back to 'local'")
-        preset_fn = RTMDKConfig.local
+        preset_fn = RTMDKConfig.local  # type: ignore[attr-defined]
 
     # Preset creates the base config, env vars override individual fields
     config = preset_fn()
@@ -441,13 +441,15 @@ def init_memory() -> RTMDKMemory:
 
         try:
             mem = RTMDKMemory.import_field(MEMORY_FILE, get_embedding)
-            logger.info(f"Loaded memory from {MEMORY_FILE}: {len(mem.field.nodes)} nodes")
+            if mem.field is not None:
+                logger.info(f"Loaded memory from {MEMORY_FILE}: {len(mem.field.nodes)} nodes")
             # Apply context_format override from env/preset if different from file
             env_fmt = os.getenv("RTMDK_CONTEXT_FORMAT")
             if env_fmt:
                 from rtmdk.memory.core import ContextFormat
                 mem.config.context_format = ContextFormat(env_fmt)
-                mem.field.stats["context_format"] = env_fmt
+                if mem.field is not None:
+                    mem.field.stats["context_format"] = env_fmt
                 logger.info(f"  context_format overridden from env: {env_fmt}")
             return mem
         except (json.JSONDecodeError, ValueError, FileNotFoundError) as e:
@@ -530,6 +532,7 @@ def build_system_prompt(user_messages: List[ChatMessage], session_id: str) -> st
     # Check for custom system prompt (env var file)
     prompt_file = os.getenv("RTMDK_SYSTEM_PROMPT_FILE")
 
+    base_prompt: Optional[str] = None
     # Priority: env var file > env var text > config.system_prompt > None
     if prompt_file and os.path.exists(prompt_file):
         try:
@@ -879,7 +882,7 @@ async def save_context(req: SaveContextRequest):
         {"input": req.input, "session_id": req.session_id},
         {"output": req.output}
     )
-    return {"status": "ok", "nodes": len(memory.field.nodes)}
+    return {"status": "ok", "nodes": len(memory.field.nodes) if memory.field is not None else 0}
 
 
 @app.post("/v1/memory/query")

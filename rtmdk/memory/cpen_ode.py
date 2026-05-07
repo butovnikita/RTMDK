@@ -111,8 +111,8 @@ class CPENChildODE:
         # - cos(phi_j) * sin(phi_i)
         sin_phi = np.sin(phi)
         cos_phi = np.cos(phi)
-        sum_sin_phi = np.sum(sin_phi)
-        sum_cos_phi = np.sum(cos_phi)
+        sum_sin_phi: float = float(np.sum(sin_phi))
+        sum_cos_phi: float = float(np.sum(cos_phi))
         dphi_dt = natural_freq + coupling * \
             (sum_sin_phi * cos_phi - sum_cos_phi * sin_phi)
 

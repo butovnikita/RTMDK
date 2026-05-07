@@ -26,7 +26,7 @@ except ImportError:
     BaseChatMessageHistory = object  # type: ignore[misc,assignment]
     BaseMessage = Any  # type: ignore[misc,assignment]
     # type: ignore[misc,assignment]
-    HumanMessage = AIMessage = SystemMessage = None
+    HumanMessage = AIMessage = SystemMessage = None  # type: ignore[misc,assignment]
 
     def Field(*a, **kw):  # type: ignore[no-redef]
         return None
@@ -42,7 +42,7 @@ class RTMDKDocument:
     score: float = 0.0
 
 
-class RTMDKRetriever(BaseRetriever if LANGCHAIN_AVAILABLE else object):
+class RTMDKRetriever(BaseRetriever if LANGCHAIN_AVAILABLE else object):  # type: ignore[misc]
     """LangChain-compatible retriever wrapper for RTMDK.
 
     Implements BaseRetriever → RunnableSerializable[str, list[Document]],
@@ -163,7 +163,7 @@ class RTMDKRetriever(BaseRetriever if LANGCHAIN_AVAILABLE else object):
 
 
 class RTMDKChatMessageHistory(
-        BaseChatMessageHistory if LANGCHAIN_AVAILABLE else object):
+        BaseChatMessageHistory if LANGCHAIN_AVAILABLE else object):  # type: ignore[misc]
     """LangChain-compatible chat message history backed by RTMDK.
 
     Implements BaseChatMessageHistory with full message persistence into

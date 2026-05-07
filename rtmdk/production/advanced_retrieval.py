@@ -65,7 +65,7 @@ class HybridRetriever:
         bm25_results = self.bm25.search(query, top_k * 3)
 
         # Step 3: Normalize and combine scores
-        all_scores: Dict[str, Dict[str, float]] = {}
+        all_scores: Dict[str, Dict[str, Any]] = {}
 
         # RTMDK resonance scores
         max_rtmdk = max((r[1] for r in rtmdk_results), default=1.0)
@@ -116,6 +116,7 @@ class HybridRetriever:
         """Get standard RTMDK results."""
         # Parse results from context (simplified — just get from field.query)
         phase = self.memory._get_phase("hybrid", query_embedding)
+        assert self.memory.field is not None
         results = self.memory.field.query(query_embedding, phase, top_k=top_k)
         return results
 
@@ -124,6 +125,7 @@ class HybridRetriever:
         # BM25 doc_id format: "doc_{index}"
         # We need to map this back to node — simplified implementation
         # In production, maintain explicit mapping
+        assert self.memory.field is not None
         for nid, node in self.memory.field.nodes.items():
             if bm25_id in node.content.get("text", "")[:100]:
                 return node
@@ -376,6 +378,7 @@ class CausalAugmentedRetriever:
         """Retrieve with causal graph augmentation."""
         # Step 1: Get initial results
         phase = self.memory._get_phase("causal", query_embedding)
+        assert self.memory.field is not None
         initial_results = self.memory.field.query(
             query_embedding, phase, top_k=top_k * 2)
 
@@ -401,9 +404,10 @@ class CausalAugmentedRetriever:
                 combined[nid] = (nid, new_score, combined[nid][2])
             else:
                 # New node from causal traversal
-                node = self.memory.field.nodes.get(nid)
-                if node:
-                    combined[nid] = (nid, self.causal_weight * bonus, node)
+                assert self.memory.field is not None
+                found_node = self.memory.field.nodes.get(nid)
+                if found_node:
+                    combined[nid] = (nid, self.causal_weight * bonus, found_node)
 
         results = list(combined.values())
         results.sort(key=lambda x: x[1], reverse=True)
@@ -420,6 +424,7 @@ class CausalAugmentedRetriever:
         if depth >= self.max_hops:
             return
 
+        assert self.memory.field is not None
         node = self.memory.field.nodes.get(node_id)
         if not node:
             return
@@ -485,7 +490,7 @@ class MetaRetrievalController:
             scores[qtype] = score
 
         # Default to factual if no pattern matches
-        best_type = max(scores, key=scores.get)
+        best_type = max(scores, key=lambda k: scores[k])
         if scores[best_type] == 0:
             return "factual"
         return best_type
@@ -500,6 +505,8 @@ class MetaRetrievalController:
         query_type = self.classify_query(query)
         retriever = self.strategies.get(
             query_type, self.strategies.get("factual"))
+        if retriever is None:
+            return [], "unknown"
 
         results = retriever.retrieve(query, query_embedding, top_k)
 
@@ -514,7 +521,7 @@ class MetaRetrievalController:
 
     @property
     def stats(self) -> Dict:
-        type_counts = defaultdict(int)
+        type_counts: Dict[str, int] = defaultdict(int)
         for log in self._query_log:
             type_counts[log["type"]] += 1
         return {
@@ -571,7 +578,7 @@ class AdvancedRTMDKRetriever:
 
         # 7. Meta-retrieval controller
         if enable_meta_controller:
-            strategies = {}
+            strategies: Dict[str, Any] = {}
             if self.causal:
                 strategies["multi-hop"] = self.causal
             if self.hybrid:
@@ -616,6 +623,7 @@ class AdvancedRTMDKRetriever:
         else:
             # Fallback to basic RTMDK
             phase = self.memory._get_phase("basic", query_embedding)
+            assert self.memory.field is not None
             results = self.memory.field.query(query_embedding, phase, top_k)
             results = [(nid, score, node) for nid, score, node in results]
             query_type = "basic"
@@ -639,7 +647,7 @@ class AdvancedRTMDKRetriever:
 
     def get_stats(self) -> Dict:
         """Get comprehensive stats."""
-        stats = {
+        stats: Dict[str, Any] = {
             "hybrid_enabled": self.hybrid is not None,
             "confidence_aware_enabled": self.confidence_aware is not None,
             "query_expansion_enabled": self.query_expander is not None,
@@ -666,5 +674,6 @@ class AdvancedRTMDKRetriever:
             if self.parent.hybrid:
                 return self.parent.hybrid.retrieve(expanded, embedding, top_k)
             phase = self.parent.memory._get_phase("expanded", embedding)
+            assert self.parent.memory.field is not None
             results = self.parent.memory.field.query(embedding, phase, top_k)
             return [(nid, score, node) for nid, score, node in results]

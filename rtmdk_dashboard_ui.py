@@ -924,6 +924,9 @@ def create_dashboard_router(memory: Callable, config: Dict[str, Any]) -> APIRout
         file = form.get("file")
         if not file or not hasattr(file, 'filename'):
             return {"error": "No file provided"}
+        from starlette.datastructures import UploadFile
+        if not isinstance(file, UploadFile):
+            return {"error": "Invalid file upload"}
 
         import tempfile, os
         content = await file.read()
@@ -934,9 +937,10 @@ def create_dashboard_router(memory: Callable, config: Dict[str, Any]) -> APIRout
         try:
             from rtmdk.memory.core import RTMDKMemory
             mem2 = RTMDKMemory.import_field(temp_path, mem.embedder)
-            if not mem2 or len(mem2.field.nodes) == 0:
+            if not mem2 or mem2.field is None or len(mem2.field.nodes) == 0:
                 return {"error": "Failed to restore: no nodes found"}
 
+            assert mem.field is not None
             mem.field.nodes.clear()
             mem.field.node_index.clear()
             for nid, node in mem2.field.nodes.items():

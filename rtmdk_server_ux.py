@@ -7,7 +7,7 @@ Usage:
     app.include_router(create_ux_router(memory, config))
 """
 import json, time, os, logging, importlib
-from typing import Dict, Any
+from typing import Dict, Any, cast
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse, PlainTextResponse
 from rtmdk.memory.core import RTMDKMemory
@@ -30,10 +30,11 @@ def _safe_import(module_path: str, **kwargs):
             return cls(**kwargs)
     except Exception as e:
         # Log only first failure per module
-        if not hasattr(_safe_import, '_logged'):
-            _safe_import._logged = set()
-        if module_path_str not in _safe_import._logged:
-            _safe_import._logged.add(module_path_str)
+        _si = cast(Any, _safe_import)
+        if not hasattr(_si, '_logged'):
+            _si._logged = set()
+        if module_path_str not in _si._logged:
+            _si._logged.add(module_path_str)
             logger.debug(f"Module {module_path_str} unavailable: {type(e).__name__}")
     return None
 
@@ -471,7 +472,7 @@ def create_ux_router(memory, config: Dict[str, Any]) -> APIRouter:
             except Exception as e:
                 return {"status": "partial", "updates": updates, "warning": f"Failed to persist config: {e}"}
 
-        result = {"status": "ok", "updates": list(updates.keys())}
+        result: Dict[str, Any] = {"status": "ok", "updates": list(updates.keys())}
         if needs_restart:
             result["needs_restart"] = True
             result["restart_required_keys"] = needs_restart
@@ -502,6 +503,9 @@ def create_ux_router(memory, config: Dict[str, Any]) -> APIRouter:
         file = form.get("file")
         if not file or not hasattr(file, 'filename'):
             raise HTTPException(400, "No file provided")
+        from starlette.datastructures import UploadFile
+        if not isinstance(file, UploadFile):
+            raise HTTPException(400, "Invalid file upload")
 
         # H6: Limit upload size to 100MB
         content = await file.read()
@@ -518,10 +522,11 @@ def create_ux_router(memory, config: Dict[str, Any]) -> APIRouter:
 
             # Restore memory from backup
             mem2 = RTMDKMemory.import_field(temp_path, mem.embedder)
-            if not mem2 or len(mem2.field.nodes) == 0:
+            if not mem2 or mem2.field is None or len(mem2.field.nodes) == 0:
                 raise HTTPException(400, "Failed to restore: no nodes found")
 
             # Copy nodes to current memory
+            assert mem.field is not None
             mem.field.nodes.clear()
             mem.field.node_index.clear()
             for nid, node in mem2.field.nodes.items():

@@ -28,7 +28,7 @@ class ABTesting:
     def __init__(self):
         self._variants: Dict[str, Dict] = {}
         self._assignments: Dict[str, str] = {}  # user_id → variant
-        self._metrics: Dict[str, Dict[str, List]
+        self._metrics: Dict[str, Dict[str, List[float]]
                             ] = defaultdict(lambda: defaultdict(list))
 
     def add_variant(self, name: str, config_overrides: Dict):

@@ -32,7 +32,7 @@ class ActiveInferenceLoop:
             return None
 
         # Find most uncertain node
-        most_uncertain = max(uncertainties, key=uncertainties.get)
+        most_uncertain = max(uncertainties, key=lambda k: uncertainties[k])
         if uncertainties[most_uncertain] < self.uncertainty_threshold:
             return None  # Uncertainty low enough, no intervention needed
 

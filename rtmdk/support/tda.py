@@ -1,7 +1,7 @@
 """TDA monitor for RTMDK."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Dict, List
+from typing import TYPE_CHECKING, Any, Dict, List
 
 import numpy as np
 from scipy.spatial.distance import cdist
@@ -12,9 +12,9 @@ if TYPE_CHECKING:
 
 class TDAMonitor:
     def __init__(self):
-        self.history: List[Dict] = []
+        self.history: List[Dict[str, Any]] = []
 
-    def compute_persistence(self, nodes: Dict[str, "MemoryNode"]) -> Dict:
+    def compute_persistence(self, nodes: Dict[str, "MemoryNode"]) -> Dict[str, Any]:
         if len(nodes) < 3:
             return {"H0": 0, "H1": 0, "avg_persistence": 0.0}
         positions = np.array([n.latent_pos for n in nodes.values()])

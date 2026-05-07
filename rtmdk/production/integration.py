@@ -30,7 +30,7 @@ USAGE:
 
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Callable
+from typing import Any, Dict, List, Optional, Callable
 from collections import defaultdict
 from dataclasses import dataclass, field
 import numpy as np
@@ -141,7 +141,7 @@ class UserSessionManager:
             self._loaded_sessions[user_id] = memory
             self._session_metadata[user_id] = {
                 "last_saved": time.time(),
-                "num_nodes": len(memory.field.nodes),
+                "num_nodes": len(memory.field.nodes) if memory.field is not None else 0,
             }
         except Exception as e:
             print(f"Failed to save session for {user_id}: {e}")
@@ -185,6 +185,7 @@ class FeedbackLoop:
         context = ctx.get("rtmdk_context", "")
 
         # Update salience of nodes mentioned in context
+        assert memory.field is not None
         for nid, node in list(
                 memory.field.nodes.items())[:50]:  # Limit for performance
             node_text = node.content.get("text", "").lower()
@@ -277,22 +278,24 @@ class SmartPruner:
     def __init__(self, max_age_days: int = 90, min_salience: float = 0.05):
         self.max_age_seconds = max_age_days * 86400
         self.min_salience = min_salience
-        self._pruning_stats = {"nodes_pruned": 0, "last_prune": 0}
+        self._pruning_stats: Dict[str, Any] = {"nodes_pruned": 0, "last_prune": 0}
 
     def prune(self, memory: RTMDKMemory) -> int:
         now = time.time()
         nodes_to_remove = []
 
+        assert memory.field is not None
         for nid, node in memory.field.nodes.items():
             age = now - node.created_at
             if node.salience < self.min_salience and age > self.max_age_seconds:
                 nodes_to_remove.append(nid)
 
         for nid in nodes_to_remove:
-            if nid in memory.field.nodes:
-                del memory.field.nodes[nid]
-            if nid in memory.field.node_index:
-                memory.field.node_index.remove(nid)
+            if memory.field is not None:
+                if nid in memory.field.nodes:
+                    del memory.field.nodes[nid]
+                if nid in memory.field.node_index:
+                    memory.field.node_index.remove(nid)
 
         self._pruning_stats["nodes_pruned"] += len(nodes_to_remove)
         self._pruning_stats["last_prune"] = now
@@ -466,7 +469,7 @@ class ProductionRTMDK:
             "avg_latency_ms": round(self._total_latency / max(self._query_count, 1), 2),
             "uptime_seconds": round(uptime, 1),
             "queries_per_second": round(self._query_count / max(uptime, 1), 2),
-            "num_nodes": len(self.memory.field.nodes),
+            "num_nodes": len(self.memory.field.nodes) if self.memory.field is not None else 0,
             "cache_stats": self.query_cache.stats if self.query_cache else {"enabled": False},
             "bm25_docs": self.bm25_fallback.size if self.bm25_fallback else 0,
             "feedback_score": self.feedback_loop.avg_feedback_score if self.feedback_loop else None,
