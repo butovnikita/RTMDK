@@ -43,6 +43,10 @@ import logging
 
 # Extracted engine classes (kept in sync with rtmdk/support/ modules)
 from rtmdk.memory.utils import SecurityViolationError, detect_modality, apply_attention_bias, _enum_value
+from rtmdk.memory.engram_cache import EngramEmbeddingCache
+from rtmdk.memory.distributed_lock import DistributedLock
+from rtmdk.memory.observability import MemoryMetrics, AlertRule
+from rtmdk.memory.rag_quality import SentenceReranker, QueryDecomposer, FeedbackLoop
 
 logger = logging.getLogger(__name__)
 
@@ -743,6 +747,41 @@ class RTMDKMemory(BaseModel):
         else:
             object.__setattr__(self, "replication_manager", None)
 
+        # Engram embedding cache (avoids TieredNodeStore disk scans)
+        sot_cfg = getattr(self.config, "sot", None)
+        if sot_cfg and getattr(sot_cfg, "engram_cache_enabled", True):
+            self.engram_cache = EngramEmbeddingCache(
+                max_hot=getattr(sot_cfg, "engram_cache_max_hot", 10_000),
+                max_warm=getattr(sot_cfg, "engram_cache_max_warm", 90_000))
+        else:
+            self.engram_cache = None
+
+        # Distributed lock
+        lock_path = getattr(sot_cfg, "distributed_lock_path", None) if sot_cfg else None
+        if lock_path:
+            self._distributed_lock = DistributedLock(lock_path)
+        else:
+            self._distributed_lock = None
+
+        # Observability
+        if sot_cfg and getattr(sot_cfg, "observability_enabled", False):
+            self.metrics = MemoryMetrics()
+            self.metrics.add_alert_rule(AlertRule("high_latency", "query_p99", threshold=100.0))
+            self.metrics.add_alert_rule(AlertRule("low_cache", "cache_hit_ratio", threshold=0.3, comparison="lt"))
+        else:
+            self.metrics = None
+
+        # RAG Quality
+        self._sentence_reranker = None
+        self._query_decomposer = None
+        self._feedback_loop = None
+        if sot_cfg and getattr(sot_cfg, "sentence_reranker_enabled", False):
+            self._sentence_reranker = SentenceReranker(self.embedder)
+        if sot_cfg and getattr(sot_cfg, "query_decomposition_enabled", False):
+            self._query_decomposer = QueryDecomposer()
+        if sot_cfg and getattr(sot_cfg, "feedback_loop_enabled", False):
+            self._feedback_loop = FeedbackLoop(self.embedder)
+
     @property
     def memory_variables(self) -> List[str]:
         return ["rtmdk_context"]
@@ -781,11 +820,18 @@ class RTMDKMemory(BaseModel):
                 modal_emb = embedding
                 embedding = embedding[:hnsw_dim]
         # P1: Sparse index insert (after we know the real node_id)
+        t0 = time.perf_counter()
         node_id = self.field.add_node(embedding, content, modal_embedding=modal_emb, **kwargs)
         if getattr(self, "sparse_index", None) is not None:
             sparse_vec = content.get("sparse_embedding")
             if sparse_vec:
                 self.sparse_index.insert(node_id, sparse_vec)
+        # Engram cache: keep embedding in RAM for fast engram similarity
+        if self.engram_cache is not None:
+            self.engram_cache.add(node_id, embedding)
+        # Observability
+        if self.metrics is not None:
+            self.metrics.record_ingestion((time.perf_counter() - t0) * 1000)
         # v8.2.1 hooks
         self._on_node_added(node_id, embedding, content, kwargs)
         return node_id
@@ -1040,37 +1086,58 @@ class RTMDKMemory(BaseModel):
             embedding: NDArray,
             session_id: str) -> str:
         """Core retrieval pipeline shared by load_memory_variables and with_embedding."""
-        phase = self._get_phase(session_id, embedding)
+        # Query decomposition for multi-hop retrieval
+        if self._query_decomposer is not None:
+            sub_queries = self._query_decomposer.decompose(query)
+        else:
+            sub_queries = [query]
 
-        # Phase 18: Engram-based retrieval (if enabled)
-        if self.engram_manager is not None and self.engram_manager.index.size > 0:
-            node_embs = {}
-            for nid, node in self.field.nodes.items():
-                emb = self._get_node_embedding(nid, node)
-                if emb is not None:
-                    node_embs[nid] = emb
+        all_results = []
+        for sub_q in sub_queries:
+            sub_emb = self.embedder(sub_q)
+            phase = self._get_phase(session_id, sub_emb)
 
-            engram_results = self.engram_manager.retrieve_engrams(
-                embedding, node_embs, top_k=self.field.cfg.top_k
-            )
+            # Phase 18: Engram-based retrieval (if enabled)
+            if self.engram_manager is not None and self.engram_manager.index.size > 0:
+                if self.engram_cache is not None and len(self.engram_cache) > 0:
+                    node_embs = self.engram_cache.get_all()
+                else:
+                    node_embs = {}
+                    for nid, node in self.field.nodes.items():
+                        emb = self._get_node_embedding(nid, node)
+                        if emb is not None:
+                            node_embs[nid] = emb
 
-            if engram_results:
-                results = self.engram_manager.expand_engrams(
-                    engram_results, self.field, top_k=self.field.cfg.top_k
+                engram_results = self.engram_manager.retrieve_engrams(
+                    sub_emb, node_embs, top_k=self.field.cfg.top_k
                 )
-                self.field.stats["engram_retrievals"] += 1
+
+                if engram_results:
+                    results = self.engram_manager.expand_engrams(
+                        engram_results, self.field, top_k=self.field.cfg.top_k
+                    )
+                    self.field.stats["engram_retrievals"] += 1
+                else:
+                    results = self.field.query(
+                        sub_emb,
+                        phase,
+                        top_k=self.field.cfg.top_k,
+                        session_id=session_id)
             else:
                 results = self.field.query(
-                    embedding,
+                    sub_emb,
                     phase,
                     top_k=self.field.cfg.top_k,
                     session_id=session_id)
-        else:
-            results = self.field.query(
-                embedding,
-                phase,
-                top_k=self.field.cfg.top_k,
-                session_id=session_id)
+            all_results.extend(results)
+
+        # Deduplicate and re-rank combined results
+        seen = set()
+        results = []
+        for nid, score, node in sorted(all_results, key=lambda x: x[1], reverse=True):
+            if nid not in seen:
+                results.append((nid, score, node))
+                seen.add(nid)
 
         # Session-scoped retrieval: filter results by session_id, with global
         # fallback
@@ -1208,24 +1275,19 @@ class RTMDKMemory(BaseModel):
             "rtmdk_context": self._retrieve_and_format(
                 query, embedding, session_id)}
 
-    def retrieve_nodes(
+    def _retrieve_nodes_impl(
             self,
             query: str,
             embedding: NDArray,
             top_k: Optional[int] = None,
             session_id: Optional[str] = None,
             sparse_vec: Optional[Dict[int, float]] = None) -> List[Tuple[str, float, Any]]:
-        """Retrieve memory nodes with full pipeline: cascade → resonance → sparse → engrams → causal → reranker.
-
-        Returns:
-            List of (node_id, score, node) tuples.
-        """
+        """Internal retrieval without metrics/locks/reranking."""
         # P1: Query expansion for short queries (< 3 content words)
         original_query = query
         if (query and
                 getattr(self.config, "query_expand_short", False) and
                 hasattr(self.embedder, "expand_query_terms")):
-            # Count content words (simple heuristic)
             content_words = [w for w in query.lower().split() if len(w) > 2]
             if len(content_words) < 3:
                 expanded = self.embedder.expand_query_terms(query, n_terms=3)
@@ -1243,7 +1305,6 @@ class RTMDKMemory(BaseModel):
             from rtmdk.production.cascade_router import QueryType
             route = self.cascade_router.classify(query)
             if route == QueryType.FACTUAL:
-                # Fast path: resonance only, skip heavy post-processing
                 return self.field.query(embedding, phase, top_k=tk, session_id=session_id, query_text=query)
 
         # Primary: resonance retrieval
@@ -1259,18 +1320,22 @@ class RTMDKMemory(BaseModel):
                     if nid not in seen:
                         node = self.field.nodes.get(nid)
                         if node:
-                            results.append((nid, score * 0.5, node))  # weight 0.5 for sparse
+                            results.append((nid, score * 0.5, node))
                             seen.add(nid)
                 results.sort(key=lambda x: x[1], reverse=True)
                 results = results[:tk]
 
         # Phase 18: Engram-based retrieval as fallback (if resonance under-delivers)
         if len(results) < tk and self.engram_manager is not None and self.engram_manager.index.size > 0:
-            node_embs = {}
-            for nid, node in self.field.nodes.items():
-                emb = self._get_node_embedding(nid, node)
-                if emb is not None:
-                    node_embs[nid] = emb
+            # Use engram cache if available to avoid TieredNodeStore disk scan
+            if self.engram_cache is not None and len(self.engram_cache) > 0:
+                node_embs = self.engram_cache.get_all()
+            else:
+                node_embs = {}
+                for nid, node in self.field.nodes.items():
+                    emb = self._get_node_embedding(nid, node)
+                    if emb is not None:
+                        node_embs[nid] = emb
 
             engram_results = self.engram_manager.retrieve_engrams(
                 embedding, node_embs, top_k=tk)
@@ -1344,6 +1409,66 @@ class RTMDKMemory(BaseModel):
 
         return results
 
+    def retrieve_nodes(
+            self,
+            query: str,
+            embedding: NDArray,
+            top_k: Optional[int] = None,
+            session_id: Optional[str] = None,
+            sparse_vec: Optional[Dict[int, float]] = None) -> List[Tuple[str, float, Any]]:
+        """Retrieve memory nodes with full pipeline: cascade → resonance → sparse → engrams → causal → reranker.
+
+        Includes observability (latency tracking), distributed locking,
+        sentence reranking, and query decomposition.
+
+        Returns:
+            List of (node_id, score, node) tuples.
+        """
+        # Distributed lock for multi-process safety
+        if self._distributed_lock is not None:
+            if not self._distributed_lock.acquire(blocking=True):
+                logger.warning("retrieve_nodes: failed to acquire distributed lock")
+
+        t0 = time.perf_counter()
+        cache_hit = False
+
+        # Check query cache
+        if self.field.query_cache is not None:
+            cache_key = self.field._query_cache_key(
+                self.field._project(embedding),
+                self._get_phase(session_id, embedding),
+                top_k or self.field.cfg.top_k,
+                "text",
+                session_id,
+            )
+            cached = self.field.query_cache.get_raw(cache_key)
+            if cached is not None:
+                cache_hit = True
+                results = cached
+            else:
+                results = self._retrieve_nodes_impl(query, embedding, top_k, session_id, sparse_vec)
+                self.field.query_cache.set_raw(cache_key, results)
+        else:
+            results = self._retrieve_nodes_impl(query, embedding, top_k, session_id, sparse_vec)
+
+        # Sentence-level reranking
+        if self._sentence_reranker is not None and results:
+            results = self._sentence_reranker.rerank(query, results, top_k=top_k or self.field.cfg.top_k)
+
+        # Observability
+        latency_ms = (time.perf_counter() - t0) * 1000
+        if self.metrics is not None:
+            self.metrics.record_query(latency_ms, cache_hit=cache_hit)
+            alerts = self.metrics.check_alerts()
+            for alert in alerts:
+                logger.warning(alert)
+
+        # Release distributed lock
+        if self._distributed_lock is not None:
+            self._distributed_lock.release()
+
+        return results
+
     def retrieve_nodes_batch(
             self,
             queries: List[str],
@@ -1410,6 +1535,32 @@ class RTMDKMemory(BaseModel):
 
         self.field.stats["batch_queries"] = self.field.stats.get("batch_queries", 0) + n_queries
         return results
+
+    def add_feedback(self, query: str, node_id: str, relevant: bool) -> bool:
+        """Provide explicit feedback to refine embeddings.
+
+        Args:
+            query: The original query text.
+            node_id: ID of the retrieved node.
+            relevant: True if the node was relevant, False otherwise.
+
+        Returns:
+            True if feedback was applied.
+        """
+        if self._feedback_loop is None:
+            logger.warning("add_feedback: feedback_loop not enabled in config")
+            return False
+        node = self.field.nodes.get(node_id)
+        if node is None:
+            return False
+        node_text = node.content.get("text", "")
+        return self._feedback_loop.add_feedback(query, node_text, relevant)
+
+    def get_metrics(self) -> Dict:
+        """Return current observability metrics snapshot."""
+        if self.metrics is None:
+            return {"observability_enabled": False}
+        return self.metrics.snapshot()
 
     def query_with_confidence(
         self,
@@ -1871,6 +2022,10 @@ class RTMDKMemory(BaseModel):
         # Reset SOT corpus to prevent stale data
         self._sot_v2_corpus.clear()
         self._sot_v2_online_buffer.clear()
+        if self.engram_cache is not None:
+            self.engram_cache.clear()
+        if self.metrics is not None:
+            self.metrics = MemoryMetrics()
 
     def inspect_node(self, node_id: str) -> Optional[Dict]:
         if node_id not in self.field.nodes:

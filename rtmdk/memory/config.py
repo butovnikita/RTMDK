@@ -350,6 +350,14 @@ _FIELD_GROUPS: Dict[str, str] = {
     "use_structured_prompt": "CoreConfig",
     "verification_confidence_threshold": "InferenceConfig",
     "version_control": "MemorySystemConfig",
+    "engram_cache_enabled": "SOTConfig",
+    "engram_cache_max_hot": "SOTConfig",
+    "engram_cache_max_warm": "SOTConfig",
+    "distributed_lock_path": "SOTConfig",
+    "observability_enabled": "SOTConfig",
+    "sentence_reranker_enabled": "SOTConfig",
+    "query_decomposition_enabled": "SOTConfig",
+    "feedback_loop_enabled": "SOTConfig",
 }
 
 
@@ -719,6 +727,18 @@ class SOTConfig:
     sot_v2_align_batch_size: int = 64
     sot_v2_aligner_path: Optional[str] = None  # Path to saved .npz aligner
     sot_v2_align_mode: str = "procrustes"  # "procrustes" | "contrastive_distill"
+    # --- Engram cache ---
+    engram_cache_enabled: bool = True
+    engram_cache_max_hot: int = 10_000
+    engram_cache_max_warm: int = 90_000
+    # --- Distributed locking ---
+    distributed_lock_path: Optional[str] = None
+    # --- Observability ---
+    observability_enabled: bool = False
+    # --- RAG Quality ---
+    sentence_reranker_enabled: bool = False
+    query_decomposition_enabled: bool = False
+    feedback_loop_enabled: bool = False
 
 
 @dataclass(init=False, repr=False, eq=False)
