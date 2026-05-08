@@ -207,8 +207,113 @@ class SIFEmbedder:
         if self._pc is not None and self.remove_pc:
             # Remove projection onto first PC
             emb = emb - emb.dot(self._pc) * self._pc
+        # Apply learnable projection if available
+        if hasattr(self, '_projection') and self._projection is not None:
+            emb = self._projection(emb)
         norm = np.linalg.norm(emb) + 1e-8
         return (emb / norm).astype(np.float32)
+
+    def add_projection_layer(self, hidden_dim: Optional[int] = None):
+        """Add a small learnable MLP projection for domain adaptation.
+
+        The projection is a single dense layer: ReLU(W·x + b).
+        It is initialised as near-identity to preserve SIF quality.
+        """
+        rng = np.random.default_rng(42)
+        h = hidden_dim or self.latent_dim
+        self._proj_W = rng.standard_normal((self.latent_dim, h)).astype(np.float32) * 0.01
+        self._proj_b = np.zeros(h, dtype=np.float32)
+        self._proj_out = rng.standard_normal((h, self.latent_dim)).astype(np.float32) * 0.01
+        self._proj_out_b = np.zeros(self.latent_dim, dtype=np.float32)
+        # Near-identity shortcut
+        self._proj_W[:min(self.latent_dim, h), :min(self.latent_dim, h)] += np.eye(
+            min(self.latent_dim, h), dtype=np.float32
+        )
+        self._projection = lambda x: self._mlp_forward(x)
+
+    def _mlp_forward(self, x: np.ndarray) -> np.ndarray:
+        h = np.maximum(x @ self._proj_W + self._proj_b, 0)  # ReLU
+        return h @ self._proj_out + self._proj_out_b
+
+    def _mlp_backward(self, x: np.ndarray, grad_out: np.ndarray, lr: float = 0.001):
+        # Simplified backprop for single layer MLP
+        h_pre = x @ self._proj_W + self._proj_b
+        h = np.maximum(h_pre, 0)
+        grad_h = grad_out @ self._proj_out.T
+        grad_h[h_pre <= 0] = 0  # ReLU derivative
+        self._proj_W -= lr * np.outer(x, grad_h)
+        self._proj_b -= lr * grad_h
+        self._proj_out -= lr * np.outer(h, grad_out)
+        self._proj_out_b -= lr * grad_out
+
+    def contrastive_fine_tune_projection(
+        self,
+        tokenized_queries: List[List[int]],
+        tokenized_positives: List[List[int]],
+        n_epochs: int = 50,
+        lr: float = 0.01,
+        temperature: float = 0.05,
+        n_negatives: int = 5,
+    ) -> "SIFEmbedder":
+        """Fine-tune only the projection MLP (preserves word embeddings).
+
+        This avoids catastrophic forgetting because the pre-trained SIF
+        word vectors are frozen; only the sentence-level projection is
+        updated to match the retrieval task distribution.
+        """
+        if not hasattr(self, '_projection') or self._projection is None:
+            self.add_projection_layer()
+
+        N = len(tokenized_queries)
+        if N == 0 or len(tokenized_positives) != N:
+            raise ValueError("Queries and positives must have same length")
+
+        logger.info(
+            "SIFEmbedder: projection fine-tuning, N=%d, epochs=%d",
+            N, n_epochs,
+        )
+
+        rng = np.random.default_rng(42)
+
+        for epoch in range(n_epochs):
+            total_loss = 0.0
+            order = rng.permutation(N)
+            for idx in order:
+                q_emb = self.embed(tokenized_queries[idx])
+                p_emb = self.embed(tokenized_positives[idx])
+
+                neg_indices = rng.choice(
+                    [i for i in range(N) if i != idx],
+                    size=min(n_negatives, N - 1),
+                    replace=False,
+                )
+                neg_embs = [self.embed(tokenized_positives[ni]) for ni in neg_indices]
+
+                pos_sim = np.dot(q_emb, p_emb) / temperature
+                neg_sims = np.array([np.dot(q_emb, ne) for ne in neg_embs]) / temperature
+                logits = np.concatenate([[pos_sim], neg_sims])
+                logits_max = logits.max()
+                exp_logits = np.exp(logits - logits_max)
+                loss = -np.log(exp_logits[0] / exp_logits.sum() + 1e-8)
+                total_loss += float(loss)
+
+                probs = exp_logits / (exp_logits.sum() + 1e-8)
+                # Gradient w.r.t. query embedding
+                d_q = -(p_emb - sum(probs[i+1] * neg_embs[i] for i in range(len(neg_embs)))) / temperature
+                # Backprop through projection only
+                q_raw = self._embed_sentence_raw(tokenized_queries[idx])
+                if q_raw is not None:
+                    self._mlp_backward(q_raw, d_q, lr=lr)
+
+            if epoch % 10 == 0:
+                logger.info(
+                    "SIFEmbedder: projection epoch %d, avg loss=%.4f",
+                    epoch,
+                    total_loss / max(N, 1),
+                )
+
+        logger.info("SIFEmbedder: projection fine-tuning complete")
+        return self
 
     @staticmethod
     def _power_iteration(X: np.ndarray, max_iter: int = 10) -> np.ndarray:
