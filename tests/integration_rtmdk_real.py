@@ -14,6 +14,7 @@ from rtmdk.memory.core import RTMDKConfig, RTMDKMemory
 from embedder_lmstudio import LMStudioEmbedder
 import os
 import sys
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -23,31 +24,20 @@ LM_STUDIO_URL = "http://127.0.0.1:12345/v1"
 RTMDK_URL = "http://127.0.0.1:8080"
 
 
-def test_embedder_connection():
-    """Test 1: LM Studio embedder is available."""
-    print("=" * 70)
-    print("TEST 1: LM Studio Embedder Connection")
-    print("=" * 70)
-
-    try:
-        embedder = LMStudioEmbedder()
-        emb = embedder("test embedding")
-        assert emb is not None, "Embedding should not be None"
-        assert emb.shape[0] == 768, f"Expected 768 dimensions, got {emb.shape[0]}"
-        print(f"[OK] Embedder connected: dim={emb.shape[0]}")
-        return embedder
-    except Exception as e:
-        print(f"[FAIL] Embedder FAILED: {e}")
-        print("   Make sure LM Studio is running with embedding model loaded")
-        raise
+@pytest.fixture(scope="module")
+def embedder():
+    """Real LM Studio embedder fixture."""
+    emb = LMStudioEmbedder()
+    # Verify connection
+    test_emb = emb("test embedding")
+    assert test_emb is not None
+    assert test_emb.shape[0] == 768
+    yield emb
 
 
-def test_memory_with_real_embeddings(embedder):
-    """Test 2: Memory operations with real embeddings."""
-    print("\n" + "=" * 70)
-    print("TEST 2: Memory Operations with Real Embeddings")
-    print("=" * 70)
-
+@pytest.fixture(scope="module")
+def memory(embedder):
+    """RTMDKMemory with real embedder."""
     config = RTMDKConfig(
         embedding_dim=768,
         latent_dim=256,
@@ -55,11 +45,8 @@ def test_memory_with_real_embeddings(embedder):
         bm25_fallback=True,
         use_hnsw=True,
     )
-
-    memory = RTMDKMemory(config=config, embedder=embedder)
-    print("[OK] Memory created with real embedder")
-
-    # Save test messages
+    mem = RTMDKMemory(config=config, embedder=embedder)
+    # Pre-populate with test messages
     test_messages = [
         ("I love drinking coffee every morning at 8am", "User likes morning coffee"),
         ("My favorite color is blue, especially navy blue", "User's favorite color is blue"),
@@ -67,24 +54,36 @@ def test_memory_with_real_embeddings(embedder):
         ("I have a golden retriever dog named Max", "User has a dog named Max"),
         ("I prefer tea in the evening, not coffee", "User prefers evening tea"),
     ]
+    for input_text, output_text in test_messages:
+        mem.save_context(
+            {"input": input_text, "session_id": "real_test"},
+            {"output": output_text}
+        )
+    yield mem
 
-    for i, (input_text, output_text) in enumerate(test_messages):
-        try:
-            memory.save_context(
-                {"input": input_text, "session_id": "real_test"},
-                {"output": output_text}
-            )
-            print(f"[OK] Message {i+1} saved")
-        except Exception as e:
-            print(f"[FAIL] Message {i+1} FAILED: {e}")
-            raise
 
+def test_embedder_connection(embedder):
+    """Test 1: LM Studio embedder is available."""
+    print("=" * 70)
+    print("TEST 1: LM Studio Embedder Connection")
+    print("=" * 70)
+
+    emb = embedder("test embedding")
+    assert emb is not None, "Embedding should not be None"
+    assert emb.shape[0] == 768, f"Expected 768 dimensions, got {emb.shape[0]}"
+    print(f"[OK] Embedder connected: dim={emb.shape[0]}")
+
+
+def test_memory_with_real_embeddings(memory):
+    """Test 2: Memory operations with real embeddings."""
+    print("\n" + "=" * 70)
+    print("TEST 2: Memory Operations with Real Embeddings")
+    print("=" * 70)
+
+    print("[OK] Memory created with real embedder")
     node_count = len(memory.field.nodes)
     print(f"\n   Total nodes: {node_count}")
-    assert node_count >= len(
-        test_messages), f"Expected {len(test_messages)} nodes, got {node_count}"
-
-    return memory
+    assert node_count >= 5, f"Expected >=5 nodes, got {node_count}"
 
 
 def test_query_real_memory(memory):

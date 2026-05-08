@@ -1809,7 +1809,8 @@ class RTMDKField:
               phase: float = 0.0,
               top_k: Optional[int] = None,
               modality: str = "text",
-              session_id: Optional[str] = None) -> List[Tuple[str,
+              session_id: Optional[str] = None,
+              query_text: Optional[str] = None) -> List[Tuple[str,
                                                               float,
                                                               MemoryNode]]:
         t0 = time.time()
@@ -1982,9 +1983,9 @@ class RTMDKField:
                     )
                 if t:
                     texts.append(t)
-            query_text = " ".join(texts)
-            if query_text:
-                for doc_id, score in self.bm25_index.search(query_text, top_k):
+            fallback_query = query_text if query_text else " ".join(texts)
+            if fallback_query:
+                for doc_id, score in self.bm25_index.search(fallback_query, top_k):
                     if doc_id in self.nodes:
                         results.append(
                             (doc_id, score * 0.1, self.nodes[doc_id]))

@@ -25,7 +25,7 @@ Theoretical foundation:
 from __future__ import annotations
 
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Callable
 
 import numpy as np
 
@@ -56,6 +56,10 @@ class SIFEmbedder:
         self.word_embeddings: Dict[int, np.ndarray] = {}
         self.word_probs: Dict[int, float] = {}
         self._pc: Optional[np.ndarray] = None  # First principal component
+        self._aligner = None  # Optional ProcrustesAligner
+        self._pmi_matrix: Optional[np.ndarray] = None  # Valid-token PMI
+        self._pmi_idx_map: Optional[Dict[int, int]] = None  # token_id -> pmi row
+        self._pmi_valid_idx: Optional[List[int]] = None  # List of valid token IDs
 
     # ------------------------------------------------------------------ #
     # Training
@@ -141,6 +145,23 @@ class SIFEmbedder:
         pmi = log_cij + math.log(N) - log_ci[:, None] - log_cj[None, :]
         pmi = np.maximum(pmi, 0.0).astype(np.float32)
 
+        # Save PMI matrix for query expansion
+        self._pmi_matrix = pmi
+        self._pmi_idx_map = idx_map
+        self._pmi_valid_idx = list(valid_idx)
+
+        # Adaptive SIF parameter: set a to 10th percentile of word probs
+        if self.word_probs:
+            probs = np.array(list(self.word_probs.values()), dtype=np.float32)
+            adaptive_a = float(np.percentile(probs, 10))
+            if adaptive_a > 0:
+                logger.info(
+                    "SIFEmbedder: adaptive a=%.6f (old a=%.6f)",
+                    adaptive_a,
+                    self.a,
+                )
+                self.a = adaptive_a
+
         # 3. Truncated SVD
         logger.info("SIFEmbedder: computing SVD on %dx%d PMI matrix...", n_valid, n_valid)
         U, S, Vt = np.linalg.svd(pmi, full_matrices=False)
@@ -181,6 +202,60 @@ class SIFEmbedder:
         logger.info("SIFEmbedder: fit complete")
         return self
 
+    def estimate_optimal_a(self, tokenized_docs: List[List[int]]) -> float:
+        """Estimate data-adaptive SIF smoothing parameter a.
+
+        Theory: Arora et al. fix a=1e-3, but optimal a depends on corpus
+        statistics.  We set a to the 10th percentile of empirical word
+        probabilities — this ensures common words are down-weighted without
+        over-penalising domain-specific terms.
+        """
+        counts: Dict[int, int] = {}
+        total = 0
+        for doc in tokenized_docs:
+            for t in doc:
+                counts[t] = counts.get(t, 0) + 1
+                total += 1
+        if total == 0:
+            return 1e-3
+        probs = np.array([c / total for c in counts.values()], dtype=np.float32)
+        return float(np.percentile(probs, 10))
+
+    def expand_query(
+        self,
+        token_ids: List[int],
+        n_terms: int = 3,
+        min_pmi: float = 0.5,
+    ) -> List[Tuple[int, float]]:
+        """Expand query with PMI-based synonym terms.
+
+        For each query token, find top-n co-occurring tokens by PMI.
+        Returns list of (token_id, aggregate_pmi_score) sorted by score.
+
+        Reference: Church & Hanks (1990) "Word Association Norms, Mutual
+        Information, and Lexicography."
+        """
+        if self._pmi_matrix is None or self._pmi_idx_map is None:
+            return []
+        scores: Dict[int, float] = {}
+        for t in token_ids:
+            if t not in self._pmi_idx_map:
+                continue
+            row = self._pmi_idx_map[t]
+            pmi_row = self._pmi_matrix[row]
+            # Find top-n terms above threshold
+            candidates = []
+            for sub_j, pmi_val in enumerate(pmi_row):
+                if pmi_val >= min_pmi:
+                    orig_t = self._pmi_valid_idx[sub_j]
+                    if orig_t != t:
+                        candidates.append((orig_t, float(pmi_val)))
+            candidates.sort(key=lambda x: x[1], reverse=True)
+            for orig_t, pmi_val in candidates[:n_terms]:
+                scores[orig_t] = scores.get(orig_t, 0.0) + pmi_val
+        sorted_terms = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+        return sorted_terms
+
     def _embed_sentence_raw(self, token_ids: List[int]) -> Optional[np.ndarray]:
         """SIF-weighted average without PC removal."""
         if not token_ids:
@@ -210,8 +285,41 @@ class SIFEmbedder:
         # Apply learnable projection if available
         if hasattr(self, '_projection') and self._projection is not None:
             emb = self._projection(emb)
+        # Apply Procrustes alignment if available
+        if self._aligner is not None:
+            emb = self._aligner.transform(emb)
         norm = np.linalg.norm(emb) + 1e-8
         return (emb / norm).astype(np.float32)
+
+    def align_to_teacher(
+        self,
+        sif_embs: np.ndarray,
+        teacher_embs: np.ndarray,
+        center: bool = True,
+    ) -> "SIFEmbedder":
+        """Align SIF embeddings to a teacher model via orthogonal Procrustes.
+
+        This is lightweight knowledge distillation: after training SIF on
+        unsupervised corpus data, we fit a single orthogonal matrix R that
+        minimises ||SIF(corpus)·R − Teacher(corpus)||_F.  At inference time
+        only the matrix multiplication is required (no PyTorch).
+
+        Args:
+            sif_embs: SIF embeddings for alignment corpus, shape (n, d).
+            teacher_embs: Teacher embeddings for the same corpus, shape (n, d).
+            center: Whether to mean-center both spaces before alignment.
+        """
+        from .procrustes import ProcrustesAligner
+
+        self._aligner = ProcrustesAligner(d=sif_embs.shape[1])
+        self._aligner.fit(sif_embs, teacher_embs, center=center)
+        diag = self._aligner.diagnostics()
+        logger.info(
+            "SIFEmbedder: Procrustes alignment fitted — MSE=%.6f, mean_cosine=%.4f",
+            diag["mse"],
+            diag["mean_cosine"],
+        )
+        return self
 
     def add_projection_layer(self, hidden_dim: Optional[int] = None):
         """Add a small learnable MLP projection for domain adaptation.
@@ -450,7 +558,7 @@ class SIFEmbedder:
         return self
 
     def get_state(self) -> dict:
-        return {
+        state = {
             "latent_dim": self.latent_dim,
             "a": self.a,
             "remove_pc": self.remove_pc,
@@ -458,6 +566,9 @@ class SIFEmbedder:
             "word_probs": self.word_probs,
             "pc": self._pc.tolist() if self._pc is not None else None,
         }
+        if self._aligner is not None:
+            state["aligner_diagnostics"] = self._aligner.diagnostics()
+        return state
 
     def online_update(
         self,
@@ -534,4 +645,5 @@ class SIFEmbedder:
         self.word_probs = {int(k): v for k, v in state["word_probs"].items()}
         pc = state.get("pc")
         self._pc = np.array(pc, dtype=np.float32) if pc is not None else None
+        # Note: aligner must be loaded separately via ProcrustesAligner.load()
         return self

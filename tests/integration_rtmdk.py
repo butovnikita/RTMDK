@@ -18,8 +18,32 @@ import sys
 import tempfile
 import shutil
 import numpy as np
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+
+@pytest.fixture(scope="module")
+def memory():
+    """Shared RTMDKMemory instance for integration tests."""
+    embedder = MockEmbedder()
+    config = RTMDKConfig(
+        embedding_dim=768,
+        latent_dim=256,
+        learn_projection=False,
+        bm25_fallback=True,
+        use_hnsw=True,
+    )
+    mem = RTMDKMemory(config=config, embedder=embedder)
+    yield mem
+
+
+@pytest.fixture(scope="module")
+def temp_dir():
+    """Temporary directory for persistence tests."""
+    td = tempfile.mkdtemp()
+    yield td
+    shutil.rmtree(td, ignore_errors=True)
 
 
 # Mock embedder for testing (deterministic)
@@ -40,22 +64,11 @@ class MockEmbedder:
         return emb
 
 
-def test_1_memory_creation():
+def test_1_memory_creation(memory):
     """Test 1: Memory file is created on startup."""
     print("=" * 70)
     print("TEST 1: Memory Creation on Startup")
     print("=" * 70)
-
-    embedder = MockEmbedder()
-    config = RTMDKConfig(
-        embedding_dim=768,
-        latent_dim=256,
-        learn_projection=False,  # Use manual projection for reliability
-        bm25_fallback=True,
-        use_hnsw=True,
-    )
-
-    memory = RTMDKMemory(config=config, embedder=embedder)
 
     # Verify memory initialized
     assert memory is not None, "Memory should be initialized"
@@ -64,9 +77,8 @@ def test_1_memory_creation():
 
     print("[OK] Memory initialized successfully")
     print(
-        f"   Config: latent_dim={config.latent_dim}, learn_projection={config.learn_projection}")
+        f"   Config: latent_dim={memory.config.latent_dim}, learn_projection={getattr(memory.config, 'learn_projection', 'N/A')}")
     print(f"   Initial nodes: {len(memory.field.nodes)}")
-    return memory
 
 
 def test_2_save_context(memory):

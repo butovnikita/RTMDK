@@ -707,16 +707,24 @@ class RTMDKMemory(BaseModel):
         # P2: SOT v2.0 Self-Supervised Embedder
         self._sot_v2 = None
         self._sot_v2_corpus: List[str] = []
-        if getattr(self.config, "sot_v2_enabled", False):
+        sot_cfg = getattr(self.config, "sot", None)
+        if sot_cfg and getattr(sot_cfg, "sot_v2_enabled", False):
             try:
                 from rtmdk.memory.sot_v2.integration import SOTv2Embedder
                 self._sot_v2 = SOTv2Embedder(
                     latent_dim=getattr(self.config, "latent_dim", 384),
-                    a=getattr(self.config, "sot_v2_a", 0.01),
-                    window_size=getattr(self.config, "sot_v2_window", 5),
-                    remove_pc=getattr(self.config, "sot_v2_remove_pc", True),
+                    a=getattr(sot_cfg, "sot_v2_a", 0.01),
+                    window_size=getattr(sot_cfg, "sot_v2_window", 5),
+                    remove_pc=getattr(sot_cfg, "sot_v2_remove_pc", True),
                 )
                 logger.info("SOT v2.0 embedder initialised (lazy training)")
+                # Load pre-fitted aligner if path provided
+                aligner_path = getattr(sot_cfg, "sot_v2_aligner_path", None)
+                if aligner_path:
+                    try:
+                        self._sot_v2.load_aligner(aligner_path)
+                    except Exception:
+                        logger.warning("SOT v2.0 aligner load failed from %s", aligner_path, exc_info=True)
             except Exception:
                 logger.warning("SOT v2.0 init failed, disabling", exc_info=True)
 
@@ -903,6 +911,24 @@ class RTMDKMemory(BaseModel):
         logger.info("train_sot_v2: training on %d texts", len(corpus))
         try:
             self._sot_v2.train(corpus)
+            # Optional: Procrustes alignment to teacher model
+            sot_cfg = getattr(self.config, "sot", None)
+            teacher_name = getattr(sot_cfg, "sot_v2_align_teacher", None) if sot_cfg else None
+            if teacher_name:
+                try:
+                    from sentence_transformers import SentenceTransformer
+                    teacher = SentenceTransformer(teacher_name)
+                    batch_size = getattr(sot_cfg, "sot_v2_align_batch_size", 64)
+                    center = getattr(sot_cfg, "sot_v2_align_center", True)
+                    logger.info("train_sot_v2: aligning to teacher %s...", teacher_name)
+                    self._sot_v2.align_to_teacher(
+                        corpus,
+                        teacher.encode,
+                        batch_size=batch_size,
+                        center=center,
+                    )
+                except Exception:
+                    logger.warning("train_sot_v2: teacher alignment failed", exc_info=True)
             # Replace embedder with trained SOT v2.0
             self.embedder = self._sot_v2
             logger.info("train_sot_v2: SOT v2.0 embedder active")
@@ -1206,11 +1232,11 @@ class RTMDKMemory(BaseModel):
             route = self.cascade_router.classify(query)
             if route == QueryType.FACTUAL:
                 # Fast path: resonance only, skip heavy post-processing
-                return self.field.query(embedding, phase, top_k=tk, session_id=session_id)
+                return self.field.query(embedding, phase, top_k=tk, session_id=session_id, query_text=query)
 
         # Primary: resonance retrieval
         results = self.field.query(
-            embedding, phase, top_k=tk, session_id=session_id)
+            embedding, phase, top_k=tk, session_id=session_id, query_text=query)
 
         # P1: Sparse index fallback (BGE-M3 learned sparse)
         if len(results) < tk and self.sparse_index is not None and sparse_vec:

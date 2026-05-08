@@ -20,16 +20,20 @@ corpus, it requires **zero external model downloads**, **no GPU**, and fits in
 ### Option A: Via `RTMDKConfig` (recommended)
 
 ```python
-from rtmdk.memory.config import RTMDKConfig
+from rtmdk.memory.config import RTMDKConfig, SOTConfig
 from rtmdk.memory.core import RTMDKMemory
 
 cfg = RTMDKConfig(
     latent_dim=384,
-    sot_v2_enabled=True,
-    sot_v2_a=0.01,           # SIF smoothing parameter
-    sot_v2_window=5,         # Co-occurrence window
-    sot_v2_remove_pc=True,   # Remove first principal component
-    sot_v2_hybrid_alpha=0.5, # BM25+SIF fusion weight
+    sot=SOTConfig(
+        sot_v2_enabled=True,
+        sot_v2_a=0.01,           # SIF smoothing parameter (or 'adaptive')
+        sot_v2_window=5,         # Co-occurrence window
+        sot_v2_remove_pc=True,   # Remove first principal component
+        sot_v2_hybrid_alpha=0.5, # BM25+SIF fusion weight
+        # Optional: lightweight teacher distillation
+        # sot_v2_align_teacher="sentence-transformers/all-MiniLM-L6-v2",
+    ),
 )
 
 memory = RTMDKMemory(config=cfg, embedder=lambda t: None)
@@ -64,10 +68,13 @@ embedding = embedder("Your query text here")
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `sot_v2_enabled` | `False` | Master switch |
-| `sot_v2_a` | `0.01` | SIF smoothing (`a / (a + p(w))`). Lower = more weight to rare words. |
+| `sot_v2_a` | `adaptive` | SIF smoothing (`a / (a + p(w))`). Auto-estimated as P10 of word probs. |
 | `sot_v2_window` | `5` | Sliding window for co-occurrence counts. Larger = more semantic neighbours. |
 | `sot_v2_remove_pc` | `True` | Remove first principal component from sentence embeddings. Usually helps. |
 | `sot_v2_hybrid_alpha` | `0.5` | Dense/Sparse fusion. `1.0` = SIF only, `0.0` = BM25 only. |
+| `sot_v2_align_teacher` | `None` | Optional SBERT model name for Procrustes alignment (inference still zero-dep). |
+| `sot_v2_align_center` | `True` | Mean-center both spaces before Procrustes alignment. |
+| `sot_v2_aligner_path` | `None` | Load a pre-fitted `.npz` alignment matrix. |
 
 ## When to Use SOT v2.0
 
@@ -100,7 +107,9 @@ embedding = embedder("Your query text here")
 | 0.01 | 5 | 1.0 | 98.5 % | 0.878 |
 | 0.1 | 20 | 0.7 | 98.5 % | 0.934 |
 
-**Rule of thumb:** start with `a=0.01`, `window=5`, `alpha=0.5`.  Increase `window` if your documents are long; decrease `a` if your vocabulary is very large.
+**Rule of thumb:** start with `a=0.01`, `window=5`, `alpha=0.5`.  
+SOT v2.0 now estimates `a` automatically from corpus statistics (10th
+percentile of word probabilities), so manual tuning is rarely needed.
 
 ## Known Limitations
 

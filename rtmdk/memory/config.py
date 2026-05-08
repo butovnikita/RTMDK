@@ -696,6 +696,11 @@ class SOTConfig:
     sot_v2_window: int = 5  # Co-occurrence window size
     sot_v2_remove_pc: bool = True  # Remove first principal component
     sot_v2_hybrid_alpha: float = 0.5  # BM25+SIF fusion weight (1.0 = dense only)
+    # Procrustes teacher alignment (lightweight knowledge distillation)
+    sot_v2_align_teacher: Optional[str] = None  # e.g. "sentence-transformers/all-MiniLM-L6-v2"
+    sot_v2_align_center: bool = True  # Mean-center before alignment
+    sot_v2_align_batch_size: int = 64
+    sot_v2_aligner_path: Optional[str] = None  # Path to saved .npz aligner
 
 
 @dataclass(init=False, repr=False, eq=False)

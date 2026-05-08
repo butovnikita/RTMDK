@@ -251,7 +251,63 @@ capture semantic correlations invisible to bag-of-vectors models.
 
 ---
 
-## 6. Empirical Results
+## 5.5 Orthogonal Procrustes Alignment (Optional Distillation)
+
+### 5.5.1 Problem
+
+SIF embeddings are trained on unsupervised co-occurrence statistics.  While
+this captures lexical semantics, it cannot learn semantic paraphrasing
+("What is X?" ↔ "X consists of ...") without supervised sentence-pair data.
+
+### 5.5.2 Orthogonal Procrustes
+
+Given source embeddings $X \in \mathbb{R}^{n \times d}$ (SIF) and target
+embeddings $Y \in \mathbb{R}^{n \times d}$ (teacher, e.g. SBERT), find
+orthogonal matrix $R \in \mathbb{R}^{d \times d}$ that minimises:
+
+$$
+\min_R \| X R - Y \|_F^2 \quad \text{s.t.} \quad R^T R = I
+$$
+
+**Theorem 5** (Schönemann, 1966).  
+The optimal $R$ is $R = U V^T$ where $U \Sigma V^T = \text{SVD}(X^T Y)$.
+
+*Proof.*  Substitute $R = U V^T$:
+
+$$
+\| X R - Y \|_F^2 = \text{tr}(R^T X^T X R) - 2 \text{tr}(R^T X^T Y) + \text{tr}(Y^T Y)
+$$
+
+The first and last terms are invariant under orthogonal $R$.  The middle term
+is maximised when $R^T X^T Y$ has maximal trace, which occurs when
+$R = U V^T$ (von Neumann's trace inequality). ∎
+
+### 5.5.3 Properties
+
+- **Isometry**: $R$ preserves norms and angles, so cosine-based nearest-
+  neighbour rankings are *invariant* under alignment.
+- **Inference cost**: One matrix multiply ($O(d^2)$).  No PyTorch needed.
+- **Use case**: Downstream classification, clustering, or L2-distance
+  retrieval where the absolute geometry matters.
+
+---
+
+## 6. Adaptive SIF Parameter
+
+Arora et al. fix $a = 10^{-3}$.  In practice the optimal $a$ depends on
+corpus statistics.  SOT v2.0 estimates $a$ automatically as the 10th
+percentile of empirical word probabilities:
+
+$$
+a^* = \text{P}_{10}\bigl( \{ p(w) \}_{w \in \mathcal{V}} \bigr)
+$$
+
+This ensures common words are down-weighted without over-penalising
+domain-specific terms that appear rarely.
+
+---
+
+## 7. Empirical Results
 
 Dataset: `qa_1000_en.json`, 200 records, top_k=5
 
@@ -265,8 +321,29 @@ Dataset: `qa_1000_en.json`, 200 records, top_k=5
 | SOT v2 Hybrid (BM25+SIF) | 0.985 | **0.934** | 0.50 ms | **None** |
 | SOT v2 Quantum | 0.985 | 0.912 | 2.03 ms | **None** |
 
-SOT v2.0 achieves **100% recall@5** with **zero external dependencies**
-after training on a corpus of ~1000 short texts.
+**Hard dataset** (`comprehensive_500`, 80 unique contexts, 430 en queries):
+
+| Method | Recall@1 | Recall@3 | Recall@5 | MRR |
+|--------|----------|----------|----------|-----|
+| SBERT (teacher) | 0.181 | 1.000 | 1.000 | 0.591 |
+| SOT v2 (a=0.01, w=5) | 0.081 | 0.933 | **0.935** | 0.374 |
+
+SOT v2.0 achieves **93.5% recall@5** with **zero external dependencies**
+on a challenging paraphrase dataset.  The gap vs SBERT is concentrated in
+recall@1 (8.1% vs 18.1%), which is closed by the cross-encoder reranker
+in the full RTMDK pipeline.
+
+---
+
+## 8. Configuration Guide (Condensed)
+
+| Parameter | Default | When to change |
+|-----------|---------|----------------|
+| `a` | adaptive (P10) | Lower for large vocabularies (>10k) |
+| `window_size` | 5 | Increase for long documents (10-20) |
+| `remove_pc` | True | Disable only for very small corpora (<50 docs) |
+| `latent_dim` | 384 | Match your teacher model if using alignment |
+| `sot_v2_align_teacher` | None | Set to SBERT name for optional distillation |
 
 ---
 

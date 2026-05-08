@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 import unicodedata
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Callable
 
 import numpy as np
 
@@ -129,16 +129,91 @@ class SOTv2Embedder:
         logger.info("SOTv2Embedder: training complete")
         return self
 
-    def __call__(self, text: str) -> np.ndarray:
-        """Embed a single text string."""
+    def align_to_teacher(
+        self,
+        corpus_texts: List[str],
+        teacher: Callable[[List[str]], np.ndarray],
+        batch_size: int = 64,
+        center: bool = True,
+    ) -> "SOTv2Embedder":
+        """Align SIF embeddings to a teacher model via orthogonal Procrustes.
+
+        This distills the teacher's semantic knowledge into the lightweight
+        SIF space.  At inference time no PyTorch / transformers are needed.
+
+        Args:
+            corpus_texts: Representative corpus for alignment.
+            teacher: Callable(texts) -> embeddings array (n, latent_dim).
+            batch_size: Batch size for teacher inference.
+            center: Mean-center both spaces before alignment (recommended).
+        """
+        if not self._trained or self._embedder is None:
+            raise RuntimeError("Train the embedder before alignment.")
+        logger.info("SOTv2Embedder: aligning to teacher on %d texts...", len(corpus_texts))
+
+        # Encode corpus with SIF
+        sif_embs = self.embed_batch(corpus_texts)
+
+        # Encode corpus with teacher (batched)
+        teacher_embs = []
+        for i in range(0, len(corpus_texts), batch_size):
+            batch = corpus_texts[i : i + batch_size]
+            embs = teacher(batch)
+            if not isinstance(embs, np.ndarray):
+                embs = np.asarray(embs)
+            teacher_embs.append(embs)
+        teacher_embs = np.concatenate(teacher_embs, axis=0)
+
+        self._embedder.align_to_teacher(sif_embs, teacher_embs, center=center)
+        logger.info("SOTv2Embedder: alignment complete")
+        return self
+
+    def save_aligner(self, path: str):
+        """Save the Procrustes alignment matrix to an NPZ file."""
+        if self._embedder is None or self._embedder._aligner is None:
+            raise RuntimeError("No aligner to save.")
+        self._embedder._aligner.save(path)
+
+    def load_aligner(self, path: str):
+        """Load a previously saved Procrustes alignment matrix."""
+        from .procrustes import ProcrustesAligner
+        if self._embedder is None:
+            raise RuntimeError("Train the embedder before loading aligner.")
+        self._embedder._aligner = ProcrustesAligner.load(path)
+        logger.info("SOTv2Embedder: aligner loaded from %s", path)
+
+    def __call__(self, text: str, expand_query: bool = False) -> np.ndarray:
+        """Embed a single text string.
+
+        Args:
+            text: Input text.
+            expand_query: If True, expand query with PMI-based synonyms
+                (useful for short queries, no effect on long documents).
+        """
         if not self._trained:
             raise RuntimeError("SOTv2Embedder has not been trained yet. Call .train() first.")
         tokens = [self._vocab[w] for w in _word_tokenize(text) if w in self._vocab]
+        if expand_query and self._embedder is not None:
+            expanded = self._embedder.expand_query(tokens, n_terms=3, min_pmi=0.5)
+            for t, weight in expanded[:3]:
+                # Add expansion token multiple times proportional to weight
+                n_copies = max(1, int(weight))
+                tokens.extend([t] * n_copies)
         return self._embedder.embed(tokens)
 
     def embed_batch(self, texts: List[str]) -> np.ndarray:
         """Embed a batch of texts."""
         return np.vstack([self(t) for t in texts])
+
+    def expand_query_terms(self, text: str, n_terms: int = 3) -> List[Tuple[str, float]]:
+        """Return human-readable query expansion terms with PMI scores."""
+        if not self._trained or self._embedder is None:
+            return []
+        tokens = [self._vocab[w] for w in _word_tokenize(text) if w in self._vocab]
+        expanded = self._embedder.expand_query(tokens, n_terms=n_terms)
+        # Reverse vocab mapping
+        rev = {v: k for k, v in self._vocab.items()}
+        return [(rev.get(t, str(t)), score) for t, score in expanded]
 
     def get_state(self) -> dict:
         return {
