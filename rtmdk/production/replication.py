@@ -199,15 +199,21 @@ class ReplicationManager:
         if self._httpx is None:
             return
         for peer in self.peers:
-            try:
-                with self._httpx.Client(timeout=self.http_timeout) as client:
-                    resp = client.post(
-                        f"{peer}/v1/replication/mutation",
-                        json=mutation,
-                    )
-                    resp.raise_for_status()
-            except Exception as exc:
-                logger.warning("Replication to %s failed: %s", peer, exc)
+            last_exc = None
+            for attempt in range(3):
+                try:
+                    with self._httpx.Client(timeout=self.http_timeout) as client:
+                        resp = client.post(
+                            f"{peer}/v1/replication/mutation",
+                            json=mutation,
+                        )
+                        resp.raise_for_status()
+                    break
+                except Exception as exc:
+                    last_exc = exc
+                    __import__("time").sleep(0.1 * (2 ** attempt))
+            else:
+                logger.warning("Replication to %s failed after 3 retries: %s", peer, last_exc)
 
 
 # ---------------------------------------------------------------------------

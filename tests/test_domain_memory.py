@@ -140,6 +140,7 @@ class TestBackwardCompatibility:
         # Manually remove Phase 20 fields to simulate old file
         with open(temp_path, 'r') as f:
             data = json.load(f)
+        data.pop("_checksum", None)
         for node_data in data.get("nodes", []):
             for key in [
                 "domain",

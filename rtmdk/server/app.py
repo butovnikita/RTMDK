@@ -267,6 +267,13 @@ async def lifespan(app: FastAPI):
     global analytics_dashboard, api_key_manager, tenant_rate_limiter
     global webhook_manager, audit_log, retention_manager
     global redis_query_cache, redis_embedding_cache, encryption_manager, telemetry_manager
+    # Structured JSON logging in production mode
+    if os.getenv("RTMDK_JSON_LOG", "").lower() in ("1", "true", "yes"):
+        try:
+            from rtmdk.production.json_logger import setup_json_logging
+            setup_json_logging()
+        except Exception:
+            pass
     logger.info("Starting RTMDK Production API v8.2.0")
     logger.info(f"Memory file: {MEMORY_FILE}")
     logger.info(f"LM Studio URL: {LM_STUDIO_URL}")
@@ -421,6 +428,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+try:
+    from rtmdk.production.metrics import MetricsMiddleware
+    app.add_middleware(MetricsMiddleware)
+except Exception:
+    pass
 
 
 # ============================================================================
@@ -1226,6 +1239,19 @@ class WebhookUnsubscribeRequest(BaseModel):
     subscription_id: str = Field(..., min_length=1)
 
 
+class SOTBootstrapRequest(BaseModel):
+    """Bootstrap SOT from a corpus of texts."""
+
+    texts: List[str] = Field(..., min_length=1)
+    teacher_model: Optional[str] = Field(default=None)
+
+
+class ReplicationMutationRequest(BaseModel):
+    """Receive a mutation from a peer node."""
+
+    model_config = ConfigDict(extra="allow")
+
+
 @app.post("/v1/memory/query")
 async def memory_query(req: MemoryQueryRequest):
     """Query memory and return ranked results."""
@@ -1656,7 +1682,13 @@ async def metrics():
         raise HTTPException(status_code=501,
                             detail="prometheus-client not installed")
     if memory:
-        _metric_nodes.set(len(memory.field.nodes))
+        node_count = len(memory.field.nodes)
+        _metric_nodes.set(node_count)
+        try:
+            from rtmdk.production.metrics import update_node_count
+            update_node_count(node_count)
+        except Exception:
+            pass
         sot = getattr(memory.field, "sot_tokenizer", None)
         if sot:
             mode = getattr(sot, "tokenization_mode", "byte")
@@ -1910,18 +1942,15 @@ async def sot_vocab(
 
 
 @app.post("/v1/sot/bootstrap")
-async def sot_bootstrap(req: dict):
-    """Bootstrap SOT from a corpus of texts.
-
-    Body: {"texts": ["text1", "text2", ...], "teacher_model": "all-MiniLM-L6-v2"}
-    """
+async def sot_bootstrap(req: SOTBootstrapRequest):
+    """Bootstrap SOT from a corpus of texts."""
     if memory is None or memory.field is None:
         raise HTTPException(status_code=503, detail="Memory not initialized")
     sot = memory.field.sot_tokenizer
     if sot is None:
         raise HTTPException(status_code=503, detail="SOT not enabled")
-    texts = req.get("texts", [])
-    teacher = req.get("teacher_model")
+    texts = req.texts
+    teacher = req.teacher_model
     if not texts:
         raise HTTPException(status_code=400, detail="texts required")
 
@@ -1945,16 +1974,17 @@ async def sot_bootstrap(req: dict):
 
 
 @app.post("/v1/replication/mutation")
-async def replication_receive_mutation(req: dict):
+async def replication_receive_mutation(req: ReplicationMutationRequest):
     """Receive a mutation from a peer node."""
     if memory is None:
         raise HTTPException(status_code=503, detail="Memory not initialized")
     rm = getattr(memory, "replication_manager", None)
     if rm is None or not rm.enabled:
         raise HTTPException(status_code=503, detail="Replication not enabled")
-    clock = req.get("_rep_clock", 0)
-    origin = req.get("_rep_origin", "unknown")
-    rm._wal.append(clock, origin, req)
+    payload = req.model_dump()
+    clock = payload.get("_rep_clock", 0)
+    origin = payload.get("_rep_origin", "unknown")
+    rm._wal.append(clock, origin, payload)
     return {"status": "accepted", "clock": clock}
 
 
@@ -2078,6 +2108,32 @@ async def list_tenants(request: Request):
     except Exception as exc:
         logger.warning("List tenants failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/v1/admin/config")
+async def admin_config_reload(req: dict, request: Request):
+    """Hot-reload configurable parameters (admin only).
+
+    Body: {"decay_rate": 0.998, "top_k": 10}
+    Only a whitelist of fields can be changed at runtime.
+    """
+    _require_admin(request)
+    if memory is None or memory.field is None:
+        raise HTTPException(status_code=503, detail="Memory not initialized")
+    whitelist = {
+        "decay_rate", "top_k", "min_response", "bandwidth",
+        "phase_coupling", "tension_threshold", "adaptive_threshold",
+    }
+    updated = []
+    for key, value in req.items():
+        if key not in whitelist:
+            raise HTTPException(status_code=400, detail=f"Field '{key}' not allowed for hot reload")
+        try:
+            setattr(memory.config, key, value)
+            updated.append(key)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid value for {key}: {exc}")
+    return {"status": "updated", "fields": updated}
 
 
 # ============================================================================

@@ -75,17 +75,37 @@ class VectorStorage:
     def insert(self, node_id: str, vector: NDArray, metadata: Optional[Dict[str, Any]] = None) -> bool:
         raise NotImplementedError
 
+    async def ainsert(self, node_id: str, vector: NDArray, metadata: Optional[Dict[str, Any]] = None) -> bool:
+        import asyncio
+        return await asyncio.to_thread(self.insert, node_id, vector, metadata)
+
     def search(self, query: NDArray, top_k: int = 5) -> List[Tuple[str, float]]:
         raise NotImplementedError
+
+    async def asearch(self, query: NDArray, top_k: int = 5) -> List[Tuple[str, float]]:
+        import asyncio
+        return await asyncio.to_thread(self.search, query, top_k)
 
     def delete(self, node_id: str) -> bool:
         raise NotImplementedError
 
+    async def adelete(self, node_id: str) -> bool:
+        import asyncio
+        return await asyncio.to_thread(self.delete, node_id)
+
     def get(self, node_id: str) -> Optional[NDArray]:
         raise NotImplementedError
 
+    async def aget(self, node_id: str) -> Optional[NDArray]:
+        import asyncio
+        return await asyncio.to_thread(self.get, node_id)
+
     def count(self) -> int:
         raise NotImplementedError
+
+    async def acount(self) -> int:
+        import asyncio
+        return await asyncio.to_thread(self.count)
 
     def close(self) -> None:
         pass

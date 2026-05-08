@@ -2255,6 +2255,13 @@ class RTMDKField:
                     f"Rate limit exceeded: max {_rate_limit} nodes/second")
             self._add_node_timestamps.append(now)
 
+        # v8.2.1: Input sanitization
+        try:
+            from rtmdk.production.sanitization import validate_embedding
+            embedding = validate_embedding(embedding)
+        except Exception as exc:
+            raise ValueError(f"Invalid embedding: {exc}")
+
         # Phase 14 Track 2: Security validation
         if self.security:
             # Check ALL text fields for prompt injection, not just 'text'

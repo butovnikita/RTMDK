@@ -13,12 +13,31 @@ Usage:
     field = FieldSerializer.field_from_file("memory.json", embedder, config)
 """
 
+import hashlib
 import os
 import json
 import logging
 from typing import Dict, Any, Callable, Optional
 from enum import Enum
 import numpy as np
+
+
+def _normalize_for_checksum(obj: Any) -> Any:
+    """Recursively normalize data for stable checksum computation.
+
+    Converts numpy arrays / sets → lists, ensures sortable keys.
+    """
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, (np.floating, np.integer)):
+        return float(obj) if isinstance(obj, np.floating) else int(obj)
+    if isinstance(obj, set):
+        return sorted(_normalize_for_checksum(v) for v in obj)
+    if isinstance(obj, dict):
+        return {k: _normalize_for_checksum(v) for k, v in sorted(obj.items())}
+    if isinstance(obj, list):
+        return [_normalize_for_checksum(v) for v in obj]
+    return obj
 
 from rtmdk.memory.config import (
     ConsolidationMode, Backend, EvalMode, ContextFormat,
@@ -149,6 +168,10 @@ class FieldSerializer:
                 f"Invalid format: path must end with .json or .msgpack: {path}")
 
         data = FieldSerializer.field_to_dict(field)
+        # v8.2.1: Snapshot integrity checksum
+        data["_checksum"] = hashlib.sha256(
+            json.dumps(_normalize_for_checksum(data), ensure_ascii=False).encode("utf-8")
+        ).hexdigest()
 
         if fmt == "msgpack":
             try:
@@ -258,6 +281,18 @@ class FieldSerializer:
             logger.info("import_field: loading JSON format")
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
+
+        # v8.2.1: Snapshot integrity verification
+        stored_checksum = data.pop("_checksum", None)
+        if stored_checksum is not None:
+            computed = hashlib.sha256(
+                json.dumps(_normalize_for_checksum(data), ensure_ascii=False).encode("utf-8")
+            ).hexdigest()
+            if computed != stored_checksum:
+                raise ValueError(
+                    f"Corrupted snapshot: checksum mismatch (expected {stored_checksum}, got {computed})"
+                )
+            logger.info("import_field: checksum verified")
 
         # Health check
         if "config" not in data:

@@ -12,6 +12,8 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
+__all__ = ["RTMDKClientError", "RTMDKClient", "AsyncRTMDKClient"]
+
 
 class RTMDKClientError(Exception):
     """Base exception for RTMDK client errors."""
@@ -274,4 +276,103 @@ class RTMDKClient:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
+        return False
+
+
+class AsyncRTMDKClient:
+    """Async Python client for RTMDK Production API."""
+
+    def __init__(
+        self,
+        base_url: str = "http://localhost:8080",
+        api_key: Optional[str] = None,
+        timeout: float = 30.0,
+    ):
+        self.base_url = base_url.rstrip("/")
+        self.api_key = api_key
+        self.timeout = timeout
+        self._client = httpx.AsyncClient(timeout=timeout)
+
+    def _headers(self) -> Dict[str, str]:
+        h = {"Content-Type": "application/json"}
+        if self.api_key:
+            h["Authorization"] = f"Bearer {self.api_key}"
+        return h
+
+    async def _request(self, method: str, path: str, **kwargs) -> dict:
+        url = f"{self.base_url}{path}"
+        headers = self._headers()
+        if "headers" in kwargs:
+            headers.update(kwargs.pop("headers"))
+        resp = await self._client.request(method, url, headers=headers, **kwargs)
+        if resp.status_code >= 400:
+            try:
+                body = resp.json()
+            except Exception:
+                body = None
+            raise RTMDKClientError(
+                f"HTTP {resp.status_code}: {resp.text}",
+                status_code=resp.status_code,
+                response_body=body,
+            )
+        return resp.json()
+
+    async def chat(
+        self,
+        messages: List[Dict[str, str]],
+        model: str = "rtmdk",
+        temperature: float = 0.7,
+        max_tokens: int = 1024,
+        stream: bool = False,
+        session_id: str = "default",
+    ) -> dict:
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": stream,
+            "session_id": session_id,
+        }
+        return await self._request("POST", "/v1/chat/completions", json=payload)
+
+    async def query_memory(
+        self,
+        query: str,
+        top_k: int = 5,
+        threshold: float = 0.0,
+        session_id: str = "default",
+    ) -> dict:
+        payload = {
+            "query": query,
+            "top_k": top_k,
+            "threshold": threshold,
+            "session_id": session_id,
+        }
+        return await self._request("POST", "/v1/memory/query", json=payload)
+
+    async def create_node(
+        self,
+        content: str,
+        node_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> dict:
+        payload: Dict[str, Any] = {"content": content}
+        if node_id:
+            payload["node_id"] = node_id
+        if metadata:
+            payload["metadata"] = metadata
+        return await self._request("POST", "/v1/memory/nodes", json=payload)
+
+    async def health(self) -> dict:
+        return await self._request("GET", "/health")
+
+    async def close(self):
+        await self._client.aclose()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.close()
         return False
