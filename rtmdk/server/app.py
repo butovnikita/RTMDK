@@ -1940,6 +1940,37 @@ async def sot_bootstrap(req: dict):
 
 
 # ============================================================================
+# REPLICATION ENDPOINTS (v8.2.1)
+# ============================================================================
+
+
+@app.post("/v1/replication/mutation")
+async def replication_receive_mutation(req: dict):
+    """Receive a mutation from a peer node."""
+    if memory is None:
+        raise HTTPException(status_code=503, detail="Memory not initialized")
+    rm = getattr(memory, "replication_manager", None)
+    if rm is None or not rm.enabled:
+        raise HTTPException(status_code=503, detail="Replication not enabled")
+    clock = req.get("_rep_clock", 0)
+    origin = req.get("_rep_origin", "unknown")
+    rm._wal.append(clock, origin, req)
+    return {"status": "accepted", "clock": clock}
+
+
+@app.get("/v1/replication/wal")
+async def replication_get_wal(since: int = 0):
+    """Return local WAL entries with clock > since."""
+    if memory is None:
+        raise HTTPException(status_code=503, detail="Memory not initialized")
+    rm = getattr(memory, "replication_manager", None)
+    if rm is None:
+        raise HTTPException(status_code=503, detail="Replication not enabled")
+    entries = rm.get_wal(since=since)
+    return {"mutations": entries, "node_id": rm.node_id}
+
+
+# ============================================================================
 # API KEY MANAGEMENT ENDPOINTS
 # ============================================================================
 

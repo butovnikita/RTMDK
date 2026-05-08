@@ -1,7 +1,7 @@
 # RTMDK — Resonance-Topological Memory v8.2.1
 
 > Долгосрочная память для LLM на основе резонансной топологии и диалектической консолидации
-> Version 8.2.1 (Tracks 1–9 + Tiered Storage + GraphQL + WebSocket) — 30,000+ строк кода, 85+ файлов, 110+ API endpoints
+> Version 8.2.1 (Tracks 1–9 + Tiered Storage + GraphQL + WebSocket + Vector Storage + Replication) — 30,000+ строк кода, 85+ файлов, 110+ API endpoints
 
 ---
 

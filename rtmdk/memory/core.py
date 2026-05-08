@@ -647,13 +647,74 @@ class RTMDKMemory(BaseModel):
         else:
             object.__setattr__(self, "engram_manager", None)
 
+        # v8.2.1 production distributed features
+        self._init_vector_storage()
+        self._init_replication_manager()
+
+    def _init_vector_storage(self) -> None:
+        dsn = self.config.vector_storage_dsn
+        if dsn:
+            try:
+                from rtmdk.production.vector_storage import VectorStorage
+                vs = VectorStorage.create(dsn, dim=self.config.latent_dim)
+                object.__setattr__(self, "vector_storage", vs)
+                logger.info("VectorStorage backend: %s (dsn=%s)", type(vs).__name__, dsn)
+            except Exception:
+                logger.warning("VectorStorage init failed, disabling", exc_info=True)
+                object.__setattr__(self, "vector_storage", None)
+        else:
+            object.__setattr__(self, "vector_storage", None)
+
+    def _init_replication_manager(self) -> None:
+        peers = self.config.replication_peers
+        if peers:
+            try:
+                from rtmdk.production.replication import ReplicationManager
+                rm = ReplicationManager(
+                    peers=peers,
+                    node_id=self.config.replication_node_id,
+                    wal_path=self.config.replication_wal_path,
+                )
+                object.__setattr__(self, "replication_manager", rm)
+                logger.info("ReplicationManager enabled with peers: %s", peers)
+            except Exception:
+                logger.warning("ReplicationManager init failed, disabling", exc_info=True)
+                object.__setattr__(self, "replication_manager", None)
+        else:
+            object.__setattr__(self, "replication_manager", None)
+
     @property
     def memory_variables(self) -> List[str]:
         return ["rtmdk_context"]
 
     def add_node(self, embedding: NDArray, content: Dict, **kwargs) -> str:
         """Add a node to the memory field. Delegates to RTMDKField.add_node."""
-        return self.field.add_node(embedding, content, **kwargs)
+        node_id = self.field.add_node(embedding, content, **kwargs)
+        # v8.2.1 hooks
+        self._on_node_added(node_id, embedding, content, kwargs)
+        return node_id
+
+    def _on_node_added(
+        self, node_id: str, embedding: NDArray, content: Dict, add_kwargs: Dict
+    ) -> None:
+        vs = getattr(self, "vector_storage", None)
+        if vs is not None:
+            try:
+                vs.insert(node_id, embedding, {"content": content})
+            except Exception:
+                logger.warning("VectorStorage insert failed for %s", node_id, exc_info=True)
+        rm = getattr(self, "replication_manager", None)
+        if rm is not None and rm.enabled:
+            try:
+                rm.replicate({
+                    "op": "add_node",
+                    "node_id": node_id,
+                    "embedding": embedding.tolist(),
+                    "content": content,
+                    "kwargs": {k: v for k, v in add_kwargs.items() if k not in {"embedding", "content"}},
+                })
+            except Exception:
+                logger.warning("Replication failed for %s", node_id, exc_info=True)
 
     def add_nodes_batch(
         self,
@@ -666,7 +727,7 @@ class RTMDKMemory(BaseModel):
         skip_projection: bool = False,
     ) -> List[str]:
         """Batch add nodes. Delegates to RTMDKField.add_nodes_batch."""
-        return self.field.add_nodes_batch(
+        result = self.field.add_nodes_batch(
             embeddings,
             contents,
             phases,
@@ -674,6 +735,28 @@ class RTMDKMemory(BaseModel):
             session_ids,
             modalities,
             skip_projection)
+        # v8.2.1 hooks
+        vs = getattr(self, "vector_storage", None)
+        rm = getattr(self, "replication_manager", None)
+        for i, nid in enumerate(result):
+            emb = embeddings[i]
+            content = contents[i]
+            if vs is not None:
+                try:
+                    vs.insert(nid, emb, {"content": content})
+                except Exception:
+                    logger.warning("VectorStorage insert failed for %s", nid, exc_info=True)
+            if rm is not None and rm.enabled:
+                try:
+                    rm.replicate({
+                        "op": "add_node",
+                        "node_id": nid,
+                        "embedding": emb.tolist(),
+                        "content": content,
+                    })
+                except Exception:
+                    logger.warning("Replication failed for %s", nid, exc_info=True)
+        return result
 
     def _replay_wal(self) -> None:
         """Replay WAL mutations to recover durability after restart.

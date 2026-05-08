@@ -152,6 +152,10 @@ _FIELD_GROUPS: Dict[str, str] = {
     "entropy_management": "MemorySystemConfig",
     "eval_frequency": "ProductionConfig",
     "eval_mode": "ProductionConfig",
+    "vector_storage_dsn": "ProductionConfig",
+    "replication_peers": "ProductionConfig",
+    "replication_node_id": "ProductionConfig",
+    "replication_wal_path": "ProductionConfig",
     "event_driven": "InferenceConfig",
     "evolve_queue_size": "MemorySystemConfig",
     "false_merge_threshold": "RetrievalConfig",
@@ -598,6 +602,11 @@ class ProductionConfig:
     ])
     system_prompt: Optional[
         str] = "You are a helpful assistant with long-term memory powered by RTMDK (Resonance-Topological Memory)."
+    # v8.2.1 production distributed features
+    vector_storage_dsn: Optional[str] = None
+    replication_peers: List[str] = field(default_factory=list)
+    replication_node_id: str = "node_1"
+    replication_wal_path: Optional[str] = None
 
 
 @dataclass
