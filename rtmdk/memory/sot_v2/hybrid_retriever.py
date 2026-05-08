@@ -97,27 +97,42 @@ class HybridSIFBM25Retriever:
         query_tokens: List[int],
         query_emb: np.ndarray,
         top_k: int = 10,
+        pseudo_relevance_k: int = 3,
+        rocchio_beta: float = 0.3,
     ) -> List[Tuple[int, float]]:
-        """Return top-k document indices with hybrid scores."""
+        """Return top-k document indices with hybrid scores.
+
+        Optional pseudo-relevance feedback (Rocchio expansion):
+        top-k documents from the first pass are used to expand the
+        query embedding, then a second pass produces the final ranking.
+        """
         N = len(self.doc_embs)
         if N == 0:
             return []
 
-        # Dense scores
-        doc_matrix = np.stack(self.doc_embs)
-        q = query_emb / (np.linalg.norm(query_emb) + 1e-8)
-        dense_scores = doc_matrix @ q
+        def _score(q_emb: np.ndarray, q_tokens: List[int]) -> np.ndarray:
+            doc_matrix = np.stack(self.doc_embs)
+            q = q_emb / (np.linalg.norm(q_emb) + 1e-8)
+            dense_scores = doc_matrix @ q
+            sparse_scores = self.bm25.score(q_tokens)
+            d_min, d_max = dense_scores.min(), dense_scores.max()
+            s_min, s_max = sparse_scores.min(), sparse_scores.max()
+            dense_norm = (dense_scores - d_min) / (d_max - d_min + 1e-8)
+            sparse_norm = (sparse_scores - s_min) / (s_max - s_min + 1e-8)
+            return self.alpha * dense_norm + (1 - self.alpha) * sparse_norm
 
-        # Sparse scores
-        sparse_scores = self.bm25.score(query_tokens)
+        # First pass
+        hybrid = _score(query_emb, query_tokens)
+        first_top = np.argsort(-hybrid)[:pseudo_relevance_k]
 
-        # Normalise to [0, 1] (min-max per query)
-        d_min, d_max = dense_scores.min(), dense_scores.max()
-        s_min, s_max = sparse_scores.min(), sparse_scores.max()
-        dense_norm = (dense_scores - d_min) / (d_max - d_min + 1e-8)
-        sparse_norm = (sparse_scores - s_min) / (s_max - s_min + 1e-8)
+        # Rocchio expansion: q_new = q + beta * mean(top_docs)
+        if len(first_top) > 0:
+            feedback_emb = np.mean([self.doc_embs[i] for i in first_top], axis=0)
+            expanded_emb = query_emb + rocchio_beta * feedback_emb
+        else:
+            expanded_emb = query_emb
 
-        # Fusion
-        hybrid = self.alpha * dense_norm + (1 - self.alpha) * sparse_norm
+        # Second pass with expanded query
+        hybrid = _score(expanded_emb, query_tokens)
         top_idx = np.argsort(-hybrid)[:top_k]
         return [(int(i), float(hybrid[i])) for i in top_idx]
