@@ -459,6 +459,70 @@ class SIFEmbedder:
             "pc": self._pc.tolist() if self._pc is not None else None,
         }
 
+    def online_update(
+        self,
+        new_tokenized_docs: List[List[int]],
+        lr: float = 0.001,
+    ) -> "SIFEmbedder":
+        """Incrementally update word embeddings with new documents.
+
+        Theoretical foundation:
+            Instead of recomputing the full PMI matrix and SVD, we treat
+            each new co-occurrence observation as a stochastic gradient
+            on the PMI objective:
+
+                L_{ij} = (e_i^T e_j - PMI_{ij})^2
+
+            For a new co-occurrence (i,j), the gradient w.r.t. e_i is:
+
+                ∇_{e_i} = 2 (e_i^T e_j - PMI_{ij}) e_j
+
+            This is online matrix factorisation (Mairal et al. 2010)
+            applied to the PMI graph.
+
+        Args:
+            new_tokenized_docs: List of new documents (token ID lists).
+            lr: Learning rate for stochastic gradient updates.
+        """
+        if not self.word_embeddings:
+            raise RuntimeError("online_update called before fit()")
+
+        logger.info("SIFEmbedder: online update with %d new docs", len(new_tokenized_docs))
+
+        # Update unigram counts and co-occurrences
+        total_new_tokens = 0
+        for doc in new_tokenized_docs:
+            for t in doc:
+                if t in self.word_embeddings:
+                    # Update unigram count (approximate: use running average)
+                    self.word_probs[t] = 0.9 * self.word_probs.get(t, 0.0) + 0.1
+                    total_new_tokens += 1
+            w = self.window_size
+            for i in range(len(doc)):
+                for j in range(i + 1, min(i + w + 1, len(doc))):
+                    a, b = doc[i], doc[j]
+                    if a in self.word_embeddings and b in self.word_embeddings:
+                        # Stochastic gradient update on PMI objective
+                        e_a = self.word_embeddings[a]
+                        e_b = self.word_embeddings[b]
+                        # Approximate PMI as sign of co-occurrence
+                        pmi_target = 1.0  # positive co-occurrence
+                        pred = float(np.dot(e_a, e_b))
+                        error = pred - pmi_target
+                        # Gradient update
+                        self.word_embeddings[a] -= lr * error * e_b
+                        self.word_embeddings[b] -= lr * error * e_a
+                        # Renormalise
+                        self.word_embeddings[a] /= np.linalg.norm(self.word_embeddings[a]) + 1e-8
+                        self.word_embeddings[b] /= np.linalg.norm(self.word_embeddings[b]) + 1e-8
+
+        # Renormalise word_probs
+        total_prob = sum(self.word_probs.values()) + 1e-8
+        self.word_probs = {k: v / total_prob for k, v in self.word_probs.items()}
+
+        logger.info("SIFEmbedder: online update complete, processed %d tokens", total_new_tokens)
+        return self
+
     def load_state(self, state: dict) -> "SIFEmbedder":
         self.latent_dim = state["latent_dim"]
         self.a = state["a"]
