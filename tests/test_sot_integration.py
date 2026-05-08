@@ -20,7 +20,6 @@ def field_sot():
         sot_max_vocab=512,
         sot_contrastive_lr=0.1,
         sot_negatives_per_query=3,
-        sot_ssm_sync=True,
         sot_merge_freq=50,
         sot_use_for_query=True,
         max_nodes=200,
@@ -34,8 +33,6 @@ def field_sot():
         max_vocab=512,
         seed=cfg.seed,
     )
-    if field.sot_ssm:
-        field.sot_ssm.tokenizer = field.sot_tokenizer
     return field
 
 
@@ -54,12 +51,10 @@ class TestSOTFieldInit:
     def test_sot_components_created_when_enabled(self, field_sot):
         assert field_sot.sot_tokenizer is not None
         assert field_sot.sot_hebbian is not None
-        assert field_sot.sot_ssm is not None
 
     def test_sot_components_none_when_disabled(self, field_baseline):
         assert field_baseline.sot_tokenizer is None
         assert field_baseline.sot_hebbian is None
-        assert field_baseline.sot_ssm is None
 
 
 class TestSOTAddNode:
@@ -197,7 +192,6 @@ class TestSOTStatePersistence:
         state = field_sot.get_state()
         assert "sot_tokenizer" in state
         assert "sot_hebbian" in state
-        assert "sot_ssm" in state
 
     def test_load_state_restores_sot(self, field_sot):
         field_sot.step([{

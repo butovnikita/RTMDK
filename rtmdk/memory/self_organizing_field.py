@@ -17,8 +17,6 @@ from typing import Dict, List, Optional, Set, Tuple
 
 import numpy as np
 
-from rtmdk.engines.ssm_dynamics import SSMDynamics
-
 logger = logging.getLogger(__name__)
 
 
@@ -1127,54 +1125,3 @@ class ContrastiveHebbian:
                 node_embeddings[k] /= norm
 
 
-class EmbeddingFieldSSM:
-    """Bridges SSMDynamics with the embedding field for smooth trajectories."""
-
-    def __init__(
-            self,
-            latent_dim: int,
-            tokenizer: SOTokenizer,
-            diagonal: bool = True):
-        self.latent_dim = latent_dim
-        self.tokenizer = tokenizer
-        self.ssm = SSMDynamics(
-            state_dim=latent_dim,
-            input_dim=latent_dim,
-            output_dim=latent_dim,
-            n_nodes=1,
-            dt=0.1,
-            learnable=False,
-            diagonal=diagonal,
-        )
-
-    def step(
-            self,
-            token_ids: List[int],
-            field_state: np.ndarray) -> np.ndarray:
-        """Compute momentum from SSM given current token sequence and field state."""
-        if field_state.ndim != 1 or field_state.shape[0] != self.latent_dim:
-            field_state = np.zeros(self.latent_dim, dtype=np.float32)
-        u = self.tokenizer.embed(token_ids)
-        if u.ndim != 1:
-            u = u.reshape(-1)
-        h = field_state.reshape(1, -1)
-        u = u.reshape(1, -1)
-        _, y = self.ssm.step(h, u)
-        if y.ndim != 1:
-            y = y.reshape(-1)
-        return y.astype(np.float32)
-
-    def sync_embeddings(self, token_ids: List[int], momentum: np.ndarray):
-        """Add SSM momentum to token embeddings via projection."""
-        if momentum.ndim != 1 or momentum.shape[0] != self.latent_dim:
-            return
-        for tid in token_ids:
-            if tid not in self.tokenizer.token_embeddings:
-                continue
-            # Apply momentum in latent space, backpropagate through projection
-            # delta_token = momentum @ projection.T
-            delta_token = momentum @ self.tokenizer.projection.T
-            self.tokenizer.token_embeddings[tid] += delta_token * 0.01
-            norm = np.linalg.norm(self.tokenizer.token_embeddings[tid])
-            if norm > 0:
-                self.tokenizer.token_embeddings[tid] /= norm

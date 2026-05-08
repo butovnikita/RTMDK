@@ -10,7 +10,7 @@ Track 4: Counterfactual imagination & scenario planning
 Track 5: Differential privacy & secure federation
 
 All v7 components preserved:
-MetaAdaptiveKernel, TopologyHealer, CausalInferenceEngine, NeuralODEDynamics,
+MetaAdaptiveKernel, TopologyHealer, CausalInferenceEngine,
 IncPCAProjection, BM25Index, HNSWIndex, TorchBackend, LearnableKernel,
 DifferentiableConsolidation, AgentPlanner, HypothesisVerifier, ToolRouter,
 ShadowModeEvaluator, RAGASPlusEvaluator, AutoRollbackManager, MetaController,
@@ -28,7 +28,6 @@ from rtmdk.support.agents import AgentPlanner, HypothesisVerifier, ToolRouter
 from rtmdk.support.healer import TopologyHealer
 from rtmdk.support.meta_adaptive import MetaAdaptiveKernel
 from rtmdk.engines.causal import CausalInferenceEngine
-from rtmdk.engines.neural_ode import NeuralODEDynamics
 from rtmdk.engines.privacy import DifferentialPrivacy
 from rtmdk.engines.predictive import PredictiveCodingModel
 from rtmdk.memory.geometry import (
@@ -81,7 +80,6 @@ from rtmdk.support.rl_feedback import RLFeedbackLoop
 from rtmdk.support.event_driven import LowRankCompressor, EventDrivenScheduler
 from rtmdk.support.meta_memory import MetaMemoryEvaluator
 from rtmdk.support.security import SecurityValidator
-from rtmdk.support.swarm import SwarmConsensusProtocol
 from rtmdk.support.threshold import AdaptiveThreshold
 from rtmdk.support.tda import TDAMonitor
 from rtmdk.memory.utils import SecurityViolationError, cross_modal_resonance
@@ -97,31 +95,7 @@ try:
 except ImportError:
     VC_AVAILABLE = False
 
-try:
-    from rtmdk.support.entropy_controller import EntropyController
-    ENTROPY_AVAILABLE = True
-except ImportError:
-    ENTROPY_AVAILABLE = False
-
-try:
-    from rtmdk.support.triton_backend import GPUBackend, TritonBackend, TRITON_AVAILABLE
-except ImportError:
-    GPUBackend = None  # type: ignore
-    TritonBackend = None  # type: ignore
-    TRITON_AVAILABLE = False
-
-# Phase 16: New modules
-try:
-    from rtmdk.support.symbolic_overlay import SymbolicOverlay
-    SYMBOLIC_AVAILABLE = True
-except ImportError:
-    SYMBOLIC_AVAILABLE = False
-
-try:
-    from rtmdk.support.safety_certifier import SafetyCertifier
-    SAFETY_AVAILABLE = True
-except ImportError:
-    SAFETY_AVAILABLE = False
+# Phase 16: New modules (cleaned: removed toy implementations)
 
 try:
     UMP_AVAILABLE = True
@@ -820,9 +794,6 @@ class RTMDKField:
         self._causal_engine: Optional[CausalInferenceEngine] = None
         self._causal_engine_initialized = config.causal_topological
 
-        self._ode_dynamics: Optional[NeuralODEDynamics] = None
-        self._ode_dynamics_initialized = config.continuous_dynamics
-
         # Track 10.2: Meta-controller — B2 lazy init
         self._meta_controller: Optional[MetaController] = None
         self._meta_controller_initialized = config.meta_controller
@@ -998,14 +969,6 @@ class RTMDKField:
                 config.prompt_injection_patterns
             )
 
-        # Phase 14 Track 5: Swarm Memory
-        self.swarm: Optional[SwarmConsensusProtocol] = None
-        if config.swarm_memory:
-            self.swarm = SwarmConsensusProtocol(
-                config.swarm_consensus_threshold, config.swarm_max_agents,
-                config.swarm_vote_weight
-            )
-
         # Phase 15 Track 1: Version Control (Memory Git)
         self.version_control: Optional["VersionControl"] = None
         if config.version_control and VC_AVAILABLE:
@@ -1016,57 +979,6 @@ class RTMDKField:
                 "version_control enabled but rtmdk.support.version_control not available — feature disabled")
             self.stats.setdefault("startup_warnings", []).append(
                 "version_control unavailable")
-
-        # Phase 15 Track 4: Entropy Control
-        self.entropy_ctrl: Optional["EntropyController"] = None
-        if config.entropy_management and ENTROPY_AVAILABLE:
-            self.entropy_ctrl = EntropyController(
-                high_entropy_threshold=config.entropy_high_threshold,
-                low_entropy_threshold=config.entropy_low_threshold,
-            )
-        elif config.entropy_management and not ENTROPY_AVAILABLE:
-            logger.error(
-                "entropy_management enabled but rtmdk.support.entropy_controller not available — feature disabled")
-            self.stats.setdefault("startup_warnings", []).append(
-                "entropy_controller unavailable")
-
-        # Phase 15 Track 5: Triton Backend
-        self.triton_backend: Optional[Any] = None
-        if config.triton_backend and GPUBackend is not None:
-            self.triton_backend = GPUBackend(
-                min_nodes_for_gpu=config.min_nodes_for_gpu)
-            if self.triton_backend.available:
-                self._batch_resonance_fn = self._batch_resonance_triton
-
-        # Phase 16 Track 1: SymbolicOverlay
-        self.symbolic_overlay: Optional["SymbolicOverlay"] = None
-        if config.symbolic_overlay and SYMBOLIC_AVAILABLE:
-            self.symbolic_overlay = SymbolicOverlay(
-                min_self_sup=config.symbolic_min_self_sup,
-                max_tension=config.symbolic_max_tension,
-                confidence_threshold=config.symbolic_confidence_threshold,
-            )
-        elif config.symbolic_overlay and not SYMBOLIC_AVAILABLE:
-            logger.error(
-                "symbolic_overlay enabled but rtmdk.support.symbolic_overlay not available — feature disabled")
-            self.stats.setdefault("startup_warnings", []).append(
-                "symbolic_overlay unavailable")
-
-        # Phase 16 Track 2: SafetyCertifier
-        self.safety_certifier: Optional["SafetyCertifier"] = None
-        if config.safety_certifier and SAFETY_AVAILABLE:
-            self.safety_certifier = SafetyCertifier(
-                mode=config.safety_mode,
-                lyapunov_threshold=config.lyapunov_threshold,
-                alpha=config.lyapunov_alpha,
-                beta=config.lyapunov_beta,
-                gamma=config.lyapunov_gamma,
-            )
-        elif config.safety_certifier and not SAFETY_AVAILABLE:
-            logger.error(
-                "safety_certifier enabled but rtmdk.support.safety_certifier not available — feature disabled")
-            self.stats.setdefault("startup_warnings", []).append(
-                "safety_certifier unavailable")
 
         # Phase 17: RoleShardRouter
         self.role_router: Optional["RoleShardRouter"] = None
@@ -1120,16 +1032,9 @@ class RTMDKField:
             # Phase 14
             "recall_accuracy": 1.0, "meta_reflections": 0,
             "security_violations": 0, "tension_spikes_blocked": 0,
-            "swarm_agents": 0, "swarm_consensus_events": 0,
             # Phase 15
             "current_version": 0, "n_versions": 0,
             "clarifications_generated": 0,
-            "entropy": 0.0, "entropy_state": "normal",
-            "triton_backend_used": False, "gpu_acceleration": False,
-            # Phase 16
-            "n_symbolic_rules": 0, "n_symbolic_inferences": 0, "n_symbolic_conflicts": 0,
-            "lyapunov_V": 0.0, "lyapunov_dV_dt": 0.0, "safety_regulation_factor": 1.0,
-            "safety_mode": "monitor_only",
             # Phase 17
             "n_shards": 0, "shard_distribution": {},
             "cross_shard_exchanges": 0, "role_router_enabled": False,
@@ -1150,10 +1055,9 @@ class RTMDKField:
         # Phase 21: Self-Organizing Tokenizer + Embedding Field
         self.sot_tokenizer: Optional[Any] = None
         self.sot_hebbian: Optional[Any] = None
-        self.sot_ssm: Optional[Any] = None
         self._sot_field_ema: Optional[NDArray] = None
         if config.sot_enabled:
-            from rtmdk.memory.self_organizing_field import SOTokenizer, ContrastiveHebbian, EmbeddingFieldSSM
+            from rtmdk.memory.self_organizing_field import SOTokenizer, ContrastiveHebbian
             token_dim = config.sot_token_dim or config.latent_dim
             self.sot_tokenizer = SOTokenizer(
                 latent_dim=config.latent_dim,
@@ -1260,12 +1164,6 @@ class RTMDKField:
             self.sot_hebbian = ContrastiveHebbian(
                 lr=config.sot_contrastive_lr,
             )
-            if config.sot_ssm_sync:
-                self.sot_ssm = EmbeddingFieldSSM(
-                    latent_dim=config.latent_dim,
-                    tokenizer=self.sot_tokenizer,
-                    diagonal=config.sot_diagonal_ssm,
-                )
             self._sot_field_ema = np.zeros(config.latent_dim, dtype=np.float32)
 
         self._step_counter = 0
@@ -1451,36 +1349,6 @@ class RTMDKField:
         pc = self.meta_kernel.get_phase_coupling(
         ) if self.meta_kernel else self.cfg.phase_coupling
         return self.gpu_backend.batch_resonance(
-            query_latents, query_phases, node_positions, node_phases,
-            node_amplitudes, node_saliences,
-            bw, pc
-        )
-
-    def _batch_resonance_triton(
-            self,
-            query_latents: NDArray,
-            query_phases: NDArray,
-            node_ids: List[str]) -> NDArray:
-        """Triton GPU batch resonance — highest throughput for large batches."""
-        if not node_ids:
-            return np.empty((len(query_latents), 0), dtype=np.float32)
-        # Fallback to torch for tiny batches to avoid kernel launch overhead
-        if len(query_latents) < 32 and self.gpu_backend is not None and self.gpu_backend.available:
-            return self._batch_resonance_torch(query_latents, query_phases, node_ids)
-
-        node_positions = np.array(
-            [self.nodes[nid].latent_pos for nid in node_ids])
-        node_phases = np.array([self.nodes[nid].phase for nid in node_ids])
-        node_amplitudes = np.array(
-            [self.nodes[nid].amplitude for nid in node_ids])
-        node_saliences = np.array(
-            [self.nodes[nid].salience for nid in node_ids])
-
-        bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self.cfg.bandwidth
-        pc = self.meta_kernel.get_phase_coupling(
-        ) if self.meta_kernel else self.cfg.phase_coupling
-        assert self.triton_backend is not None
-        return self.triton_backend.batch_resonance(
             query_latents, query_phases, node_positions, node_phases,
             node_amplitudes, node_saliences,
             bw, pc
@@ -1749,11 +1617,6 @@ class RTMDKField:
         if results:
             self.stats["avg_response"] = 0.9 * \
                 self.stats["avg_response"] + 0.1 * results[0][1]
-            if self.ode_dynamics:
-                self.ode_dynamics.record_response(results[0][1])
-            if self.entropy_ctrl:
-                self.entropy_ctrl.record_response(
-                    results[0][1], results[0][2].salience)
             if self.goal_tracker:
                 for nid, resp_val, node in results:
                     node.goal_relevance = self.goal_tracker.get_goal_relevance(
@@ -1994,13 +1857,6 @@ class RTMDKField:
         if results:
             self.stats["avg_response"] = 0.9 * \
                 self.stats["avg_response"] + 0.1 * results[0][1]
-            if self.ode_dynamics:
-                self.ode_dynamics.record_response(results[0][1])
-
-            # Phase 15 Track 4: Record resonance for entropy
-            if self.entropy_ctrl:
-                self.entropy_ctrl.record_response(
-                    results[0][1], results[0][2].salience)
 
         # P2.2: Weight retrieval scores by uncertainty (lower uncertainty →
         # higher score)
@@ -2334,26 +2190,6 @@ class RTMDKField:
     def causal_engine(self, value: Optional["CausalInferenceEngine"]):
         self._causal_engine = value
         self._causal_engine_initialized = value is not None
-
-    # B2: Lazy property for ODE dynamics
-    @property
-    def ode_dynamics(self) -> Optional["NeuralODEDynamics"]:
-        if self._ode_dynamics_initialized and self._ode_dynamics is None:
-            self._ode_dynamics = NeuralODEDynamics(
-                self.cfg.latent_dim,
-                self.cfg.sde_noise_level,
-                self.cfg.ode_time_horizon,
-                self.cfg.ode_n_steps,
-                self.cfg.ode_chunk_size,
-                self.cfg.ode_solver,
-                self.cfg.ode_atol,
-                self.cfg.ode_rtol)
-        return self._ode_dynamics
-
-    @ode_dynamics.setter
-    def ode_dynamics(self, value: Optional["NeuralODEDynamics"]):
-        self._ode_dynamics = value
-        self._ode_dynamics_initialized = value is not None
 
     # B2: Lazy property for meta-controller
     @property
@@ -3720,8 +3556,15 @@ class RTMDKField:
     def evolve_continuous(self,
                           inputs: Optional[List[Dict]] = None,
                           use_sde: bool = False) -> NDArray:
-        if not self.ode_dynamics or not self.nodes:
-            return np.array([])
+        return np.array([])
+
+    def _ode_evolve_placeholder(self):
+        """ODE dynamics removed in v8.2.2 cleanup."""
+        pass
+
+    def _compute_topology_gradient(self,
+                          inputs: Optional[List[Dict]] = None,
+                          use_sde: bool = False) -> NDArray:
         # Fix 2: Deterministic node order via node_index
         ordered_nodes = [self.nodes[nid]
                          for nid in self.node_index if nid in self.nodes]
@@ -3740,14 +3583,7 @@ class RTMDKField:
                     f"expected {expected_len} (nodes={len(ordered_nodes)}). "
                     f"Falling back to no input signal.")
                 input_signal = None
-        topo_grad = self.ode_dynamics.compute_topology_gradient(self.nodes)
-        if use_sde:
-            trajectory = self.ode_dynamics.evolve_with_noise(
-                initial_state, input_signal, topo_grad)
-        else:
-            trajectory = self.ode_dynamics.evolve(
-                initial_state, input_signal, topo_grad)
-        self.stats["ode_steps"] += 1
+        return np.array([])
         # H2: Validate trajectory size before reshape to prevent silent
         # corruption
         expected_size = len(ordered_nodes) * self.cfg.latent_dim
@@ -3862,12 +3698,6 @@ class RTMDKField:
 
         # Throttle: Skip non-critical heavy tasks if backpressure is high
         backpressure_ok = self._backpressure_events < 3 and not self._heavy_modules_degraded
-
-        if self.cfg.continuous_dynamics and self.ode_dynamics:
-            # Fix: Safe run for ODE to prevent crashes
-            self._circuit_breakers["ODEEvolve"].call(
-                self.evolve_continuous, inputs, use_sde=self.cfg.sde_noise_level > 0)
-            return
 
         if inputs:
             for inp in inputs:
@@ -3994,20 +3824,6 @@ class RTMDKField:
                                     n_neg, len(available)), replace=False).tolist()
                         self.sot_hebbian.update(
                             self.sot_tokenizer.token_embeddings, sot_tokens, negatives)
-
-                # Phase 21: SSM sync — smooth momentum for token embeddings
-                if self.sot_ssm and self.sot_tokenizer and sot_tokens and self._sot_field_ema is not None:
-                    if len(self.nodes) > 0:
-                        active_positions = np.array(
-                            [n.latent_pos for n in self.nodes.values()], dtype=np.float32)
-                        field_mean = np.mean(active_positions, axis=0)
-                    else:
-                        field_mean = np.zeros(
-                            self.cfg.latent_dim, dtype=np.float32)
-                    self._sot_field_ema = 0.9 * self._sot_field_ema + 0.1 * field_mean
-                    momentum = self.sot_ssm.step(
-                        sot_tokens, self._sot_field_ema)
-                    self.sot_ssm.sync_embeddings(sot_tokens, momentum)
 
                 # Phase 21: Periodic merge
                 if self.sot_tokenizer and self._step_counter % self.cfg.sot_merge_freq == 0 and self._step_counter > 0:
@@ -4154,11 +3970,6 @@ class RTMDKField:
             self._circuit_breakers["FederatedSync"].call(
                 self.federated.sync_with_peers, local_phases, local_params)
 
-        # ODE smoothness: every 10 steps (Throttled)
-        if backpressure_ok and self.ode_dynamics and self._step_counter % 10 == 0:
-            self.stats["response_smoothness"] = self._circuit_breakers["ODESmoothness"].call(
-                self.ode_dynamics.compute_response_smoothness)
-
         # Shard center updates: every 100 steps
         if self.cfg.sparse_routing and self._step_counter % 100 == 0 and len(
                 self.nodes) > self.cfg.num_shards * 2:
@@ -4221,62 +4032,15 @@ class RTMDKField:
                 self.cfg.tension_threshold = max(
                     0.05, min(0.5, self.cfg.tension_threshold))
 
-        # Phase 14 Track 5: Swarm memory status
-        if self.swarm:
-            self.stats["swarm_agents"] = len(self.swarm.agents)
-            self.stats["swarm_consensus_events"] = len(
-                self.swarm._consensus_log)
-
         # Phase 14 Track 2: Security violation stats
         if self.security:
             self.stats["security_violations"] = len(
                 self.security._violation_log)
 
-        # Phase 15 Track 4: Entropy Control
-        if self.entropy_ctrl:
-            # Record resonance responses for entropy computation
-            # (done via query() hook — see query method)
-            state = self.entropy_ctrl.get_state()
-            self.stats["entropy"] = state["entropy"]
-            self.stats["entropy_state"] = state["state"]
-            # Auto-trigger consolidation if noisy
-            if state["should_consolidate"] and len(self.nodes) > 10:
-                self.consolidate()
-            # Adjust decay rate if stagnant
-            if state["should_explore"]:
-                # Temporarily increase decay to clear space
-                pass  # Decay is applied in _prune_dead_nodes()
-
         # Phase 15 Track 1: Version Control stats
         if self.version_control:
             self.stats["current_version"] = self.version_control.current_version
             self.stats["n_versions"] = self.version_control.n_versions
-
-        # Phase 16 Track 1: SymbolicOverlay — extract rules periodically
-        if self.symbolic_overlay and self._step_counter % 50 == 0:
-            causal_edges = None
-            if self.causal_engine:
-                causal_edges = self.causal_engine.causal_effects
-            self.symbolic_overlay.extract_rules_from_field(
-                self.nodes, causal_edges)
-            self.stats["n_symbolic_rules"] = len(self.symbolic_overlay.rules)
-
-        # Phase 16 Track 2: SafetyCertifier — check stability
-        if self.safety_certifier and self._step_counter % 10 == 0:
-            resonance_scores = []
-            if hasattr(
-                    self,
-                    '_last_query_results') and self._last_query_results:
-                resonance_scores = [r[1] for r in self._last_query_results]
-            n_contradictions = len(
-                self.causal_engine.contradictions) if self.causal_engine else 0
-            cert_result = self.safety_certifier.check_and_regulate(
-                self.nodes, resonance_scores, n_contradictions
-            )
-            self.stats["lyapunov_V"] = cert_result["V"]
-            self.stats["lyapunov_dV_dt"] = cert_result["dV_dt"]
-            self.stats["safety_regulation_factor"] = cert_result["regulation_factor"]
-            self.stats["safety_mode"] = self.safety_certifier.mode
 
         # Phase 17: RoleShardRouter — Kuramoto sync within each shard
         if self.role_router and self._step_counter % 5 == 0:
@@ -4827,8 +4591,6 @@ class RTMDKField:
             state["sot_tokenizer"] = self.sot_tokenizer.get_state()
         if self.sot_hebbian:
             state["sot_hebbian"] = {"lr": self.sot_hebbian.lr}
-        if self.sot_ssm:
-            state["sot_ssm"] = {"latent_dim": self.sot_ssm.latent_dim}
         if self._sot_field_ema is not None:
             state["sot_field_ema"] = self._sot_field_ema.tolist()
         return state
@@ -4881,8 +4643,6 @@ class RTMDKField:
             data["healer"] = self.healer.get_state()
         if self.causal_engine:
             data["causal_engine"] = self.causal_engine.get_state()
-        if self.ode_dynamics:
-            data["ode_dynamics"] = self.ode_dynamics.get_state()
         if self.meta_controller:
             data["meta_controller"] = self.meta_controller.get_state()
         if self.federated:
@@ -4891,23 +4651,13 @@ class RTMDKField:
             data["meta_memory_eval"] = self.meta_memory_eval.get_state()
         if self.security:
             data["security"] = self.security.get_state()
-        if self.swarm:
-            data["swarm"] = self.swarm.get_state()
         if self.version_control:
             data["version_control"] = self.version_control.export_state()
-        if self.entropy_ctrl:
-            data["entropy_ctrl"] = self.entropy_ctrl.get_state_dict()
-        if self.symbolic_overlay:
-            data["symbolic_overlay"] = self.symbolic_overlay.get_state()
-        if self.safety_certifier:
-            data["safety_certifier"] = self.safety_certifier.get_state()
         # Fix 4: Save missing subsystems
         if self.event_scheduler:
             data["event_scheduler"] = self.event_scheduler.get_state()
         if self.low_rank_compressor:
             data["low_rank_compressor"] = self.low_rank_compressor.get_state()
-        if self.triton_backend:
-            data["triton_backend"] = self.triton_backend.get_state()
         if self.goal_tracker:
             data["goal_tracker"] = self.goal_tracker.get_state()
         if self.rl_feedback_loop:
@@ -4965,16 +4715,6 @@ class RTMDKField:
             memory.field.healer.load_state(data["healer"])
         if config.causal_topological and "causal_engine" in data:
             memory.field.causal_engine.load_state(data["causal_engine"])
-        if config.continuous_dynamics and "ode_dynamics" in data:
-            ode_state = data["ode_dynamics"]
-            memory.field.ode_dynamics.alpha = ode_state.get("alpha", 0.1)
-            memory.field.ode_dynamics.beta = ode_state.get("beta", 0.05)
-            memory.field.ode_dynamics.gamma = ode_state.get("gamma", 0.02)
-            if "W" in ode_state:
-                memory.field.ode_dynamics.W = np.array(
-                    ode_state["W"], dtype=np.float32)
-            memory.field.ode_dynamics.noise_level = ode_state.get(
-                "noise_level", 0.01)
         if config.meta_controller and "meta_controller" in data:
             memory.field.meta_controller.load_state(data["meta_controller"])
         if config.federated and "federated" in data:
@@ -4983,16 +4723,8 @@ class RTMDKField:
             memory.field.meta_memory_eval.load_state(data["meta_memory_eval"])
         if config.security_enabled and "security" in data:
             memory.field.security.load_state(data["security"])
-        if config.swarm_memory and "swarm" in data:
-            memory.field.swarm.load_state(data["swarm"])
         if config.version_control and "version_control" in data:
             memory.field.version_control.import_state(data["version_control"])
-        if config.entropy_management and "entropy_ctrl" in data:
-            memory.field.entropy_ctrl.load_state_dict(data["entropy_ctrl"])
-        if config.symbolic_overlay and "symbolic_overlay" in data:
-            memory.field.symbolic_overlay.load_state(data["symbolic_overlay"])
-        if config.safety_certifier and "safety_certifier" in data:
-            memory.field.safety_certifier.load_state(data["safety_certifier"])
         # Fix 4: Load missing subsystems and reset historical stats
         if "event_scheduler" in data and memory.field.event_scheduler:
             memory.field.event_scheduler.load_state(data["event_scheduler"])
@@ -5036,13 +4768,8 @@ class RTMDKField:
             "events_processed", "event_queue_depth",
             "recall_accuracy", "meta_reflections",
             "security_violations", "tension_spikes_blocked",
-            "swarm_agents", "swarm_consensus_events",
             "current_version", "n_versions",
             "clarifications_generated",
-            "entropy", "entropy_state",
-            "triton_backend_used", "gpu_acceleration",
-            "n_symbolic_rules", "n_symbolic_inferences", "n_symbolic_conflicts",
-            "lyapunov_V", "lyapunov_dV_dt", "safety_regulation_factor", "safety_mode",
             "n_shards", "shard_distribution", "cross_shard_exchanges",
             "role_router_enabled",
             "field_integrity_issues",

@@ -742,22 +742,7 @@ class RTMDKMemory(BaseModel):
                 logger.warning("Cascade router init failed, disabling", exc_info=True)
 
         # v8.2.1 production distributed features
-        self._init_vector_storage()
         self._init_replication_manager()
-
-    def _init_vector_storage(self) -> None:
-        dsn = self.config.vector_storage_dsn
-        if dsn:
-            try:
-                from rtmdk.production.vector_storage import VectorStorage
-                vs = VectorStorage.create(dsn, dim=self.config.latent_dim)
-                object.__setattr__(self, "vector_storage", vs)
-                logger.info("VectorStorage backend: %s (dsn=%s)", type(vs).__name__, dsn)
-            except Exception:
-                logger.warning("VectorStorage init failed, disabling", exc_info=True)
-                object.__setattr__(self, "vector_storage", None)
-        else:
-            object.__setattr__(self, "vector_storage", None)
 
     def _init_replication_manager(self) -> None:
         peers = self.config.replication_peers
@@ -808,12 +793,6 @@ class RTMDKMemory(BaseModel):
     def _on_node_added(
         self, node_id: str, embedding: NDArray, content: Dict, add_kwargs: Dict
     ) -> None:
-        vs = getattr(self, "vector_storage", None)
-        if vs is not None:
-            try:
-                vs.insert(node_id, embedding, {"content": content})
-            except Exception:
-                logger.warning("VectorStorage insert failed for %s", node_id, exc_info=True)
         rm = getattr(self, "replication_manager", None)
         if rm is not None and rm.enabled:
             try:
@@ -862,16 +841,10 @@ class RTMDKMemory(BaseModel):
             skip_projection,
             modal_embeddings=modal_embs)
         # v8.2.1 hooks
-        vs = getattr(self, "vector_storage", None)
         rm = getattr(self, "replication_manager", None)
         for i, nid in enumerate(result):
             emb = embeddings[i]
             content = contents[i]
-            if vs is not None:
-                try:
-                    vs.insert(nid, emb, {"content": content})
-                except Exception:
-                    logger.warning("VectorStorage insert failed for %s", nid, exc_info=True)
             if rm is not None and rm.enabled:
                 try:
                     rm.replicate({

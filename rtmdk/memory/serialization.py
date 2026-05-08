@@ -106,11 +106,7 @@ class FieldSerializer:
         ("federated", "federated", "federated"),
         ("meta_memory_eval", "meta_memory_eval", "meta_memory"),
         ("security", "security", "security_enabled"),
-        ("swarm", "swarm", "swarm_memory"),
         ("version_control", "version_control", "version_control"),
-        ("entropy_ctrl", "entropy_ctrl", "entropy_management"),
-        ("symbolic_overlay", "symbolic_overlay", "symbolic_overlay"),
-        ("safety_certifier", "safety_certifier", "safety_certifier"),
         ("sot_tokenizer", "sot_tokenizer", "sot_enabled"),
     ]
 
@@ -366,8 +362,6 @@ class FieldSerializer:
             memory.field.meta_memory_eval.load_state(data["meta_memory_eval"])
         if config.security_enabled and "security" in data:
             memory.field.security.load_state(data["security"])
-        if config.swarm_memory and "swarm" in data:
-            memory.field.swarm.load_state(data["swarm"])
         if config.sot_enabled and "sot_tokenizer" in data:
             if memory.field.sot_tokenizer is not None:
                 memory.field.sot_tokenizer.load_state(data["sot_tokenizer"])
@@ -415,11 +409,8 @@ class FieldSerializer:
             "events_processed", "event_queue_depth",
             "recall_accuracy", "meta_reflections",
             "security_violations", "tension_spikes_blocked",
-            "swarm_agents", "swarm_consensus_events",
             "current_version", "n_versions",
             "clarifications_generated",
-            "entropy", "entropy_state",
-            "triton_backend_used", "gpu_acceleration",
             "n_symbolic_rules", "n_symbolic_inferences", "n_symbolic_conflicts",
             "lyapunov_V", "lyapunov_dV_dt", "safety_regulation_factor", "safety_mode",
             "n_shards", "shard_distribution", "cross_shard_exchanges",
