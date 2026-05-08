@@ -70,7 +70,7 @@ def bench_rtmdk(records: List[Dict], embedder, top_k: int = 5, latent_dim: int =
     from rtmdk.memory.config import RTMDKConfig
     from rtmdk.memory.core import RTMDKMemory
 
-    cfg = RTMDKConfig(
+    cfg = RTMDKConfig.benchmark() if latent_dim == 384 else RTMDKConfig(
         latent_dim=latent_dim,
         embedding_dim=384,
         max_nodes=len(records) + 10,
@@ -87,13 +87,16 @@ def bench_rtmdk(records: List[Dict], embedder, top_k: int = 5, latent_dim: int =
         memory.add_node(embedding=emb, content={"text": rec["context"]})
 
     queries = [r["query"] for r in records]
+    query_embs = [embedder(q) for q in queries]
+    node_ids = {n.id: idx for idx, n in enumerate(memory.field.nodes.values())}
+
+    # Single-query latency
     recalls = []
     latencies = []
     ranks = []
-    node_ids = {n.id: idx for idx, n in enumerate(memory.field.nodes.values())}
-    for i, query in enumerate(queries):
+    for i, q_emb in enumerate(query_embs):
         t0 = time.perf_counter()
-        results = memory.field.query(embedder(query), top_k=top_k * 2)
+        results = memory.field.query(q_emb, top_k=top_k * 2)
         top_idx = [node_ids.get(nid, -1) for nid, _, _ in results[:top_k]]
         latencies.append((time.perf_counter() - t0) * 1000)
         recalls.append(1 if i in top_idx else 0)
@@ -103,11 +106,23 @@ def bench_rtmdk(records: List[Dict], embedder, top_k: int = 5, latent_dim: int =
                 rank = rank_pos
                 break
         ranks.append(1.0 / (rank + 1) if rank is not None else 0.0)
+
+    # Batch-query latency (true batch resonance)
+    batch_latencies = []
+    batch_size = 32
+    for offset in range(0, len(query_embs), batch_size):
+        batch = query_embs[offset:offset + batch_size]
+        t0 = time.perf_counter()
+        _ = memory.batch_query(batch, top_k=top_k * 2)
+        batch_latencies.append((time.perf_counter() - t0) * 1000)
+    per_query_batch_latency = [lat / batch_size for lat in batch_latencies for _ in range(batch_size)][:len(query_embs)]
+
     return {
         "recall_at_k": float(np.mean(recalls)),
         "mrr": float(np.mean(ranks)),
         "latency_p50_ms": float(np.median(latencies)),
         "latency_p99_ms": float(np.percentile(latencies, 99)),
+        "batch_latency_p50_ms": float(np.median(per_query_batch_latency)) if per_query_batch_latency else 0.0,
     }
 
 
@@ -136,6 +151,8 @@ def main():
         for k, v in rtmdk.items():
             print(f"  {k}: {v:.4f}")
         print(f"  vs RAG — recall delta={rtmdk['recall_at_k']-cosine['recall_at_k']:+.3f}, mrr delta={rtmdk['mrr']-cosine['mrr']:+.3f}")
+        if 'batch_latency_p50_ms' in rtmdk:
+            print(f"  batch per-query latency p50: {rtmdk['batch_latency_p50_ms']:.4f} ms")
 
 
 if __name__ == "__main__":

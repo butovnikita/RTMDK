@@ -1304,54 +1304,66 @@ async def memory_query(req: MemoryQueryRequest):
 
 @app.post("/v1/memory/batch_query")
 async def memory_batch_query(req: BatchQueryRequest):
-    """Batch query memory for multiple queries."""
+    """Batch query memory for multiple queries — uses true batch resonance."""
     if not memory:
         raise HTTPException(status_code=503, detail="Memory not initialized")
 
     _metric_queries.inc(len(req.queries))
     t0 = time.time()
     try:
-        responses = []
-        for q in req.queries:
-            # Query cache check per query
+        # Phase 1: per-query cache check and embedding gathering
+        uncached_indices: List[int] = []
+        uncached_queries: List[str] = []
+        embeddings_list: List[Any] = []
+        responses: List[Dict] = [{} for _ in req.queries]
+
+        for i, q in enumerate(req.queries):
             if query_cache is not None:
                 cached = query_cache.get(q)
                 if cached is not None:
-                    responses.append(
-                        {"query": q, "results": cached.get("results", []), "cached": True})
+                    responses[i] = {
+                        "query": q, "results": cached.get("results", []), "cached": True}
                     continue
+            uncached_indices.append(i)
+            uncached_queries.append(q)
+            emb = await _get_embedding_cached(q)
+            embeddings_list.append(emb)
 
-            embedding = await _get_embedding_cached(q)
-            assert memory.field is not None
-            results = await run_sync(memory.field.query, embedding, top_k=req.top_k)
-            formatted = []
-            for nid, score, node in results:
-                if score < req.threshold:
-                    continue
-                formatted.append(
-                    {
-                        "id": nid,
-                        "content": (
-                            node.content.get("content", node.content)
-                            if isinstance(node.content, dict)
-                            else str(node.content)
-                        ),
-                        "score": round(float(score), 4),
-                    }
-                )
-            resp = {"query": q, "results": formatted}
-            if query_cache is not None:
-                query_cache.put(
-                    q, {"query": q, "results": formatted, "total": len(formatted)})
-            responses.append(resp)
+        # Phase 2: batch resonance for uncached queries
+        if embeddings_list:
+            batch_results = await run_sync(
+                memory.batch_query,
+                embeddings_list,
+                top_k=req.top_k)
+            for offset, i in enumerate(uncached_indices):
+                q = req.queries[i]
+                results = batch_results[offset]
+                formatted = []
+                for nid, score, node in results:
+                    if score < req.threshold:
+                        continue
+                    formatted.append(
+                        {
+                            "id": nid,
+                            "content": (
+                                node.content.get("content", node.content)
+                                if isinstance(node.content, dict)
+                                else str(node.content)
+                            ),
+                            "score": round(float(score), 4),
+                        }
+                    )
+                resp = {"query": q, "results": formatted}
+                if query_cache is not None:
+                    query_cache.put(
+                        q, {"query": q, "results": formatted, "total": len(formatted)})
+                responses[i] = resp
+
         _metric_query_dur.observe(time.time() - t0)
         return {
-            "queries": len(
-                req.queries),
+            "queries": len(req.queries),
             "results": responses,
-            "latency_ms": round(
-                (time.time() - t0) * 1000,
-                2)}
+            "latency_ms": round((time.time() - t0) * 1000, 2)}
     except Exception as exc:
         _metric_query_dur.observe(time.time() - t0)
         logger.warning("Batch memory query failed: %s", exc)

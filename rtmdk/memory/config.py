@@ -188,6 +188,7 @@ _FIELD_GROUPS: Dict[str, str] = {
     "l2_regularization": "RetrievalConfig",
     "latent_dim": "CoreConfig",
     "learn_projection": "CoreConfig",
+    "projection_mode": "CoreConfig",
     "learnable_bandwidth": "LearningConfig",
     "learnable_decay": "LearningConfig",
     "learnable_phase_coupling": "LearningConfig",
@@ -373,6 +374,7 @@ class CoreConfig:
     projection_lr: float = 0.001
     projection_update_freq: int = 300  # OPTIMIZED: >= latent_dim for IncPCA first fit
     pca_n_components: Optional[int] = None
+    projection_mode: str = "random"  # "random" | "identity" | "pca"
     bm25_fallback: bool = True  # OPTIMIZED: text search as safety net
     bm25_k1: float = 1.5
     bm25_b: float = 0.75
@@ -819,6 +821,7 @@ class RTMDKConfig:
             ("RTMDK_LEARN_PROJECTION", "learn_projection", lambda x: x.lower() == "true"),
             ("RTMDK_PROJECTION_LR", "projection_lr", float),
             ("RTMDK_PROJECTION_UPDATE_FREQ", "projection_update_freq", int),
+    ("RTMDK_PROJECTION_MODE", "projection_mode", str),
             ("RTMDK_ATTENTION_BIAS", "attention_bias", lambda x: x.lower() == "true"),
             ("RTMDK_ENABLE_ASYNC", "enable_async", lambda x: x.lower() == "true"),
             ("RTMDK_SOFT_GATES", "soft_gates", lambda x: x.lower() == "true"),

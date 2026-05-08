@@ -33,7 +33,8 @@ def _local() -> RTMDKConfig:
     return RTMDKConfig(
         latent_dim=256, top_k=5,
         decay_rate=0.999, use_hnsw=True, bm25_fallback=True,
-        learn_projection=False, attention_bias=True,
+        learn_projection=False, projection_mode="identity",
+        hybrid_alpha=0.7, attention_bias=True,
         enable_async=False, max_nodes=10000,
         context_format=ContextFormat.ATTENTION,
         enable_engrams=True, engram_min_nodes=2, engram_max_nodes=15,
@@ -49,7 +50,8 @@ def _production() -> RTMDKConfig:
     return RTMDKConfig(
         latent_dim=256, top_k=5, min_response=0.001,
         decay_rate=0.999, use_hnsw=True, bm25_fallback=True,
-        learn_projection=False, attention_bias=True,
+        learn_projection=False, projection_mode="identity",
+        hybrid_alpha=0.7, attention_bias=True,
         enable_async=True, max_nodes=100000,
         hnsw_m=32, hnsw_ef_construction=400,
         version_control=True,
@@ -104,7 +106,9 @@ def _enterprise() -> RTMDKConfig:
     return RTMDKConfig(
         latent_dim=256, top_k=5,
         decay_rate=0.999, use_hnsw=True, bm25_fallback=True,
-        learn_projection=False, attention_bias=True,
+        learn_projection=False, projection_mode="identity",
+        hybrid_alpha=0.7, attention_bias=True,
+        meta_adaptive=True,
         enable_async=True, max_nodes=500000,
         hnsw_m=64, hnsw_ef_construction=800,
         sparse_routing=True, num_shards=32,
@@ -123,7 +127,9 @@ def _agent() -> RTMDKConfig:
     return RTMDKConfig(
         latent_dim=256, top_k=5,
         decay_rate=0.998, use_hnsw=True, bm25_fallback=True,
-        learn_projection=False, attention_bias=True,
+        learn_projection=False, projection_mode="identity",
+        hybrid_alpha=0.7, attention_bias=True,
+        meta_adaptive=True,
         enable_async=True, max_nodes=50000,
         enable_engrams=True, engram_min_nodes=2, engram_max_nodes=20,
         offline_dreaming=True, dreaming_freq=30,
@@ -176,7 +182,9 @@ def _streaming() -> RTMDKConfig:
     return RTMDKConfig(
         latent_dim=256, top_k=5,
         decay_rate=0.999, use_hnsw=True, bm25_fallback=True,
-        learn_projection=False, attention_bias=False,
+        learn_projection=False, projection_mode="identity",
+        hybrid_alpha=0.7, attention_bias=False,
+        meta_adaptive=True,
         enable_async=True, max_nodes=50000,
         hnsw_m=32, hnsw_ef_construction=200,
         enable_engrams=True, engram_min_nodes=2, engram_max_nodes=15,
@@ -204,6 +212,26 @@ def _sillytavern() -> RTMDKConfig:
     return cfg
 
 
+def _benchmark() -> RTMDKConfig:
+    """Benchmark preset — maximizes recall@K on standard QA datasets."""
+    return RTMDKConfig(
+        embedding_dim=384, latent_dim=384, top_k=5, min_response=0.001,
+        decay_rate=0.999, use_hnsw=True, bm25_fallback=True,
+        learn_projection=False, projection_mode="identity",
+        hybrid_alpha=0.7, attention_bias=True,
+        meta_adaptive=True,
+        enable_async=True, max_nodes=100000,
+        hnsw_m=32, hnsw_ef_construction=400,
+        resonance_kernel="cosine",
+        enable_engrams=False,
+        offline_dreaming=False,
+        causal_traversal=False,
+        ssm_dynamics=False,
+        trust_consensus=False,
+        neuro_symbolic_prover=False,
+    )
+
+
 # Bind presets as class methods for backward compatibility
 RTMDKConfig.local = staticmethod(_local)  # type: ignore
 RTMDKConfig.production = staticmethod(_production)  # type: ignore
@@ -214,3 +242,4 @@ RTMDKConfig.legal = staticmethod(_legal)  # type: ignore
 RTMDKConfig.medical = staticmethod(_medical)  # type: ignore
 RTMDKConfig.streaming = staticmethod(_streaming)  # type: ignore
 RTMDKConfig.sillytavern = staticmethod(_sillytavern)  # type: ignore
+RTMDKConfig.benchmark = staticmethod(_benchmark)  # type: ignore

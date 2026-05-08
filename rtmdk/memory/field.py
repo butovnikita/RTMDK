@@ -22,7 +22,7 @@ from rtmdk.support.circuit_breaker import CircuitBreaker
 from rtmdk.support.meta_controller import MetaController
 from rtmdk.support.learnable import LearnableKernel, DifferentiableConsolidation
 from rtmdk.support.torch_backend import TorchBackend
-from rtmdk.support.projection import IncPCAProjection
+from rtmdk.support.projection import IncPCAProjection, IdentityProjection
 from rtmdk.support.production import ShadowModeEvaluator, RAGASPlusEvaluator, AutoRollbackManager
 from rtmdk.support.agents import AgentPlanner, HypothesisVerifier, ToolRouter
 from rtmdk.support.healer import TopologyHealer
@@ -648,6 +648,17 @@ class RTMDKField:
         self.nodes: Dict[str, MemoryNode] = {}
         self.node_index: List[str] = []
 
+        # Normalize projection_mode and latent_dim for identity
+        if config.projection_mode == "identity":
+            if config.latent_dim != config.embedding_dim:
+                logger.warning(
+                    f"projection_mode='identity' but latent_dim ({config.latent_dim}) != "
+                    f"embedding_dim ({config.embedding_dim}). Aligning latent_dim to embedding_dim.")
+                config.latent_dim = config.embedding_dim
+                config.pca_n_components = config.latent_dim
+        elif config.projection_mode == "pca":
+            config.learn_projection = True
+
         # Track 2: Tiered Storage (Hot / Warm / Cold)
         self._tiered_store: Optional[Any] = None
         if config.tiered_storage_enabled:
@@ -714,7 +725,11 @@ class RTMDKField:
                 ball_radius=config.ball_radius,
             )
 
-        if config.learn_projection:
+        if config.projection_mode == "identity":
+            self.projection_learner = IdentityProjection(
+                config.embedding_dim, config.latent_dim)
+            self._raw_projection = None
+        elif config.learn_projection:
             self.projection_learner = IncPCAProjection(
                 config.embedding_dim,
                 config.pca_n_components or config.latent_dim,
@@ -723,6 +738,7 @@ class RTMDKField:
                 config.l2_regularization)
             if projection_matrix is not None:
                 self.projection_learner.set_matrix(projection_matrix)
+            self._raw_projection = None
         else:
             self.projection_learner = None
             self._raw_projection = (
@@ -1019,6 +1035,8 @@ class RTMDKField:
         if config.triton_backend and GPUBackend is not None:
             self.triton_backend = GPUBackend(
                 min_nodes_for_gpu=config.min_nodes_for_gpu)
+            if self.triton_backend.available:
+                self._batch_resonance_fn = self._batch_resonance_triton
 
         # Phase 16 Track 1: SymbolicOverlay
         self.symbolic_overlay: Optional["SymbolicOverlay"] = None
@@ -1433,6 +1451,36 @@ class RTMDKField:
         pc = self.meta_kernel.get_phase_coupling(
         ) if self.meta_kernel else self.cfg.phase_coupling
         return self.gpu_backend.batch_resonance(
+            query_latents, query_phases, node_positions, node_phases,
+            node_amplitudes, node_saliences,
+            bw, pc
+        )
+
+    def _batch_resonance_triton(
+            self,
+            query_latents: NDArray,
+            query_phases: NDArray,
+            node_ids: List[str]) -> NDArray:
+        """Triton GPU batch resonance — highest throughput for large batches."""
+        if not node_ids:
+            return np.empty((len(query_latents), 0), dtype=np.float32)
+        # Fallback to torch for tiny batches to avoid kernel launch overhead
+        if len(query_latents) < 32 and self.gpu_backend is not None and self.gpu_backend.available:
+            return self._batch_resonance_torch(query_latents, query_phases, node_ids)
+
+        node_positions = np.array(
+            [self.nodes[nid].latent_pos for nid in node_ids])
+        node_phases = np.array([self.nodes[nid].phase for nid in node_ids])
+        node_amplitudes = np.array(
+            [self.nodes[nid].amplitude for nid in node_ids])
+        node_saliences = np.array(
+            [self.nodes[nid].salience for nid in node_ids])
+
+        bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self.cfg.bandwidth
+        pc = self.meta_kernel.get_phase_coupling(
+        ) if self.meta_kernel else self.cfg.phase_coupling
+        assert self.triton_backend is not None
+        return self.triton_backend.batch_resonance(
             query_latents, query_phases, node_positions, node_phases,
             node_amplitudes, node_saliences,
             bw, pc
@@ -2037,6 +2085,86 @@ class RTMDKField:
             self.query_cache.put_raw(cache_key, final)
 
         return final
+
+    def batch_query(
+            self,
+            embeddings: List[NDArray],
+            phases: Optional[List[float]] = None,
+            top_k: Optional[int] = None,
+            modality: str = "text",
+            session_id: Optional[str] = None) -> List[List[Tuple[str,
+                                                                  float,
+                                                                  MemoryNode]]]:
+        """Batch query with vectorized resonance for HNSW candidate sets."""
+        top_k = top_k or self.cfg.top_k
+        n = len(embeddings)
+        if phases is None:
+            phases = [0.0] * n
+
+        query_latents = np.array(
+            [self._project(e) for e in embeddings], dtype=np.float32)
+        phases_arr = np.array(phases, dtype=np.float32)
+
+        # HNSW fast path: collect union candidates, single batch resonance call
+        if self.cfg.use_hnsw and self.hnsw_index and len(
+                self.hnsw_index.positions) > 50:
+            n_pos = len(self.hnsw_index.positions)
+            hnsw_k = min(n_pos, max(top_k * 20, min(n_pos // 20, 2000)))
+            per_query_candidates: List[List[str]] = []
+            all_candidate_ids: List[str] = []
+            candidate_set: Set[str] = set()
+            for ql in query_latents:
+                cands = self.hnsw_index.search(ql, hnsw_k)
+                cands = [nid for nid in cands if nid in self.nodes]
+                per_query_candidates.append(cands)
+                for nid in cands:
+                    if nid not in candidate_set:
+                        candidate_set.add(nid)
+                        all_candidate_ids.append(nid)
+            if all_candidate_ids:
+                all_scores = self._batch_resonance(
+                    query_latents, phases_arr, all_candidate_ids)
+                cand_index = {nid: idx for idx, nid in enumerate(all_candidate_ids)}
+                results: List[List[Tuple[str, float, MemoryNode]]] = []
+                for i, cands in enumerate(per_query_candidates):
+                    row = []
+                    for nid in cands:
+                        j = cand_index[nid]
+                        score = float(all_scores[i, j])
+                        node = self.nodes[nid]
+                        if session_id and node.content.get("session") == session_id:
+                            score *= 1.3
+                        if score >= self.cfg.min_response:
+                            row.append((nid, score, node))
+                            node.last_resonated = time.time()
+                    row.sort(key=lambda x: x[1], reverse=True)
+                    results.append(row[:top_k])
+                return results
+            return [[] for _ in range(n)]
+
+        # Fallback: vectorized or per-query loop
+        return [
+            self.query(
+                e,
+                p,
+                top_k=top_k,
+                modality=modality,
+                session_id=session_id) for e,
+            p in zip(
+                embeddings,
+                phases)]
+
+    def fit_projection(self, corpus_embeddings: NDArray) -> None:
+        """Batch-fit projection learner on a corpus of embeddings."""
+        if self.projection_learner is None:
+            return
+        if hasattr(self.projection_learner, "fit"):
+            self.projection_learner.fit(corpus_embeddings)
+            logger.info(
+                f"Projection fitted on {corpus_embeddings.shape[0]} samples")
+        else:
+            logger.warning(
+                "projection_learner does not support fit() — skipping corpus fit")
 
     def sot_bootstrap(
             self,
@@ -4728,7 +4856,7 @@ class RTMDKField:
             "stats": self.stats}
         if self.projection_learner:
             data["projection_state"] = self.projection_learner.get_state()
-        else:
+        elif self._raw_projection is not None:
             data["projection"] = self._raw_projection.tolist()
         if self.learnable_kernel:
             data["learnable_kernel"] = self.learnable_kernel.get_state()
@@ -4808,10 +4936,10 @@ class RTMDKField:
         from rtmdk.memory.core import RTMDKMemory
         memory = RTMDKMemory(config=config, embedder=embedder)
 
-        if config.learn_projection and "projection_state" in data:
+        if memory.field.projection_learner is not None and "projection_state" in data:
             memory.field.projection_learner.load_state(
                 data["projection_state"])
-        elif "projection" in data:
+        elif "projection" in data and memory.field._raw_projection is not None:
             memory.field._raw_projection = np.array(
                 data["projection"], dtype=np.float32)
         if config.differentiable and "learnable_kernel" in data:

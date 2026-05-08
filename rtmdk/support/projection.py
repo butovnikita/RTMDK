@@ -10,6 +10,39 @@ from numpy.typing import NDArray
 logger = logging.getLogger(__name__)
 
 
+class IdentityProjection:
+    """No-op projection that optionally truncates or passes through unchanged."""
+
+    def __init__(self, input_dim: int, latent_dim: int):
+        self.input_dim = input_dim
+        self.latent_dim = latent_dim
+
+    def project(self, embedding: NDArray) -> NDArray:
+        if embedding.shape[0] == self.latent_dim:
+            return embedding.astype(np.float32)
+        if embedding.shape[0] > self.latent_dim:
+            return embedding[:self.latent_dim].astype(np.float32)
+        # Pad with zeros if smaller (should not happen in normal use)
+        padded = np.zeros(self.latent_dim, dtype=np.float32)
+        padded[:embedding.shape[0]] = embedding
+        return padded
+
+    def update(self, embedding: NDArray) -> NDArray:
+        return self.project(embedding)
+
+    def get_state(self) -> Dict:
+        return {"mode": "identity", "input_dim": self.input_dim, "latent_dim": self.latent_dim}
+
+    def load_state(self, state: Dict):
+        pass
+
+    def set_matrix(self, matrix: NDArray):
+        pass
+
+    def fit(self, corpus: NDArray) -> None:
+        pass
+
+
 class IncPCAProjection:
     def __init__(
             self,
@@ -121,6 +154,26 @@ class IncPCAProjection:
         # projection
         self._ipca_fitted = False
         self.use_sklearn = False
+
+    def fit(self, corpus: NDArray) -> None:
+        """Batch-fit on a corpus of embeddings."""
+        if corpus.ndim == 1:
+            corpus = corpus.reshape(1, -1)
+        if self.use_sklearn:
+            try:
+                self.ipca.partial_fit(corpus)
+                if self.ipca.n_samples_seen_ >= self.latent_dim:
+                    self._ipca_fitted = True
+                    self.projection = self.ipca.components_.T.astype(np.float32)
+                    self.mean = self.ipca.mean_.astype(np.float32)
+                self.n_samples += corpus.shape[0]
+            except Exception as e:
+                self._ipca_error = str(e)
+        else:
+            # Manual mean update
+            alpha = self.lr / (1 + self.n_samples * self.lr * 0.01)
+            self.mean += alpha * (corpus.mean(axis=0) - self.mean)
+            self.n_samples += corpus.shape[0]
 
     def load_state(self, state: Dict):
         self.projection = np.array(state["projection"], dtype=np.float32)

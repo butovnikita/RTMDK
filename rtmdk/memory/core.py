@@ -1053,6 +1053,30 @@ class RTMDKMemory(BaseModel):
             return latent[:emb_dim] if len(latent) > emb_dim else latent
         return None
 
+    def batch_query(
+            self,
+            embeddings: List[np.ndarray],
+            top_k: Optional[int] = None,
+            session_id: Optional[str] = None) -> List[List[Tuple[str, float, Any]]]:
+        """Batch query memory for multiple embeddings."""
+        if self.field is None:
+            raise RuntimeError("Field not initialized")
+        phases = [
+            self._get_phase(
+                session_id,
+                emb) for emb in embeddings] if session_id else [
+            self._get_phase() for _ in embeddings]
+        return self.field.batch_query(
+            embeddings,
+            phases=phases,
+            top_k=top_k,
+            session_id=session_id)
+
+    def fit_projection(self, corpus_embeddings: np.ndarray) -> None:
+        """Fit projection learner on corpus embeddings."""
+        if self.field is not None:
+            self.field.fit_projection(corpus_embeddings)
+
     def _detect_tags(self, text: str) -> List[str]:
         """Auto-detect memory tags from text content."""
         tags = []
