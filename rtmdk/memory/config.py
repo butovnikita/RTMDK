@@ -90,6 +90,15 @@ _FIELD_GROUPS: Dict[str, str] = {
     "adaptive_top_k": "RetrievalConfig",
     "reranker_enabled": "RetrievalConfig",
     "reranker_model": "RetrievalConfig",
+    "contextual_retrieval": "RetrievalConfig",
+    "contextual_backend": "RetrievalConfig",
+    "bgem3_enabled": "RetrievalConfig",
+    "bgem3_model_name": "RetrievalConfig",
+    "matryoshka_mode": "RetrievalConfig",
+    "matryoshka_hnsw_dim": "RetrievalConfig",
+    "cascade_enabled": "RetrievalConfig",
+    "cascade_causal_threshold": "RetrievalConfig",
+    "cascade_factual_threshold": "RetrievalConfig",
     "bm25_b": "CoreConfig",
     "bm25_fallback": "CoreConfig",
     "bm25_k1": "CoreConfig",
@@ -415,6 +424,15 @@ class RetrievalConfig:
     adaptive_top_k: bool = False
     reranker_enabled: bool = False
     reranker_model: str = "BAAI/bge-reranker-v2-m3"
+    contextual_retrieval: bool = False
+    contextual_backend: str = "heuristic"  # "heuristic" | "sot" | "llm"
+    bgem3_enabled: bool = False
+    bgem3_model_name: str = "BAAI/bge-m3"
+    matryoshka_mode: bool = False
+    matryoshka_hnsw_dim: int = 256
+    cascade_enabled: bool = False
+    cascade_causal_threshold: float = 0.3
+    cascade_factual_threshold: float = 0.3
 
 
 @dataclass

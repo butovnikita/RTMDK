@@ -231,6 +231,13 @@ def _benchmark() -> RTMDKConfig:
         ssm_dynamics=False,
         trust_consensus=False,
         neuro_symbolic_prover=False,
+        # P1 Differentiation features
+        contextual_retrieval=True,
+        contextual_backend="heuristic",
+        bgem3_enabled=False,  # Toggle to True when BGE-M3 embedder is used
+        cascade_enabled=True,
+        cascade_causal_threshold=0.3,
+        cascade_factual_threshold=0.3,
     )
 
 

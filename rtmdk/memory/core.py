@@ -674,6 +674,49 @@ class RTMDKMemory(BaseModel):
                     "CrossEncoderReranker initialization failed, disabling",
                     exc_info=True)
 
+        # P1: Contextual Retrieval
+        self.header_generator = None
+        if getattr(self.config, "contextual_retrieval", False):
+            try:
+                from rtmdk.production.contextual_retrieval import ContextualHeaderGenerator, ContextualEmbedderWrapper
+                sot = getattr(self.field, "sot_tokenizer", None) if hasattr(self, "field") else None
+                self.header_generator = ContextualHeaderGenerator(
+                    backend=getattr(self.config, "contextual_backend", "heuristic"),
+                    sot_tokenizer=sot,
+                )
+                self.embedder = ContextualEmbedderWrapper(self.embedder, self.header_generator)
+                logger.info("Contextual retrieval enabled (%s)", self.header_generator.backend)
+            except Exception:
+                logger.warning("Contextual retrieval init failed, disabling", exc_info=True)
+
+        # P1: BGE-M3 Hybrid
+        self.bgem3_embedder = None
+        self.sparse_index = None
+        if getattr(self.config, "bgem3_enabled", False):
+            try:
+                from rtmdk.production.bgem3_embedder import BGEM3Embedder
+                from rtmdk.production.sparse_index import SparseIndex
+                self.bgem3_embedder = BGEM3Embedder(
+                    model_name=getattr(self.config, "bgem3_model_name", "BAAI/bge-m3"),
+                )
+                self.sparse_index = SparseIndex()
+                logger.info("BGE-M3 hybrid retrieval enabled")
+            except Exception:
+                logger.warning("BGE-M3 init failed, disabling", exc_info=True)
+
+        # P1: Adaptive Cascade Router
+        self.cascade_router = None
+        if getattr(self.config, "cascade_enabled", False):
+            try:
+                from rtmdk.production.cascade_router import AdaptiveCascadeRouter
+                self.cascade_router = AdaptiveCascadeRouter(
+                    causal_threshold=getattr(self.config, "cascade_causal_threshold", 0.3),
+                    factual_threshold=getattr(self.config, "cascade_factual_threshold", 0.3),
+                )
+                logger.info("Adaptive cascade router enabled")
+            except Exception:
+                logger.warning("Cascade router init failed, disabling", exc_info=True)
+
         # v8.2.1 production distributed features
         self._init_vector_storage()
         self._init_replication_manager()
@@ -716,7 +759,19 @@ class RTMDKMemory(BaseModel):
 
     def add_node(self, embedding: NDArray, content: Dict, **kwargs) -> str:
         """Add a node to the memory field. Delegates to RTMDKField.add_node."""
-        node_id = self.field.add_node(embedding, content, **kwargs)
+        # P1: Matryoshka-lite — truncate for HNSW, keep full for resonance
+        modal_emb = None
+        if getattr(self.config, "matryoshka_mode", False):
+            hnsw_dim = getattr(self.config, "matryoshka_hnsw_dim", self.config.latent_dim)
+            if embedding.shape[0] > hnsw_dim:
+                modal_emb = embedding
+                embedding = embedding[:hnsw_dim]
+        # P1: Sparse index insert
+        if getattr(self, "sparse_index", None) is not None:
+            sparse_vec = content.get("sparse_embedding")
+            if sparse_vec:
+                self.sparse_index.insert(kwargs.get("node_id") or f"n_{len(self.field.nodes)}_", sparse_vec)
+        node_id = self.field.add_node(embedding, content, modal_embedding=modal_emb, **kwargs)
         # v8.2.1 hooks
         self._on_node_added(node_id, embedding, content, kwargs)
         return node_id
@@ -754,6 +809,20 @@ class RTMDKMemory(BaseModel):
         skip_projection: bool = False,
     ) -> List[str]:
         """Batch add nodes. Delegates to RTMDKField.add_nodes_batch."""
+        # P1: Matryoshka-lite
+        modal_embs = None
+        if getattr(self.config, "matryoshka_mode", False):
+            hnsw_dim = getattr(self.config, "matryoshka_hnsw_dim", self.config.latent_dim)
+            if embeddings.shape[1] > hnsw_dim:
+                modal_embs = embeddings
+                embeddings = embeddings[:, :hnsw_dim]
+        # P1: Sparse index
+        if getattr(self, "sparse_index", None) is not None:
+            for i, content in enumerate(contents):
+                sparse_vec = content.get("sparse_embedding")
+                nid = node_ids[i] if node_ids else f"n_{i}_"
+                if sparse_vec:
+                    self.sparse_index.insert(nid, sparse_vec)
         result = self.field.add_nodes_batch(
             embeddings,
             contents,
@@ -761,7 +830,8 @@ class RTMDKMemory(BaseModel):
             node_ids,
             session_ids,
             modalities,
-            skip_projection)
+            skip_projection,
+            modal_embeddings=modal_embs)
         # v8.2.1 hooks
         vs = getattr(self, "vector_storage", None)
         rm = getattr(self, "replication_manager", None)
@@ -1064,8 +1134,9 @@ class RTMDKMemory(BaseModel):
             query: str,
             embedding: NDArray,
             top_k: Optional[int] = None,
-            session_id: Optional[str] = None) -> List[Tuple[str, float, Any]]:
-        """Retrieve memory nodes with full pipeline: engrams → resonance → causal → reranker.
+            session_id: Optional[str] = None,
+            sparse_vec: Optional[Dict[int, float]] = None) -> List[Tuple[str, float, Any]]:
+        """Retrieve memory nodes with full pipeline: cascade → resonance → sparse → engrams → causal → reranker.
 
         Returns:
             List of (node_id, score, node) tuples.
@@ -1073,9 +1144,31 @@ class RTMDKMemory(BaseModel):
         phase = self._get_phase(session_id, embedding)
         tk = top_k or self.field.cfg.top_k
 
+        # P1: Adaptive Cascade Router
+        if self.cascade_router is not None:
+            from rtmdk.production.cascade_router import QueryType
+            route = self.cascade_router.classify(query)
+            if route == QueryType.FACTUAL:
+                # Fast path: resonance only, skip heavy post-processing
+                return self.field.query(embedding, phase, top_k=tk, session_id=session_id)
+
         # Primary: resonance retrieval
         results = self.field.query(
             embedding, phase, top_k=tk, session_id=session_id)
+
+        # P1: Sparse index fallback (BGE-M3 learned sparse)
+        if len(results) < tk and self.sparse_index is not None and sparse_vec:
+            sparse_hits = self.sparse_index.search(sparse_vec, tk * 2)
+            if sparse_hits:
+                seen = {nid for nid, _, _ in results}
+                for nid, score in sparse_hits:
+                    if nid not in seen:
+                        node = self.field.nodes.get(nid)
+                        if node:
+                            results.append((nid, score * 0.5, node))  # weight 0.5 for sparse
+                            seen.add(nid)
+                results.sort(key=lambda x: x[1], reverse=True)
+                results = results[:tk]
 
         # Phase 18: Engram-based retrieval as fallback (if resonance under-delivers)
         if len(results) < tk and self.engram_manager is not None and self.engram_manager.index.size > 0:
@@ -1090,7 +1183,6 @@ class RTMDKMemory(BaseModel):
             if engram_results:
                 engram_nodes = self.engram_manager.expand_engrams(
                     engram_results, self.field, top_k=tk)
-                # Merge without duplicates, keeping highest score
                 seen = {nid for nid, _, _ in results}
                 for nid, score, node in engram_nodes:
                     if nid not in seen:

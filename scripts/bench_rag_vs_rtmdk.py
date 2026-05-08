@@ -82,21 +82,39 @@ def bench_rtmdk(records: List[Dict], embedder, top_k: int = 5, latent_dim: int =
         learn_projection=False,
     )
     memory = RTMDKMemory(config=cfg, embedder=embedder)
-    for rec in records:
-        emb = embedder(rec["context"])
-        memory.add_node(embedding=emb, content={"text": rec["context"]})
+    # Use memory.embedder (may be wrapped with contextual retrieval)
+    mem_embedder = memory.embedder
+
+    # P1: BGE-M3 support
+    bgem3 = getattr(memory, "bgem3_embedder", None)
+    if bgem3 is not None:
+        print("  Using BGE-M3 embedder (dense + sparse)")
+        ctx_texts = [rec["context"] for rec in records]
+        ctx_bgems = bgem3.encode(ctx_texts)
+        for rec, bge in zip(records, ctx_bgems):
+            memory.add_node(
+                embedding=bge.dense,
+                content={"text": rec["context"], "sparse_embedding": bge.sparse})
+        query_bgems = bgem3.encode([rec["query"] for rec in records])
+        query_embs = [b.dense for b in query_bgems]
+        query_sparse = [b.sparse for b in query_bgems]
+    else:
+        for rec in records:
+            emb = mem_embedder(rec["context"])
+            memory.add_node(embedding=emb, content={"text": rec["context"]})
+        query_embs = [mem_embedder(rec["query"]) for rec in records]
+        query_sparse = [None for _ in records]
 
     queries = [r["query"] for r in records]
-    query_embs = [embedder(q) for q in queries]
     node_ids = {n.id: idx for idx, n in enumerate(memory.field.nodes.values())}
 
-    # Single-query latency (full pipeline: engrams + resonance + causal + hybrid)
+    # Single-query latency (full pipeline: cascade + engrams + resonance + causal + hybrid)
     recalls = []
     latencies = []
     ranks = []
-    for i, (query, q_emb) in enumerate(zip(queries, query_embs)):
+    for i, (query, q_emb, q_sparse) in enumerate(zip(queries, query_embs, query_sparse)):
         t0 = time.perf_counter()
-        results = memory.retrieve_nodes(query, q_emb, top_k=top_k * 2)
+        results = memory.retrieve_nodes(query, q_emb, top_k=top_k * 2, sparse_vec=q_sparse)
         top_idx = [node_ids.get(nid, -1) for nid, _, _ in results[:top_k]]
         latencies.append((time.perf_counter() - t0) * 1000)
         recalls.append(1 if i in top_idx else 0)

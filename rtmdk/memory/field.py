@@ -2370,7 +2370,8 @@ class RTMDKField:
             node_id: Optional[str] = None,
             session_id: Optional[str] = None,
             modality: str = "text",
-            skip_projection: bool = False) -> str:
+            skip_projection: bool = False,
+            modal_embedding: Optional[NDArray] = None) -> str:
         # Rate limiting: configurable via RTMDK_ADD_RATE_LIMIT env var (default
         # 100/sec)
         _rate_limit = int(os.environ.get("RTMDK_ADD_RATE_LIMIT", "100"))
@@ -2457,7 +2458,8 @@ class RTMDKField:
             lineage=[],
             modality=modality,
             latent_scale=latent_scale,
-            latent_zero_point=latent_zero_point)
+            latent_zero_point=latent_zero_point,
+            modal_embedding=modal_embedding.astype(np.float32) if modal_embedding is not None else None)
 
         # P2.2: Initialize uncertainty covariance
         if self.kalman_filter is not None:
@@ -2563,6 +2565,7 @@ class RTMDKField:
         session_ids: Optional[List[str]] = None,
         modalities: Optional[List[str]] = None,
         skip_projection: bool = False,
+        modal_embeddings: Optional[NDArray] = None,
     ) -> List[str]:
         """Batch add nodes with vectorized projection, cache, and index updates.
 
@@ -2657,6 +2660,8 @@ class RTMDKField:
             )
             if self.cfg.cross_modal:
                 node.modal_embedding = embeddings[i].copy()
+            if modal_embeddings is not None:
+                node.modal_embedding = modal_embeddings[i].astype(np.float32)
             self.nodes[nid] = node
             if nid not in self.node_index:
                 self.node_index.append(nid)
