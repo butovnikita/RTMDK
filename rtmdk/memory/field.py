@@ -1397,10 +1397,24 @@ class RTMDKField:
             idx = rng.choice(len(nids), size=sample_size, replace=False)
             sample_queries = doc_embs[idx]
             sample_targets = idx
-            pc = self._estimate_optimal_pc_fn(
-                doc_embs, sample_queries, sample_targets, sample_size=sample_size)
-            self._adaptive_pc_value = float(pc)
-            logger.info("Adaptive phase coupling estimated: pc=%.2f", self._adaptive_pc_value)
+            # Estimate embedding quality: cosine recall@1 on pseudo-queries
+            sims = sample_queries @ doc_embs.T
+            np.fill_diagonal(sims, -1.0)  # exclude self
+            ranks = np.argmax(sims, axis=1)
+            hits = np.sum(ranks == sample_targets)
+            recall1 = hits / len(sample_targets)
+            # If embeddings are strong, phase coupling adds no value → disable
+            threshold = getattr(self.cfg, "adaptive_pc_disable_threshold", 0.93)
+            if recall1 >= threshold:
+                self._adaptive_pc_value = 0.0
+                logger.info(
+                    "Adaptive PC: embeddings strong (recall@1=%.2f ≥ %.2f) → pc=0.0",
+                    recall1, threshold)
+            else:
+                pc = self._estimate_optimal_pc_fn(
+                    doc_embs, sample_queries, sample_targets, sample_size=sample_size)
+                self._adaptive_pc_value = float(pc)
+                logger.info("Adaptive phase coupling estimated: pc=%.2f", self._adaptive_pc_value)
         except Exception as exc:
             logger.warning("Adaptive PC estimation failed: %s", exc)
         finally:
@@ -1872,10 +1886,38 @@ class RTMDKField:
             self.stats.setdefault("query_cache_misses", 0)
             self.stats["query_cache_misses"] += 1
 
+        # P0: BM25 first-stage pre-filtering — use BM25 to get top-K candidates,
+        # then score only those with resonance. 10-100x faster than full scan.
+        if (self.cfg.bm25_first_stage_k > 0 and
+                query_text and
+                self.bm25_index is not None and
+                len(self.nodes) > self.cfg.bm25_first_stage_k):
+            candidate_ids = [
+                nid for nid, _ in self.bm25_index.search(query_text, self.cfg.bm25_first_stage_k)
+                if nid in self.nodes
+            ]
+            if candidate_ids:
+                scores = self._batch_resonance(
+                    query_latent[np.newaxis, :],
+                    np.array([phase], dtype=np.float32),
+                    candidate_ids,
+                )[0]
+                results = []
+                for idx, nid in enumerate(candidate_ids):
+                    node = self.nodes[nid]
+                    resp = float(
+                        scores[idx]) * (1.3 if session_id and node.content.get("session") == session_id else 1.0)
+                    if resp >= self.cfg.min_response:
+                        results.append((nid, resp, node))
+                        node.last_resonated = time.time()
+                results.sort(key=lambda x: x[1], reverse=True)
+                self.stats["bm25_first_stage_hits"] = self.stats.get("bm25_first_stage_hits", 0) + 1
+            else:
+                results = []
         # Fix 1: HNSW auto-intercept for large N (>50 nodes).
         # For small datasets, full vectorized scan is more accurate and still
         # fast (SIMD).
-        if self.cfg.use_hnsw and self.hnsw_index and len(
+        elif self.cfg.use_hnsw and self.hnsw_index and len(
                 self.hnsw_index.positions) > 50:
             n_pos = len(self.hnsw_index.positions)
             hnsw_k = min(n_pos, max(top_k * 20, min(n_pos // 20, 2000)))
@@ -4228,8 +4270,12 @@ class RTMDKField:
         # Shard center updates: every 100 steps
         if self.cfg.sparse_routing and self._step_counter % 100 == 0 and len(
                 self.nodes) > self.cfg.num_shards * 2:
-            self._circuit_breakers["ShardUpdate"].call(
-                self._update_shard_centers)
+            if getattr(self.cfg, "bm25_topic_shards", False):
+                self._circuit_breakers["ShardUpdate"].call(
+                    self._update_shard_centers_bm25)
+            else:
+                self._circuit_breakers["ShardUpdate"].call(
+                    self._update_shard_centers)
             self.stats["avg_rl_reward"] = self.rl_feedback_loop.get_average_reward()
 
         # Event-driven processing: every 10 steps
@@ -4514,6 +4560,59 @@ class RTMDKField:
         self._node_shard_map.clear()
         for i, nid in enumerate(self.node_index):
             self._node_shard_map[nid] = int(labels[i])
+
+    def _update_shard_centers_bm25(self):
+        """Build topic-based shards from BM25 term vectors.
+
+        Clusters documents by their top BM25 terms instead of embeddings.
+        More robust when embeddings are weak or documents are short.
+        """
+        if self.bm25_index is None or len(self.nodes) < self.cfg.num_shards:
+            return
+        # Build doc-term matrix from BM25
+        from collections import Counter
+        term_doc = {}  # term -> list of doc indices
+        doc_terms = []  # list of term lists per doc
+        nids = list(self.node_index)
+        for i, nid in enumerate(nids):
+            node = self.nodes[nid]
+            text = node.content.get("text", "")
+            terms = [w for w in text.lower().split() if len(w) > 2]
+            doc_terms.append(terms)
+            for t in set(terms):
+                term_doc.setdefault(t, []).append(i)
+        # Assign each doc to its most discriminative term
+        doc_cluster = {}
+        for i, terms in enumerate(doc_terms):
+            if not terms:
+                continue
+            # Score terms by inverse doc frequency (simulated)
+            best_term = min(terms, key=lambda t: len(term_doc.get(t, [])))
+            doc_cluster[i] = best_term
+        # Group by term, merge small groups
+        groups = {}
+        for i, term in doc_cluster.items():
+            groups.setdefault(term, []).append(i)
+        # Merge until we have num_shards clusters
+        sorted_groups = sorted(groups.items(), key=lambda x: len(x[1]), reverse=True)
+        clusters = []
+        for term, members in sorted_groups:
+            clusters.append(members)
+        # Merge smallest clusters
+        while len(clusters) > self.cfg.num_shards:
+            clusters.sort(key=len)
+            clusters[1].extend(clusters[0])
+            clusters.pop(0)
+        # Assign shard IDs and compute centers as mean latent positions
+        self._node_shard_map.clear()
+        centers = []
+        for shard_id, members in enumerate(clusters):
+            for idx in members:
+                self._node_shard_map[nids[idx]] = shard_id
+            positions = np.array([self.nodes[nids[idx]].latent_pos for idx in members])
+            centers.append(positions.mean(axis=0))
+        self.shard_centers = np.stack(centers).astype(np.float32)
+        logger.info("BM25 topic shards: %d clusters from %d docs", len(clusters), len(nids))
 
     # ========================================================================
     # PHASE 12 TRACK 2: COGNITIVE CONTEXT COMPRESSION

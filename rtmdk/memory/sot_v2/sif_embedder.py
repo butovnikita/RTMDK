@@ -666,6 +666,95 @@ class SIFEmbedder:
         logger.info("SIFEmbedder: contrastive fine-tuning complete")
         return self
 
+    def contrastive_distill(
+        self,
+        sif_embs: np.ndarray,
+        teacher_embs: np.ndarray,
+        n_epochs: int = 20,
+        lr: float = 0.01,
+        n_negatives: int = 5,
+        margin: float = 0.2,
+    ) -> "SIFEmbedder":
+        """Local-preserving alignment via contrastive distillation.
+
+        Instead of global Procrustes (which destroys local structure), we
+        train a linear projection W that preserves nearest-neighbor
+        relationships from the teacher space.
+
+        Args:
+            sif_embs: SIF sentence embeddings (n, latent_dim).
+            teacher_embs: Teacher embeddings (n, latent_dim).
+            n_epochs: Training epochs.
+            lr: Learning rate.
+            n_negatives: Number of negatives per positive.
+            margin: Triplet loss margin.
+        """
+        n, d = sif_embs.shape
+        if n < 10:
+            logger.warning("contrastive_distill: too few samples (%d), skipping", n)
+            return self
+
+        # Normalize both spaces
+        sif_norm = sif_embs / (np.linalg.norm(sif_embs, axis=1, keepdims=True) + 1e-8)
+        teacher_norm = teacher_embs / (np.linalg.norm(teacher_embs, axis=1, keepdims=True) + 1e-8)
+
+        # Build teacher nearest-neighbor graph
+        teacher_sims = teacher_norm @ teacher_norm.T
+        np.fill_diagonal(teacher_sims, -1.0)
+        teacher_nn = np.argmax(teacher_sims, axis=1)
+
+        # Initialize W as identity
+        W = np.eye(d, dtype=np.float32)
+
+        logger.info("SIFEmbedder: contrastive distillation on %d samples...", n)
+        for epoch in range(n_epochs):
+            total_loss = 0.0
+            indices = np.random.permutation(n)
+            for i in indices:
+                x_i = sif_norm[i]
+                pos_idx = teacher_nn[i]
+                x_pos = sif_norm[pos_idx]
+
+                # Negative sampling: hard negatives in teacher space
+                neg_scores = teacher_sims[i]
+                neg_candidates = np.argsort(neg_scores)[-n_negatives:]
+                for neg_idx in neg_candidates:
+                    if neg_idx == i:
+                        continue
+                    x_neg = sif_norm[neg_idx]
+
+                    # Projected similarities
+                    sim_pos = float(x_i @ W @ x_pos)
+                    sim_neg = float(x_i @ W @ x_neg)
+
+                    loss = max(0.0, margin + sim_neg - sim_pos)
+                    if loss > 0:
+                        # Gradient: dL/dW = x_i^T (x_neg - x_pos)
+                        grad = np.outer(x_i, x_neg - x_pos)
+                        W -= lr * grad
+                        total_loss += loss
+
+            avg_loss = total_loss / max(n, 1)
+            if epoch % 5 == 0:
+                logger.info("SIFEmbedder: distill epoch %d, avg loss=%.4f", epoch, avg_loss)
+
+        # Orthonormalize W (prevent collapse)
+        u, s, vt = np.linalg.svd(W)
+        W = (u @ vt).astype(np.float32)
+
+        # Apply W to all word embeddings (linear projection preserves composition)
+        for tid in self.word_embeddings:
+            self.word_embeddings[tid] = (W @ self.word_embeddings[tid]).astype(np.float32)
+            self.word_embeddings[tid] /= np.linalg.norm(self.word_embeddings[tid]) + 1e-8
+
+        # Also apply to char ngram embeddings
+        for ng in self.char_ngram_embeddings:
+            self.char_ngram_embeddings[ng] = (W @ self.char_ngram_embeddings[ng]).astype(np.float32)
+            self.char_ngram_embeddings[ng] /= np.linalg.norm(self.char_ngram_embeddings[ng]) + 1e-8
+
+        logger.info("SIFEmbedder: contrastive distillation complete")
+        return self
+
     def get_state(self) -> dict:
         state = {
             "latent_dim": self.latent_dim,
@@ -763,3 +852,75 @@ class SIFEmbedder:
         }
         # Note: aligner must be loaded separately via ProcrustesAligner.load()
         return self
+
+    def save_npz(self, path: str):
+        """Save to compact NPZ binary format (~10x smaller than JSON)."""
+        # Word embeddings: stacked array + token_ids
+        if self.word_embeddings:
+            token_ids = np.array(sorted(self.word_embeddings.keys()), dtype=np.int32)
+            word_emb_matrix = np.stack([self.word_embeddings[t] for t in token_ids])
+        else:
+            token_ids = np.array([], dtype=np.int32)
+            word_emb_matrix = np.array([])
+
+        # Char ngram embeddings
+        if self.char_ngram_embeddings:
+            ngram_keys = sorted(self.char_ngram_embeddings.keys())
+            ngram_matrix = np.stack([self.char_ngram_embeddings[k] for k in ngram_keys])
+        else:
+            ngram_keys = []
+            ngram_matrix = np.array([])
+
+        # Word probs
+        prob_ids = np.array(sorted(self.word_probs.keys()), dtype=np.int32)
+        prob_values = np.array([self.word_probs[t] for t in prob_ids], dtype=np.float32)
+
+        np.savez_compressed(
+            path,
+            latent_dim=self.latent_dim,
+            a=self.a,
+            remove_pc=self.remove_pc,
+            use_char_fallback=self.use_char_fallback,
+            token_ids=token_ids,
+            word_emb_matrix=word_emb_matrix,
+            prob_ids=prob_ids,
+            prob_values=prob_values,
+            pc=self._pc if self._pc is not None else np.array([]),
+            ngram_keys=ngram_keys,
+            ngram_matrix=ngram_matrix,
+        )
+        logger.info("SIFEmbedder: saved NPZ to %s", path)
+
+    @classmethod
+    def load_npz(cls, path: str) -> "SIFEmbedder":
+        """Load from compact NPZ binary format."""
+        data = np.load(path, allow_pickle=True)
+        inst = cls(
+            latent_dim=int(data["latent_dim"]),
+            a=float(data["a"]),
+            remove_pc=bool(data["remove_pc"]),
+            use_char_fallback=bool(data.get("use_char_fallback", True)),
+        )
+        token_ids = data["token_ids"]
+        word_emb_matrix = data["word_emb_matrix"]
+        if len(token_ids) > 0 and len(word_emb_matrix) > 0:
+            inst.word_embeddings = {
+                int(tid): word_emb_matrix[i]
+                for i, tid in enumerate(token_ids)
+            }
+        prob_ids = data["prob_ids"]
+        prob_values = data["prob_values"]
+        if len(prob_ids) > 0:
+            inst.word_probs = {int(tid): float(v) for tid, v in zip(prob_ids, prob_values)}
+        pc = data["pc"]
+        if len(pc) > 0:
+            inst._pc = pc.astype(np.float32)
+        ngram_keys = data.get("ngram_keys", [])
+        ngram_matrix = data.get("ngram_matrix", np.array([]))
+        if len(ngram_keys) > 0 and len(ngram_matrix) > 0:
+            inst.char_ngram_embeddings = {
+                str(k): ngram_matrix[i]
+                for i, k in enumerate(ngram_keys)
+            }
+        logger.info("SIFEmbedder: loaded NPZ from %s", path)
+        return inst

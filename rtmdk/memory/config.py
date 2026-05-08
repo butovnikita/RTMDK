@@ -103,7 +103,11 @@ _FIELD_GROUPS: Dict[str, str] = {
     "cascade_factual_threshold": "RetrievalConfig",
     "bm25_b": "CoreConfig",
     "bm25_fallback": "CoreConfig",
+    "bm25_first_stage_k": "CoreConfig",
+    "bm25_topic_shards": "CoreConfig",
     "bm25_k1": "CoreConfig",
+    "query_expand_short": "CoreConfig",
+    "adaptive_pc_disable_threshold": "CoreConfig",
     "causal_adjustment_sets": "InferenceConfig",
     "causal_discovery_min_samples": "InferenceConfig",
     "causal_graph_integrity_check": "ProductionConfig",
@@ -394,7 +398,11 @@ class CoreConfig:
     bm25_fallback: bool = True  # OPTIMIZED: text search as safety net
     bm25_k1: float = 1.5
     bm25_b: float = 0.75
+    bm25_first_stage_k: int = 0  # 0 = disabled; >0 = BM25 pre-filters top-K candidates before resonance
+    bm25_topic_shards: bool = False  # Use BM25 term clusters for sparse routing instead of k-means
     hybrid_alpha: float = 1.0  # 1.0 = pure RTMDK, 0.0 = pure BM25, 0.7 = 70/30 blend
+    query_expand_short: bool = False  # Auto-expand queries with < 3 content words
+    adaptive_pc_disable_threshold: float = 0.93  # If embedding quality estimate > threshold, force pc=0
     quantization: str = "none"  # "none" | "fp16" | "int8"
 
 
@@ -701,11 +709,13 @@ class SOTConfig:
     sot_v2_window: int = 5  # Co-occurrence window size
     sot_v2_remove_pc: bool = True  # Remove first principal component
     sot_v2_hybrid_alpha: float = 0.5  # BM25+SIF fusion weight (1.0 = dense only)
-    # Procrustes teacher alignment (lightweight knowledge distillation)
+    sot_online_update_threshold: int = 10  # Trigger online_update every N new docs
+    # Teacher alignment options
     sot_v2_align_teacher: Optional[str] = None  # e.g. "sentence-transformers/all-MiniLM-L6-v2"
     sot_v2_align_center: bool = True  # Mean-center before alignment
     sot_v2_align_batch_size: int = 64
     sot_v2_aligner_path: Optional[str] = None  # Path to saved .npz aligner
+    sot_v2_align_mode: str = "procrustes"  # "procrustes" | "contrastive_distill"
 
 
 @dataclass(init=False, repr=False, eq=False)

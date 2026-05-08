@@ -264,3 +264,43 @@ class SOTv2Embedder:
         inst.load_state(state)
         logger.info("SOTv2Embedder: loaded from %s", path)
         return inst
+
+    def save_npz(self, path: str):
+        """Save to compact NPZ binary format (~10x smaller than JSON)."""
+        # Vocab: two parallel arrays
+        vocab_words = sorted(self._vocab.keys())
+        vocab_ids = np.array([self._vocab[w] for w in vocab_words], dtype=np.int32)
+
+        embedder_path = path.replace(".npz", "_embedder.npz")
+        self._embedder.save_npz(embedder_path)
+
+        np.savez_compressed(
+            path,
+            latent_dim=self.latent_dim,
+            window_size=self.window_size,
+            a=self.a,
+            remove_pc=self.remove_pc,
+            vocab_words=vocab_words,
+            vocab_ids=vocab_ids,
+            embedder_file=embedder_path,
+        )
+        logger.info("SOTv2Embedder: saved NPZ to %s", path)
+
+    @classmethod
+    def load_npz(cls, path: str) -> "SOTv2Embedder":
+        """Load from compact NPZ binary format."""
+        data = np.load(path, allow_pickle=True)
+        inst = cls(
+            latent_dim=int(data["latent_dim"]),
+            window_size=int(data["window_size"]),
+            a=float(data["a"]),
+            remove_pc=bool(data["remove_pc"]),
+        )
+        vocab_words = list(data["vocab_words"])
+        vocab_ids = data["vocab_ids"]
+        inst._vocab = {str(w): int(vid) for w, vid in zip(vocab_words, vocab_ids)}
+        embedder_file = str(data["embedder_file"])
+        inst._embedder = SIFEmbedder.load_npz(embedder_file)
+        inst._trained = True
+        logger.info("SOTv2Embedder: loaded NPZ from %s", path)
+        return inst
