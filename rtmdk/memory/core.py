@@ -1002,9 +1002,13 @@ class RTMDKMemory(BaseModel):
     def _get_phase(
             self,
             session_id: Optional[str] = None,
-            embedding: Optional[NDArray] = None) -> float:
+            embedding: Optional[NDArray] = None,
+            content: Optional[Dict] = None) -> float:
         if session_id and session_id in self.session_phases:
             return self.session_phases[session_id]
+        # Use semantic phase from field when content is available
+        if content is not None:
+            return self.field._get_phase(session_id, embedding, content=content)
         phase = (time.time() * 0.01) % (2 * np.pi)
         if session_id:
             self.session_phases[session_id] = phase
@@ -1196,7 +1200,8 @@ class RTMDKMemory(BaseModel):
         Returns:
             List of (node_id, score, node) tuples.
         """
-        phase = self._get_phase(session_id, embedding)
+        query_content = {"text": query} if query else None
+        phase = self._get_phase(session_id, embedding, content=query_content)
         tk = top_k or self.field.cfg.top_k
 
         # P1: Adaptive Cascade Router

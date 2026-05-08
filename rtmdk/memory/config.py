@@ -61,6 +61,8 @@ _GROUP_ATTRS: Dict[str, str] = {
 _FIELD_GROUPS: Dict[str, str] = {
     "adaptive_threshold": "CoreConfig",
     "adaptive_window": "CoreConfig",
+    "adaptive_bandwidth": "CoreConfig",
+    "adaptive_phase_coupling": "CoreConfig",
     "adjoint_enabled": "DynamicsConfig",
     "agent_orchestration": "InferenceConfig",
     "async_pipeline": "MemorySystemConfig",
@@ -358,6 +360,7 @@ class CoreConfig:
     conformal_min_calib: int = 50
     learned_consolidation: bool = False
     adaptive_bandwidth: bool = False
+    adaptive_phase_coupling: bool = False
     spectral_consolidation: bool = False
     spectral_max_clusters: int = 10
     spectral_sigma: float = 1.0

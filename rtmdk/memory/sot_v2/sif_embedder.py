@@ -46,12 +46,16 @@ class SIFEmbedder:
         min_count: int = 2,
         a: float = 1e-3,
         remove_pc: bool = True,
+        use_char_fallback: bool = True,
+        char_ngram_range: tuple = (3, 4),
     ):
         self.latent_dim = latent_dim
         self.window_size = window_size
         self.min_count = min_count
         self.a = a
         self.remove_pc = remove_pc
+        self.use_char_fallback = use_char_fallback
+        self.char_ngram_range = char_ngram_range
 
         self.word_embeddings: Dict[int, np.ndarray] = {}
         self.word_probs: Dict[int, float] = {}
@@ -60,6 +64,9 @@ class SIFEmbedder:
         self._pmi_matrix: Optional[np.ndarray] = None  # Valid-token PMI
         self._pmi_idx_map: Optional[Dict[int, int]] = None  # token_id -> pmi row
         self._pmi_valid_idx: Optional[List[int]] = None  # List of valid token IDs
+        self.char_ngram_embeddings: Dict[str, np.ndarray] = {}  # "#ea" -> vector
+        self._char_ngram_probs: Dict[str, float] = {}
+        self._id2word: Optional[Dict[int, str]] = None
 
     # ------------------------------------------------------------------ #
     # Training
@@ -69,6 +76,7 @@ class SIFEmbedder:
         self,
         tokenized_docs: List[List[int]],
         vocab_size: int,
+        id2word: Optional[Dict[int, str]] = None,
     ) -> "SIFEmbedder":
         """Fit word embeddings and sentence PCA on tokenized documents.
 
@@ -199,8 +207,97 @@ class SIFEmbedder:
                 self._pc = self._power_iteration(X, max_iter=10)
                 logger.info("SIFEmbedder: first principal component computed")
 
+        # 5. Fit character n-gram embeddings for OOV fallback
+        if id2word is not None:
+            self._id2word = id2word
+        if self.use_char_fallback and self._id2word is not None:
+            self._fit_char_ngrams(tokenized_docs, self._id2word)
+
         logger.info("SIFEmbedder: fit complete")
         return self
+
+    # ------------------------------------------------------------------ #
+    # Character n-gram fallback (FastText-style OOV handling)
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _char_ngrams(word: str, n: int) -> List[str]:
+        """Extract character n-grams with boundary markers."""
+        padded = f"#{word}#"
+        if len(padded) < n:
+            return [padded] if padded else []
+        return [padded[i:i + n] for i in range(len(padded) - n + 1)]
+
+    def _fit_char_ngrams(
+        self,
+        tokenized_docs: List[List[int]],
+        id2word: Dict[int, str],
+    ) -> None:
+        """Derive character n-gram embeddings from word embeddings.
+
+        For each character n-gram, its embedding is the mean of word
+        embeddings for all corpus words that contain it.  This requires
+        no external data and works with any alphabet.
+        """
+        logger.info("SIFEmbedder: fitting char n-gram fallback...")
+
+        # Collect word embeddings and char n-gram occurrences
+        ngram_to_vectors: Dict[str, List[np.ndarray]] = {}
+        ngram_counts: Dict[str, int] = {}
+
+        for doc in tokenized_docs:
+            for t in doc:
+                if t not in self.word_embeddings:
+                    continue
+                word = id2word.get(t, "")
+                if not word:
+                    continue
+                emb = self.word_embeddings[t]
+                for n in range(self.char_ngram_range[0], self.char_ngram_range[1] + 1):
+                    for cg in self._char_ngrams(word, n):
+                        ngram_to_vectors.setdefault(cg, []).append(emb)
+                        ngram_counts[cg] = ngram_counts.get(cg, 0) + 1
+
+        if not ngram_to_vectors:
+            logger.warning("SIFEmbedder: no char n-grams could be derived")
+            return
+
+        # Average and normalize
+        for cg, vecs in ngram_to_vectors.items():
+            avg = np.mean(vecs, axis=0)
+            norm = np.linalg.norm(avg) + 1e-8
+            self.char_ngram_embeddings[cg] = (avg / norm).astype(np.float32)
+
+        # Compute pseudo-probabilities for SIF weighting
+        total = sum(ngram_counts.values()) + 1e-8
+        self._char_ngram_probs = {cg: c / total for cg, c in ngram_counts.items()}
+
+        logger.info(
+            "SIFEmbedder: %d char n-grams derived from %d words",
+            len(self.char_ngram_embeddings),
+            sum(1 for t in id2word if t in self.word_embeddings),
+        )
+
+    def _get_char_fallback_embedding(self, word: str) -> Optional[np.ndarray]:
+        """Compose word embedding from character n-grams."""
+        if not self.char_ngram_embeddings or not word:
+            return None
+        vectors = []
+        weights = []
+        for n in range(self.char_ngram_range[0], self.char_ngram_range[1] + 1):
+            for cg in self._char_ngrams(word, n):
+                if cg in self.char_ngram_embeddings:
+                    vectors.append(self.char_ngram_embeddings[cg])
+                    weights.append(self._char_ngram_probs.get(cg, 1e-3))
+        if not vectors:
+            return None
+        # Weighted average (rare char n-grams get higher weight)
+        weights = np.array(weights, dtype=np.float32)
+        weights = self.a / (self.a + weights)
+        vecs = np.stack(vectors, axis=0) * weights[:, None]
+        emb = np.sum(vecs, axis=0) / (weights.sum() + 1e-8)
+        norm = np.linalg.norm(emb) + 1e-8
+        return (emb / norm).astype(np.float32)
 
     def estimate_optimal_a(self, tokenized_docs: List[List[int]]) -> float:
         """Estimate data-adaptive SIF smoothing parameter a.
@@ -257,18 +354,30 @@ class SIFEmbedder:
         return sorted_terms
 
     def _embed_sentence_raw(self, token_ids: List[int]) -> Optional[np.ndarray]:
-        """SIF-weighted average without PC removal."""
+        """SIF-weighted average without PC removal.
+
+        Uses character n-gram fallback for OOV tokens when enabled.
+        """
         if not token_ids:
             return None
         vecs = []
         weights = []
         for t in token_ids:
-            if t not in self.word_embeddings:
-                continue
-            p = self.word_probs.get(t, 1e-8)
-            weight = self.a / (self.a + p)
-            vecs.append(self.word_embeddings[t] * weight)
-            weights.append(weight)
+            if t in self.word_embeddings:
+                p = self.word_probs.get(t, 1e-8)
+                weight = self.a / (self.a + p)
+                vecs.append(self.word_embeddings[t] * weight)
+                weights.append(weight)
+            elif self.use_char_fallback and self._id2word is not None:
+                word = self._id2word.get(t, "")
+                if word:
+                    fallback = self._get_char_fallback_embedding(word)
+                    if fallback is not None:
+                        # Use a flat weight for fallback tokens (they don't have
+                        # corpus frequency, so we assume moderate rarity)
+                        weight = 0.5
+                        vecs.append(fallback * weight)
+                        weights.append(weight)
         if not vecs:
             return None
         emb = np.sum(vecs, axis=0) / (sum(weights) + 1e-8)
@@ -562,9 +671,11 @@ class SIFEmbedder:
             "latent_dim": self.latent_dim,
             "a": self.a,
             "remove_pc": self.remove_pc,
+            "use_char_fallback": self.use_char_fallback,
             "word_embeddings": {k: v.tolist() for k, v in self.word_embeddings.items()},
             "word_probs": self.word_probs,
             "pc": self._pc.tolist() if self._pc is not None else None,
+            "char_ngram_embeddings": {k: v.tolist() for k, v in self.char_ngram_embeddings.items()},
         }
         if self._aligner is not None:
             state["aligner_diagnostics"] = self._aligner.diagnostics()
@@ -638,6 +749,7 @@ class SIFEmbedder:
         self.latent_dim = state["latent_dim"]
         self.a = state["a"]
         self.remove_pc = state["remove_pc"]
+        self.use_char_fallback = state.get("use_char_fallback", True)
         self.word_embeddings = {
             int(k): np.array(v, dtype=np.float32)
             for k, v in state["word_embeddings"].items()
@@ -645,5 +757,9 @@ class SIFEmbedder:
         self.word_probs = {int(k): v for k, v in state["word_probs"].items()}
         pc = state.get("pc")
         self._pc = np.array(pc, dtype=np.float32) if pc is not None else None
+        self.char_ngram_embeddings = {
+            k: np.array(v, dtype=np.float32)
+            for k, v in state.get("char_ngram_embeddings", {}).items()
+        }
         # Note: aligner must be loaded separately via ProcrustesAligner.load()
         return self

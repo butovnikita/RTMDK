@@ -87,6 +87,59 @@ from rtmdk.memory.utils import SecurityViolationError, cross_modal_resonance
 
 logger = logging.getLogger(__name__)
 
+# Stop-word lists for content-word extraction in semantic phase
+_STOP_WORDS_EN = frozenset({
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
+    "have", "has", "had", "do", "does", "did", "will", "would", "could",
+    "should", "may", "might", "must", "shall", "can", "need", "dare",
+    "ought", "used", "to", "of", "in", "for", "on", "with", "at", "by",
+    "from", "as", "into", "through", "during", "before", "after", "above",
+    "below", "between", "under", "again", "further", "then", "once", "here",
+    "there", "when", "where", "why", "how", "all", "each", "few", "more",
+    "most", "other", "some", "such", "no", "nor", "not", "only", "own",
+    "same", "so", "than", "too", "very", "just", "and", "but", "if", "or",
+    "because", "until", "while", "what", "which", "who", "whom", "this",
+    "that", "these", "those", "am", "it", "its", "itself", "they", "them",
+    "their", "theirs", "themselves", "you", "your", "yours", "yourself",
+    "yourselves", "he", "him", "his", "himself", "she", "her", "hers",
+    "herself", "we", "us", "our", "ours", "ourselves", "i", "me", "my",
+    "myself", "mine", "about", "against", "out", "up", "down", "off",
+    "over", "s", "t", "don", "doesn", "didn", "wasn", "weren", "haven",
+    "hasn", "hadn", "won", "wouldn", "shouldn", "isn", "aren", "ain",
+    "let", "ll", "re", "ve", "y", "ma", "d", "o", "an", "any", "both",
+    "each", "few", "more", "most", "other", "some", "such", "no", "nor",
+    "not", "only", "own", "same", "so", "than", "too", "very", "just",
+})
+
+_STOP_WORDS_RU = frozenset({
+    "и", "в", "во", "не", "что", "он", "на", "я", "с", "со", "как",
+    "а", "то", "все", "она", "так", "его", "но", "да", "ты", "к",
+    "у", "же", "вы", "за", "бы", "по", "только", "ее", "мне", "было",
+    "вот", "от", "меня", "еще", "нет", "о", "из", "ему", "теперь",
+    "когда", "даже", "ну", "вдруг", "ли", "если", "уже", "или", "ни",
+    "быть", "был", "него", "до", "вас", "нибудь", "опять", "уж",
+    "вам", "сказал", "ведь", "там", "потом", "себя", "ничего", "ей",
+    "может", "они", "тут", "где", "есть", "надо", "ней", "для", "мы",
+    "тебя", "их", "чем", "была", "сам", "чтоб", "без", "будто",
+    "человек", "чего", "раз", "тоже", "себе", "под", "жизнь", "будет",
+    "ж", "тогда", "кто", "этот", "говорил", "того", "потому", "этого",
+    "какой", "совсем", "ним", "здесь", "этом", "один", "почти", "мой",
+    "тем", "чтобы", "нее", "кажется", "сейчас", "были", "куда", "зачем",
+    "всех", "никогда", "можно", "при", "наконец", "два", "об", "другой",
+    "хоть", "после", "над", "больше", "тот", "через", "эти", "нас",
+    "про", "всего", "них", "какая", "много", "разве", "сказала", "три",
+    "эту", "моя", "впрочем", "хорошо", "свою", "этой", "перед", "иногда",
+    "лучше", "чуть", "том", "нельзя", "такой", "им", "более", "всегда",
+    "конечно", "всю", "между", "это", "который", "которая", "которые",
+    "которых", "которому", "которой", "которым", "которыми", "котором",
+    "котором", "какой", "какая", "какое", "какие", "какого", "какой",
+    "какому", "каким", "каком", "такой", "такая", "такое", "такие",
+    "такого", "такой", "такому", "таким", "таком", "весь", "вся",
+    "все", "всего", "всему", "всем", "всеми", "всех", "всею",
+})
+
+_STOP_WORDS = _STOP_WORDS_EN | _STOP_WORDS_RU
+
 # Phase 5: dataclass nodes extracted to rtmdk.nodes
 
 # Phase 15: New modules
@@ -701,6 +754,15 @@ class RTMDKField:
             self.adaptive_bw = AdaptiveBandwidthOptimizer(
                 latent_dim=config.latent_dim)
 
+        # P1.4: Adaptive phase coupling
+        self._adaptive_pc_value: Optional[float] = None
+        self._adaptive_pc_estimated: bool = False
+        if getattr(config, "adaptive_phase_coupling", False):
+            from rtmdk.memory.adaptive_pc import estimate_optimal_pc
+            self._estimate_optimal_pc_fn = estimate_optimal_pc
+        else:
+            self._estimate_optimal_pc_fn = None
+
         # P2.2: Kalman filter for position uncertainty
         self.kalman_filter: Optional[KalmanFilter] = None
         if config.enable_kalman_filter:
@@ -1240,10 +1302,14 @@ class RTMDKField:
         neighbourhoods, so phase coupling (cos Δφ) naturally boosts
         intra-cluster retrieval.  The phase is deterministic for identical
         keys, with a small spread to avoid exact collisions.
+
+        Uses content-bearing words (skipping stop words) for robust
+        cross-lingual phase extraction.
         """
         import hashlib
         import math
         import random
+        import re
 
         parts = []
         if session_id:
@@ -1254,8 +1320,24 @@ class RTMDKField:
                 parts.append(f"t:{topic}")
             text = content.get("text", "") or content.get("input_text", "")
             if text:
-                words = text.lower().split()[:3]
-                parts.append(f"w:{'_'.join(words)}")
+                # Extract alphanumeric tokens (supports Unicode)
+                tokens = re.findall(r"[\w']+", text.lower())
+                # Filter stop words, keep content words
+                content_words = [w for w in tokens if w not in _STOP_WORDS and len(w) > 2]
+                if content_words:
+                    # Deduplicate while preserving order, then take top-3
+                    seen = set()
+                    deduped = []
+                    for w in content_words:
+                        if w not in seen:
+                            seen.add(w)
+                            deduped.append(w)
+                    words = deduped[:3]
+                else:
+                    # Fallback to first 3 raw tokens
+                    words = tokens[:3]
+                if words:
+                    parts.append(f"w:{'_'.join(words)}")
         parts.append(f"m:{modality}")
 
         seed_text = "|".join(parts)
@@ -1286,6 +1368,44 @@ class RTMDKField:
             return self.adaptive_bw._best_bw
         return self.cfg.bandwidth
 
+    @property
+    def _effective_pc(self) -> float:
+        """Return adaptive phase coupling if estimated, else config value."""
+        if self._adaptive_pc_value is not None:
+            return self._adaptive_pc_value
+        if self.meta_kernel is not None:
+            return self.meta_kernel.get_phase_coupling()
+        return self.cfg.phase_coupling
+
+    def _ensure_adaptive_pc(self, query_latent: NDArray) -> None:
+        """Run once on first query to auto-tune phase coupling."""
+        if self._adaptive_pc_estimated or self._estimate_optimal_pc_fn is None:
+            return
+        if len(self.nodes) < 10:
+            return
+        try:
+            # Build normalized node position matrix
+            nids = list(self.node_index)
+            positions = np.array([self.nodes[nid].latent_pos for nid in nids])
+            norms = np.linalg.norm(positions, axis=1, keepdims=True)
+            norms = np.maximum(norms, 1e-8)
+            doc_embs = positions / norms
+            q_emb = query_latent / max(np.linalg.norm(query_latent), 1e-8)
+            # Quick self-test: sample some nodes as pseudo-queries
+            sample_size = min(50, len(nids))
+            rng = np.random.default_rng(42)
+            idx = rng.choice(len(nids), size=sample_size, replace=False)
+            sample_queries = doc_embs[idx]
+            sample_targets = idx
+            pc = self._estimate_optimal_pc_fn(
+                doc_embs, sample_queries, sample_targets, sample_size=sample_size)
+            self._adaptive_pc_value = float(pc)
+            logger.info("Adaptive phase coupling estimated: pc=%.2f", self._adaptive_pc_value)
+        except Exception as exc:
+            logger.warning("Adaptive PC estimation failed: %s", exc)
+        finally:
+            self._adaptive_pc_estimated = True
+
     def _resonance_response(
             self,
             query_latent: NDArray,
@@ -1309,8 +1429,7 @@ class RTMDKField:
         phase_diff = node.phase - query_phase
         bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self._effective_bandwidth
         bw = max(bw, 1e-8)
-        pc = self.meta_kernel.get_phase_coupling(
-        ) if self.meta_kernel else self.cfg.phase_coupling
+        pc = self._effective_pc
 
         if self.learnable_kernel:
             resp = self.learnable_kernel.resonance_response(
@@ -1374,8 +1493,7 @@ class RTMDKField:
         # (Fix 2: consistency with single-node path)
         bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self._effective_bandwidth
         bw = np.maximum(bw, 1e-8)
-        pc = self.meta_kernel.get_phase_coupling(
-        ) if self.meta_kernel else self.cfg.phase_coupling
+        pc = self._effective_pc
         # Broadcasting: per-node bw across queries
         if np.ndim(bw) == 0:
             spatial = np.exp(-dists ** 2 / (2 * bw ** 2))
@@ -1407,8 +1525,7 @@ class RTMDKField:
         # Use meta_kernel if available (Fix 2: consistency with single-node
         # path)
         bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self.cfg.bandwidth
-        pc = self.meta_kernel.get_phase_coupling(
-        ) if self.meta_kernel else self.cfg.phase_coupling
+        pc = self._effective_pc
         return self.gpu_backend.batch_resonance(
             query_latents, query_phases, node_positions, node_phases,
             node_amplitudes, node_saliences,
@@ -1506,8 +1623,7 @@ class RTMDKField:
             ) if self.meta_kernel else self.cfg.bandwidth
         local_bw = np.maximum(local_bw, 1e-8)
         spatial = np.exp(-dists ** 2 / (2 * local_bw ** 2))
-        pc = self.meta_kernel.get_phase_coupling(
-        ) if self.meta_kernel else self.cfg.phase_coupling
+        pc = self._effective_pc
         phase_align = 0.5 + 0.5 * np.cos(phases - query_phase)
         resp = spatial * ((1 - pc) + pc * phase_align) * \
             amplitudes * saliences * modal_weights
@@ -1534,6 +1650,8 @@ class RTMDKField:
         Complexity: O(N×d) with SIMD vectorization (~200x faster than Python loop)
         Cached arrays avoid O(N) Python loop on every query.
         """
+        self._ensure_adaptive_pc(query_latent)
+
         n_nodes = len(self.node_index)
         if n_nodes == 0:
             return []
@@ -1740,6 +1858,7 @@ class RTMDKField:
         t0 = time.time()
         top_k = top_k or self.cfg.top_k
         query_latent = self._project(embedding)
+        self._ensure_adaptive_pc(query_latent)
 
         # Track 3: Query cache check
         if self.query_cache is not None:

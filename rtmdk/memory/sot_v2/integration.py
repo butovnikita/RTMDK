@@ -107,6 +107,8 @@ class SOTv2Embedder:
             for text in corpus_texts
         ]
 
+        self._id2word = {v: k for k, v in self._vocab.items()}
+
         self._embedder = SIFEmbedder(
             latent_dim=self.latent_dim,
             window_size=self.window_size,
@@ -114,7 +116,7 @@ class SOTv2Embedder:
             a=self.a,
             remove_pc=self.remove_pc,
         )
-        self._embedder.fit(tokenized, vocab_size=len(self._vocab))
+        self._embedder.fit(tokenized, vocab_size=len(self._vocab), id2word=self._id2word)
 
         # Contrastive fine-tuning if query/positive pairs provided
         if tokenized_queries is not None and tokenized_positives is not None:
@@ -154,13 +156,16 @@ class SOTv2Embedder:
         # Encode corpus with SIF
         sif_embs = self.embed_batch(corpus_texts)
 
-        # Encode corpus with teacher (batched)
+        # Encode corpus with teacher (batched) and normalize
         teacher_embs = []
         for i in range(0, len(corpus_texts), batch_size):
             batch = corpus_texts[i : i + batch_size]
             embs = teacher(batch)
             if not isinstance(embs, np.ndarray):
                 embs = np.asarray(embs)
+            # Normalize to unit sphere for consistent Procrustes alignment
+            norms = np.linalg.norm(embs, axis=1, keepdims=True) + 1e-8
+            embs = embs / norms
             teacher_embs.append(embs)
         teacher_embs = np.concatenate(teacher_embs, axis=0)
 
@@ -235,3 +240,27 @@ class SOTv2Embedder:
             self._embedder = SIFEmbedder().load_state(state["embedder"])
         self._trained = True
         return self
+
+    def save(self, path: str):
+        """Save embedder state to a JSON file."""
+        import json
+        state = self.get_state()
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+        logger.info("SOTv2Embedder: saved to %s", path)
+
+    @classmethod
+    def load(cls, path: str) -> "SOTv2Embedder":
+        """Load embedder state from a JSON file."""
+        import json
+        with open(path, "r", encoding="utf-8") as f:
+            state = json.load(f)
+        inst = cls(
+            latent_dim=state["latent_dim"],
+            window_size=state["window_size"],
+            a=state["a"],
+            remove_pc=state["remove_pc"],
+        )
+        inst.load_state(state)
+        logger.info("SOTv2Embedder: loaded from %s", path)
+        return inst
