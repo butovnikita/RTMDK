@@ -647,6 +647,33 @@ class RTMDKMemory(BaseModel):
         else:
             object.__setattr__(self, "engram_manager", None)
 
+        # Phase 18b: Causal Traversal Engine
+        self.causal_traversal_engine = None
+        if self.config.causal_traversal:
+            try:
+                from rtmdk.engines.causal_traversal import CausalTraversalEngine
+                self.causal_traversal_engine = CausalTraversalEngine(
+                    max_hops=self.config.causal_max_hops,
+                    decay_per_hop=0.5,
+                )
+            except Exception:
+                logger.warning(
+                    "CausalTraversalEngine initialization failed, disabling",
+                    exc_info=True)
+
+        # Phase 18c: Cross-Encoder Reranker
+        self.reranker = None
+        if getattr(self.config, "reranker_enabled", False):
+            try:
+                from rtmdk.production.reranker import CrossEncoderReranker
+                self.reranker = CrossEncoderReranker(
+                    model_name=getattr(self.config, "reranker_model", "BAAI/bge-reranker-v2-m3"),
+                )
+            except Exception:
+                logger.warning(
+                    "CrossEncoderReranker initialization failed, disabling",
+                    exc_info=True)
+
         # v8.2.1 production distributed features
         self._init_vector_storage()
         self._init_replication_manager()
@@ -1031,6 +1058,105 @@ class RTMDKMemory(BaseModel):
         return {
             "rtmdk_context": self._retrieve_and_format(
                 query, embedding, session_id)}
+
+    def retrieve_nodes(
+            self,
+            query: str,
+            embedding: NDArray,
+            top_k: Optional[int] = None,
+            session_id: Optional[str] = None) -> List[Tuple[str, float, Any]]:
+        """Retrieve memory nodes with full pipeline: engrams → resonance → causal → reranker.
+
+        Returns:
+            List of (node_id, score, node) tuples.
+        """
+        phase = self._get_phase(session_id, embedding)
+        tk = top_k or self.field.cfg.top_k
+
+        # Primary: resonance retrieval
+        results = self.field.query(
+            embedding, phase, top_k=tk, session_id=session_id)
+
+        # Phase 18: Engram-based retrieval as fallback (if resonance under-delivers)
+        if len(results) < tk and self.engram_manager is not None and self.engram_manager.index.size > 0:
+            node_embs = {}
+            for nid, node in self.field.nodes.items():
+                emb = self._get_node_embedding(nid, node)
+                if emb is not None:
+                    node_embs[nid] = emb
+
+            engram_results = self.engram_manager.retrieve_engrams(
+                embedding, node_embs, top_k=tk)
+            if engram_results:
+                engram_nodes = self.engram_manager.expand_engrams(
+                    engram_results, self.field, top_k=tk)
+                # Merge without duplicates, keeping highest score
+                seen = {nid for nid, _, _ in results}
+                for nid, score, node in engram_nodes:
+                    if nid not in seen:
+                        results.append((nid, score, node))
+                        seen.add(nid)
+                results.sort(key=lambda x: x[1], reverse=True)
+                results = results[:tk]
+                self.field.stats["engram_retrievals"] = self.field.stats.get(
+                    "engram_retrievals", 0) + 1
+
+        # Session-scoped retrieval
+        if session_id and session_id != "default" and results:
+            session_results = [
+                (nid, score, node) for nid, score, node in results
+                if node.content.get("session") == session_id
+            ]
+            if len(session_results) < tk:
+                global_results = [
+                    (nid, score, node) for nid, score, node in results
+                    if node.content.get("session") != session_id
+                ]
+                needed = tk - len(session_results)
+                session_results.extend(global_results[:needed])
+            boosted = []
+            for nid, score, node in session_results:
+                if node.content.get("session") == session_id:
+                    score *= 1.5
+                boosted.append((nid, score, node))
+            boosted.sort(key=lambda x: x[1], reverse=True)
+            results = boosted[:tk]
+            self.field.stats["session_scoped_retrievals"] = self.field.stats.get(
+                "session_scoped_retrievals", 0) + 1
+
+        # Hybrid BM25 blend
+        if self.field.cfg.hybrid_alpha < 1.0 and self.field.bm25_index is not None and results:
+            bm25_results = self.field.bm25_index.search(query, tk * 2)
+            if bm25_results:
+                bm25_scores = {nid: score for nid, score in bm25_results}
+                max_bm25 = max(bm25_scores.values()) if bm25_scores else 1.0
+                if max_bm25 > 0:
+                    bm25_scores = {nid: s / max_bm25 for nid, s in bm25_scores.items()}
+                alpha = self.field.cfg.hybrid_alpha
+                blended = []
+                for nid, score, node in results:
+                    bm25_score = bm25_scores.get(nid, 0.0)
+                    blended.append((nid, alpha * score + (1 - alpha) * bm25_score, node))
+                for nid, bm25_score in bm25_scores.items():
+                    if nid not in [n[0] for n in blended] and bm25_score > self.field.cfg.min_response:
+                        node = self.field.nodes.get(nid)
+                        if node:
+                            blended.append((nid, alpha * 0.0 + (1 - alpha) * bm25_score, node))
+                blended.sort(key=lambda x: x[1], reverse=True)
+                results = blended[:tk]
+                self.field.stats["hybrid_retrievals"] = self.field.stats.get(
+                    "hybrid_retrievals", 0) + 1
+
+        # Causal Traversal
+        if self.causal_traversal_engine is not None and results:
+            results = self.causal_traversal_engine.retrieve_with_causal(
+                results, self.field, top_k=tk)
+
+        # Cross-Encoder Reranker
+        if self.reranker is not None and results and query:
+            results = self.reranker.rerank(query, results, top_k=tk)
+
+        return results
 
     def _get_node_embedding(self, nid: str, node) -> Optional[np.ndarray]:
         """Retrieve stored embedding for a node, or approximate from latent position."""

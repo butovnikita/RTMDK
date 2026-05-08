@@ -88,6 +88,8 @@ _FIELD_GROUPS: Dict[str, str] = {
     "query_cache_size": "RetrievalConfig",
     "query_cache_ttl": "RetrievalConfig",
     "adaptive_top_k": "RetrievalConfig",
+    "reranker_enabled": "RetrievalConfig",
+    "reranker_model": "RetrievalConfig",
     "bm25_b": "CoreConfig",
     "bm25_fallback": "CoreConfig",
     "bm25_k1": "CoreConfig",
@@ -411,6 +413,8 @@ class RetrievalConfig:
     query_cache_size: int = 0  # 0 = disabled
     query_cache_ttl: int = 3600  # seconds
     adaptive_top_k: bool = False
+    reranker_enabled: bool = False
+    reranker_model: str = "BAAI/bge-reranker-v2-m3"
 
 
 @dataclass

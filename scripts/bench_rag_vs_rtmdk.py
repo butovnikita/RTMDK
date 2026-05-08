@@ -90,13 +90,13 @@ def bench_rtmdk(records: List[Dict], embedder, top_k: int = 5, latent_dim: int =
     query_embs = [embedder(q) for q in queries]
     node_ids = {n.id: idx for idx, n in enumerate(memory.field.nodes.values())}
 
-    # Single-query latency
+    # Single-query latency (full pipeline: engrams + resonance + causal + hybrid)
     recalls = []
     latencies = []
     ranks = []
-    for i, q_emb in enumerate(query_embs):
+    for i, (query, q_emb) in enumerate(zip(queries, query_embs)):
         t0 = time.perf_counter()
-        results = memory.field.query(q_emb, top_k=top_k * 2)
+        results = memory.retrieve_nodes(query, q_emb, top_k=top_k * 2)
         top_idx = [node_ids.get(nid, -1) for nid, _, _ in results[:top_k]]
         latencies.append((time.perf_counter() - t0) * 1000)
         recalls.append(1 if i in top_idx else 0)
