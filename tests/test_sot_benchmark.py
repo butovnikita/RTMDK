@@ -53,12 +53,14 @@ def test_sot_vs_sbert_baseline():
         sot_use_for_query=True,
         sot_subword_seed=True,
         sot_attention_pooling=True,
-        sot_max_vocab=5000,
+        sot_max_vocab=10000,
+        sot_tokenization_mode="word",
     )
     field_sot = RTMDKField(cfg_sot)
 
     texts = [r["query"] + " " + r["answer"] for r in data]
-    field_sot.sot_bootstrap(texts, teacher_model="all-MiniLM-L6-v2")
+    field_sot.sot_bootstrap(texts, teacher_model="all-MiniLM-L6-v2",
+                            fit_projection_only=False, n_epochs=50)
 
     for rec in data:
         text = rec["query"] + " " + rec["answer"]

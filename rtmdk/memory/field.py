@@ -2169,7 +2169,9 @@ class RTMDKField:
     def sot_bootstrap(
             self,
             texts: List[str],
-            teacher_model: str = 'all-MiniLM-L6-v2'):
+            teacher_model: str = 'all-MiniLM-L6-v2',
+            fit_projection_only: bool = True,
+            n_epochs: int = 30):
         """Bootstrap SOT embeddings from a sentence-transformer teacher model.
 
         This dramatically improves cold-start quality by initializing byte/token
@@ -2178,6 +2180,10 @@ class RTMDKField:
         Args:
             texts: Corpus texts to use for bootstrap (e.g. from dataset).
             teacher_model: Sentence-transformer model name.
+            fit_projection_only: If True, only fit projection matrix (stable).
+                If False, also update token embeddings toward teacher targets.
+            n_epochs: Number of epochs for token embedding updates (only when
+                fit_projection_only=False).
         """
         if not self.sot_tokenizer:
             raise RuntimeError("SOT not enabled in config")
@@ -2190,7 +2196,10 @@ class RTMDKField:
             def embed_fn(text):
                 return teacher.encode(text, show_progress_bar=False)
 
-            self.sot_tokenizer.bootstrap_from_teacher(texts, embed_fn)
+            self.sot_tokenizer.bootstrap_from_teacher(
+                texts, embed_fn,
+                fit_projection_only=fit_projection_only,
+                n_epochs=n_epochs)
         except ImportError:
             logger.error(
                 "sentence-transformers not installed, cannot bootstrap SOT")

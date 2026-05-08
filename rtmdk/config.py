@@ -238,6 +238,11 @@ def _benchmark() -> RTMDKConfig:
         cascade_enabled=True,
         cascade_causal_threshold=0.3,
         cascade_factual_threshold=0.3,
+        # SOT defaults for best quality
+        sot_enabled=False,
+        sot_tokenization_mode="word",
+        sot_max_vocab=10000,
+        sot_attention_pooling=True,
     )
 
 
