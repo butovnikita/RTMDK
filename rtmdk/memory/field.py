@@ -28,6 +28,7 @@ from rtmdk.support.agents import AgentPlanner, HypothesisVerifier, ToolRouter
 from rtmdk.support.healer import TopologyHealer
 from rtmdk.support.meta_adaptive import MetaAdaptiveKernel
 from rtmdk.engines.causal import CausalInferenceEngine
+from rtmdk.engines.causal_extraction import extract_causal_edges_from_content
 from rtmdk.engines.privacy import DifferentialPrivacy
 from rtmdk.engines.predictive import PredictiveCodingModel
 from rtmdk.memory.geometry import (
@@ -686,6 +687,20 @@ class RTMDKField:
             self.conformal_calibrator = ConformalCalibrator(
                 alpha=config.conformal_alpha)
 
+        # P1.2: Learned consolidation MLP
+        self.learned_consolidator = None
+        if getattr(config, "learned_consolidation", False):
+            from rtmdk.memory.learned_consolidation import LearnedConsolidator
+            self.learned_consolidator = LearnedConsolidator(
+                latent_dim=config.latent_dim)
+
+        # P1.3: Adaptive bandwidth optimiser
+        self.adaptive_bw = None
+        if getattr(config, "adaptive_bandwidth", False):
+            from rtmdk.support.adaptive_bandwidth import AdaptiveBandwidthOptimizer
+            self.adaptive_bw = AdaptiveBandwidthOptimizer(
+                latent_dim=config.latent_dim)
+
         # P2.2: Kalman filter for position uncertainty
         self.kalman_filter: Optional[KalmanFilter] = None
         if config.enable_kalman_filter:
@@ -1264,6 +1279,13 @@ class RTMDKField:
             phase += self.cfg.modality_phase_shifts[modality]
         return phase % (2 * np.pi)
 
+    @property
+    def _effective_bandwidth(self) -> float:
+        """Return adaptive bandwidth if available, else config bandwidth."""
+        if self.adaptive_bw is not None and self.adaptive_bw._best_bw is not None:
+            return self.adaptive_bw._best_bw
+        return self.cfg.bandwidth
+
     def _resonance_response(
             self,
             query_latent: NDArray,
@@ -1285,7 +1307,7 @@ class RTMDKField:
         else:
             dist = np.linalg.norm(query_latent - node.latent_pos)
         phase_diff = node.phase - query_phase
-        bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self.cfg.bandwidth
+        bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self._effective_bandwidth
         bw = max(bw, 1e-8)
         pc = self.meta_kernel.get_phase_coupling(
         ) if self.meta_kernel else self.cfg.phase_coupling
@@ -1350,7 +1372,7 @@ class RTMDKField:
         dists = cdist(query_latents, node_positions)
         # Gaussian kernel: exp(-d^2/(2*bw^2)) — use meta_kernel if available
         # (Fix 2: consistency with single-node path)
-        bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self.cfg.bandwidth
+        bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self._effective_bandwidth
         bw = np.maximum(bw, 1e-8)
         pc = self.meta_kernel.get_phase_coupling(
         ) if self.meta_kernel else self.cfg.phase_coupling
@@ -1859,6 +1881,22 @@ class RTMDKField:
                     node.last_resonated = time.time()
 
             results.sort(key=lambda x: x[1], reverse=True)
+
+        # P1.3: Trigger adaptive bandwidth re-optimisation periodically
+        if self.adaptive_bw is not None and self.adaptive_bw.should_optimize():
+            if self._cached_positions is not None and len(self.nodes) >= self.adaptive_bw.min_nodes:
+                try:
+                    optimal_bw = self.adaptive_bw.optimize(
+                        self._cached_positions,
+                        self._cached_phases,
+                        self._cached_amplitudes,
+                        self._cached_saliences,
+                        top_k=self.cfg.top_k,
+                    )
+                    self.stats["adaptive_bw"] = optimal_bw
+                except Exception:
+                    logger.warning("Adaptive bandwidth optimisation failed", exc_info=True)
+
         self.stats["total_queries"] += 1
 
         # Track shard query time
@@ -2367,6 +2405,17 @@ class RTMDKField:
         if nid not in self.node_index:
             self.node_index.append(nid)
         self.stats["total_adds"] += 1
+
+        # Extract causal edges from explanation text
+        causal_edges = extract_causal_edges_from_content(content)
+        if causal_edges:
+            for effect, cause, strength in causal_edges:
+                # Store as causal metadata on the node
+                node.causal_strength[cause] = max(
+                    node.causal_strength.get(cause, 0.0), strength)
+                node.causal_parents.append(cause)
+            self.stats.setdefault("causal_edges_extracted", 0)
+            self.stats["causal_edges_extracted"] += len(causal_edges)
 
         # P0: Invalidate cached arrays (will be rebuilt on next query)
         # For single node additions, use incremental append if cache exists
@@ -2982,7 +3031,7 @@ class RTMDKField:
                     node.latent_pos, partner.latent_pos, self.cfg.ball_radius
                 )
             else:
-                node.latent_pos = 0.5 * (node.latent_pos + partner.latent_pos)
+                self._merge_latents(node, partner)
             node.phase = np.arctan2(0.5 * (np.sin(node.phase) + np.sin(partner.phase)), 0.5 * (
                 np.cos(node.phase) + np.cos(partner.phase))) % (2 * np.pi)
             node.amplitude = min(
@@ -2994,7 +3043,7 @@ class RTMDKField:
                     node.latent_pos, partner.latent_pos, self.cfg.ball_radius
                 )
             else:
-                node.latent_pos = 0.5 * (node.latent_pos + partner.latent_pos)
+                self._merge_latents(node, partner)
             node.phase = np.arctan2(0.5 * (np.sin(node.phase) + np.sin(partner.phase)), 0.5 * (
                 np.cos(node.phase) + np.cos(partner.phase))) % (2 * np.pi)
 
@@ -3185,8 +3234,7 @@ class RTMDKField:
                         node.latent_pos = poincare_midpoint(
                             node.latent_pos, partner.latent_pos, self.cfg.ball_radius)
                     else:
-                        node.latent_pos = 0.5 * \
-                            (node.latent_pos + partner.latent_pos)
+                        self._merge_latents(node, partner)
                     node.phase = np.arctan2(0.5 * (np.sin(node.phase) + np.sin(partner.phase)), 0.5 * (
                         np.cos(node.phase) + np.cos(partner.phase))) % (2 * np.pi)
                     node.amplitude = min(
@@ -3200,8 +3248,7 @@ class RTMDKField:
                         node.latent_pos = poincare_midpoint(
                             node.latent_pos, partner.latent_pos, self.cfg.ball_radius)
                     else:
-                        node.latent_pos = 0.5 * \
-                            (node.latent_pos + partner.latent_pos)
+                        self._merge_latents(node, partner)
                     node.phase = np.arctan2(0.5 * (np.sin(node.phase) + np.sin(partner.phase)), 0.5 * (
                         np.cos(node.phase) + np.cos(partner.phase))) % (2 * np.pi)
 
@@ -3329,8 +3376,7 @@ class RTMDKField:
                         node.latent_pos = poincare_midpoint(
                             node.latent_pos, partner.latent_pos, self.cfg.ball_radius)
                     else:
-                        node.latent_pos = 0.5 * \
-                            (node.latent_pos + partner.latent_pos)
+                        self._merge_latents(node, partner)
                     node.phase = np.arctan2(0.5 * (np.sin(node.phase) + np.sin(partner.phase)), 0.5 * (
                         np.cos(node.phase) + np.cos(partner.phase))) % (2 * np.pi)
                     node.amplitude = min(
@@ -3445,6 +3491,10 @@ class RTMDKField:
         if updated:
             self._cache_dirty = True
 
+        # P1.2: Periodic training of learned consolidator
+        if self.learned_consolidator is not None and self.stats["consolidations"] % 20 == 0 and self.stats["consolidations"] > 0:
+            self._train_learned_consolidator()
+
         self.wal.append_consolidate(updated)
         self._dirty = True
         return updated
@@ -3531,6 +3581,54 @@ class RTMDKField:
             return []
         return self.scenario_planner.imagine_counterfactual(
             base_query, intervention)
+
+    def _merge_latents(self, node, partner):
+        """Merge two node latent positions using learned or heuristic method."""
+        if self.learned_consolidator is not None and self.learned_consolidator._trained:
+            # Undo quantization for learned merge (needs float32 latent)
+            latent_a = self._quant.dequantize(
+                node.latent_pos, node.latent_scale, node.latent_zero_point)
+            latent_b = self._quant.dequantize(
+                partner.latent_pos, partner.latent_scale, partner.latent_zero_point)
+            merged = self.learned_consolidator.predict(
+                latent_a, latent_b,
+                node.phase, partner.phase,
+                node.amplitude, partner.amplitude,
+                node.salience, partner.salience,
+            )
+            # Re-quantize
+            merged_q, scale, zp = self._quant.quantize_with_meta(merged)
+            node.latent_pos = merged_q
+            node.latent_scale = scale
+            node.latent_zero_point = zp
+        else:
+            # Heuristic average (preserves existing behaviour)
+            node.latent_pos = 0.5 * (node.latent_pos + partner.latent_pos)
+
+    def _train_learned_consolidator(self):
+        """Collect synthetic merge examples and train the consolidator MLP."""
+        if self.learned_consolidator is None:
+            return
+        n = len(self.nodes)
+        if n < 4:
+            return
+        # Sample random node pairs as synthetic merge examples
+        rng = np.random.default_rng(42)
+        node_list = list(self.nodes.values())
+        for _ in range(min(50, n * 2)):
+            a, b = rng.choice(node_list, size=2, replace=False)
+            # Dequantize latents for training
+            la = self._quant.dequantize(a.latent_pos, a.latent_scale, a.latent_zero_point)
+            lb = self._quant.dequantize(b.latent_pos, b.latent_scale, b.latent_zero_point)
+            # Queries = the parent latents themselves (proxy)
+            self.learned_consolidator.add_example(
+                la, lb,
+                queries=[la, lb],
+                phase_a=a.phase, phase_b=b.phase,
+                amp_a=a.amplitude, amp_b=b.amplitude,
+                sal_a=a.salience, sal_b=b.salience,
+            )
+        self.learned_consolidator.train(epochs=10, lr=0.005)
 
     def _prune_dead_nodes(self):
         to_remove = [nid for nid in self.node_index
@@ -4681,6 +4779,8 @@ class RTMDKField:
             data["healer"] = self.healer.get_state()
         if self.causal_engine:
             data["causal_engine"] = self.causal_engine.get_state()
+        if self.learned_consolidator is not None:
+            data["learned_consolidator"] = self.learned_consolidator.get_state()
         if self.meta_controller:
             data["meta_controller"] = self.meta_controller.get_state()
         if self.federated:

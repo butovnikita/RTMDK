@@ -362,6 +362,8 @@ class FieldSerializer:
             memory.field.meta_memory_eval.load_state(data["meta_memory_eval"])
         if config.security_enabled and "security" in data:
             memory.field.security.load_state(data["security"])
+        if getattr(config, "learned_consolidation", False) and "learned_consolidator" in data and memory.field.learned_consolidator is not None:
+            memory.field.learned_consolidator.load_state(data["learned_consolidator"])
         if config.sot_enabled and "sot_tokenizer" in data:
             if memory.field.sot_tokenizer is not None:
                 memory.field.sot_tokenizer.load_state(data["sot_tokenizer"])

@@ -111,6 +111,54 @@ embedding = embedder("Your query text here")
 SOT v2.0 now estimates `a` automatically from corpus statistics (10th
 percentile of word probabilities), so manual tuning is rarely needed.
 
+## New in v8.2.2 — Breakthrough Features
+
+### 1. Semantic Phase Learning
+Node phases are no longer random (`time.time()*0.01`).  They are derived
+from `hash(session_id + topic + keywords)`, so nodes from the same
+conversation or topic share phase neighbourhoods.  The resonance kernel's
+`cos(Δφ)` term now **genuinely boosts intra-cluster retrieval** — a
+feature no other vector database offers.
+
+Enable: always on (computed automatically in `_get_phase`).
+
+### 2. Learned Consolidation
+A tiny MLP (~450K params for d=384) learns how to merge two nodes while
+preserving retrieval quality.  Instead of heuristic averaging, the merged
+latent is predicted from parent states and trained on synthetic merge
+examples with a hinge loss.
+
+```python
+RTMDKConfig(
+    learned_consolidation=True,
+)
+```
+
+### 3. Causal Graph from LLM Explanations
+When a node contains explanation text ("A because B"), RTMDK extracts
+directed causal edges and stores them in `node.causal_parents`.  This
+replaces the statistically broken PC-algorithm with robust pattern
+matching on natural language.
+
+### 4. Adaptive Bandwidth
+Bandwidth is optimised by random search on a synthetic calibration set
+(self-retrieval recall).  No more hand-tuning or kurtosis chasing.
+
+```python
+RTMDKConfig(
+    adaptive_bandwidth=True,
+)
+```
+
+### 5. Conformal Prediction API
+Statistical guarantee: `P(target ∈ prediction_set) ≥ 1 - α`.
+
+```python
+result = memory.query_with_confidence(query, embedding, alpha=0.05)
+# result["prediction_set"] — node_ids with coverage guarantee
+# result["coverage_guarantee"] — True if calibrated
+```
+
 ## Known Limitations
 
 - **Morphologically rich languages** (Turkish, Finnish) may need subword tokenisation (`MI_SubwordTokenizer`) instead of word-level.

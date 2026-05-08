@@ -356,6 +356,8 @@ class CoreConfig:
     conformal_prediction: bool = False
     conformal_alpha: float = 0.10
     conformal_min_calib: int = 50
+    learned_consolidation: bool = False
+    adaptive_bandwidth: bool = False
     spectral_consolidation: bool = False
     spectral_max_clusters: int = 10
     spectral_sigma: float = 1.0
@@ -840,6 +842,8 @@ class RTMDKConfig:
             ("RTMDK_CONFORMAL_PREDICTION", "conformal_prediction", lambda x: x.lower() == "true"),
             ("RTMDK_CONFORMAL_ALPHA", "conformal_alpha", float),
             ("RTMDK_CONFORMAL_MIN_CALIB", "conformal_min_calib", int),
+            ("RTMDK_LEARNED_CONSOLIDATION", "learned_consolidation", lambda x: x.lower() == "true"),
+            ("RTMDK_ADAPTIVE_BANDWIDTH", "adaptive_bandwidth", lambda x: x.lower() == "true"),
             ("RTMDK_SPECTRAL_CONSOLIDATION", "spectral_consolidation", lambda x: x.lower() == "true"),
             ("RTMDK_SPECTRAL_MAX_CLUSTERS", "spectral_max_clusters", int),
             ("RTMDK_SPECTRAL_SIGMA", "spectral_sigma", float),
