@@ -1780,11 +1780,11 @@ class RTMDKField:
             self.stats.setdefault("query_cache_misses", 0)
             self.stats["query_cache_misses"] += 1
 
-        # Fix 1: HNSW auto-intercept for large N (>5000 nodes).
+        # Fix 1: HNSW auto-intercept for large N (>50 nodes).
         # For small datasets, full vectorized scan is more accurate and still
         # fast (SIMD).
         if self.cfg.use_hnsw and self.hnsw_index and len(
-                self.hnsw_index.positions) > 20000:
+                self.hnsw_index.positions) > 50:
             n_pos = len(self.hnsw_index.positions)
             hnsw_k = min(n_pos, max(top_k * 20, min(n_pos // 20, 2000)))
             candidate_ids = self.hnsw_index.search(query_latent, hnsw_k)
