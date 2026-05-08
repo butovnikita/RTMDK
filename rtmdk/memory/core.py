@@ -704,6 +704,22 @@ class RTMDKMemory(BaseModel):
             except Exception:
                 logger.warning("BGE-M3 init failed, disabling", exc_info=True)
 
+        # P2: SOT v2.0 Self-Supervised Embedder
+        self._sot_v2 = None
+        self._sot_v2_corpus: List[str] = []
+        if getattr(self.config, "sot_v2_enabled", False):
+            try:
+                from rtmdk.memory.sot_v2.integration import SOTv2Embedder
+                self._sot_v2 = SOTv2Embedder(
+                    latent_dim=getattr(self.config, "latent_dim", 384),
+                    a=getattr(self.config, "sot_v2_a", 0.01),
+                    window_size=getattr(self.config, "sot_v2_window", 5),
+                    remove_pc=getattr(self.config, "sot_v2_remove_pc", True),
+                )
+                logger.info("SOT v2.0 embedder initialised (lazy training)")
+            except Exception:
+                logger.warning("SOT v2.0 init failed, disabling", exc_info=True)
+
         # P1: Adaptive Cascade Router
         self.cascade_router = None
         if getattr(self.config, "cascade_enabled", False):
@@ -759,6 +775,11 @@ class RTMDKMemory(BaseModel):
 
     def add_node(self, embedding: NDArray, content: Dict, **kwargs) -> str:
         """Add a node to the memory field. Delegates to RTMDKField.add_node."""
+        # P2: Accumulate corpus for SOT v2.0 lazy training
+        if self._sot_v2 is not None:
+            text = content.get("text", "")
+            if text:
+                self._sot_v2_corpus.append(text)
         # P1: Matryoshka-lite — truncate for HNSW, keep full for resonance
         modal_emb = None
         if getattr(self.config, "matryoshka_mode", False):
@@ -853,7 +874,42 @@ class RTMDKMemory(BaseModel):
                     })
                 except Exception:
                     logger.warning("Replication failed for %s", nid, exc_info=True)
+        # P2: Accumulate corpus for SOT v2.0
+        if self._sot_v2 is not None:
+            for content in contents:
+                text = content.get("text", "")
+                if text:
+                    self._sot_v2_corpus.append(text)
         return result
+
+    def train_sot_v2(self, extra_texts: Optional[List[str]] = None) -> bool:
+        """Train SOT v2.0 embedder on accumulated corpus.
+
+        Call this after ingesting all documents.  Optionally provide
+        additional query texts for contrastive fine-tuning.
+
+        Returns:
+            True if training succeeded.
+        """
+        if self._sot_v2 is None:
+            logger.warning("train_sot_v2 called but SOT v2.0 is not enabled")
+            return False
+        corpus = list(self._sot_v2_corpus)
+        if extra_texts:
+            corpus.extend(extra_texts)
+        if not corpus:
+            logger.warning("train_sot_v2: no corpus to train on")
+            return False
+        logger.info("train_sot_v2: training on %d texts", len(corpus))
+        try:
+            self._sot_v2.train(corpus)
+            # Replace embedder with trained SOT v2.0
+            self.embedder = self._sot_v2
+            logger.info("train_sot_v2: SOT v2.0 embedder active")
+            return True
+        except Exception:
+            logger.error("train_sot_v2 failed", exc_info=True)
+            return False
 
     def _replay_wal(self) -> None:
         """Replay WAL mutations to recover durability after restart.

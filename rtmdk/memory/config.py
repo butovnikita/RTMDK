@@ -690,6 +690,12 @@ class SOTConfig:
     sot_bootstrap_fasttext_model: Optional[str] = None
     sot_tokenization_mode: str = "word"  # "byte" or "word"
     sot_max_cooccurrence: int = 100_000  # Max co-occurrence entries before pruning
+    # --- SOT v2.0 (self-supervised, zero external dependencies) ---
+    sot_v2_enabled: bool = False
+    sot_v2_a: float = 0.01  # SIF smoothing parameter
+    sot_v2_window: int = 5  # Co-occurrence window size
+    sot_v2_remove_pc: bool = True  # Remove first principal component
+    sot_v2_hybrid_alpha: float = 0.5  # BM25+SIF fusion weight (1.0 = dense only)
 
 
 @dataclass(init=False, repr=False, eq=False)
