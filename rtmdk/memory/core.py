@@ -42,7 +42,7 @@ from pydantic import BaseModel, Field, ConfigDict, model_validator
 import logging
 
 # Extracted engine classes (kept in sync with rtmdk/support/ modules)
-from rtmdk.memory.utils import SecurityViolationError, detect_modality
+from rtmdk.memory.utils import SecurityViolationError, detect_modality, apply_attention_bias, _enum_value
 
 logger = logging.getLogger(__name__)
 
@@ -1921,26 +1921,27 @@ class RTMDKMemory(BaseModel):
     def clear_interventions(self):
         self.field.clear_interventions()
 
-    def get_dashboard(self) -> Dict:
-        return self.field.get_field_health()
-
-    def get_field_health(self) -> Dict:
-        return self.field.get_field_health()
-
-    def trigger_healing(self) -> List[Dict]:
-        return self.field._self_heal()
-
-    def counterfactual_query(self,
-                             intervention: Dict[str,
-                                                Any],
-                             query_nodes: List[str],
-                             evidence: Optional[Dict[str,
-                                                     Any]] = None) -> CounterfactualResult:
-        return self.field.counterfactual_query(
-            intervention, query_nodes, evidence)
-
-    def get_causal_summary(self) -> Dict:
-        return self.field.get_causal_summary()
+    def __getattr__(self, name: str):
+        """Proxy simple delegations to RTMDKField to reduce boilerplate."""
+        # Respect pydantic private/extra attributes first
+        pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+        if pydantic_extra is not None and name in pydantic_extra:
+            return pydantic_extra[name]
+        # get_dashboard is a legacy alias for get_field_health
+        if name == "get_dashboard":
+            return self.field.get_field_health
+        _proxy_methods = {
+            "get_field_health", "trigger_healing",
+            "counterfactual_query", "get_causal_summary",
+            "evolve_continuous", "get_response_smoothness",
+            "create_plan", "verify_hypothesis", "execute_tool",
+            "register_tool", "evaluate_response", "compare_shadow",
+            "get_cross_modal_stats", "get_meta_controller_state",
+            "get_federated_status", "export_field", "import_field",
+        }
+        if name in _proxy_methods:
+            return getattr(self.field, name)
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
     def get_contradictions(self) -> List[ContradictionRecord]:
         if self.field.causal_engine:
@@ -1968,72 +1969,17 @@ class RTMDKMemory(BaseModel):
             "causal_conflicts": [],
             "recommendation": "proceed"}
 
-    # Phase 7: ODE
-    def evolve_continuous(self,
-                          inputs: Optional[List[Dict]] = None,
-                          use_sde: bool = False) -> NDArray:
-        return self.field.evolve_continuous(inputs, use_sde)
-
-    def get_response_smoothness(self) -> float:
-        return self.field.stats.get("response_smoothness", 1.0)
-
-    # Phase 8: Agent
-    def create_plan(
-            self,
-            goal: str,
-            available_tools: List[str],
-            context: Optional[Dict] = None) -> AgentPlan:
-        return self.field.create_plan(goal, available_tools, context)
-
-    def verify_hypothesis(self, hypothesis: str,
-                          active_nodes: Optional[List[str]] = None) -> Hypothesis:
-        return self.field.verify_hypothesis(hypothesis, active_nodes)
-
-    def execute_tool(self,
-                     tool_name: str,
-                     arguments: Dict[str,
-                                     Any]) -> ToolCall:
-        return self.field.execute_tool(tool_name, arguments)
-
-    def register_tool(self, name: str, func: Callable):
-        self.field.register_tool(name, func)
-
-    # Phase 9: Production
-    def evaluate_response(
-            self,
-            question: str,
-            answer: str,
-            contexts: List[str],
-            ground_truth: Optional[str] = None) -> EvalResult:
-        return self.field.evaluate_response(
-            question, answer, contexts, ground_truth)
-
-    def compare_shadow(self, shadow_score: float,
-                       production_score: float) -> Dict[str, Any]:
-        return self.field.compare_shadow(shadow_score, production_score)
-
     def get_ragas_trend(self) -> Dict[str, float]:
         if self.field.ragas_evaluator:
             return self.field.ragas_evaluator.get_trend()
         return {}
-
-    # Track 10: New methods
-    def get_cross_modal_stats(self) -> Dict:
-        return self.field.get_cross_modal_stats()
-
-    def get_meta_controller_state(self) -> Dict:
-        return self.field.get_meta_controller_state()
-
-    def get_federated_status(self) -> Dict:
-        return self.field.get_federated_status()
 
     def get_stats(self) -> Dict:
         self.field.stats["active_nodes"] = len(self.field.nodes)
         if self.field.tda_monitor:
             self.field.stats["tda_trend"] = self.field.tda_monitor.get_trend()
         if self.field.dp:
-            self.field.stats["privacy_budget_spent"] = self.field.dp.get_privacy_spent(
-            )
+            self.field.stats["privacy_budget_spent"] = self.field.dp.get_privacy_spent()
         return {**self.field.stats, "config": self.config.asdict()}
 
     # Phase 11 Track 4: Counterfactual imagination
@@ -2044,9 +1990,6 @@ class RTMDKMemory(BaseModel):
         """Generate hypothetical scenarios."""
         embedding = self.embedder(base_query)
         return self.field.imagine_counterfactual(embedding, intervention)
-
-    def export_field(self, path: str, fmt: Optional[str] = None):
-        self.field.export_field(path, fmt=fmt)
 
     @classmethod
     def import_field(cls, path: str, embedder: Callable,

@@ -105,6 +105,7 @@ _FIELD_GROUPS: Dict[str, str] = {
     "bm25_fallback": "CoreConfig",
     "bm25_first_stage_k": "CoreConfig",
     "bm25_topic_shards": "CoreConfig",
+    "hnsw_min_nodes": "CoreConfig",
     "bm25_k1": "CoreConfig",
     "query_expand_short": "CoreConfig",
     "adaptive_pc_disable_threshold": "CoreConfig",
@@ -400,6 +401,7 @@ class CoreConfig:
     bm25_b: float = 0.75
     bm25_first_stage_k: int = 0  # 0 = disabled; >0 = BM25 pre-filters top-K candidates before resonance
     bm25_topic_shards: bool = False  # Use BM25 term clusters for sparse routing instead of k-means
+    hnsw_min_nodes: int = 50  # Minimum nodes to activate HNSW first-stage
     hybrid_alpha: float = 1.0  # 1.0 = pure RTMDK, 0.0 = pure BM25, 0.7 = 70/30 blend
     query_expand_short: bool = False  # Auto-expand queries with < 3 content words
     adaptive_pc_disable_threshold: float = 0.93  # If embedding quality estimate > threshold, force pc=0

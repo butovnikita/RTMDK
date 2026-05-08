@@ -1815,7 +1815,7 @@ class RTMDKField:
                     node.goal_relevance = self.goal_tracker.get_goal_relevance(
                         nid)
             if self.cfg.attention_bias:
-                from rtmdk.memory.core import apply_attention_bias
+                from rtmdk.memory.utils import apply_attention_bias
                 results = apply_attention_bias(
                     results, self.cfg.bias_temperature)
                 self.stats["attention_bias_applied"] += 1
@@ -1918,7 +1918,7 @@ class RTMDKField:
         # For small datasets, full vectorized scan is more accurate and still
         # fast (SIMD).
         elif self.cfg.use_hnsw and self.hnsw_index and len(
-                self.hnsw_index.positions) > 50:
+                self.hnsw_index.positions) > getattr(self.cfg, "hnsw_min_nodes", 50):
             n_pos = len(self.hnsw_index.positions)
             hnsw_k = min(n_pos, max(top_k * 20, min(n_pos // 20, 2000)))
             candidate_ids = self.hnsw_index.search(query_latent, hnsw_k)
@@ -2202,7 +2202,7 @@ class RTMDKField:
 
         # HNSW fast path: collect union candidates, single batch resonance call
         if self.cfg.use_hnsw and self.hnsw_index and len(
-                self.hnsw_index.positions) > 50:
+                self.hnsw_index.positions) > getattr(self.cfg, "hnsw_min_nodes", 50):
             n_pos = len(self.hnsw_index.positions)
             hnsw_k = min(n_pos, max(top_k * 20, min(n_pos // 20, 2000)))
             per_query_candidates: List[List[str]] = []
@@ -3314,7 +3314,7 @@ class RTMDKField:
                     nid for nid in high_tension if nid not in processed and nid in self.nodes]
 
         # FIX: Precompute positions for vectorized distance computation
-        if self.cfg.use_hnsw and self.hnsw_index and n_snap > 50:
+        if self.cfg.use_hnsw and self.hnsw_index and n_snap > getattr(self.cfg, "hnsw_min_nodes", 50):
             # Use HNSW for candidate search — O(N log N)
             # Fix 10: Track HNSW bypass when node count <= 50
             if n_snap <= 50:
@@ -5054,7 +5054,9 @@ class RTMDKField:
             f.name for f in RTMDKConfig.__dataclass_fields__.values())
         cd = {k: v for k, v in cd.items() if k in valid_fields}
         config = RTMDKConfig(**cd)
-        from rtmdk.memory.core import RTMDKMemory
+        from typing import TYPE_CHECKING
+        if TYPE_CHECKING:
+            from rtmdk.memory.core import RTMDKMemory
         memory = RTMDKMemory(config=config, embedder=embedder)
 
         if memory.field.projection_learner is not None and "projection_state" in data:

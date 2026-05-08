@@ -2,7 +2,12 @@
 
 import re
 import math
-from typing import Dict
+import numpy as np
+from enum import Enum
+from typing import Dict, List, Tuple, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from rtmdk.nodes import MemoryNode
 
 
 class SecurityViolationError(Exception):
@@ -59,3 +64,51 @@ def cross_modal_resonance(
     modal_coupling = math.cos(phase_diff)
     boost = 1.0 + cross_modal_kernel_weight * modal_coupling
     return base_resp * boost
+
+
+def apply_attention_bias(
+    results: List[Tuple[str, float, "MemoryNode"]],
+    temperature: float = 1.0,
+) -> List[Tuple[str, float, "MemoryNode"]]:
+    """Transform raw resonance scores into attention-biased scores.
+
+    Incorporates causal_strength, tension, salience as structural signals.
+    """
+    if not results:
+        return results
+
+    raw_scores = np.array([r for _, r, _ in results])
+    if len(raw_scores) < 2:
+        return results
+
+    weights = []
+    for nid, resp, node in results:
+        score = resp
+        causal_boost = sum(node.causal_strength.values()) if hasattr(node, 'causal_strength') else 0
+        score *= (1.0 + 0.2 * min(1.0, causal_boost))
+        score *= max(0.5, 1.0 - node.tension)
+        goal_rel = getattr(node, 'goal_relevance', 0.0)
+        score *= (1.0 + 0.3 * goal_rel)
+        weights.append(score)
+
+    weights = np.array(weights)
+    if temperature > 0:
+        exp_weights = np.exp(weights / temperature)
+        normalized = exp_weights / (exp_weights.sum() + 1e-8)
+    else:
+        normalized = weights / (weights.sum() + 1e-8)
+
+    biased = []
+    for i, (nid, _, node) in enumerate(results):
+        biased.append((nid, float(normalized[i]), node))
+    biased.sort(key=lambda x: x[1], reverse=True)
+    return biased
+
+
+def _enum_value(val, default):
+    """Convert enum or enum-value to canonical value."""
+    if val is None:
+        return default
+    if isinstance(val, Enum):
+        return val
+    return val.value if hasattr(val, "value") else val
