@@ -1305,6 +1305,78 @@ class RTMDKMemory(BaseModel):
 
         return results
 
+    def query_with_confidence(
+        self,
+        query: str,
+        embedding: NDArray,
+        top_k: Optional[int] = None,
+        session_id: Optional[str] = None,
+        alpha: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Retrieve with conformal prediction confidence guarantee.
+
+        Returns a prediction set that contains the true relevant result
+        with probability >= 1 - alpha (marginal coverage guarantee).
+
+        Args:
+            query: Query text.
+            embedding: Query embedding.
+            top_k: Max results to return.
+            session_id: Optional session filter.
+            alpha: Miscoverage rate (default from config.conformal_alpha).
+
+        Returns:
+            Dict with keys:
+                - results: List of (node_id, score, node) tuples
+                - prediction_set: List of node_ids in the conformal set
+                - confidence: 1 - alpha
+                - threshold: Minimum score for inclusion
+                - coverage_guarantee: True if calibrator has enough samples
+        """
+        tk = top_k or self.field.cfg.top_k
+        alpha = alpha or getattr(
+            self.config, "conformal_alpha", 0.1)
+
+        # Standard retrieval
+        results = self.retrieve_nodes(
+            query, embedding, top_k=tk, session_id=session_id)
+
+        # Conformal prediction
+        cal = getattr(self.field, "conformal_calibrator", None)
+        if cal is None or not self.config.conformal_prediction:
+            return {
+                "results": results,
+                "prediction_set": [nid for nid, _, _ in results],
+                "confidence": 1.0 - alpha,
+                "threshold": 0.0,
+                "coverage_guarantee": False,
+                "reason": "conformal_prediction disabled or not initialized",
+            }
+
+        min_calib = getattr(self.config, "conformal_min_calib", 50)
+        if cal.n_calibrated < min_calib:
+            return {
+                "results": results,
+                "prediction_set": [nid for nid, _, _ in results],
+                "confidence": 1.0 - alpha,
+                "threshold": 0.0,
+                "coverage_guarantee": False,
+                "reason": f"insufficient calibration samples ({cal.n_calibrated}/{min_calib})",
+            }
+
+        scores = [score for _, score, _ in results]
+        nids = [nid for nid, _, _ in results]
+        pred_set, confidence, threshold = cal.predict(scores, nids)
+
+        return {
+            "results": results,
+            "prediction_set": pred_set,
+            "confidence": confidence,
+            "threshold": threshold,
+            "coverage_guarantee": True,
+            "reason": "marginal coverage guarantee active",
+        }
+
     def _get_node_embedding(self, nid: str, node) -> Optional[np.ndarray]:
         """Retrieve stored embedding for a node, or approximate from latent position."""
         # Check if node has modal_embedding (cross-modal)

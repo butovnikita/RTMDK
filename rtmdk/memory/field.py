@@ -1213,17 +1213,56 @@ class RTMDKField:
         embs = embs / norms
         return embs @ self._raw_projection
 
+    def _semantic_phase(
+            self,
+            session_id: Optional[str] = None,
+            content: Optional[Dict] = None,
+            modality: str = "text",
+    ) -> float:
+        """Compute a semantically meaningful phase from session/topic/content.
+
+        Nodes sharing the same session or topic cluster into phase
+        neighbourhoods, so phase coupling (cos Δφ) naturally boosts
+        intra-cluster retrieval.  The phase is deterministic for identical
+        keys, with a small spread to avoid exact collisions.
+        """
+        import hashlib
+        import math
+        import random
+
+        parts = []
+        if session_id:
+            parts.append(f"s:{session_id}")
+        if content:
+            topic = content.get("topic", "")
+            if topic:
+                parts.append(f"t:{topic}")
+            text = content.get("text", "") or content.get("input_text", "")
+            if text:
+                words = text.lower().split()[:3]
+                parts.append(f"w:{'_'.join(words)}")
+        parts.append(f"m:{modality}")
+
+        seed_text = "|".join(parts)
+        h = hashlib.md5(seed_text.encode("utf-8")).hexdigest()
+        base = (int(h, 16) % 6283) / 1000.0  # [0, 2π]
+        rng = random.Random(h)
+        spread = rng.uniform(-0.15, 0.15)
+        return (base + spread) % (2 * math.pi)
+
     def _get_phase(
             self,
             session_id: Optional[str] = None,
             embedding: Optional[NDArray] = None,
-            modality: str = "text") -> float:
-        base = (time.time() * 0.01) % (2 * np.pi)
+            modality: str = "text",
+            content: Optional[Dict] = None,
+    ) -> float:
+        phase = self._semantic_phase(session_id, content, modality)
         if self.cfg.cross_modal and modality in self.cfg.modal_phase_offsets:
-            base += self.cfg.modal_phase_offsets[modality]
+            phase += self.cfg.modal_phase_offsets[modality]
         elif self.cfg.multimodal and modality in self.cfg.modality_phase_shifts:
-            base += self.cfg.modality_phase_shifts[modality]
-        return base % (2 * np.pi)
+            phase += self.cfg.modality_phase_shifts[modality]
+        return phase % (2 * np.pi)
 
     def _resonance_response(
             self,
@@ -2283,7 +2322,7 @@ class RTMDKField:
         latent, latent_scale, latent_zero_point = self._quant.quantize_with_meta(latent)
 
         if phase is None:
-            phase = self._get_phase(session_id, embedding, modality)
+            phase = self._get_phase(session_id, embedding, modality, content)
 
         # OPTIMIZED: Initialize amplitude/salience based on embedding quality
         # Higher norm embeddings → more informative content → higher initial
@@ -2339,8 +2378,7 @@ class RTMDKField:
                 self._cached_phases = np.append(
                     self._cached_phases,
                     phase if phase is not None else self._get_phase(
-                        session_id,
-                        embedding))
+                        session_id, embedding, modality, content))
                 self._cached_amplitudes = np.append(
                     self._cached_amplitudes, amplitude)
                 self._cached_saliences = np.append(
