@@ -31,6 +31,7 @@ import functools
 import json
 import re
 import time
+import threading
 import os
 import copy
 from typing import List, Dict, Optional, Tuple, Callable, Any
@@ -41,26 +42,11 @@ from pydantic import BaseModel, Field, ConfigDict, model_validator
 import logging
 
 # Extracted engine classes (kept in sync with rtmdk/support/ modules)
-try:
-    _HNSWLIB_AVAILABLE = True
-except ImportError:
-    _HNSWLIB_AVAILABLE = False
 from rtmdk.memory.utils import SecurityViolationError, detect_modality
 
 logger = logging.getLogger(__name__)
 
 # Phase 5: dataclass nodes extracted to rtmdk.nodes
-
-# Phase 15: New modules
-try:
-    VC_AVAILABLE = True
-except ImportError:
-    VC_AVAILABLE = False
-
-try:
-    ENTROPY_AVAILABLE = True
-except ImportError:
-    ENTROPY_AVAILABLE = False
 
 try:
     from rtmdk.support.triton_backend import GPUBackend, TritonBackend, TRITON_AVAILABLE
@@ -68,17 +54,6 @@ except ImportError:
     GPUBackend = None  # type: ignore
     TritonBackend = None  # type: ignore
     TRITON_AVAILABLE = False
-
-# Phase 16: New modules
-try:
-    SYMBOLIC_AVAILABLE = True
-except ImportError:
-    SYMBOLIC_AVAILABLE = False
-
-try:
-    SAFETY_AVAILABLE = True
-except ImportError:
-    SAFETY_AVAILABLE = False
 
 try:
     from rtmdk.support.ump import UniversalMemoryProtocol
@@ -707,9 +682,12 @@ class RTMDKMemory(BaseModel):
         # P2: SOT v2.0 Self-Supervised Embedder
         self._sot_v2 = None
         self._sot_v2_corpus: List[str] = []
+        self._sot_v2_corpus_maxlen: int = getattr(
+            self.config, "sot_max_corpus", 10000)
         self._sot_v2_online_buffer: List[List[int]] = []  # Tokenized docs for online update
         self._sot_v2_online_threshold: int = getattr(
             self.config, "sot_online_update_threshold", 10)
+        self._sot_v2_online_lock = threading.Lock()
         sot_cfg = getattr(self.config, "sot", None)
         if sot_cfg and getattr(sot_cfg, "sot_v2_enabled", False):
             try:
@@ -775,17 +753,24 @@ class RTMDKMemory(BaseModel):
         if self._sot_v2 is not None:
             text = content.get("text", "")
             if text:
+                # FIFO corpus to prevent OOM
                 self._sot_v2_corpus.append(text)
-                # Online update: tokenize and buffer
+                if len(self._sot_v2_corpus) > self._sot_v2_corpus_maxlen:
+                    self._sot_v2_corpus.pop(0)
+                # Online update: tokenize and buffer (thread-safe)
                 if hasattr(self._sot_v2, '_vocab') and self._sot_v2._vocab:
                     tokens = [self._sot_v2._vocab[w] for w in self._sot_v2._word_tokenize(text)
                               if w in self._sot_v2._vocab]
                     if tokens:
-                        self._sot_v2_online_buffer.append(tokens)
-                        if len(self._sot_v2_online_buffer) >= self._sot_v2_online_threshold:
-                            try:
-                                self._sot_v2._embedder.online_update(self._sot_v2_online_buffer)
+                        with self._sot_v2_online_lock:
+                            self._sot_v2_online_buffer.append(tokens)
+                            should_update = len(self._sot_v2_online_buffer) >= self._sot_v2_online_threshold
+                            if should_update:
+                                buffer_to_update = self._sot_v2_online_buffer
                                 self._sot_v2_online_buffer = []
+                        if should_update:
+                            try:
+                                self._sot_v2._embedder.online_update(buffer_to_update)
                             except Exception:
                                 logger.warning("SOT v2.0 online update failed", exc_info=True)
         # P1: Matryoshka-lite — truncate for HNSW, keep full for resonance
@@ -795,12 +780,12 @@ class RTMDKMemory(BaseModel):
             if embedding.shape[0] > hnsw_dim:
                 modal_emb = embedding
                 embedding = embedding[:hnsw_dim]
-        # P1: Sparse index insert
+        # P1: Sparse index insert (after we know the real node_id)
+        node_id = self.field.add_node(embedding, content, modal_embedding=modal_emb, **kwargs)
         if getattr(self, "sparse_index", None) is not None:
             sparse_vec = content.get("sparse_embedding")
             if sparse_vec:
-                self.sparse_index.insert(kwargs.get("node_id") or f"n_{len(self.field.nodes)}_", sparse_vec)
-        node_id = self.field.add_node(embedding, content, modal_embedding=modal_emb, **kwargs)
+                self.sparse_index.insert(node_id, sparse_vec)
         # v8.2.1 hooks
         self._on_node_added(node_id, embedding, content, kwargs)
         return node_id
@@ -930,6 +915,15 @@ class RTMDKMemory(BaseModel):
                     logger.warning("train_sot_v2: teacher alignment failed", exc_info=True)
             # Replace embedder with trained SOT v2.0
             self.embedder = self._sot_v2
+            # Invalidate query cache (scores changed)
+            if self.field.query_cache is not None:
+                self.field.query_cache.clear()
+            # Reset conformal calibrator (distribution changed)
+            if self.field.conformal_calibrator is not None:
+                from rtmdk.memory.conformal import ConformalCalibrator
+                self.field.conformal_calibrator = ConformalCalibrator(
+                    alpha=self.config.conformal_alpha)
+                logger.info("train_sot_v2: conformal calibrator reset")
             logger.info("train_sot_v2: SOT v2.0 embedder active")
             return True
         except Exception:
@@ -1516,29 +1510,32 @@ class RTMDKMemory(BaseModel):
         sample_size = min(n_samples, len(nids))
         sample_nids = random.sample(nids, sample_size)
 
+        # Pre-compute normalized document matrix once (O(N) memory, not O(N²))
+        doc_embs = []
+        nid_to_idx = {}
+        for i, dnid in enumerate(nids):
+            d_emb = self._get_node_embedding(dnid, nodes[dnid])
+            if d_emb is not None:
+                d_emb = d_emb / (np.linalg.norm(d_emb) + 1e-8)
+                doc_embs.append(d_emb)
+                nid_to_idx[dnid] = len(doc_embs) - 1
+        if not doc_embs:
+            return False
+        doc_matrix = np.stack(doc_embs)
+
         for nid in sample_nids:
             node = nodes[nid]
             text = node.content.get("text", "")
             if not text:
                 continue
+            target_idx = nid_to_idx.get(nid)
+            if target_idx is None:
+                continue
             try:
                 q_emb = self.embedder(text)
                 q_emb = q_emb / (np.linalg.norm(q_emb) + 1e-8)
-                # Compute cosine with all nodes
-                doc_embs = []
-                target_idx = None
-                for i, dnid in enumerate(nids):
-                    d_emb = self._get_node_embedding(dnid, nodes[dnid])
-                    if d_emb is not None:
-                        d_emb = d_emb / (np.linalg.norm(d_emb) + 1e-8)
-                        doc_embs.append(d_emb)
-                        if dnid == nid:
-                            target_idx = len(doc_embs) - 1
-                if doc_embs and target_idx is not None:
-                    doc_matrix = np.stack(doc_embs)
-                    sims = doc_matrix @ q_emb
-                    # Score of the true relevant document
-                    cal.add_sample(float(sims[target_idx]))
+                sims = doc_matrix @ q_emb
+                cal.add_sample(float(sims[target_idx]))
             except Exception:
                 continue
 
@@ -1688,7 +1685,7 @@ class RTMDKMemory(BaseModel):
     def _generate_clarification(self, results: List, query: str) -> str:
         """Generate a clarification prompt from weak-resonance nodes."""
         lines = [
-            "[CLARIFICATION] Не нашёл точных воспоминаний по запросу: \"{query[:80]}\""]
+            f"[CLARIFICATION] Не нашёл точных воспоминаний по запросу: \"{query[:80]}\""]
         lines.append("Полусовпадения (низкий резонанс):")
         for nid, score, node in results[:3]:
             text = node.content.get("text", "")[:60]
@@ -1760,7 +1757,6 @@ class RTMDKMemory(BaseModel):
             elif any(w in lower_input for w in [
                     "?", "what", "why", "how", "when",
                     "где", "что", "как", "когда", "почему"]):
-                emotion = "negative"
                 emotion = "questioning"
 
         # Auto-detect tags from text
@@ -1808,28 +1804,29 @@ class RTMDKMemory(BaseModel):
             self.field.nodes[nid].tier = tier
 
         # Phase 18: Create/update engrams from co-activated nodes
+        # Use retrieval instead of O(N) scan for scalability
         if self.engram_manager is not None:
-            related_nodes = []
-            for existing_nid, existing_node in self.field.nodes.items():
-                existing_emb = self._get_node_embedding(
-                    existing_nid, existing_node)
-                if existing_emb is not None:
-                    sim = float(np.dot(embedding, existing_emb) /
-                                ((np.linalg.norm(embedding) +
-                                  1e-8) *
-                                 (np.linalg.norm(existing_emb) +
-                                  1e-8)))
-                    if sim > 0.5:
-                        related_nodes.append((existing_nid, sim))
+            # Fast path: retrieve top-k similar nodes via HNSW/resonance
+            try:
+                retrieved = self.retrieve_nodes(
+                    text_for_embedding, embedding,
+                    top_k=self.config.engram_max_nodes * 2,
+                    session_id=session_id)
+                related_nodes = []
+                for rnid, rscore, _ in retrieved:
+                    if rscore >= self.config.min_response:
+                        related_nodes.append((rnid, float(rscore)))
+            except Exception:
+                related_nodes = []
             related_nodes.append((nid, 1.0))
 
             if len(related_nodes) >= self.config.engram_min_nodes:
                 node_embs = {}
-                for nid, _ in related_nodes:
+                for rnid, _ in related_nodes:
                     emb = self._get_node_embedding(
-                        nid, self.field.nodes.get(nid))
+                        rnid, self.field.nodes.get(rnid))
                     if emb is not None:
-                        node_embs[nid] = emb
+                        node_embs[rnid] = emb
 
                 self.engram_manager.create_engram_from_nodes(
                     activated_nodes=related_nodes[:self.config.engram_max_nodes],
@@ -1865,12 +1862,15 @@ class RTMDKMemory(BaseModel):
 
     def clear(self) -> None:
         # Fix 3: Cancel background workers before replacing field
-        for task in self._workers:
+        for task in self.field._workers:
             if not task.done():
                 task.cancel()
-        self._workers.clear()
-        self.field = RTMDKField(self.config)
+        self.field._workers.clear()
+        self.field = RTMDKField(self.config, wal_path=self.wal_path)
         self.session_phases.clear()
+        # Reset SOT corpus to prevent stale data
+        self._sot_v2_corpus.clear()
+        self._sot_v2_online_buffer.clear()
 
     def inspect_node(self, node_id: str) -> Optional[Dict]:
         if node_id not in self.field.nodes:

@@ -68,6 +68,27 @@ class SIFEmbedder:
         self._char_ngram_probs: Dict[str, float] = {}
         self._id2word: Optional[Dict[int, str]] = None
 
+    @staticmethod
+    def _randomized_svd(M: np.ndarray, n_components: int, n_oversamples: int = 10, n_iter: int = 2):
+        """Randomized SVD via Halko et al. 2011 — O(n×d²) instead of O(n³).
+
+        Suitable for large dense matrices where full SVD is prohibitive.
+        """
+        m, n = M.shape
+        p = min(n, n_components + n_oversamples)
+        rng = np.random.default_rng(42)
+        Omega = rng.standard_normal(n, dtype=np.float32)
+        if p > 1:
+            Omega = np.column_stack([Omega] + [rng.standard_normal(n, dtype=np.float32) for _ in range(p - 1)])
+        Y = M @ Omega
+        for _ in range(n_iter):
+            Y = M @ (M.T @ Y)
+        Q, _ = np.linalg.qr(Y)
+        B = Q.T @ M
+        Uhat, S, Vt = np.linalg.svd(B, full_matrices=False)
+        U = Q @ Uhat
+        return U[:, :n_components], S[:n_components], Vt[:n_components, :]
+
     # ------------------------------------------------------------------ #
     # Training
     # ------------------------------------------------------------------ #
@@ -91,9 +112,10 @@ class SIFEmbedder:
             self.latent_dim,
         )
 
-        # 1. Count unigrams and co-occurrences
+        # 1. Count unigrams and co-occurrences (sparse to avoid OOM)
         unigram_counts = np.zeros(vocab_size, dtype=np.float64)
-        cooc_counts = np.zeros((vocab_size, vocab_size), dtype=np.float64)
+        from collections import defaultdict
+        cooc_sparse = defaultdict(lambda: defaultdict(float))
         total_tokens = 0
 
         for doc in tokenized_docs:
@@ -108,8 +130,8 @@ class SIFEmbedder:
                 for j in range(i + 1, min(i + w + 1, len(doc))):
                     a, b = doc[i], doc[j]
                     if 0 <= a < vocab_size and 0 <= b < vocab_size:
-                        cooc_counts[a, b] += 1.0
-                        cooc_counts[b, a] += 1.0
+                        cooc_sparse[a][b] += 1.0
+                        cooc_sparse[b][a] += 1.0
 
         if total_tokens == 0:
             raise ValueError("No tokens found in corpus")
@@ -139,11 +161,19 @@ class SIFEmbedder:
                 self.word_embeddings[t] = emb
             return self
 
-        # 2. PMI matrix for valid tokens
+        # 2. PMI matrix for valid tokens (dense only for valid subset)
         valid_idx = np.where(valid_mask)[0]
         idx_map = {int(v): i for i, v in enumerate(valid_idx)}
         u_counts = unigram_counts[valid_idx] + 1e-8
-        c_counts = cooc_counts[np.ix_(valid_idx, valid_idx)]
+        # Build dense co-occurrence only for valid tokens (much smaller than vocab_size²)
+        c_counts = np.zeros((n_valid, n_valid), dtype=np.float64)
+        for a, neighbors in cooc_sparse.items():
+            if a not in idx_map:
+                continue
+            ai = idx_map[a]
+            for b, count in neighbors.items():
+                if b in idx_map:
+                    c_counts[ai, idx_map[b]] = count
         N = float(c_counts.sum()) + 1e-8
 
         log_cij = np.log(c_counts + 1e-8)
@@ -170,13 +200,19 @@ class SIFEmbedder:
                 )
                 self.a = adaptive_a
 
-        # 3. Truncated SVD
+        # 3. Truncated SVD (randomized for large matrices)
         logger.info("SIFEmbedder: computing SVD on %dx%d PMI matrix...", n_valid, n_valid)
-        U, S, Vt = np.linalg.svd(pmi, full_matrices=False)
         k = min(self.latent_dim, n_valid)
-        Uk = U[:, :k]
-        Sk = np.sqrt(S[:k])
-        raw_emb = (Uk * Sk[None, :]).astype(np.float32)
+        if n_valid > 5000:
+            # Randomized SVD for large matrices — O(n×d²) instead of O(n³)
+            logger.info("SIFEmbedder: using randomized SVD (n_valid=%d > 5000)", n_valid)
+            U, S, _ = self._randomized_svd(pmi, n_components=k, n_oversamples=10, n_iter=2)
+        else:
+            U, S, _ = np.linalg.svd(pmi, full_matrices=False)
+            U = U[:, :k]
+            S = S[:k]
+        Sk = np.sqrt(S)
+        raw_emb = (U * Sk[None, :]).astype(np.float32)
         norms = np.linalg.norm(raw_emb, axis=1, keepdims=True) + 1e-8
         raw_emb /= norms
 
@@ -624,9 +660,12 @@ class SIFEmbedder:
                 total_loss += float(loss)
 
                 # Gradient w.r.t. query and positive embeddings
+                # Correct InfoNCE gradient: dL/dq = -( (1-p₀)*p - Σ pᵢ*nᵢ ) / τ
                 probs = exp_logits / (exp_logits.sum() + 1e-8)
-                d_q = -(p_emb - sum(probs[i+1] * neg_embs[i] for i in range(len(neg_embs)))) / temperature
-                d_p = -q_emb / temperature
+                pos_prob = float(probs[0])
+                neg_weighted = sum(probs[i+1] * neg_embs[i] for i in range(len(neg_embs)))
+                d_q = -( (1.0 - pos_prob) * p_emb - neg_weighted ) / temperature
+                d_p = -( (1.0 - pos_prob) * q_emb ) / temperature
 
                 # Backpropagate to word embeddings via average gradient
                 # (simplified: treat each word as contributing equally to sentence emb)

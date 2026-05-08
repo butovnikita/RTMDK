@@ -710,6 +710,7 @@ class SOTConfig:
     sot_v2_remove_pc: bool = True  # Remove first principal component
     sot_v2_hybrid_alpha: float = 0.5  # BM25+SIF fusion weight (1.0 = dense only)
     sot_online_update_threshold: int = 10  # Trigger online_update every N new docs
+    sot_max_corpus: int = 10000  # Max SOT corpus size (FIFO)
     # Teacher alignment options
     sot_v2_align_teacher: Optional[str] = None  # e.g. "sentence-transformers/all-MiniLM-L6-v2"
     sot_v2_align_center: bool = True  # Mean-center before alignment
