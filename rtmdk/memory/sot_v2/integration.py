@@ -80,11 +80,20 @@ class SOTv2Embedder:
         self._vocab: Dict[str, int] = {}
         self._embedder: Optional[SIFEmbedder] = None
 
-    def train(self, corpus_texts: List[str]) -> "SOTv2Embedder":
+    def train(
+        self,
+        corpus_texts: List[str],
+        tokenized_queries: Optional[List[List[int]]] = None,
+        tokenized_positives: Optional[List[List[int]]] = None,
+        contrastive_epochs: int = 30,
+    ) -> "SOTv2Embedder":
         """Train on a corpus of raw texts.
 
         Args:
             corpus_texts: List of strings (e.g. all document texts + queries).
+            tokenized_queries: Optional query token IDs for contrastive fine-tuning.
+            tokenized_positives: Optional positive context token IDs for contrastive fine-tuning.
+            contrastive_epochs: Number of contrastive fine-tuning epochs.
         """
         if not corpus_texts:
             raise ValueError("corpus_texts must not be empty")
@@ -106,6 +115,16 @@ class SOTv2Embedder:
             remove_pc=self.remove_pc,
         )
         self._embedder.fit(tokenized, vocab_size=len(self._vocab))
+
+        # Contrastive fine-tuning if query/positive pairs provided
+        if tokenized_queries is not None and tokenized_positives is not None:
+            logger.info("SOTv2Embedder: running contrastive fine-tuning...")
+            self._embedder.contrastive_fine_tune(
+                tokenized_queries,
+                tokenized_positives,
+                n_epochs=contrastive_epochs,
+            )
+
         self._trained = True
         logger.info("SOTv2Embedder: training complete")
         return self

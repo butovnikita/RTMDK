@@ -12,5 +12,15 @@ Modules:
 from .tokenizer import MI_SubwordTokenizer
 from .embedder import SpectralEmbedder
 from .retriever import ResonanceRetriever
+from .sif_embedder import SIFEmbedder
+from .hybrid_retriever import HybridSIFBM25Retriever
+from .integration import SOTv2Embedder
 
-__all__ = ["MI_SubwordTokenizer", "SpectralEmbedder", "ResonanceRetriever"]
+__all__ = [
+    "MI_SubwordTokenizer",
+    "SpectralEmbedder",
+    "ResonanceRetriever",
+    "SIFEmbedder",
+    "HybridSIFBM25Retriever",
+    "SOTv2Embedder",
+]

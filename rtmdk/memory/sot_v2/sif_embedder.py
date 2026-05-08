@@ -220,6 +220,130 @@ class SIFEmbedder:
             v /= np.linalg.norm(v) + 1e-8
         return v.astype(np.float32)
 
+    def contrastive_fine_tune(
+        self,
+        tokenized_queries: List[List[int]],
+        tokenized_positives: List[List[int]],
+        n_epochs: int = 30,
+        lr: float = 0.01,
+        temperature: float = 0.05,
+        n_negatives: int = 10,
+    ) -> "SIFEmbedder":
+        """Fine-tune word embeddings via InfoNCE loss.
+
+        Theoretical foundation:
+            InfoNCE (Oord et al. 2018) maximises a lower bound on the
+            mutual information I(q; c) between query q and context c:
+
+                L = -E[ log( exp(sim(q,p)/τ) / Σ_n exp(sim(q,n)/τ) ) ]
+
+            Under the representation learning framework, minimising this
+            loss pushes the query embedding toward its positive context
+            and away from sampled negatives, which tightens the bound on
+            MI and therefore improves retrieval discriminability.
+
+        Args:
+            tokenized_queries: One list of token IDs per query.
+            tokenized_positives: One list of token IDs per positive context.
+            n_epochs: Number of contrastive epochs.
+            lr: Learning rate for word embedding updates.
+            temperature: Temperature τ for InfoNCE scaling.
+            n_negatives: Number of in-batch negatives per query.
+        """
+        N = len(tokenized_queries)
+        if N == 0 or len(tokenized_positives) != N:
+            raise ValueError("Queries and positives must have same length")
+
+        logger.info(
+            "SIFEmbedder: contrastive fine-tuning, N=%d, epochs=%d, lr=%.4f",
+            N, n_epochs, lr,
+        )
+
+        rng = np.random.default_rng(42)
+
+        for epoch in range(n_epochs):
+            total_loss = 0.0
+            order = rng.permutation(N)
+            for idx in order:
+                q_tokens = [t for t in tokenized_queries[idx] if t in self.word_embeddings]
+                p_tokens = [t for t in tokenized_positives[idx] if t in self.word_embeddings]
+                if not q_tokens or not p_tokens:
+                    continue
+
+                q_emb = self._embed_sentence_raw(q_tokens)
+                p_emb = self._embed_sentence_raw(p_tokens)
+                if q_emb is None or p_emb is None:
+                    continue
+
+                # Sample negatives
+                neg_indices = rng.choice(
+                    [i for i in range(N) if i != idx],
+                    size=min(n_negatives, N - 1),
+                    replace=False,
+                )
+                neg_embs = []
+                for ni in neg_indices:
+                    n_tokens = [t for t in tokenized_positives[ni] if t in self.word_embeddings]
+                    if n_tokens:
+                        ne = self._embed_sentence_raw(n_tokens)
+                        if ne is not None:
+                            neg_embs.append(ne)
+                if not neg_embs:
+                    continue
+
+                # InfoNCE loss
+                pos_sim = np.dot(q_emb, p_emb) / temperature
+                neg_sims = np.array([np.dot(q_emb, ne) for ne in neg_embs]) / temperature
+                logits = np.concatenate([[pos_sim], neg_sims])
+                # Numerical stability
+                logits_max = logits.max()
+                exp_logits = np.exp(logits - logits_max)
+                loss = -np.log(exp_logits[0] / exp_logits.sum() + 1e-8)
+                total_loss += float(loss)
+
+                # Gradient w.r.t. query and positive embeddings
+                probs = exp_logits / (exp_logits.sum() + 1e-8)
+                d_q = -(p_emb - sum(probs[i+1] * neg_embs[i] for i in range(len(neg_embs)))) / temperature
+                d_p = -q_emb / temperature
+
+                # Backpropagate to word embeddings via average gradient
+                # (simplified: treat each word as contributing equally to sentence emb)
+                for t in q_tokens:
+                    w = self.a / (self.a + self.word_probs.get(t, 1e-8))
+                    self.word_embeddings[t] += lr * d_q * w / len(q_tokens)
+                for t in p_tokens:
+                    w = self.a / (self.a + self.word_probs.get(t, 1e-8))
+                    self.word_embeddings[t] += lr * d_p * w / len(p_tokens)
+
+                # Renormalise updated embeddings
+                for t in set(q_tokens + p_tokens):
+                    vec = self.word_embeddings[t]
+                    norm = np.linalg.norm(vec) + 1e-8
+                    self.word_embeddings[t] = (vec / norm).astype(np.float32)
+
+            if epoch % 5 == 0:
+                logger.info(
+                    "SIFEmbedder: contrastive epoch %d, avg loss=%.4f",
+                    epoch,
+                    total_loss / max(N, 1),
+                )
+
+        # Recompute first PC after fine-tuning
+        if self.remove_pc:
+            sentence_embs = []
+            for q_tokens, p_tokens in zip(tokenized_queries, tokenized_positives):
+                for tokens in (q_tokens, p_tokens):
+                    emb = self._embed_sentence_raw(tokens)
+                    if emb is not None:
+                        sentence_embs.append(emb)
+            if len(sentence_embs) >= 2:
+                X = np.stack(sentence_embs)
+                self._pc = self._power_iteration(X, max_iter=10)
+                logger.info("SIFEmbedder: first PC recomputed after fine-tuning")
+
+        logger.info("SIFEmbedder: contrastive fine-tuning complete")
+        return self
+
     def get_state(self) -> dict:
         return {
             "latent_dim": self.latent_dim,

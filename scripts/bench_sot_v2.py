@@ -21,6 +21,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from rtmdk.memory.sot_v2.sif_embedder import SIFEmbedder
+from rtmdk.memory.sot_v2.hybrid_retriever import HybridSIFBM25Retriever
 
 
 def load_dataset(path: str, n: int) -> List[Dict]:
@@ -85,13 +86,13 @@ def bench_sot_v2(records: List[Dict], top_k: int = 5) -> Dict[str, float]:
     all_tokenized = tokenized_contexts + tokenized_queries
     embedder.fit(all_tokenized, vocab_size=len(vocab))
 
-    print("[SOT v2.0] Encoding documents...")
-    doc_embs = []
-    for tokens in tokenized_contexts:
+
+
+    print("[SOT v2.0] Building hybrid BM25 + SIF index...")
+    retriever = HybridSIFBM25Retriever(latent_dim=384, alpha=0.5)
+    for i, tokens in enumerate(tokenized_contexts):
         emb = embedder.embed(tokens)
-        doc_embs.append(emb)
-    doc_matrix = np.stack(doc_embs)
-    doc_matrix = doc_matrix / (np.linalg.norm(doc_matrix, axis=1, keepdims=True) + 1e-8)
+        retriever.add_document(tokens, emb)
 
     print(f"[SOT v2.0] Retrieving top-{top_k} for {len(records)} queries...")
     recalls = []
@@ -99,14 +100,17 @@ def bench_sot_v2(records: List[Dict], top_k: int = 5) -> Dict[str, float]:
     latencies = []
     for i, rec in enumerate(records):
         q_emb = embedder.embed(tokenized_queries[i])
-        q_emb = q_emb / (np.linalg.norm(q_emb) + 1e-8)
         t0 = time.perf_counter()
-        sims = doc_matrix @ q_emb
-        top_idx = np.argsort(-sims)[:top_k]
+        results = retriever.query(tokenized_queries[i], q_emb, top_k=top_k)
         latencies.append((time.perf_counter() - t0) * 1000)
+        top_idx = [idx for idx, _ in results]
         recalls.append(1 if i in top_idx else 0)
-        rank = np.where(np.argsort(-sims) == i)[0]
-        ranks.append(1.0 / (rank[0] + 1) if len(rank) else 0.0)
+        rank = None
+        for pos, (idx, _) in enumerate(results):
+            if idx == i:
+                rank = pos
+                break
+        ranks.append(1.0 / (rank + 1) if rank is not None else 0.0)
 
     return {
         "recall_at_k": float(np.mean(recalls)),
