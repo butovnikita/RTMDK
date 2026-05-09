@@ -33,6 +33,8 @@ class PipelineExecutor:
         )
         for stage in self.stages:
             ctx = stage.run(ctx)
+            if ctx.skip_remaining:
+                break
         return ctx
 
     def run_batch(

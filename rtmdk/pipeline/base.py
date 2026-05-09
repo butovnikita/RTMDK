@@ -44,6 +44,7 @@ class PipelineContext:
     metrics: List[StageMetrics] = field(default_factory=list)
     degraded_stages: List[str] = field(default_factory=list)
     breaker_states: Dict[str, str] = field(default_factory=dict)
+    skip_remaining: bool = False
 
     def add_metric(self, name: str, latency_ms: float, input_count: int = 0, output_count: int = 0, error: Optional[str] = None, degraded: bool = False):
         self.metrics.append(StageMetrics(

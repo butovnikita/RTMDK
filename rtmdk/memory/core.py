@@ -1666,6 +1666,7 @@ class RTMDKMemory(BaseModel):
         """
         from rtmdk.production.cascade_router import AdaptiveCascadeRouter
         from rtmdk.pipeline.health import PipelineHealthMonitor
+        from rtmdk.pipeline.cache_stages import QueryCacheCheckStage, QueryCacheSaveStage
 
         stages = []
         monitor = PipelineHealthMonitor()
@@ -1696,6 +1697,10 @@ class RTMDKMemory(BaseModel):
                 stage.circuit_breaker.half_open_max_calls = half_open_calls
             return stage
 
+        # Stage 0: Query cache check (before embed if cache enabled)
+        if getattr(self.field, "query_cache", None) is not None:
+            stages.append(_attach_breaker(QueryCacheCheckStage(self.field, self)))
+
         # Stage 1: Embed (optional — caller may provide embedding directly)
         stages.append(_attach_breaker(EmbedStage(self.embedder)))
 
@@ -1717,6 +1722,10 @@ class RTMDKMemory(BaseModel):
 
         # Stage 6: Explain
         stages.append(_attach_breaker(ExplainStage(self._result_explainer)))
+
+        # Stage 7: Query cache save (after explain if cache enabled)
+        if getattr(self.field, "query_cache", None) is not None:
+            stages.append(_attach_breaker(QueryCacheSaveStage(self.field, self)))
 
         return PipelineExecutor(stages)
 
