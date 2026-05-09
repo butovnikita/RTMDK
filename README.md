@@ -39,6 +39,58 @@ python rtmdk_sillytavern_launcher.py
 
 ---
 
+## 🔄 Pipeline API (v8.3+)
+
+RTMDK теперь предоставляет显式的 retrieval pipeline с 6 стадиями, каждая из которых независимо наблюдаема и конфигурируема:
+
+```python
+from rtmdk import RTMDKMemory, RTMDKConfig
+
+config = RTMDKConfig.production()
+mem = RTMDKMemory(config=config, embedder=embed_fn)
+
+# Pipeline retrieval с полной observability
+result = mem.retrieve_nodes_pipeline("What is resonance?", top_k=5)
+# result["results"]  — ranked nodes
+# result["route"]    — routing decision (factual/standard/deep)
+# result["metrics"]  — per-stage latency + breaker states
+```
+
+### Pipeline stages
+1. **Embed** — query → embedding
+2. **Route** — adaptive cascade routing
+3. **Retrieve** — resonance / HNSW / BM25 hybrid
+4. **Rerank** — sentence-level reranking
+5. **Calibrate** — conformal prediction filtering
+6. **Explain** — per-result explanations
+
+### Circuit breaker & SLO
+Каждая стадия имеет circuit breaker. При превышении latency или ошибках стадия автоматически bypass'ится:
+
+```python
+config = RTMDKConfig(
+    pipeline_breaker_enabled=True,
+    pipeline_breaker_thresholds={"rerank": 500.0, "retrieve": 200.0},
+)
+```
+
+### Batch execution
+```python
+from rtmdk.pipeline import BatchPipelineExecutor
+
+batch = BatchPipelineExecutor(mem.build_pipeline().stages)
+outputs = batch.run_batch(["q1", "q2", "q3"], top_k=5)
+```
+
+### HTTP endpoint
+```bash
+curl -X POST http://localhost:8080/v1/memory/query_pipeline \
+  -H "Content-Type: application/json" \
+  -d '{"query": "resonance", "top_k": 5, "session_id": "sess_1"}'
+```
+
+---
+
 ## 📚 Документация
 
 | Что нужно | Документ |
