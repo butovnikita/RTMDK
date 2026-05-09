@@ -1495,6 +1495,14 @@ class RTMDKMemory(BaseModel):
         Returns:
             List of (node_id, score, node) tuples.
         """
+        # Pipeline path (v8.3+): use explicit pipeline when enabled and no sparse vec
+        if getattr(self.config, "pipeline_enabled", False) and sparse_vec is None:
+            result = self.retrieve_nodes_pipeline(
+                query, embedding=embedding, top_k=top_k, session_id=session_id
+            )
+            return result["results"]
+
+        # Legacy path — preserved for backward compatibility
         # Distributed lock for multi-process safety
         if self._distributed_lock is not None:
             if not self._distributed_lock.acquire(blocking=True):

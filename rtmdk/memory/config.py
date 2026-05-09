@@ -174,6 +174,7 @@ _FIELD_GROUPS: Dict[str, str] = {
     "replication_peers": "ProductionConfig",
     "replication_node_id": "ProductionConfig",
     "replication_wal_path": "ProductionConfig",
+    "pipeline_enabled": "ProductionConfig",
     "pipeline_breaker_enabled": "ProductionConfig",
     "pipeline_breaker_failure_threshold": "ProductionConfig",
     "pipeline_breaker_latency_violation_threshold": "ProductionConfig",
@@ -723,7 +724,8 @@ class ProductionConfig:
     replication_peers: List[str] = field(default_factory=list)
     replication_node_id: str = "node_1"
     replication_wal_path: Optional[str] = None
-    # Pipeline circuit breaker settings (v8.3+)
+    # Pipeline settings (v8.3+)
+    pipeline_enabled: bool = False
     pipeline_breaker_enabled: bool = True
     pipeline_breaker_failure_threshold: int = 5
     pipeline_breaker_latency_violation_threshold: int = 3
