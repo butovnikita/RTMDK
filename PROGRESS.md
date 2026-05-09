@@ -666,4 +666,34 @@ python -m build
 - **151 new tests** written in this branch
 - **0 breaking changes**
 
+## ✅ 22. Tiered Storage v2 Integration (completed 2026-05-09)
+
+**Goal:** Integrate memmap-based tiered storage into RTMDKField for true RAM savings.
+
+### Changes Made
+- **`rtmdk/memory/config.py`**: Added `tiered_storage_v2_enabled` to `MemorySystemConfig`
+- **`rtmdk/memory/field.py`**: `RTMDKField.__init__` uses `TieredNodeStoreAdapter` when v2 enabled
+- **`rtmdk/storage/tiered_adapter.py`**: Dict-like wrapper around `TieredNodeStore`
+  - `__setitem__` / `__getitem__` / `__delitem__` / `__contains__` / `__len__`
+  - `cacheable_nodes()` — for `_build_node_cache()`
+  - `warm_ids()` / `cold_ids()` — for fallback query paths
+  - `get_batch()` — batch retrieval
+  - `MemoryNode` serialization via `to_dict()` / `from_dict()`
+- **`tests/test_tiered_storage_v2_integration.py`**: 4 integration tests
+  - Field uses tiered v2 when enabled
+  - Add and query nodes
+  - Eviction to warm tier
+  - Stats tracking
+
+### Test Results
+- 4 new integration tests — all passing
+- Full regression suite: **906 passed, 1 skipped**
+
+---
+
+## Statistics
+- **906 passed, 1 skipped** — full regression suite
+- **155 new tests** written in this branch
+- **0 breaking changes**
+
 *Last updated: 2026-05-09*

@@ -689,7 +689,20 @@ class RTMDKField:
 
         # Track 2: Tiered Storage (Hot / Warm / Cold)
         self._tiered_store: Optional[Any] = None
-        if config.tiered_storage_enabled:
+        if config.tiered_storage_v2_enabled:
+            from rtmdk.storage.tiered import TieredNodeStore
+            from rtmdk.storage.tiered_adapter import TieredNodeStoreAdapter
+            hot_limit = max(1, int(config.max_nodes *
+                                   config.tiered_hot_pct)) if config.max_nodes else 100
+            warm_limit = max(1, int(config.max_nodes *
+                                    config.tiered_warm_pct)) if config.max_nodes else 1000
+            cold_dir = config.tiered_storage_path or "./rtmdk_cold_storage_v2"
+            inner = TieredNodeStore(
+                max_hot=hot_limit, max_warm=warm_limit,
+                cold_dir=cold_dir, latent_dim=config.latent_dim)
+            self._tiered_store = TieredNodeStoreAdapter(inner)
+            self.nodes = self._tiered_store  # type: ignore[assignment]
+        elif config.tiered_storage_enabled:
             from rtmdk.memory.tiered_storage import TieredNodeStore
             hot_limit = max(1, int(config.max_nodes *
                                    config.tiered_hot_pct)) if config.max_nodes else 100

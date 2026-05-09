@@ -339,6 +339,7 @@ _FIELD_GROUPS: Dict[str, str] = {
     "symbolic_overlay": "MemorySystemConfig",
     "system_prompt": "ProductionConfig",
     "tiered_storage_enabled": "MemorySystemConfig",
+    "tiered_storage_v2_enabled": "MemorySystemConfig",
     "tiered_storage_path": "MemorySystemConfig",
     "tiered_hot_pct": "MemorySystemConfig",
     "tiered_warm_pct": "MemorySystemConfig",
@@ -688,6 +689,7 @@ class MemorySystemConfig:
     cpen_child_ode: bool = False
     hebbian_learning_rate: float = 0.01
     tiered_storage_enabled: bool = False
+    tiered_storage_v2_enabled: bool = False
     tiered_storage_path: Optional[str] = None
     tiered_hot_pct: float = 0.01
     tiered_warm_pct: float = 0.09

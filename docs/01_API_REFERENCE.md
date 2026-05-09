@@ -34,10 +34,14 @@
 | POST | `/v1/cache/clear` | Clear cache |
 | POST | `/v1/memory/save` | Сохранить контекст |
 | POST | `/v1/memory/query` | Запросить память |
-| POST | `/v1/memory/query_pipeline` | Запросить память (pipeline API с метриками) |
+| POST | `/v1/memory/query_pipeline` | Запросить память (pipeline API с метриками и cost) |
 | GET  | `/v1/memory/pipeline/stream` | SSE streaming pipeline stage events |
 | GET  | `/v1/memory/pipeline/health` | Pipeline per-stage health status |
 | GET  | `/v1/memory/pipeline/metrics` | Aggregated pipeline metrics |
+| GET  | `/v1/memory/pipeline/plan` | Preview execution plan без выполнения |
+| GET  | `/v1/memory/pipeline/dag` | Pipeline stage dependency graph |
+| GET  | `/v1/memory/pipeline/prometheus` | Prometheus exposition format |
+| GET  | `/v1/analytics/pipeline` | Pipeline analytics dashboard |
 | POST | `/v1/memory/batch_query` | Batch query памяти |
 | POST | `/v1/memory/nodes` | Создать ноду |
 | GET | `/v1/memory/nodes/{id}` | Получить ноду |
@@ -1250,6 +1254,47 @@ curl -N 'http://localhost:8080/v1/memory/pipeline/stream?query=resonance&top_k=5
 - `stage_degraded` — stage failed or bypassed
 - `pipeline_completed` — final results and total latency
 
+#### Query plan preview
+```bash
+curl 'http://localhost:8080/v1/memory/pipeline/plan?query=hello&route=fast&top_k=5'
+```
+
+**Response:**
+```json
+{
+  "query": "hello",
+  "plan": {
+    "stage_names": ["embed", "route", "retrieve"],
+    "skipped_stages": ["rerank", "calibrate", "explain"],
+    "estimated_latency_ms": 16.1,
+    "estimated_cost": 0.36
+  }
+}
+```
+
+#### Pipeline DAG
+```bash
+curl http://localhost:8080/v1/memory/pipeline/dag
+```
+
+**Response:**
+```json
+{
+  "nodes": [
+    {"id": "embed", "enabled": true, "has_breaker": true, "breaker_state": "closed"}
+  ],
+  "edges": [{"from": "embed", "to": "route"}],
+  "total_stages": 6,
+  "enabled_stages": 6,
+  "stages_with_breakers": 6
+}
+```
+
+#### Prometheus metrics
+```bash
+curl http://localhost:8080/v1/memory/pipeline/prometheus
+```
+
 #### Health check
 ```bash
 curl http://localhost:8080/v1/memory/pipeline/health
@@ -1282,9 +1327,32 @@ curl http://localhost:8080/v1/memory/pipeline/health
     "total_latency_ms": 13.3,
     "breaker_states": {"embed": "closed", "retrieve": "closed"}
   },
-  "total": 1
+  "total": 1,
+  "cost": {
+    "total_cost": 0.99,
+    "stage_costs": {"embed": 0.52, "retrieve": 0.02},
+    "total_latency_ms": 131.0
+  }
 }
 ```
+
+*Cost tracking доступен при `pipeline_cost_tracking_enabled=True`.*
+
+### Query Planner
+
+Динамическая оптимизация pipeline — пропускает ненужные стадии в зависимости от query:
+
+```python
+config = RTMDKConfig(
+    pipeline_planner_enabled=True,      # Включить query planner
+    pipeline_cost_tracking_enabled=True, # Включить cost tracking
+)
+```
+
+**Правила оптимизации:**
+- Fast route → пропускает `rerank` + `calibrate` (~40% экономия)
+- Short query (<10 токенов) → пропускает `explain` (~15% экономия)
+- Low top_k (≤3) → пропускает `calibrate`
 
 ### Circuit breaker configuration
 
@@ -1322,4 +1390,4 @@ stage = GLOBAL_REGISTRY.create("custom")
 
 ---
 
-*Updated: 2026-05-07 — Track 17: Tier 1 Production Readiness*
+*Updated: 2026-05-09 — Pipeline v8.3: Query Planner, Cost Tracking, Production Observability*
