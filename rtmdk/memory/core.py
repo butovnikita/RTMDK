@@ -49,6 +49,7 @@ from rtmdk.memory.observability import MemoryMetrics, AlertRule
 from rtmdk.memory.rag_quality import SentenceReranker, QueryDecomposer, FeedbackLoop
 from rtmdk.pipeline import (
     PipelineExecutor,
+    PlannedPipelineExecutor,
     EmbedStage,
     RouteStage,
     RetrieveStage,
@@ -1744,6 +1745,12 @@ class RTMDKMemory(BaseModel):
         if self._distributed_lock is not None:
             stages.append(_attach_breaker(DistributedLockReleaseStage(self._distributed_lock)))
 
+        # Use planned executor if query planner is enabled
+        planner_enabled = getattr(self.config, "pipeline_planner_enabled", False)
+        if planner_enabled:
+            from rtmdk.pipeline.planner import QueryPlanner
+            planner = QueryPlanner()
+            return PlannedPipelineExecutor(stages, planner=planner)
         return PipelineExecutor(stages)
 
     def retrieve_nodes_pipeline(
@@ -1767,18 +1774,38 @@ class RTMDKMemory(BaseModel):
                 - metrics: per-stage latency breakdown
         """
         pipeline = self.build_pipeline()
+        cost_tracking = getattr(self.config, "pipeline_cost_tracking_enabled", False)
+        cost_analyzer = None
+        if cost_tracking:
+            from rtmdk.pipeline.cost import PipelineCostAnalyzer
+            cost_analyzer = PipelineCostAnalyzer()
+            cost_analyzer.start(query)
+
         ctx = pipeline.run(
             query_text=query,
             top_k=top_k or self.field.cfg.top_k,
             session_id=session_id,
             embedding=embedding,
         )
+
+        if cost_analyzer is not None:
+            for metric in ctx.metrics:
+                cost_analyzer.record_stage(
+                    metric.name,
+                    latency_ms=metric.latency_ms,
+                )
+            cost_breakdown = cost_analyzer.finalize()
+        else:
+            cost_breakdown = None
+
         result = {
             "results": ctx.results,
             "route": ctx.route,
             "explanations": ctx.explanations,
             "metrics": ctx.to_dict(),
         }
+        if cost_breakdown is not None:
+            result["cost"] = cost_breakdown.to_dict()
         if metrics_store is not None:
             metrics_store.write(result["metrics"])
         return result

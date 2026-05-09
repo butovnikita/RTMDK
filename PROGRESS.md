@@ -552,9 +552,53 @@ python -m build
 
 ---
 
+## ✅ 18. Query Planner + Cost Analyzer Production Integration (completed 2026-05-09)
+
+**Goal:** Enable query planner and cost tracking in production pipeline.
+
+### Changes Made
+- **`rtmdk/memory/config.py`**: Added `pipeline_planner_enabled` and `pipeline_cost_tracking_enabled` to `ProductionConfig`
+- **`rtmdk/memory/core.py`**: 
+  - `build_pipeline()` returns `PlannedPipelineExecutor` when planner enabled
+  - `retrieve_nodes_pipeline()` integrates `PipelineCostAnalyzer` — adds `"cost"` key to result
+- **`rtmdk/server/app.py`**:
+  - `POST /v1/memory/query_pipeline` returns `cost` in response when tracking enabled
+  - `GET /v1/memory/pipeline/plan` — preview execution plan without running query
+
+### Test Results
+- 5 new integration tests in `test_pipeline_planner_integration.py` — all passing
+- Full regression suite: **902 passed, 1 skipped**
+
+---
+
+## ✅ 19. Stress Test + Chaos Engineering CI (completed 2026-05-09)
+
+**Goal:** Validate pipeline performance under load and ensure resilience in CI.
+
+### Changes Made
+- **`scripts/stress_test_pipeline.py`**:
+  - Configurable node count (default 10K) and query count
+  - Measures insert throughput, query latency (p50/p95/p99), memory usage
+  - Supports `--planner` and `--cost-tracking` flags
+  - Stage breakdown per query
+  - Automatic failure if p99 latency exceeds threshold
+- **`.github/workflows/ci.yml`**:
+  - Added `Run chaos engineering tests` job (8/8 tests)
+  - Added `Run stress test (smoke)` job (5000 nodes, 50 queries)
+
+### Stress Test Results (5K nodes, 50 queries, planner + cost)
+- Insert throughput: **2,827 nodes/sec**
+- Query latency p50: **1.00ms**
+- Query latency p95: **1.16ms**
+- Query latency p99: **2.29ms**
+- Memory usage: **587MB**
+- Avg cost/query: **0.990**
+
+---
+
 ## Statistics
-- **891 passed, 1 skipped** — full regression suite
-- **146 new tests** written in this branch
+- **902 passed, 1 skipped** — full regression suite
+- **151 new tests** written in this branch
 - **0 breaking changes**
 
 *Last updated: 2026-05-09*

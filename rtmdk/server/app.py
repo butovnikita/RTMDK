@@ -1412,6 +1412,8 @@ async def memory_query_pipeline(req: MemoryQueryPipelineRequest):
             "metrics": result.get("metrics", {}),
             "total": len(formatted),
         }
+        if result.get("cost"):
+            resp["cost"] = result["cost"]
         if pipeline_metrics_store is not None:
             pipeline_metrics_store.write(result.get("metrics", {}))
         _metric_query_dur.observe(time.time() - t0)
@@ -1501,6 +1503,25 @@ async def memory_pipeline_dag():
         "enabled_stages": sum(1 for n in nodes if n["enabled"]),
         "stages_with_breakers": sum(1 for n in nodes if n["has_breaker"]),
     }
+
+
+@app.get("/v1/memory/pipeline/plan")
+async def memory_pipeline_plan(query: str = "", route: Optional[str] = None, top_k: int = 5):
+    """Preview the execution plan for a query without running it.
+
+    Useful for debugging and UI optimization previews.
+    """
+    if not memory or not memory.field:
+        raise HTTPException(status_code=503, detail="Memory not initialized")
+    query = _sanitize_query(query)
+    pipeline = memory.build_pipeline()
+    if hasattr(pipeline, "get_plan"):
+        plan = pipeline.get_plan(query, route=route, top_k=top_k)
+    else:
+        from rtmdk.pipeline.planner import QueryPlanner
+        planner = QueryPlanner()
+        plan = planner.plan(query, route=route, top_k=top_k).to_dict()
+    return {"query": query, "plan": plan}
 
 
 @app.get("/v1/memory/pipeline/health")

@@ -68,6 +68,14 @@ jobs:
         run: python scripts/bench_pipeline_ab.py --queries 10 --nodes 100
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10'
 
+      - name: Run chaos engineering tests
+        run: python scripts/chaos_test_pipeline.py --mode all --seed 42
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10'
+
+      - name: Run stress test (smoke)
+        run: python scripts/stress_test_pipeline.py --nodes 5000 --queries 50 --planner --cost-tracking
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10'
+
   pipeline-integration:
     runs-on: ubuntu-latest
     steps:

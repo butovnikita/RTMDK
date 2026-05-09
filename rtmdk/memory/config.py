@@ -181,6 +181,8 @@ _FIELD_GROUPS: Dict[str, str] = {
     "pipeline_breaker_recovery_timeout_ms": "ProductionConfig",
     "pipeline_breaker_half_open_max_calls": "ProductionConfig",
     "pipeline_breaker_thresholds": "ProductionConfig",
+    "pipeline_planner_enabled": "ProductionConfig",
+    "pipeline_cost_tracking_enabled": "ProductionConfig",
     "event_driven": "InferenceConfig",
     "evolve_queue_size": "MemorySystemConfig",
     "false_merge_threshold": "RetrievalConfig",
@@ -743,6 +745,8 @@ class ProductionConfig:
     pipeline_alert_degraded_stages_threshold: int = 2  # Alert if >= N stages degraded
     pipeline_alert_latency_threshold_ms: float = 5000.0  # Alert if total latency > N ms
     pipeline_alert_error_rate_threshold: float = 0.1  # Alert if error rate > 10%
+    pipeline_planner_enabled: bool = False  # Enable query planner stage skipping
+    pipeline_cost_tracking_enabled: bool = False  # Enable per-query cost tracking
 
 
 @dataclass
