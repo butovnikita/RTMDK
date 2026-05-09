@@ -66,6 +66,7 @@
 | **TopologyManager** | Tension, soft gates, pruning, integrity | `memory/topology_manager.py` |
 | **AsyncPipelineManager** | Background async workers (evolve, save) | `memory/async_pipeline_manager.py` |
 | **CrystallizationManager** | Recurring pattern detection (DBSCAN) | `memory/crystallization_manager.py` |
+| **NodeManager** | Node ingestion, batch add, delete, queue | `memory/node_manager.py` |
 | **Riemannian Geometry** | Операции на шаре Пуанкаре (exp/log/midpoint/scalar) | `memory/geometry.py`, `utils/hyperbolic.py` |
 | **Spectral Clustering** | Спектральный графовый Laplacian для глобальной кластеризации перед merge | `memory/spectral.py` |
 | **Kalman Filter** | EKF для отслеживания неопределённости позиций узлов | `memory/kalman.py` |
@@ -423,7 +424,7 @@ rtmdk/
 ├── config.py            # 8 пресетов RTMDKConfig
 │
 ├── memory/              # Core kernel
-│   ├── field.py              # RTMDKField (~2550 lines, 11 managers extracted)
+│   ├── field.py              # RTMDKField (~2180 lines, 12 managers extracted)
 │   ├── core.py               # RTMDKMemory (~2600 lines, pipeline & API)
 │   ├── resonance.py          # ResonanceEngine (math extraction)
 │   ├── cache_manager.py      # NodeCacheManager (cache extraction)
