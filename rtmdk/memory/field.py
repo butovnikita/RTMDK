@@ -30,6 +30,7 @@ from rtmdk.memory.query_manager import QueryManager
 from rtmdk.memory.routing_manager import RoutingManager
 from rtmdk.memory.scheduler import StepScheduler
 from rtmdk.memory.topology_manager import TopologyManager
+from rtmdk.memory.async_pipeline_manager import AsyncPipelineManager
 from rtmdk.support.agents import AgentPlanner, HypothesisVerifier, ToolRouter
 from rtmdk.support.healer import TopologyHealer
 from rtmdk.support.meta_adaptive import MetaAdaptiveKernel
@@ -1099,6 +1100,7 @@ class RTMDKField:
         self._query_mgr = QueryManager(self)
         self._routing_mgr = RoutingManager(self)
         self._topology_mgr = TopologyManager(self)
+        self._async_pipeline_mgr = AsyncPipelineManager(self)
         self._scheduler = StepScheduler(self)
 
     # ------------------------------------------------------------------
@@ -2343,102 +2345,10 @@ class RTMDKField:
     # ========================================================================
 
     async def _start_workers(self):
-        """Start background worker tasks for async pipeline with lifecycle tracking."""
-        if self._workers_started:
-            return
-        self._workers_started = True
-        # Fix 3: Track tasks for cancellation in clear()
-        t_evolve = asyncio.create_task(self._worker_evolve())
-        t_save = asyncio.create_task(self._worker_save())
-        self._workers.extend([t_evolve, t_save])
-
-    async def _worker_evolve(self):
-        """Background worker for field evolution with throttling."""
-        try:
-            while True:
-                try:
-                    payload = await asyncio.wait_for(self.evolve_q.get(), timeout=1.0)
-                    inputs = payload.get("inputs", {})
-
-                    # Throttling: Skip heavy meta-ops if backpressure high
-                    backpressure_ok = self._backpressure_events < 3
-
-                    loop = asyncio.get_event_loop()
-                    await loop.run_in_executor(None, self.step, inputs)
-
-                    # Fix 10: Track recovery and update last successful step
-                    self._last_successful_step = time.time()
-
-                    if backpressure_ok and self.meta_controller:
-                        # Safe execution for optimization
-                        if self.meta_controller.should_optimize():
-                            self._circuit_breakers["MetaControllerOptimize"].call(
-                                self.meta_controller.optimize, self)
-
-                    # Decay backpressure on success — also check if we can
-                    # recover from degraded mode
-                    if self._backpressure_events > 0:
-                        self._backpressure_events = max(
-                            0, self._backpressure_events - 1)
-                        # Fix 10: Recover from degraded mode if backpressure
-                        # has fully decayed
-                        if self._backpressure_events == 0 and self._heavy_modules_degraded:
-                            self._heavy_modules_degraded = False
-                            self.stats["backpressure_degraded_mode"] = self.stats.get(
-                                "backpressure_degraded_mode", 0) + 1
-                            logger.info(
-                                "Backpressure recovered — heavy modules re-enabled")
-                        if self._backpressure_events == 0:
-                            self.stats["last_backpressure_recovery"] = time.time()
-
-                    self.evolve_q.task_done()
-                except asyncio.TimeoutError:
-                    continue
-                except Exception:
-                    self._backpressure_events += 1
-                    logger.exception("Evolve worker error")
-        except asyncio.CancelledError:
-            logger.info("Evolve worker cancelled cleanly.")
-
-    async def _worker_save(self):
-        """Background worker for batch ingestion."""
-        try:
-            while True:
-                try:
-                    payload = await asyncio.wait_for(self.save_q.get(), timeout=1.0)
-                    embeddings = payload.get("embeddings")
-                    contents = payload.get("contents")
-                    modalities = payload.get("modalities")
-                    if embeddings is not None and contents is not None:
-                        loop = asyncio.get_event_loop()
-                        await loop.run_in_executor(
-                            None,
-                            self.add_nodes_batch,
-                            embeddings,
-                            contents,
-                            None,  # phases
-                            None,  # node_ids
-                            None,  # session_ids
-                            modalities,
-                            False,  # skip_projection
-                        )
-                    self._track_queue_depth()
-                    self.save_q.task_done()
-                except asyncio.TimeoutError:
-                    continue
-                except Exception:
-                    logger.exception("Save worker error")
-        except asyncio.CancelledError:
-            logger.info("Save worker cancelled cleanly.")
+        await self._async_pipeline_mgr.start_workers()
 
     def _track_queue_depth(self):
-        """Track async queue depths for monitoring."""
-        if self.cfg.async_pipeline and self.evolve_q:
-            self.stats["async_queue_depth"] = (
-                self.evolve_q.qsize() +
-                (self.save_q.qsize() if self.save_q else 0) +
-                (self.query_q.qsize() if self.query_q else 0)
-            )
+        self._async_pipeline_mgr._track_queue_depth()
 
     # ========================================================================
     # PHASE 13 TRACK 4: LOW-RANK COMPRESSION
