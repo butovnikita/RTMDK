@@ -34,6 +34,7 @@ from rtmdk.memory.async_pipeline_manager import AsyncPipelineManager
 from rtmdk.memory.crystallization_manager import CrystallizationManager
 from rtmdk.memory.node_manager import NodeManager
 from rtmdk.memory.cognitive_manager import CognitiveManager
+from rtmdk.memory.operational_manager import OperationalManager
 from rtmdk.support.agents import AgentPlanner, HypothesisVerifier, ToolRouter
 from rtmdk.support.healer import TopologyHealer
 from rtmdk.support.meta_adaptive import MetaAdaptiveKernel
@@ -693,6 +694,7 @@ class RTMDKField:
         self._crystallization_mgr = CrystallizationManager(self)
         self._node_mgr = NodeManager(self)
         self._cognitive_mgr = CognitiveManager(self)
+        self._operational_mgr = OperationalManager(self)
         self._scheduler = StepScheduler(self)
 
     # ------------------------------------------------------------------
@@ -1012,27 +1014,6 @@ class RTMDKField:
 
     def queue_add_nodes(self, embeddings: NDArray, contents: List[Dict], modalities: Optional[List[str]] = None) -> None:
         self._node_mgr.queue_add_nodes(embeddings, contents, modalities)
-    def calibrate(
-            self,
-            query_embedding: NDArray,
-            node_id: str,
-            is_relevant: bool) -> None:
-        """Add a labeled query-result pair to the conformal calibration set.
-
-        Args:
-            query_embedding: the query embedding used for retrieval
-            node_id: the retrieved node id
-            is_relevant: whether this node was judged relevant for the query
-        """
-        if not self.cfg.conformal_prediction or self.conformal_calibrator is None:
-            return
-        if not is_relevant or node_id not in self.nodes:
-            return
-        node = self.nodes[node_id]
-        query_latent = self._project(query_embedding)
-        score = self._resonance_response(query_latent, node.phase, node)
-        self.conformal_calibrator.add_sample(score)
-
     def _apply_conformal_filter(self, results: List[Tuple[str, float, MemoryNode]]) -> List[Tuple[str, float, MemoryNode]]:
         return self._query_mgr._apply_conformal_filter(results)
 
@@ -1069,14 +1050,37 @@ class RTMDKField:
     def _encode_field_state(self) -> NDArray:
         return self._cognitive_mgr.encode_field_state()
 
-    # Phase 11 Track 4: Counterfactual imagination
+    # ========================================================================
+    # Operational methods (delegated to OperationalManager)
+    # ========================================================================
+    def calibrate(self, query_embedding: NDArray, node_id: str,
+                  is_relevant: bool) -> None:
+        self._operational_mgr.calibrate(query_embedding, node_id, is_relevant)
+
     def imagine_counterfactual(self, base_query: NDArray,
                                intervention: Dict[str, float]) -> List[Dict]:
-        """Generate hypothetical trajectories via do-interventions."""
-        if not self.scenario_planner:
-            return []
-        return self.scenario_planner.imagine_counterfactual(
-            base_query, intervention)
+        return self._operational_mgr.imagine_counterfactual(base_query, intervention)
+
+    def rollback_consolidation(self, n_steps: int = 1) -> bool:
+        return self._operational_mgr.rollback_consolidation(n_steps)
+
+    def do_intervention(self, node_id: str, new_embedding: NDArray):
+        self._operational_mgr.do_intervention(node_id, new_embedding)
+
+    def clear_interventions(self):
+        self._operational_mgr.clear_interventions()
+
+    def get_field_health(self) -> Dict:
+        return self._operational_mgr.get_field_health()
+
+    def counterfactual_query(self, intervention: Dict[str, Any],
+                             query_nodes: List[str],
+                             evidence: Optional[Dict[str, Any]] = None) -> CounterfactualResult:
+        return self._operational_mgr.counterfactual_query(
+            intervention, query_nodes, evidence)
+
+    def get_causal_summary(self) -> Dict:
+        return self._operational_mgr.get_causal_summary()
 
     def _merge_latents(self, node, partner):
         """Merge two node latent positions using learned or heuristic method."""
