@@ -134,8 +134,8 @@ def bench_rtmdk(
         memory.field.sot_bootstrap(texts, teacher_model="all-MiniLM-L6-v2",
                                    fit_projection_only=False, n_epochs=50)
         def sot_embed(text: str):
-            tokens = memory.field.sot_tokenizer.encode(text)
-            return memory.field.sot_tokenizer.embed(tokens).astype(np.float32)
+            tokens = memory.field._projection_mgr.sot_tokenizer.encode(text)
+            return memory.field._projection_mgr.sot_tokenizer.embed(tokens).astype(np.float32)
         for rec in records:
             emb = sot_embed(rec["context"])
             memory.add_node(embedding=emb, content={"text": rec["context"]}, phase=0.0)
