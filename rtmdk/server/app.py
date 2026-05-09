@@ -719,6 +719,27 @@ async def _fetch_embedding(text: str, model: str) -> np.ndarray:
     return np.array(data["data"][0]["embedding"], dtype=np.float32)
 
 
+def _sanitize_query(query: str, max_length: int = 4096) -> str:
+    """Sanitize user query input for pipeline endpoints.
+
+    - Strip control characters
+    - Normalize whitespace
+    - Enforce max length
+    - Reject null bytes
+    """
+    if not query:
+        raise HTTPException(status_code=400, detail="Query cannot be empty")
+    if "\x00" in query:
+        raise HTTPException(status_code=400, detail="Query contains invalid characters")
+    # Strip control chars except newline/tab
+    query = "".join(ch for ch in query if ch == "\n" or ch == "\t" or ord(ch) >= 32)
+    # Normalize whitespace
+    query = " ".join(query.split())
+    if len(query) > max_length:
+        raise HTTPException(status_code=400, detail=f"Query exceeds max length ({max_length})")
+    return query
+
+
 async def _get_embedding_cached(text: str, model: str = None) -> np.ndarray:
     """Get embedding with disk+memory caching."""
     if embedding_cache is None:
@@ -1333,13 +1354,15 @@ async def memory_query(req: MemoryQueryRequest):
 @app.post("/v1/memory/query_pipeline")
 async def memory_query_pipeline(req: MemoryQueryPipelineRequest):
     """Query memory using the explicit pipeline API with per-stage metrics."""
+    query = _sanitize_query(req.query)
+
     if not memory:
         raise HTTPException(status_code=503, detail="Memory not initialized")
 
     t0 = time.time()
     try:
         result = await memory.retrieve_nodes_pipeline_async(
-            req.query,
+            query,
             top_k=req.top_k,
             session_id=req.session_id,
         )
@@ -1380,6 +1403,7 @@ async def memory_pipeline_stream(
     top_k: int = Query(5, ge=1, le=50, description="Number of results"),
     session_id: Optional[str] = Query(None, description="Session ID"),
 ):
+    query = _sanitize_query(query)
     """Stream pipeline stage events via Server-Sent Events.
 
     Each event carries the completion status of a single stage,
