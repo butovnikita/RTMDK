@@ -69,6 +69,30 @@ class TestWebSocketMemory:
             assert resp["type"] == "error"
             assert "Unknown action" in resp["message"]
 
+    def test_websocket_pipeline_query(self, client):
+        cfg = RTMDKConfig(latent_dim=16, use_hnsw=False)
+        field = RTMDKField(cfg)
+        field.add_node(
+            embedding=np.array([0.0] * 16),
+            content={"content": "hello world"},
+            node_id="n0")
+        mem = RTMDKMemory(config=cfg, embedder=lambda x: np.array([0.0] * 16))
+        mem.field = field
+        app_mod.memory = mem
+
+        try:
+            with client.websocket_connect("/ws/memory") as ws:
+                ws.send_json({"action": "query_pipeline", "query": "hello", "top_k": 5})
+                resp = ws.receive_json()
+                assert resp["type"] == "pipeline_results"
+                assert "results" in resp
+                assert "metrics" in resp
+                assert len(resp["results"]) >= 1
+                assert resp["results"][0]["node_id"] == "n0"
+                assert resp["route"] in ("default", None)
+        finally:
+            app_mod.memory = None
+
     def test_websocket_invalid_json(self, client):
         with client.websocket_connect("/ws/memory") as ws:
             ws.send_text("not json")
