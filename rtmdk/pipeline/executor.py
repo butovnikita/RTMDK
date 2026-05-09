@@ -17,8 +17,27 @@ class PipelineExecutor:
         print(ctx.to_dict()["stages"])  # per-stage latency breakdown
     """
 
-    def __init__(self, stages: List[PipelineStage]):
+    def __init__(self, stages: List[PipelineStage], webhook_manager: Optional[Any] = None):
         self.stages = stages
+        self.webhook_manager = webhook_manager
+
+    def _dispatch_stage_event(self, ctx: PipelineContext, stage: PipelineStage) -> None:
+        """Dispatch webhook events for degraded stages or breaker state changes."""
+        if self.webhook_manager is None:
+            return
+        latest = ctx.metrics[-1] if ctx.metrics else None
+        if latest and latest.degraded:
+            self.webhook_manager.dispatch(
+                "pipeline_stage_degraded",
+                {
+                    "stage": stage.name,
+                    "query": ctx.query_text[:100],
+                    "session_id": ctx.session_id,
+                    "error": latest.error,
+                    "latency_ms": latest.latency_ms,
+                    "breaker_state": ctx.breaker_states.get(stage.name),
+                },
+            )
 
     def run(
         self,
@@ -35,6 +54,7 @@ class PipelineExecutor:
         )
         for stage in self.stages:
             ctx = stage.run(ctx)
+            self._dispatch_stage_event(ctx, stage)
             if ctx.skip_remaining:
                 break
         return ctx

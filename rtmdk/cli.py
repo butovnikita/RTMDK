@@ -76,6 +76,70 @@ def cmd_recommend(
     print(f"  memory = create_rtmdk('{result['preset']}', embedder=embedder)")
 
 
+def cmd_pipeline_diagnose(
+        memory_file: str = "",
+        config_preset: str = "local",
+):
+    """Diagnose pipeline health and run a smoke test query.
+
+    Usage:
+        python -m rtmdk pipeline-diagnose
+        python -m rtmdk pipeline-diagnose --memory ~/.rtmdk/memory.json
+        python -m rtmdk pipeline-diagnose --preset production
+    """
+    import numpy as np
+    from rtmdk.memory.config import RTMDKConfig
+    from rtmdk.memory.core import RTMDKMemory
+
+    print("RTMDK Pipeline Diagnostics")
+    print("=" * 60)
+
+    preset_fn = getattr(RTMDKConfig, config_preset, None)
+    if preset_fn is None:
+        print(f"Unknown preset '{config_preset}', falling back to 'local'")
+        preset_fn = RTMDKConfig.local
+    cfg = preset_fn()
+    mem = RTMDKMemory(config=cfg, embedder=lambda x: np.zeros(cfg.latent_dim, dtype=np.float32))
+
+    if memory_file and os.path.exists(os.path.expanduser(memory_file)):
+        print(f"Loading memory from: {memory_file}")
+        try:
+            mem.load(os.path.expanduser(memory_file))
+        except Exception as exc:
+            print(f"  [WARN] Could not load: {exc}")
+    else:
+        print("No memory file — using empty field for smoke test")
+        mem.field.add_node(
+            embedding=np.zeros(cfg.latent_dim, dtype=np.float32),
+            content={"text": "smoke test node"},
+            node_id="smoke_0",
+        )
+
+    # Build pipeline and check stages
+    pipeline = mem.build_pipeline()
+    print(f"\nPipeline stages ({len(pipeline.stages)}):")
+    for stage in pipeline.stages:
+        breaker = "none"
+        if stage.circuit_breaker is not None:
+            breaker = stage.circuit_breaker.state.value
+        print(f"  - {stage.name:20s} enabled={stage.enabled} breaker={breaker}")
+
+    # Smoke test
+    print("\nRunning smoke test query...")
+    try:
+        result = mem.retrieve_nodes_pipeline("smoke test", top_k=3)
+        print(f"  Query:     smoke test")
+        print(f"  Results:   {result.get('results_count', 0)}")
+        print(f"  Route:     {result.get('route', 'N/A')}")
+        print(f"  Latency:   {result.get('total_latency_ms', 0):.2f} ms")
+        print(f"  Degraded:  {result.get('degraded_stages', [])}")
+        print(f"  Breakers:  {result.get('breaker_states', {})}")
+        print("\n[OK] Pipeline is operational")
+    except Exception as exc:
+        print(f"\n[FAIL] Pipeline query failed: {exc}")
+        raise SystemExit(1)
+
+
 def cmd_bootstrap_sbert(
         corpus_path: str,
         output: str,
@@ -242,6 +306,17 @@ def main():
     bf_parser.add_argument("--output", "-o", type=str,
                            default="sot_fasttext.json")
 
+    # pipeline-diagnose
+    pd_parser = subparsers.add_parser(
+        "pipeline-diagnose",
+        help="Diagnose pipeline health and run smoke test")
+    pd_parser.add_argument(
+        "--memory", "-m", type=str, default="",
+        help="Path to memory file (optional)")
+    pd_parser.add_argument(
+        "--preset", "-p", type=str, default="local",
+        help="Config preset: local, production, research")
+
     args = parser.parse_args()
 
     if args.command == "status":
@@ -260,6 +335,8 @@ def main():
         cmd_bootstrap_sbert(args.corpus, args.output, args.model)
     elif args.command == "bootstrap-fasttext":
         cmd_bootstrap_fasttext(args.model_path, args.corpus, args.output)
+    elif args.command == "pipeline-diagnose":
+        cmd_pipeline_diagnose(args.memory, args.preset)
     else:
         parser.print_help()
 

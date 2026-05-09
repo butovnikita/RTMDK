@@ -148,3 +148,48 @@ class TestBatchPipelineIntegration:
             assert "stages" in output
             assert "total_latency_ms" in output
             assert "breaker_states" in output
+
+
+class TestPipelineExecutorWebhook:
+    def test_webhook_dispatch_on_degraded_stage(self):
+        from rtmdk.pipeline.executor import PipelineExecutor
+        from rtmdk.pipeline.base import PipelineStage, PipelineContext
+
+        class FailingStage(PipelineStage):
+            name = "fail"
+            def process(self, ctx):
+                raise RuntimeError("intentional failure")
+
+        dispatched = []
+
+        class FakeWebhookManager:
+            def dispatch(self, event_type, payload):
+                dispatched.append((event_type, payload))
+
+        executor = PipelineExecutor([FailingStage()], webhook_manager=FakeWebhookManager())
+        ctx = executor.run("test", top_k=5)
+
+        assert len(dispatched) == 1
+        assert dispatched[0][0] == "pipeline_stage_degraded"
+        assert dispatched[0][1]["stage"] == "fail"
+        assert "intentional failure" in dispatched[0][1]["error"]
+
+    def test_no_webhook_when_healthy(self):
+        from rtmdk.pipeline.executor import PipelineExecutor
+        from rtmdk.pipeline.base import PipelineStage, PipelineContext
+
+        class PassStage(PipelineStage):
+            name = "pass"
+            def process(self, ctx):
+                return ctx
+
+        dispatched = []
+
+        class FakeWebhookManager:
+            def dispatch(self, event_type, payload):
+                dispatched.append((event_type, payload))
+
+        executor = PipelineExecutor([PassStage()], webhook_manager=FakeWebhookManager())
+        ctx = executor.run("test", top_k=5)
+
+        assert len(dispatched) == 0
