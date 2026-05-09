@@ -7,7 +7,7 @@ kalman filtering, versioning, etc.
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
 
 import numpy as np
 
@@ -40,7 +40,7 @@ class ConsolidationManager:
         updated: List[str] = []
         eff_threshold = field.get_effective_threshold()
 
-        pre_state: Dict = {}
+        pre_state: Dict[str, Any] = {}
         if cfg.enable_rollback or cfg.self_sup_verify_after_consolidate:
             for nid in field.node_index:
                 n = field.nodes[nid]
@@ -238,7 +238,7 @@ class ConsolidationManager:
         updated: List[str],
         pending_deletions: List[str],
         processed: Set[str],
-        pre_state: Dict,
+        pre_state: Dict[str, Any],
     ) -> bool:
         """Execute a single merge of nid with pid."""
         field = self.field
@@ -346,7 +346,7 @@ class ConsolidationManager:
     def _verify_consistency(
         self,
         updated_nodes: List[str],
-        pre_state: Optional[Dict] = None,
+        pre_state: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Self-supervision: probe merged nodes to verify they remain retrievable."""
         field = self.field
@@ -372,7 +372,7 @@ class ConsolidationManager:
         updated: List[str],
         pending_deletions: List[str],
         processed: Set[str],
-        pre_state: Dict,
+        pre_state: Dict[str, Any],
     ) -> bool:
         """Spectral Graph Laplacian clustering for consolidation."""
         field = self.field

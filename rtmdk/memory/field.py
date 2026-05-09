@@ -49,6 +49,7 @@ import asyncio
 import functools
 import json
 import math
+import random
 import threading
 import re
 import time
@@ -1237,11 +1238,6 @@ class RTMDKField:
         Uses content-bearing words (skipping stop words) for robust
         cross-lingual phase extraction.
         """
-        import hashlib
-        import math
-        import random
-        import re
-
         parts = []
         if session_id:
             parts.append(f"s:{session_id}")
