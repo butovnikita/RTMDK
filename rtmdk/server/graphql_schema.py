@@ -32,6 +32,30 @@ class MemoryResult:
 
 
 @strawberry.type
+class StageMetric:
+    stage: str
+    latency_ms: float
+    error: Optional[str]
+    degraded: bool
+
+
+@strawberry.type
+class PipelineMetrics:
+    stages: List[StageMetric]
+    total_latency_ms: float
+    breaker_states: Optional[str] = None
+
+
+@strawberry.type
+class PipelineResult:
+    query: str
+    results: List[MemoryResult]
+    route: Optional[str]
+    total: int
+    metrics: PipelineMetrics
+
+
+@strawberry.type
 class Query:
     @strawberry.field
     def health(self) -> Health:
@@ -59,6 +83,47 @@ class Query:
         return MemoryNode(
             id=n.id, content=content, salience=float(n.salience),
             phase=float(n.phase), amplitude=float(n.amplitude))
+
+    @strawberry.field
+    def query_pipeline(self, query: str, top_k: int = 5, session_id: Optional[str] = None) -> Optional[PipelineResult]:
+        import rtmdk.server.app as app_mod
+        memory = getattr(app_mod, "memory", None)
+        if memory is None:
+            return None
+        try:
+            result = memory.retrieve_nodes_pipeline(query, top_k=top_k, session_id=session_id)
+            formatted = []
+            for nid, score, node in result["results"]:
+                content = ""
+                if isinstance(node.content, dict):
+                    content = node.content.get("text", str(node.content))
+                else:
+                    content = str(node.content)
+                formatted.append(MemoryResult(node_id=nid, score=round(float(score), 4), content=content))
+            metrics_data = result.get("metrics", {})
+            stages = [
+                StageMetric(
+                    stage=s.get("stage", ""),
+                    latency_ms=s.get("latency_ms", 0.0),
+                    error=s.get("error"),
+                    degraded=s.get("degraded", False),
+                )
+                for s in metrics_data.get("stages", [])
+            ]
+            metrics = PipelineMetrics(
+                stages=stages,
+                total_latency_ms=metrics_data.get("total_latency_ms", 0.0),
+                breaker_states=str(metrics_data.get("breaker_states", {})) if metrics_data.get("breaker_states") else None,
+            )
+            return PipelineResult(
+                query=query,
+                results=formatted,
+                route=result.get("route"),
+                total=len(formatted),
+                metrics=metrics,
+            )
+        except Exception as exc:
+            raise Exception(f"Pipeline query failed: {exc}")
 
     @strawberry.field
     def nodes(self, limit: int = 10, offset: int = 0) -> List[MemoryNode]:
