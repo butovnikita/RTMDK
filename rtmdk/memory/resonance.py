@@ -196,6 +196,7 @@ class ResonanceEngine:
         bw: Optional[Any] = None,
         use_gates: bool = False,
         use_causal: bool = False,
+        pc: Optional[float] = None,
     ) -> NDArray:
         """Compute resonance for a chunk of nodes (used by _query_vectorized)."""
         if bw is not None:
@@ -203,7 +204,10 @@ class ResonanceEngine:
         else:
             local_bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self.cfg.bandwidth
         local_bw = max(local_bw, 1e-8)
-        pc = float(self._effective_pc)
+        if pc is None:
+            pc = float(self._effective_pc)
+        else:
+            pc = float(pc)
 
         # Numba fast-path for scalar bandwidth (the common case)
         if is_numba_available() and np.ndim(bw) == 0:

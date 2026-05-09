@@ -1471,19 +1471,22 @@ class RTMDKField:
             causal_boost,
             query_latent,
             query_phase,
-            bw=None):
+            bw=None,
+            pc=None):
         """Compute resonance response for a chunk of nodes.
 
         Args:
             bw: Optional per-node bandwidth vector (same length as positions).
                 If None, uses global bandwidth from config or meta_kernel.
+            pc: Optional phase coupling. If None, uses _effective_pc.
         """
         return self._resonance_engine.chunk_response(
             positions, phases, amplitudes, saliences,
             modal_weights, gates, causal_boost,
             query_latent, query_phase, bw,
             use_gates=self.cfg.soft_gates,
-            use_causal=self.causal_engine is not None)
+            use_causal=self.causal_engine is not None,
+            pc=pc)
 
     def _query_vectorized(self, query_latent: NDArray, query_phase: float,
                           top_k: int, modality: str, session_id: Optional[str],
@@ -1502,6 +1505,15 @@ class RTMDKField:
         Complexity: O(N×d) with SIMD vectorization (~200x faster than Python loop)
         Cached arrays avoid O(N) Python loop on every query.
         """
+        cfg = self.cfg
+        min_response = cfg.min_response
+        gpu_batch_size = cfg.gpu_batch_size
+        attention_bias = getattr(cfg, "attention_bias", False)
+        bias_temperature = getattr(cfg, "bias_temperature", 1.0)
+        bw = cfg.bandwidth
+        pc = float(self._resonance_engine._effective_pc)
+        use_causal = self.causal_engine is not None
+
         self._ensure_adaptive_pc(query_latent)
 
         n_nodes = len(self.node_index)
@@ -1553,7 +1565,7 @@ class RTMDKField:
 
         # Phase 3c: Chunked batch computation — prevents OOM and improves cache
         # locality
-        batch_size = self.cfg.gpu_batch_size
+        batch_size = gpu_batch_size
         n = len(positions)
 
         if n <= batch_size:
@@ -1562,10 +1574,11 @@ class RTMDKField:
                 positions, phases, amplitudes, saliences,
                 modal_weights, gates, causal_boost,
                 query_latent, query_phase,
+                bw=bw, pc=pc,
             )
             if session_id and session_id != "default" and session_mask is not None and session_indices is None:
                 resp = resp * (1.0 + 0.5 * session_mask.astype(np.float32))
-            above_threshold = resp >= self.cfg.min_response
+            above_threshold = resp >= min_response
             indices = np.where(above_threshold)[0]
             if len(indices) == 0:
                 self.stats["total_queries"] += 1
@@ -1598,11 +1611,12 @@ class RTMDKField:
                     positions[start:end], phases[start:end], amplitudes[start:end],
                     saliences[start:end], modal_weights[start:end], gates[start:end],
                     causal_boost[start:end], query_latent, query_phase,
+                    bw=bw, pc=pc,
                 )
                 if session_id and session_id != "default" and session_mask is not None and session_indices is None:
                     resp = resp * \
                         (1.0 + 0.5 * session_mask[start:end].astype(np.float32))
-                above = resp >= self.cfg.min_response
+                above = resp >= min_response
                 local_idx = np.where(above)[0]
                 if len(local_idx) == 0:
                     continue
@@ -1652,10 +1666,10 @@ class RTMDKField:
                 for nid, resp_val, node in results:
                     node.goal_relevance = self.goal_tracker.get_goal_relevance(
                         nid)
-            if self.cfg.attention_bias:
+            if attention_bias:
                 from rtmdk.memory.utils import apply_attention_bias
                 results = apply_attention_bias(
-                    results, self.cfg.bias_temperature)
+                    results, bias_temperature)
                 self.stats["attention_bias_applied"] += 1
 
         # Track timing
@@ -1793,7 +1807,8 @@ class RTMDKField:
                                                               float,
                                                               MemoryNode]]:
         t0 = time.time()
-        top_k = top_k or self.cfg.top_k
+        cfg = self.cfg
+        top_k = top_k or cfg.top_k
         query_latent = self._project(embedding)
         self._ensure_adaptive_pc(query_latent)
 
@@ -1811,12 +1826,12 @@ class RTMDKField:
 
         # P0: BM25 first-stage pre-filtering — use BM25 to get top-K candidates,
         # then score only those with resonance. 10-100x faster than full scan.
-        if (self.cfg.bm25_first_stage_k > 0 and
+        if (cfg.bm25_first_stage_k > 0 and
                 query_text and
                 self.bm25_index is not None and
-                len(self.nodes) > self.cfg.bm25_first_stage_k):
+                len(self.nodes) > cfg.bm25_first_stage_k):
             candidate_ids = [
-                nid for nid, _ in self._index_mgr.bm25_search(query_text, self.cfg.bm25_first_stage_k)
+                nid for nid, _ in self._index_mgr.bm25_search(query_text, cfg.bm25_first_stage_k)
                 if nid in self.nodes
             ]
             if candidate_ids:
@@ -1830,7 +1845,7 @@ class RTMDKField:
                     node = self.nodes[nid]
                     resp = float(
                         scores[idx]) * (1.3 if session_id and node.content.get("session") == session_id else 1.0)
-                    if resp >= self.cfg.min_response:
+                    if resp >= cfg.min_response:
                         results.append((nid, resp, node))
                         node.last_resonated = time.time()
                 results.sort(key=lambda x: x[1], reverse=True)
@@ -1840,7 +1855,7 @@ class RTMDKField:
         # Fix 1: HNSW auto-intercept for large N (>50 nodes).
         # For small datasets, full vectorized scan is more accurate and still
         # fast (SIMD).
-        elif self.cfg.use_hnsw:
+        elif cfg.use_hnsw:
             candidate_ids: List[str] = []
             n_pos = self._index_mgr.hnsw_count()
             if n_pos > getattr(self.cfg, "hnsw_min_nodes", 50):
@@ -1861,7 +1876,7 @@ class RTMDKField:
                         for nid in candidate_ids
                     ], dtype=np.float32)
                     scores = scores * session_boosts
-                above = scores >= self.cfg.min_response
+                above = scores >= cfg.min_response
                 indices = np.where(above)[0]
                 if len(indices) == 0:
                     results = []
@@ -1887,9 +1902,9 @@ class RTMDKField:
                     query_latent, phase, top_k, modality, session_id, t0)
             else:
                 results = []
-        elif self.cfg.sparse_routing and self._index_mgr.shard_centers is not None and len(self.nodes) > self.cfg.num_shards * 2:
+        elif cfg.sparse_routing and self._index_mgr.shard_centers is not None and len(self.nodes) > cfg.num_shards * 2:
             active_shards = self._route_query(
-                query_latent, self.cfg.top_shards)
+                query_latent, cfg.top_shards)
             candidate_ids = [
                 nid for nid in self.node_index if self._get_node_shard(nid) in active_shards]
             search_nodes = [(nid, self.nodes[nid])
@@ -1903,7 +1918,7 @@ class RTMDKField:
 
         # Track 2: Fallback to warm/cold tiers if tiered storage is enabled
         if (self._tiered_store is not None and
-                self.cfg.tiered_fallback_enabled and
+                cfg.tiered_fallback_enabled and
                 len(results) < top_k):
             needed = top_k - len(results)
             # Warm candidates — peek without promotion (fast bulk read)
@@ -1919,7 +1934,7 @@ class RTMDKField:
                     for idx, node in enumerate(warm_nodes):
                         resp = float(
                             scores[idx]) * (1.3 if session_id and node.content.get("session") == session_id else 1.0)
-                        if resp >= self.cfg.min_response:
+                        if resp >= cfg.min_response:
                             results.append((node.id, resp, node))
                             node.last_resonated = time.time()
                     results.sort(key=lambda x: x[1], reverse=True)
@@ -1941,7 +1956,7 @@ class RTMDKField:
                             resp = float(scores[idx]) * (
                                 1.3 if session_id and
                                 node.content.get("session") == session_id else 1.0)
-                            if resp >= self.cfg.min_response:
+                            if resp >= cfg.min_response:
                                 results.append((node.id, resp, node))
                                 node.last_resonated = time.time()
                         results.sort(key=lambda x: x[1], reverse=True)
@@ -1951,26 +1966,26 @@ class RTMDKField:
         if 'results' not in locals():
             search_nodes = [(nid, self.nodes[nid])
                             for nid in self.node_index if nid in self.nodes]
-            if self.cfg.sparse_routing:
+            if cfg.sparse_routing:
                 self.stats["shard_misses"] += 1
 
             # Fix 3: Hyperbolic pre-filtering for candidate selection
-            if self.cfg.hyperbolic and len(search_nodes) > top_k * 5:
+            if cfg.hyperbolic and len(search_nodes) > top_k * 5:
                 query_norm = np.linalg.norm(query_latent)
-                if query_norm >= self.cfg.ball_radius:
+                if query_norm >= cfg.ball_radius:
                     query_latent = query_latent * \
-                        (self.cfg.ball_radius - 1e-6) / max(query_norm, 1e-8)
+                        (cfg.ball_radius - 1e-6) / max(query_norm, 1e-8)
                 prefiltered = []
                 for nid, node in search_nodes:
                     # FIX: Never mutate node.latent_pos — use a local copy for
                     # projection
                     node_norm = np.linalg.norm(node.latent_pos)
                     node_pos = node.latent_pos
-                    if node_norm >= self.cfg.ball_radius:
+                    if node_norm >= cfg.ball_radius:
                         node_pos = node.latent_pos * \
-                            (self.cfg.ball_radius - 1e-6) / max(node_norm, 1e-8)
+                            (cfg.ball_radius - 1e-6) / max(node_norm, 1e-8)
                     hdist = poincare_dist(
-                        query_latent, node_pos, self.cfg.ball_radius)
+                        query_latent, node_pos, cfg.ball_radius)
                     if hdist < 3.0:
                         prefiltered.append((nid, node))
                 if len(prefiltered) > 0:
@@ -1984,7 +1999,7 @@ class RTMDKField:
                 # session
                 if session_id and node.content.get("session") == session_id:
                     resp *= 1.3  # 30% boost for session-matching nodes
-                if resp >= self.cfg.min_response:
+                if resp >= cfg.min_response:
                     results.append((nid, resp, node))
                     node.last_resonated = time.time()
 
@@ -1999,7 +2014,7 @@ class RTMDKField:
                         self._cached_phases,
                         self._cached_amplitudes,
                         self._cached_saliences,
-                        top_k=self.cfg.top_k,
+                        top_k=cfg.top_k,
                     )
                     self.stats["adaptive_bw"] = optimal_bw
                 except Exception:
@@ -2008,19 +2023,19 @@ class RTMDKField:
         self.stats["total_queries"] += 1
 
         # Track shard query time
-        if self.cfg.sparse_routing:
+        if cfg.sparse_routing:
             elapsed_ms = (time.time() - t0) * 1000
             self.stats["avg_shard_query_time_ms"] = (
                 0.95 * self.stats["avg_shard_query_time_ms"] + 0.05 * elapsed_ms)
 
-        if self.cfg.cross_modal:
+        if cfg.cross_modal:
             self.stats["cross_modal_queries"] += 1
             if results:
                 cm_scores = [n.cross_modal_score for _, _, n in results]
                 self.stats["cross_modal_recall"] = 0.9 * \
                     self.stats["cross_modal_recall"] + 0.1 * float(np.mean(cm_scores))
 
-        if len(results) == 0 and self.cfg.bm25_fallback and self.bm25_index:
+        if len(results) == 0 and cfg.bm25_fallback and self.bm25_index:
             texts = []
             for nid in self.node_index[:100]:
                 t = self._extract_text(self.nodes[nid].content)
@@ -2059,8 +2074,8 @@ class RTMDKField:
                 node.goal_relevance = self.goal_tracker.get_goal_relevance(nid)
 
         # Phase 13 Track 2: Cognitive attention bias
-        if self.cfg.attention_bias and results:
-            results = apply_attention_bias(results, self.cfg.bias_temperature)
+        if cfg.attention_bias and results:
+            results = apply_attention_bias(results, cfg.bias_temperature)
             self.stats["attention_bias_applied"] += 1
 
         # Phase 13 Track 4: Event-driven trigger for queries
@@ -2091,7 +2106,7 @@ class RTMDKField:
             active = [
                 nid for nid,
                 resp,
-                _ in results if resp > self.cfg.min_response *
+                _ in results if resp > cfg.min_response *
                 0.5]
             if active:
                 self.causal_engine.record_observation(active)
@@ -2110,11 +2125,11 @@ class RTMDKField:
         results = self._apply_conformal_filter(results)
 
         # E: Retrieval-aware feedback for SOT
-        if self.cfg.sot_retrieval_feedback and self._projection_mgr.has_sot and results:
+        if cfg.sot_retrieval_feedback and self._projection_mgr.has_sot and results:
             self._sot_retrieval_feedback(query_latent, results)
 
         # Track 3: Adaptive top_k based on confidence
-        if self.cfg.adaptive_top_k:
+        if cfg.adaptive_top_k:
             results = self._apply_adaptive_top_k(results)
 
         final = results[:top_k]
