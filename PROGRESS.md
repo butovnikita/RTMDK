@@ -32,6 +32,27 @@
 
 ---
 
+## ✅ 13. Pipeline Metrics Dashboard + HTTP Endpoints (completed 2026-05-07)
+
+**Goal:** Make pipeline metrics observable via HTTP and persistable for offline analysis.
+
+### Changes Made
+- **`rtmdk/pipeline/persistence.py`**: `PipelineMetricsStore` — append-only JSON lines with rotation
+  - Thread-safe writes, summary statistics (mean/median/p95 per stage)
+  - Integrated with `retrieve_nodes_pipeline(metrics_store=store)`
+- **`rtmdk/server/app.py`**: 
+  - `pipeline_metrics_store` global (optional)
+  - `memory_query_pipeline` persists metrics when store configured
+  - `GET /v1/memory/pipeline/metrics` — aggregated summary endpoint
+- **`docs/PIPELINE_ARCHITECTURE.md`**: Added metrics persistence and HTTP endpoints sections
+- **Tests**: 5 persistence tests + 2 server dashboard tests
+
+### Test Results
+- 7 new tests — all passing
+- Full regression suite: **780 passed, 1 skipped**
+
+---
+
 ## ✅ 12. Config-Driven Circuit Breaker Thresholds (completed 2026-05-07)
 
 **Goal:** Remove hardcoded SLO thresholds from `build_pipeline()`.

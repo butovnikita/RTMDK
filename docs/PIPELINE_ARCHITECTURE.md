@@ -173,6 +173,30 @@ Breaker states: `closed` → `open` (after threshold exceeded) → `half_open` (
 - calibrate: 200ms
 - explain: 100ms
 
+## Metrics Persistence
+
+Store pipeline metrics for offline analysis:
+
+```python
+from rtmdk.pipeline import PipelineMetricsStore
+
+store = PipelineMetricsStore("./pipeline_metrics.jsonl")
+result = mem.retrieve_nodes_pipeline("query", top_k=5, metrics_store=store)
+
+# Aggregate statistics
+summary = store.summary()
+# summary["queries"] — total query count
+# summary["stages"]["embed"]["latency_ms"]["p95"] — 95th percentile
+# summary["stages"]["retrieve"]["errors"] — error count
+```
+
+## HTTP Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/v1/memory/query_pipeline` | Pipeline retrieval with full metrics |
+| GET | `/v1/memory/pipeline/metrics` | Aggregated pipeline metrics summary |
+
 ## Future Work
 
 - Extract query cache, distributed lock, and query rewrite into separate stages.
