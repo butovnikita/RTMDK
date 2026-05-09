@@ -2021,15 +2021,6 @@ class RTMDKMemory(BaseModel):
         self._rollback_manager.take_snapshot(self.field)
         logger.info("Memory snapshot taken")
 
-    def rollback(self, timestamp: Optional[float] = None) -> bool:
-        """Rollback memory to a previous snapshot."""
-        success = self._rollback_manager.rollback(self.field, timestamp)
-        if success:
-            logger.info("Memory rolled back to snapshot")
-        else:
-            logger.warning("Rollback failed: no suitable snapshot")
-        return success
-
     def detect_poisoned_memories(self) -> List[Dict]:
         """Scan for potentially poisoned or anomalous memory nodes."""
         return self._poison_detector.scan(self.field)
