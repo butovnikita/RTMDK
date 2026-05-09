@@ -4,6 +4,7 @@ import asyncio
 from typing import Any, Dict, List, Optional
 
 from rtmdk.pipeline.base import PipelineContext, PipelineStage
+from rtmdk.pipeline.profiler import PipelineMemoryProfiler
 
 
 class PipelineExecutor:
@@ -65,6 +66,33 @@ class PipelineExecutor:
         return await loop.run_in_executor(
             None, self.run, query_text, top_k, session_id, embedding
         )
+
+    def run_with_profiler(
+        self,
+        query_text: str,
+        top_k: int = 5,
+        session_id: Optional[str] = None,
+        embedding: Optional[Any] = None,
+    ) -> tuple[PipelineContext, PipelineMemoryProfiler]:
+        """Run pipeline with memory profiling per stage.
+
+        Returns:
+            (ctx, profiler) — context and profiler with memory summary
+        """
+        profiler = PipelineMemoryProfiler()
+        profiler.start()
+        ctx = PipelineContext(
+            query_text=query_text,
+            top_k=top_k,
+            session_id=session_id,
+            embedding=embedding,
+        )
+        for stage in self.stages:
+            ctx = profiler.profile_stage(stage, ctx)
+            if ctx.skip_remaining:
+                break
+        profiler.stop()
+        return ctx, profiler
 
     async def run_batch_async(
         self,
