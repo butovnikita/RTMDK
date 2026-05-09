@@ -544,3 +544,19 @@ rtmdk/
 
 *Документ создан: Апрель 2026, RTMDK v8.1*
 *Обновлён: Май 2026 (post-audit)*
+
+
+## Backlog Modules (v8.2.1)
+
+### EngramEmbeddingCache
+- File: tmdk/memory/engram_cache.py`n- Purpose: Hot/warm/cold tiered cache for node embeddings to avoid TieredNodeStore disk scans.
+- Config: sot.engram_cache_enabled, sot.engram_cache_max_hot, sot.engram_cache_max_warm`n
+### Observability
+- File: tmdk/memory/observability.py`n- Purpose: Latency histograms (p50/p95/p99), cache hit ratio, threshold alerting.
+- Config: sot.observability_enabled`n
+### DistributedLock
+- File: tmdk/memory/distributed_lock.py`n- Purpose: File-based inter-process lock with intra-process thread safety.
+- Config: sot.distributed_lock_path`n
+### RAG Quality
+- File: tmdk/memory/rag_quality.py`n- Purpose: Query decomposition, sentence-level reranking, explicit feedback loop.
+- Config: sot.sentence_reranker_enabled, sot.query_decomposition_enabled, sot.feedback_loop_enabled`n

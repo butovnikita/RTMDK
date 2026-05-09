@@ -161,32 +161,94 @@ class SIFEmbedder:
                 self.word_embeddings[t] = emb
             return self
 
-        # 2. PMI matrix for valid tokens (dense only for valid subset)
+        # 2. PMI matrix for valid tokens
         valid_idx = np.where(valid_mask)[0]
         idx_map = {int(v): i for i, v in enumerate(valid_idx)}
-        u_counts = unigram_counts[valid_idx] + 1e-8
-        # Build dense co-occurrence only for valid tokens (much smaller than vocab_size²)
-        c_counts = np.zeros((n_valid, n_valid), dtype=np.float64)
-        for a, neighbors in cooc_sparse.items():
-            if a not in idx_map:
-                continue
-            ai = idx_map[a]
-            for b, count in neighbors.items():
-                if b in idx_map:
-                    c_counts[ai, idx_map[b]] = count
-        N = float(c_counts.sum()) + 1e-8
-
-        log_cij = np.log(c_counts + 1e-8)
-        log_ci = np.log(u_counts)
-        log_cj = np.log(u_counts)
         import math
-        pmi = log_cij + math.log(N) - log_ci[:, None] - log_cj[None, :]
-        pmi = np.maximum(pmi, 0.0).astype(np.float32)
 
-        # Save PMI matrix for query expansion
-        self._pmi_matrix = pmi
-        self._pmi_idx_map = idx_map
-        self._pmi_valid_idx = list(valid_idx)
+        SPARSE_PMI_THRESHOLD = 5000
+        k = min(self.latent_dim, n_valid)
+
+        if n_valid > SPARSE_PMI_THRESHOLD:
+            # Sparse PMI path for large vocabularies — avoids O(n²) dense matrix
+            logger.info("SIFEmbedder: building sparse PMI (n_valid=%d)", n_valid)
+            from scipy.sparse import coo_matrix
+
+            rows, cols, data = [], [], []
+            for a, neighbors in cooc_sparse.items():
+                if a not in idx_map:
+                    continue
+                ai = idx_map[a]
+                for b, count in neighbors.items():
+                    if b in idx_map:
+                        rows.append(ai)
+                        cols.append(idx_map[b])
+                        data.append(count)
+
+            cooc_coo = coo_matrix((data, (rows, cols)), shape=(n_valid, n_valid))
+            N = float(cooc_coo.sum()) + 1e-8
+            log_N = math.log(N)
+
+            row_sums = np.array(cooc_coo.sum(axis=1)).flatten() + 1e-8
+            col_sums = np.array(cooc_coo.sum(axis=0)).flatten() + 1e-8
+            log_row = np.log(row_sums)
+            log_col = np.log(col_sums)
+
+            pmi_data, pmi_rows, pmi_cols = [], [], []
+            for i, j, c in zip(cooc_coo.row, cooc_coo.col, cooc_coo.data):
+                pmi_val = math.log(c + 1e-8) + log_N - log_row[i] - log_col[j]
+                if pmi_val > 0:
+                    pmi_data.append(pmi_val)
+                    pmi_rows.append(i)
+                    pmi_cols.append(j)
+
+            from scipy.sparse import coo_matrix as _coo
+            pmi = _coo((pmi_data, (pmi_rows, pmi_cols)), shape=(n_valid, n_valid)).tocsr()
+            self._pmi_matrix = pmi
+            self._pmi_idx_map = idx_map
+            self._pmi_valid_idx = list(valid_idx)
+
+            # Truncated SVD on sparse PMI via sklearn
+            from sklearn.decomposition import TruncatedSVD
+            svd = TruncatedSVD(n_components=k, algorithm="randomized", random_state=42)
+            raw_emb = svd.fit_transform(pmi).astype(np.float32)
+            norms = np.linalg.norm(raw_emb, axis=1, keepdims=True) + 1e-8
+            raw_emb /= norms
+        else:
+            # Dense PMI path for small vocabularies — faster for small matrices
+            u_counts = unigram_counts[valid_idx] + 1e-8
+            c_counts = np.zeros((n_valid, n_valid), dtype=np.float64)
+            for a, neighbors in cooc_sparse.items():
+                if a not in idx_map:
+                    continue
+                ai = idx_map[a]
+                for b, count in neighbors.items():
+                    if b in idx_map:
+                        c_counts[ai, idx_map[b]] = count
+            N = float(c_counts.sum()) + 1e-8
+
+            log_cij = np.log(c_counts + 1e-8)
+            log_ci = np.log(u_counts)
+            log_cj = np.log(u_counts)
+            pmi = log_cij + math.log(N) - log_ci[:, None] - log_cj[None, :]
+            pmi = np.maximum(pmi, 0.0).astype(np.float32)
+
+            # Save PMI matrix for query expansion
+            self._pmi_matrix = pmi
+            self._pmi_idx_map = idx_map
+            self._pmi_valid_idx = list(valid_idx)
+
+            logger.info("SIFEmbedder: computing SVD on %dx%d PMI matrix...", n_valid, n_valid)
+            if n_valid > 2000:
+                U, S, _ = self._randomized_svd(pmi, n_components=k, n_oversamples=10, n_iter=2)
+            else:
+                U, S, _ = np.linalg.svd(pmi, full_matrices=False)
+                U = U[:, :k]
+                S = S[:k]
+            Sk = np.sqrt(S)
+            raw_emb = (U * Sk[None, :]).astype(np.float32)
+            norms = np.linalg.norm(raw_emb, axis=1, keepdims=True) + 1e-8
+            raw_emb /= norms
 
         # Adaptive SIF parameter: set a to 10th percentile of word probs
         if self.word_probs:
@@ -199,22 +261,6 @@ class SIFEmbedder:
                     self.a,
                 )
                 self.a = adaptive_a
-
-        # 3. Truncated SVD (randomized for large matrices)
-        logger.info("SIFEmbedder: computing SVD on %dx%d PMI matrix...", n_valid, n_valid)
-        k = min(self.latent_dim, n_valid)
-        if n_valid > 5000:
-            # Randomized SVD for large matrices — O(n×d²) instead of O(n³)
-            logger.info("SIFEmbedder: using randomized SVD (n_valid=%d > 5000)", n_valid)
-            U, S, _ = self._randomized_svd(pmi, n_components=k, n_oversamples=10, n_iter=2)
-        else:
-            U, S, _ = np.linalg.svd(pmi, full_matrices=False)
-            U = U[:, :k]
-            S = S[:k]
-        Sk = np.sqrt(S)
-        raw_emb = (U * Sk[None, :]).astype(np.float32)
-        norms = np.linalg.norm(raw_emb, axis=1, keepdims=True) + 1e-8
-        raw_emb /= norms
 
         for orig_t, sub_i in idx_map.items():
             emb = raw_emb[sub_i]
@@ -371,18 +417,28 @@ class SIFEmbedder:
         if self._pmi_matrix is None or self._pmi_idx_map is None:
             return []
         scores: Dict[int, float] = {}
+        # Support both dense (np.ndarray) and sparse (scipy.sparse) PMI matrices
+        is_sparse = hasattr(self._pmi_matrix, "getrow")
         for t in token_ids:
             if t not in self._pmi_idx_map:
                 continue
             row = self._pmi_idx_map[t]
-            pmi_row = self._pmi_matrix[row]
-            # Find top-n terms above threshold
-            candidates = []
-            for sub_j, pmi_val in enumerate(pmi_row):
-                if pmi_val >= min_pmi:
-                    orig_t = self._pmi_valid_idx[sub_j]
-                    if orig_t != t:
-                        candidates.append((orig_t, float(pmi_val)))
+            if is_sparse:
+                pmi_row = self._pmi_matrix.getrow(row)
+                candidates = []
+                for sub_j, pmi_val in zip(pmi_row.indices, pmi_row.data):
+                    if pmi_val >= min_pmi:
+                        orig_t = self._pmi_valid_idx[sub_j]
+                        if orig_t != t:
+                            candidates.append((orig_t, float(pmi_val)))
+            else:
+                pmi_row = self._pmi_matrix[row]
+                candidates = []
+                for sub_j, pmi_val in enumerate(pmi_row):
+                    if pmi_val >= min_pmi:
+                        orig_t = self._pmi_valid_idx[sub_j]
+                        if orig_t != t:
+                            candidates.append((orig_t, float(pmi_val)))
             candidates.sort(key=lambda x: x[1], reverse=True)
             for orig_t, pmi_val in candidates[:n_terms]:
                 scores[orig_t] = scores.get(orig_t, 0.0) + pmi_val

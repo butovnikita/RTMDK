@@ -608,3 +608,55 @@ class TestSOTV2Integration:
         assert len(
             field_v2.sot_tokenizer.token_embeddings) > len(
             field_v1.sot_tokenizer.token_embeddings)
+
+
+# ------------------------------------------------------------------
+# Sparse PMI path (backlog v8.2.1)
+# ------------------------------------------------------------------
+class TestSparsePMI:
+    def test_sparse_pmi_path_does_not_crash(self):
+        from rtmdk.memory.sot_v2.sif_embedder import SIFEmbedder
+        sif = SIFEmbedder(latent_dim=64, min_count=1, window_size=2)
+        vocab_size = 6000  # > SPARSE_PMI_THRESHOLD (5000)
+        n_docs = 1200
+        doc_len = 10
+        tokenized_docs = [
+            [(i * doc_len + j) % vocab_size for j in range(doc_len)]
+            for i in range(n_docs)
+        ]
+        # Ensure every token appears at least twice
+        for t in range(vocab_size):
+            tokenized_docs[t % n_docs].append(t)
+        sif.fit(tokenized_docs, vocab_size=vocab_size)
+        assert len(sif.word_embeddings) == vocab_size
+        assert sif._pmi_matrix is not None
+
+    def test_sparse_pmi_expand_query_terms(self):
+        from rtmdk.memory.sot_v2.sif_embedder import SIFEmbedder
+        sif = SIFEmbedder(latent_dim=64, min_count=1, window_size=2)
+        vocab_size = 6000
+        n_docs = 1200
+        doc_len = 10
+        tokenized_docs = [
+            [(i * doc_len + j) % vocab_size for j in range(doc_len)]
+            for i in range(n_docs)
+        ]
+        for t in range(vocab_size):
+            tokenized_docs[t % n_docs].append(t)
+        sif.fit(tokenized_docs, vocab_size=vocab_size)
+        expanded = sif.expand_query([0, 1, 2], n_terms=2, min_pmi=0.0)
+        # Should return some terms (PMI threshold 0 means all non-zero PMI)
+        assert isinstance(expanded, list)
+
+    def test_dense_pmi_still_works_for_small_vocab(self):
+        from rtmdk.memory.sot_v2.sif_embedder import SIFEmbedder
+        sif = SIFEmbedder(latent_dim=16, min_count=1, window_size=2)
+        tokenized_docs = [
+            [0, 1, 2, 3, 4],
+            [1, 2, 3, 4, 5],
+            [2, 3, 4, 5, 0],
+        ]
+        sif.fit(tokenized_docs, vocab_size=6)
+        assert len(sif.word_embeddings) == 6
+        expanded = sif.expand_query([0], n_terms=2, min_pmi=0.0)
+        assert isinstance(expanded, list)
