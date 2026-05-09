@@ -1122,6 +1122,29 @@ class RTMDKField:
         self._active_node_history: deque = deque(maxlen=50)
 
     # ------------------------------------------------------------------
+    # Projection-manager aliases (backward-compatible during refactor)
+    # ------------------------------------------------------------------
+    @property
+    def projection_learner(self):
+        return self._projection_mgr.projection_learner if self._projection_mgr else None
+
+    @property
+    def _raw_projection(self):
+        return self._projection_mgr._raw_projection if self._projection_mgr else None
+
+    @property
+    def sot_tokenizer(self):
+        return self._projection_mgr.sot_tokenizer if self._projection_mgr else None
+
+    @property
+    def sot_hebbian(self):
+        return self._projection_mgr.sot_hebbian if self._projection_mgr else None
+
+    @property
+    def _sot_field_ema(self):
+        return self._projection_mgr._sot_field_ema if self._projection_mgr else None
+
+    # ------------------------------------------------------------------
     # Cache-manager aliases (backward-compatible during refactor)
     # ------------------------------------------------------------------
     @property
