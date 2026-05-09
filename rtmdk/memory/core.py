@@ -1642,11 +1642,6 @@ class RTMDKMemory(BaseModel):
             top_k=top_k,
             session_id=session_id)
 
-    def fit_projection(self, corpus_embeddings: np.ndarray) -> None:
-        """Fit projection learner on corpus embeddings."""
-        if self.field is not None:
-            self.field.fit_projection(corpus_embeddings)
-
     def _detect_tags(self, text: str) -> List[str]:
         """Auto-detect memory tags from text content."""
         tags = []
@@ -2060,9 +2055,6 @@ class RTMDKMemory(BaseModel):
             info["modal_embedding"] = node.modal_embedding.tolist()
         return info
 
-    def rollback(self, n_steps: int = 1) -> bool:
-        return self.field.rollback_consolidation(n_steps)
-
     def get_rollback_history(self) -> List[Dict]:
         return [{"timestamp": s["timestamp"], "updated": s["updated"], "n_nodes": len(
             s["pre_state"])} for s in self.field._rollback_history]
@@ -2070,9 +2062,6 @@ class RTMDKMemory(BaseModel):
     def do_intervention(self, node_id: str, text: str):
         emb = self.embedder(text)
         self.field.do_intervention(node_id, emb)
-
-    def clear_interventions(self):
-        self.field.clear_interventions()
 
     def __getattr__(self, name: str):
         """Proxy simple delegations to RTMDKField to reduce boilerplate."""
@@ -2087,6 +2076,7 @@ class RTMDKMemory(BaseModel):
             "get_field_health",
             "counterfactual_query", "get_causal_summary",
             "export_field", "import_field",
+            "rollback", "clear_interventions", "fit_projection",
         }
         if name in _proxy_methods:
             return getattr(self.field, name)
