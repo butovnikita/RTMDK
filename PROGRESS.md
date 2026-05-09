@@ -32,6 +32,28 @@
 
 ---
 
+## ✅ 14. Entry-Point Discovery + Docs Update (completed 2026-05-07)
+
+**Goal:** Allow third-party packages to auto-register pipeline stages.
+
+### Changes Made
+- **`rtmdk/pipeline/registry.py`**: `StageRegistry.discover_entry_points()` 
+  - Loads stages from setuptools entry points group `rtmdk.pipeline.stages`
+  - Skips invalid classes and already-registered names
+  - Python < 3.10 compatibility
+- **`rtmdk/pipeline/__init__.py`**: Auto-discovery runs on import
+- **`docs/PIPELINE_ARCHITECTURE.md`**: Added sections:
+  - Pipeline Migration (opt-in retrieve_nodes → pipeline)
+  - Query Cache & Distributed Lock as Stages
+  - Entry-Point Discovery with pyproject.toml example
+- **Tests**: 3 entry point discovery tests
+
+### Test Results
+- 3 new tests — all passing
+- Full regression suite: **797 passed, 1 skipped**
+
+---
+
 ## ✅ 13. Pipeline Metrics Dashboard + HTTP Endpoints (completed 2026-05-07)
 
 **Goal:** Make pipeline metrics observable via HTTP and persistable for offline analysis.

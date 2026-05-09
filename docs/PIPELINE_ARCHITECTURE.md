@@ -197,8 +197,49 @@ summary = store.summary()
 | POST | `/v1/memory/query_pipeline` | Pipeline retrieval with full metrics |
 | GET | `/v1/memory/pipeline/metrics` | Aggregated pipeline metrics summary |
 
+## Pipeline Migration
+
+Opt-in migration from legacy `retrieve_nodes()` to pipeline:
+
+```python
+config = RTMDKConfig(pipeline_enabled=True)
+mem = RTMDKMemory(config=config, embedder=embed_fn)
+
+# retrieve_nodes() now uses pipeline internally
+results = mem.retrieve_nodes("query", embedding=emb, top_k=5)
+# Same return type, but with circuit breakers, metrics, and graceful degradation
+```
+
+Fallback to legacy path is automatic when:
+- `pipeline_enabled=False` (default)
+- `sparse_vec` is provided (not yet supported in pipeline)
+
+## Query Cache & Distributed Lock as Stages
+
+Query cache and distributed lock are now explicit pipeline stages:
+
+```python
+pipeline = mem.build_pipeline()
+stage_names = [s.name for s in pipeline.stages]
+# Includes: query_cache_check, embed, route, retrieve, rerank, calibrate, explain, query_cache_save
+```
+
+This means `retrieve_nodes_pipeline()` has the same multi-process safety and cache behavior as `retrieve_nodes()`.
+
+## Entry-Point Discovery
+
+Third-party packages can auto-register stages via setuptools entry points:
+
+```toml
+# pyproject.toml
+[project.entry-points."rtmdk.pipeline.stages"]
+my_rerank = "my_package.stages:MyRerankStage"
+```
+
+Stages are discovered automatically on `import rtmdk.pipeline`.
+
 ## Future Work
 
-- Extract query cache, distributed lock, and query rewrite into separate stages.
-- Entry-point discovery for third-party stage plugins.
+- Extract query rewrite and intent classification into separate stages.
 - True vectorized batch retrieval in RetrieveStage.
+- Async pipeline execution with concurrent stages.
