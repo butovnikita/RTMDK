@@ -63,10 +63,12 @@ class PipelineContext:
             "query_text": self.query_text,
             "route": self.route,
             "top_k": self.top_k,
+            "session_id": self.session_id,
             "results_count": len(self.results),
             "explanations_count": len(self.explanations),
             "degraded_stages": self.degraded_stages,
             "breaker_states": self.breaker_states,
+            "skip_remaining": self.skip_remaining,
             "stages": [m.to_dict() for m in self.metrics],
             "total_latency_ms": round(sum(m.latency_ms for m in self.metrics), 3),
         }
