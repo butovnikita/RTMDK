@@ -35,6 +35,9 @@
 | POST | `/v1/memory/save` | Сохранить контекст |
 | POST | `/v1/memory/query` | Запросить память |
 | POST | `/v1/memory/query_pipeline` | Запросить память (pipeline API с метриками) |
+| GET  | `/v1/memory/pipeline/stream` | SSE streaming pipeline stage events |
+| GET  | `/v1/memory/pipeline/health` | Pipeline per-stage health status |
+| GET  | `/v1/memory/pipeline/metrics` | Aggregated pipeline metrics |
 | POST | `/v1/memory/batch_query` | Batch query памяти |
 | POST | `/v1/memory/nodes` | Создать ноду |
 | GET | `/v1/memory/nodes/{id}` | Получить ноду |
@@ -1226,12 +1229,42 @@ outputs = batch.run_batch(["q1", "q2", "q3"], top_k=5)
 # outputs — list of ctx.to_dict()
 ```
 
-### HTTP endpoint
+### HTTP endpoints
 
+#### Synchronous query
 ```bash
 curl -X POST http://localhost:8080/v1/memory/query_pipeline \
   -H "Content-Type: application/json" \
   -d '{"query": "resonance", "top_k": 5, "session_id": "sess_1"}'
+```
+
+#### SSE streaming (live stage events)
+```bash
+curl -N 'http://localhost:8080/v1/memory/pipeline/stream?query=resonance&top_k=5'
+```
+
+**Events:**
+- `pipeline_started` — planned stage list
+- `stage_started` — stage execution begins
+- `stage_completed` — stage done with latency and breaker state
+- `stage_degraded` — stage failed or bypassed
+- `pipeline_completed` — final results and total latency
+
+#### Health check
+```bash
+curl http://localhost:8080/v1/memory/pipeline/health
+```
+
+**Response:**
+```json
+{
+  "overall": "healthy",
+  "stages": [
+    {"name": "embed", "enabled": true, "breaker_state": "closed", "has_fallback": true}
+  ],
+  "open_breakers": 0,
+  "total_stages": 6
+}
 ```
 
 **Response:**

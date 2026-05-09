@@ -1409,6 +1409,50 @@ async def memory_pipeline_stream(
     )
 
 
+@app.get("/v1/memory/pipeline/health")
+async def memory_pipeline_health():
+    """Return per-stage health status for the pipeline.
+
+    Useful for load balancers and monitoring dashboards to determine
+    whether the retrieval pipeline is healthy or degraded.
+    """
+    if not memory or not memory.field:
+        raise HTTPException(status_code=503, detail="Memory not initialized")
+
+    pipeline = memory.build_pipeline()
+    stages_health = []
+    degraded_count = 0
+    open_breakers = 0
+
+    for stage in pipeline.stages:
+        breaker_state = None
+        if stage.circuit_breaker is not None:
+            breaker_state = stage.circuit_breaker.state.value
+            if breaker_state == "open":
+                open_breakers += 1
+
+        health = {
+            "name": stage.name,
+            "enabled": stage.enabled,
+            "breaker_state": breaker_state,
+            "has_fallback": hasattr(stage, "fallback") and stage.fallback is not None,
+        }
+        stages_health.append(health)
+
+    overall = "healthy"
+    if open_breakers > 0:
+        overall = "degraded"
+    if open_breakers >= len(stages_health) // 2:
+        overall = "unhealthy"
+
+    return {
+        "overall": overall,
+        "stages": stages_health,
+        "open_breakers": open_breakers,
+        "total_stages": len(stages_health),
+    }
+
+
 @app.get("/v1/memory/pipeline/metrics")
 async def memory_pipeline_metrics_summary():
     """Return aggregated pipeline metrics summary."""

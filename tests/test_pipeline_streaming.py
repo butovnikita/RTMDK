@@ -116,3 +116,25 @@ class TestServerSSEEndpoint:
         resp = client.get("/v1/memory/pipeline/stream?query=hello&top_k=5")
         assert resp.status_code == 200
         assert "error" in resp.text
+
+    def test_pipeline_health_endpoint(self, client):
+        mem = make_memory()
+        app_mod.memory = mem
+
+        try:
+            resp = client.get("/v1/memory/pipeline/health")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["overall"] in ("healthy", "degraded", "unhealthy")
+            assert "stages" in data
+            assert data["total_stages"] >= 1
+            for stage in data["stages"]:
+                assert "name" in stage
+                assert "enabled" in stage
+                assert "breaker_state" in stage
+        finally:
+            app_mod.memory = None
+
+    def test_pipeline_health_no_memory(self, client):
+        resp = client.get("/v1/memory/pipeline/health")
+        assert resp.status_code == 503
