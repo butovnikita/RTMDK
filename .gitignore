@@ -47,6 +47,9 @@ rtmdk_demo_state.json
 *.log
 app.log
 
+# Kimi CLI exports
+kimi-export-*.md
+
 # Docker
 .env
 
