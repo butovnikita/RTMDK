@@ -34,6 +34,7 @@
 | POST | `/v1/cache/clear` | Clear cache |
 | POST | `/v1/memory/save` | Сохранить контекст |
 | POST | `/v1/memory/query` | Запросить память |
+| POST | `/v1/memory/query_pipeline` | Запросить память (pipeline API с метриками) |
 | POST | `/v1/memory/batch_query` | Batch query памяти |
 | POST | `/v1/memory/nodes` | Создать ноду |
 | GET | `/v1/memory/nodes/{id}` | Получить ноду |
@@ -1193,6 +1194,98 @@ Get retention manager statistics (admin only).
 **Environment variables:**
 - `RTMDK_RETENTION_MAX_AGE_DAYS` — automatic pruning of nodes older than N days (0 = disabled)
 - `RTMDK_RETENTION_MAX_NODES` — keep only N most recently accessed nodes (0 = disabled)
+
+---
+
+## 14. Pipeline API (v8.3+)
+
+Явный retrieval pipeline с 6 стадиями, каждая из которых независимо наблюдаема.
+
+### Python API
+
+```python
+from rtmdk import RTMDKMemory, RTMDKConfig
+
+config = RTMDKConfig.production()
+mem = RTMDKMemory(config=config, embedder=embed_fn)
+
+result = mem.retrieve_nodes_pipeline("What is resonance?", top_k=5)
+# result["results"]      — ranked nodes: [(node_id, score, node), ...]
+# result["route"]        — routing decision: "factual" | "standard" | "deep"
+# result["explanations"] — per-result explanation dicts
+# result["metrics"]      — {stages: [...], total_latency_ms: ..., breaker_states: {...}}
+```
+
+### Batch execution
+
+```python
+from rtmdk.pipeline import BatchPipelineExecutor
+
+batch = BatchPipelineExecutor(mem.build_pipeline().stages)
+outputs = batch.run_batch(["q1", "q2", "q3"], top_k=5)
+# outputs — list of ctx.to_dict()
+```
+
+### HTTP endpoint
+
+```bash
+curl -X POST http://localhost:8080/v1/memory/query_pipeline \
+  -H "Content-Type: application/json" \
+  -d '{"query": "resonance", "top_k": 5, "session_id": "sess_1"}'
+```
+
+**Response:**
+```json
+{
+  "query": "resonance",
+  "results": [{"id": "n0", "content": "...", "score": 0.95}],
+  "route": "factual",
+  "explanations": [],
+  "metrics": {
+    "stages": [
+      {"stage": "embed", "latency_ms": 12.5, "error": null, "degraded": false},
+      {"stage": "retrieve", "latency_ms": 0.8, "error": null, "degraded": false}
+    ],
+    "total_latency_ms": 13.3,
+    "breaker_states": {"embed": "closed", "retrieve": "closed"}
+  },
+  "total": 1
+}
+```
+
+### Circuit breaker configuration
+
+```python
+config = RTMDKConfig(
+    pipeline_breaker_enabled=True,
+    pipeline_breaker_failure_threshold=5,
+    pipeline_breaker_latency_violation_threshold=3,
+    pipeline_breaker_recovery_timeout_ms=30000,
+    pipeline_breaker_thresholds={
+        "embed": 5000.0,
+        "route": 100.0,
+        "retrieve": 500.0,
+        "rerank": 1000.0,
+        "calibrate": 200.0,
+        "explain": 100.0,
+    },
+)
+```
+
+### Plugin registry
+
+```python
+from rtmdk.pipeline.registry import StageRegistry, GLOBAL_REGISTRY
+from rtmdk.pipeline.base import PipelineStage
+
+class CustomStage(PipelineStage):
+    name = "custom"
+    def process(self, ctx):
+        return ctx
+
+GLOBAL_REGISTRY.register("custom", CustomStage)
+stage = GLOBAL_REGISTRY.create("custom")
+```
 
 ---
 
