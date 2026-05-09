@@ -6,11 +6,26 @@ Usage:
     registry.register("my_rerank", MyRerankStage)
 
     stage = registry.create("my_rerank", **kwargs)
+
+Third-party packages can auto-register via setuptools entry points:
+    [rtmdk.pipeline.stages]
+    my_rerank = my_package.stages:MyRerankStage
 """
 from __future__ import annotations
 from typing import Any, Callable, Dict, Type
+import logging
+
+try:
+    from importlib.metadata import entry_points as _entry_points
+except ImportError:
+    try:
+        from importlib_metadata import entry_points as _entry_points  # type: ignore
+    except ImportError:
+        _entry_points = None  # type: ignore
 
 from rtmdk.pipeline.base import PipelineStage
+
+logger = logging.getLogger(__name__)
 
 
 class StageRegistry:
@@ -36,6 +51,38 @@ class StageRegistry:
     def list_stages(self) -> Dict[str, Type[PipelineStage]]:
         """Return a copy of the registered stages map."""
         return dict(self._stages)
+
+    def discover_entry_points(self, group: str = "rtmdk.pipeline.stages") -> None:
+        """Auto-register stages from setuptools entry points.
+
+        Entry point format in pyproject.toml/setup.cfg:
+            [rtmdk.pipeline.stages]
+            my_stage = my_package.stages:MyStageClass
+        """
+        if _entry_points is None:
+            logger.debug("importlib.metadata not available, skipping entry point discovery")
+            return
+
+        try:
+            eps = _entry_points(group=group)
+        except TypeError:
+            # Python < 3.10 compatibility
+            all_eps = _entry_points()
+            eps = all_eps.get(group, [])
+
+        for ep in eps:
+            try:
+                stage_cls = ep.load()
+                if not issubclass(stage_cls, PipelineStage):
+                    logger.warning("Entry point %s does not subclass PipelineStage", ep.name)
+                    continue
+                if ep.name in self._stages:
+                    logger.debug("Entry point stage %s already registered", ep.name)
+                    continue
+                self._stages[ep.name] = stage_cls
+                logger.info("Auto-registered pipeline stage: %s", ep.name)
+            except Exception as exc:
+                logger.warning("Failed to load entry point %s: %s", ep.name, exc)
 
 
 # Global singleton for convenience

@@ -48,6 +48,9 @@ GLOBAL_REGISTRY.register("rerank", RerankStage)
 GLOBAL_REGISTRY.register("calibrate", CalibrateStage)
 GLOBAL_REGISTRY.register("explain", ExplainStage)
 
+# Auto-discover third-party stages from installed packages
+GLOBAL_REGISTRY.discover_entry_points()
+
 __all__ = [
     "PipelineStage",
     "PipelineContext",
