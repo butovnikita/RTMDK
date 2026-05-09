@@ -2106,6 +2106,10 @@ class RTMDKField:
                     score = score * w
                 weighted.append((nid, score, node))
             results = weighted
+            # Re-sort and re-truncate after weighting so low-uncertainty nodes
+            # can displace high-uncertainty ones in the top-k.
+            results.sort(key=lambda x: x[1], reverse=True)
+            results = results[:top_k]
 
         # Phase 13 Track 1: Goal relevance scoring
         if self.goal_tracker and results:

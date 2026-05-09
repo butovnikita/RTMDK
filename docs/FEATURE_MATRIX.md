@@ -32,7 +32,7 @@
 | `rtmdk/memory/rag_quality.py` | `sentence_reranker_enabled` | `False` | 1 test(s) | 0 bench | integrated | [DISABLED] | PASS: 1.05ms latency |
 | `rtmdk/memory/sot_v2/sif_embedder.py` | `sot_v2_enabled` | `False` | 1 test(s) | 2 bench | standalone | [DISABLED] | PASS: matches TF-IDF baseline |
 | `rtmdk/memory/conformal.py` | `conformal_prediction` | `False` | 4 test(s) | 0 bench | integrated | [DISABLED] | PASS: 90.8% coverage on correct eval protocol |
-| `rtmdk/memory/kalman.py` | `enable_kalman_filter` | `False` | 2 test(s) | 0 bench | integrated | [DISABLED] | Diagonal approx |
+| `rtmdk/memory/kalman.py` | `enable_kalman_filter` | `False` | 2 test(s) | 1 bench | integrated | [DISABLED] | PASS: +35.7% precision@5 on noisy data (bug fixed) |
 | `rtmdk/memory/spectral.py` | `spectral_consolidation` | `False` | 2 test(s) | 0 bench | integrated | [DISABLED] | PASS: 4/4 clusters with normalized data + fixed eigengap |
 | `rtmdk/memory/learned_consolidation.py` | `learned_consolidation` | `False` | 0 test(s) | 0 bench | integrated | [DISABLED] | Tiny MLP |
 | `rtmdk/memory/quantization.py` | `quantization` | `none` | 8 test(s) | 1 bench | integrated | [DISABLED] | PASS: 50% fp16 75% int8 reduction |

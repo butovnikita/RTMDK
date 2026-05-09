@@ -1018,4 +1018,16 @@ class RTMDKConfig:
                 f"matryoshka_hnsw_dim ({getattr(self, 'matryoshka_hnsw_dim', self.core.latent_dim)}) >= embedding_dim ({self.core.embedding_dim}). "
                 "No actual truncation will occur."
             )
+        # Check conformal without calibration data source
+        if self.core.conformal_prediction and self.core.conformal_min_calib > 0:
+            warnings.append(
+                "conformal_prediction=True but no calibration data loaded yet. "
+                "Threshold will be 0.0 until calibrate_conformal_sot() or explicit feedback is provided."
+            )
+        # Check query rewriter without embedder
+        if self.sot.query_rewrite_enabled and not getattr(self, "_embedder_provided", True):
+            warnings.append(
+                "query_rewrite_enabled=True but no embedder provided to RTMDKMemory. "
+                "Heuristic rewrite will be skipped; LLM fallback required."
+            )
         return warnings
