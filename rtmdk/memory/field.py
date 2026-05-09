@@ -22,7 +22,7 @@ from rtmdk.support.circuit_breaker import CircuitBreaker
 from rtmdk.support.meta_controller import MetaController
 from rtmdk.support.learnable import LearnableKernel, DifferentiableConsolidation
 from rtmdk.support.torch_backend import TorchBackend
-from rtmdk.support.projection import IncPCAProjection
+
 from rtmdk.support.production import ShadowModeEvaluator, RAGASPlusEvaluator, AutoRollbackManager
 from rtmdk.memory.projection_manager import ProjectionManager
 from rtmdk.memory.consolidation_manager import ConsolidationManager
@@ -35,9 +35,7 @@ from rtmdk.engines.causal import CausalInferenceEngine
 from rtmdk.engines.causal_extraction import extract_causal_edges_from_content
 from rtmdk.engines.privacy import DifferentialPrivacy
 from rtmdk.engines.predictive import PredictiveCodingModel
-from rtmdk.memory.geometry import (
-    poincare_dist, exp_map_poincare, log_map_poincare, poincare_midpoint,
-)
+from rtmdk.memory.geometry import exp_map_poincare
 from rtmdk.memory.quantization import QuantizationHelper
 from rtmdk.memory.config import (
     ConsolidationMode, Backend, ContextFormat, FieldHealth, EvalMode,
@@ -56,7 +54,7 @@ import re
 import time
 import os
 from concurrent.futures import ThreadPoolExecutor
-import copy
+
 import hashlib
 from collections import deque
 from typing import List, Dict, Optional, Tuple, Callable, Any, Set
