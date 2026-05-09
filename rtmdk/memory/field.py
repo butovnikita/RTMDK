@@ -739,17 +739,8 @@ class RTMDKField:
 
         # P0: Cached numpy arrays for vectorized query — avoids O(N) Python
         # loop on every query
-        # (N, latent_dim)
-        self._cached_positions: Optional[NDArray] = None
-        self._cached_phases: Optional[NDArray] = None          # (N,)
-        self._cached_amplitudes: Optional[NDArray] = None      # (N,)
-        self._cached_saliences: Optional[NDArray] = None       # (N,)
-        self._cached_modal_weights: Optional[NDArray] = None   # (N,)
-        # (N,) soft_gate values
-        self._cached_gates: Optional[NDArray] = None
-        # (N,) causal boost factor
-        self._cached_causal_boost: Optional[NDArray] = None
-        self._cache_dirty: bool = False
+        from rtmdk.memory.cache_manager import NodeCacheManager
+        self._cache_mgr = NodeCacheManager()
 
         # Track 3: Query cache
         self.query_cache: Optional[Any] = None
@@ -1262,6 +1253,89 @@ class RTMDKField:
             maxlen=config.field_stability_window)
         self._active_node_history: deque = deque(maxlen=50)
 
+    # ------------------------------------------------------------------
+    # Cache-manager aliases (backward-compatible during refactor)
+    # ------------------------------------------------------------------
+    @property
+    def _cached_positions(self) -> Optional[NDArray]:
+        return self._cache_mgr._cached_positions
+
+    @_cached_positions.setter
+    def _cached_positions(self, v: Optional[NDArray]) -> None:
+        self._cache_mgr._cached_positions = v
+
+    @property
+    def _cached_phases(self) -> Optional[NDArray]:
+        return self._cache_mgr._cached_phases
+
+    @_cached_phases.setter
+    def _cached_phases(self, v: Optional[NDArray]) -> None:
+        self._cache_mgr._cached_phases = v
+
+    @property
+    def _cached_amplitudes(self) -> Optional[NDArray]:
+        return self._cache_mgr._cached_amplitudes
+
+    @_cached_amplitudes.setter
+    def _cached_amplitudes(self, v: Optional[NDArray]) -> None:
+        self._cache_mgr._cached_amplitudes = v
+
+    @property
+    def _cached_saliences(self) -> Optional[NDArray]:
+        return self._cache_mgr._cached_saliences
+
+    @_cached_saliences.setter
+    def _cached_saliences(self, v: Optional[NDArray]) -> None:
+        self._cache_mgr._cached_saliences = v
+
+    @property
+    def _cached_modal_weights(self) -> Optional[NDArray]:
+        return self._cache_mgr._cached_modal_weights
+
+    @_cached_modal_weights.setter
+    def _cached_modal_weights(self, v: Optional[NDArray]) -> None:
+        self._cache_mgr._cached_modal_weights = v
+
+    @property
+    def _cached_gates(self) -> Optional[NDArray]:
+        return self._cache_mgr._cached_gates
+
+    @_cached_gates.setter
+    def _cached_gates(self, v: Optional[NDArray]) -> None:
+        self._cache_mgr._cached_gates = v
+
+    @property
+    def _cached_causal_boost(self) -> Optional[NDArray]:
+        return self._cache_mgr._cached_causal_boost
+
+    @_cached_causal_boost.setter
+    def _cached_causal_boost(self, v: Optional[NDArray]) -> None:
+        self._cache_mgr._cached_causal_boost = v
+
+    @property
+    def _cache_dirty(self) -> bool:
+        return self._cache_mgr._cache_dirty
+
+    @_cache_dirty.setter
+    def _cache_dirty(self, v: bool) -> None:
+        self._cache_mgr._cache_dirty = v
+
+    @property
+    def _node_id_to_cached_idx(self) -> Dict[str, int]:
+        return self._cache_mgr._node_id_to_cached_idx
+
+    @_node_id_to_cached_idx.setter
+    def _node_id_to_cached_idx(self, v: Dict[str, int]) -> None:
+        self._cache_mgr._node_id_to_cached_idx = v
+
+    def _build_node_cache(self) -> None:
+        """Rebuild cached arrays — delegates to NodeCacheManager."""
+        self._cache_mgr.build(self)
+
+    def _ensure_cache(self) -> None:
+        """Lazy cache rebuild if dirty."""
+        self._cache_mgr.ensure_built(self)
+
     def _project(self, embedding: NDArray) -> NDArray:
         # Phase 21: If embedding is already latent_dim, use directly
         if len(embedding) == self.cfg.latent_dim:
@@ -1543,72 +1617,6 @@ class RTMDKField:
             query_latents, query_phases,
             node_positions, node_phases,
             node_amplitudes, node_saliences)
-
-    def _build_node_cache(self):
-        """Build numpy arrays cache from nodes — called once when cache is dirty."""
-        # Thread-safety: compact node_index to exclude nodes that may have been deleted
-        # by async consolidation while query() was running.
-        if self._tiered_store is not None:
-            valid_entries = list(self._tiered_store.cacheable_nodes())
-        else:
-            valid_entries = [(nid, self.nodes[nid])
-                             for nid in self.node_index if nid in self.nodes]
-        n = len(valid_entries)
-        if n == 0:
-            cache_dtype = np.float32 if self._quant.mode == "int8" else self._quant.dtype
-            self._cached_positions = np.empty(
-                (0, self.cfg.latent_dim), dtype=cache_dtype)
-            self._cached_phases = np.empty(0, dtype=np.float32)
-            self._cached_amplitudes = np.empty(0, dtype=np.float32)
-            self._cached_saliences = np.empty(0, dtype=np.float32)
-            self._cached_modal_weights = np.empty(0, dtype=np.float32)
-            self._cached_gates = np.empty(0, dtype=np.float32)
-            self._cached_causal_boost = np.empty(0, dtype=np.float32)
-            self._cache_dirty = False
-            self.node_index = []
-            return
-
-        # Single pass through valid nodes — much faster than 5 separate list
-        # comprehensions
-        cache_dtype = np.float32 if self._quant.mode == "int8" else self._quant.dtype
-        positions = np.zeros((n, self.cfg.latent_dim), dtype=cache_dtype)
-        phases = np.zeros(n, dtype=np.float32)
-        amplitudes = np.zeros(n, dtype=np.float32)
-        saliences = np.zeros(n, dtype=np.float32)
-        modal_weights = np.zeros(n, dtype=np.float32)
-        gates = np.ones(n, dtype=np.float32)  # Default gate = 1.0
-        # Default causal boost = 0
-        causal_boost = np.zeros(n, dtype=np.float32)
-
-        for i, (nid, node) in enumerate(valid_entries):
-            positions[i] = self._quant.dequantize(
-                node.latent_pos,
-                getattr(node, "latent_scale", 1.0),
-                getattr(node, "latent_zero_point", 0.0),
-            )
-            phases[i] = node.phase
-            amplitudes[i] = node.amplitude
-            saliences[i] = node.salience
-            modal_weights[i] = node.modal_weight
-            if self.cfg.soft_gates and hasattr(node, 'soft_gate'):
-                gates[i] = node.soft_gate
-            # Pre-compute causal boost factor: 1.0 + 0.1 * sum(causal_strength)
-            if self.causal_engine and hasattr(
-                    node, 'causal_parents') and node.causal_parents:
-                cb = sum(node.causal_strength.get(p, 0)
-                         for p in node.causal_parents)
-                causal_boost[i] = 1.0 + 0.1 * cb
-
-        self._cached_positions = positions
-        self._cached_phases = phases
-        self._cached_amplitudes = amplitudes
-        self._cached_saliences = saliences
-        self._cached_modal_weights = modal_weights
-        self._cached_gates = gates
-        self._cached_causal_boost = causal_boost
-        self._cache_dirty = False
-        self.node_index = [nid for nid, _ in valid_entries]
-        self._node_id_to_cached_idx = {nid: i for i, (nid, _) in enumerate(valid_entries)}
 
     def _compute_resonance_chunk(
             self,
