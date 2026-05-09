@@ -1095,6 +1095,7 @@ class RTMDKField:
         self._stability_buffer: deque = deque(
             maxlen=config.field_stability_window)
         self._active_node_history: deque = deque(maxlen=50)
+        self._semantic_phase_cache: Dict[str, float] = {}
 
         self._consolidation_mgr = ConsolidationManager(self)
         self._scheduler = StepScheduler(self)
@@ -1271,11 +1272,16 @@ class RTMDKField:
         parts.append(f"m:{modality}")
 
         seed_text = "|".join(parts)
+        cached = self._semantic_phase_cache.get(seed_text)
+        if cached is not None:
+            return cached
         h = hashlib.md5(seed_text.encode("utf-8")).hexdigest()
         base = (int(h, 16) % 6283) / 1000.0  # [0, 2π]
         rng = random.Random(h)
         spread = rng.uniform(-0.15, 0.15)
-        return (base + spread) % (2 * math.pi)
+        result = (base + spread) % (2 * math.pi)
+        self._semantic_phase_cache[seed_text] = result
+        return result
 
     def _get_phase(
             self,
