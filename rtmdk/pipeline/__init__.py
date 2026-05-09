@@ -41,6 +41,9 @@ from rtmdk.pipeline.health import PipelineHealthMonitor
 from rtmdk.pipeline.persistence import PipelineMetricsStore
 from rtmdk.pipeline.ab_testing import PipelineABTester
 from rtmdk.pipeline.profiler import PipelineMemoryProfiler
+from rtmdk.pipeline.planner import QueryPlanner, ExecutionPlan
+from rtmdk.pipeline.cost import PipelineCostAnalyzer, CostBreakdown
+from rtmdk.pipeline.planned_executor import PlannedPipelineExecutor
 
 # Register default stages in the global registry
 GLOBAL_REGISTRY.register("embed", EmbedStage)
@@ -74,4 +77,9 @@ __all__ = [
     "PipelineMetricsStore",
     "PipelineABTester",
     "PipelineMemoryProfiler",
+    "QueryPlanner",
+    "ExecutionPlan",
+    "PipelineCostAnalyzer",
+    "CostBreakdown",
+    "PlannedPipelineExecutor",
 ]

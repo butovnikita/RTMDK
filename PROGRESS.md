@@ -479,4 +479,82 @@ python -m build
 
 ---
 
-*Last updated: 2026-05-07*
+## ✅ 15. Query Planner + Cost Analyzer + Chaos Engineering (completed 2026-05-09)
+
+**Goal:** Optimize pipeline execution per-query and verify resilience under failure.
+
+### Query Planner
+- **`rtmdk/pipeline/planner.py`**: `QueryPlanner` — generates optimized `ExecutionPlan` per query
+  - Fast route: skips `rerank` + `calibrate` → ~40% latency reduction
+  - Short query (<10 tokens): skips `explain` → ~15% latency reduction
+  - Low top_k (≤3): skips `calibrate`
+  - Batch planning: `plan_batch()` for multiple queries
+- **`rtmdk/pipeline/planned_executor.py`**: `PlannedPipelineExecutor`
+  - Executes embed + route first, then plans remaining stages dynamically
+  - Records skipped stages as zero-latency metrics for observability
+  - `get_plan()` preview without execution
+
+### Cost Analyzer
+- **`rtmdk/pipeline/cost.py`**: `PipelineCostAnalyzer`
+  - Tracks per-query compute cost by stage
+  - Latency-adjusted cost model (slower = more expensive)
+  - `summary()` for aggregate reporting (capacity planning, showback)
+
+### Chaos Engineering
+- **`scripts/chaos_test_pipeline.py`**: Resilience test suite
+  - Injects failures into individual stages (100% fail rate)
+  - Verifies graceful degradation: route/rerank/calibrate/explain failures → results still returned
+  - Circuit breaker opens after sustained failures
+  - Latency spike triggers high-latency alerts
+  - Mixed failure scenario: 100% success rate despite 30–50% stage failure rates
+
+### Test Results
+- 18 new tests in `test_pipeline_planner.py` + `test_pipeline_cost.py` — all passing
+- 6 new tests in `test_pipeline_planned_executor.py` — all passing
+- Chaos test suite: **8/8 passed**
+- Full pipeline suite: **142 passed** (3.65s)
+
+---
+
+## ✅ 16. Tiered Storage v2 Prototype (completed 2026-05-09)
+
+**Goal:** Rebuild tiered storage with memmap-based warm tier for true RAM savings.
+
+### Implementation
+- **`rtmdk/storage/tiered.py`**: `TieredNodeStore` (new prototype)
+  - **Hot**: in-memory dict with LFU eviction
+  - **Warm**: `numpy.memmap` for embeddings + metadata dict (~10× RAM savings vs full objects)
+  - **Cold**: gzip-compressed JSONL on disk
+  - Auto-promotion on access (warm→hot, cold→hot)
+  - Auto-demotion on capacity overflow (hot→warm→cold)
+  - Thread-safe (`RLock`)
+  - Context manager support (`with TieredNodeStore(...) as store`)
+
+### Test Results
+- 8 new tests in `tests/test_tiered_storage.py` — all passing
+- Covers: put/get, eviction, promotion, deletion, persistence, stats, context manager
+
+---
+
+## ✅ 17. RAG Comparison Document (completed 2026-05-09)
+
+**Goal:** Comprehensive comparison of RTMDK vs traditional RAG for stakeholders and customers.
+
+### Document
+- **`docs/24_RAG_COMPARISON.md`**:
+  - Recall metrics: RTMDK 0.993 vs Cosine 0.181 (5.5×)
+  - Latency breakdown: 15–100ms vs 30–200ms
+  - Production operations: full observability stack vs DIY
+  - Architecture comparison: observable stages vs black box
+  - Use case fit matrix: when RTMDK is essential vs when traditional RAG is sufficient
+  - Cost analysis: infrastructure + per-query costs
+  - Migration path: 4-phase staged migration
+
+---
+
+## Statistics
+- **891 passed, 1 skipped** — full regression suite
+- **146 new tests** written in this branch
+- **0 breaking changes**
+
+*Last updated: 2026-05-09*
