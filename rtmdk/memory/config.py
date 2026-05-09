@@ -1041,13 +1041,6 @@ class RTMDKConfig:
     def validate(self) -> list:
         """Check for config conflicts and return list of warning strings."""
         warnings = []
-        # Warn about orphaned flags (no implementation in codebase)
-        active_orphaned = [name for name in ORPHANED_FLAGS if getattr(self, name, False)]
-        if active_orphaned:
-            warnings.append(
-                f"Orphaned config flags enabled (no implementation): {', '.join(active_orphaned)}. "
-                "They will be removed in v9.0."
-            )
         # Check HNSW inconsistencies
         if not self.retrieval.use_hnsw and self.core.hnsw_min_nodes > 0:
             warnings.append(
