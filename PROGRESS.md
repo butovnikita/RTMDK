@@ -1,6 +1,6 @@
 # RTMDK Production Hardening — Progress Log
 
-## ✅ Pipeline v8.3 — Complete (29 commits, 827 tests)
+## ✅ Pipeline v8.3 — Complete (33 commits, 840 tests)
 
 **Status:** Production-ready. All features implemented, tested, documented.
 
@@ -33,10 +33,14 @@
 | Prometheus exposition | `server/app.py` | 2 |
 | Metrics time/stage filtering | `persistence.py` | 2 |
 | Pipeline config validation | `config.py` | 2 |
+| GraphQL subscription | `graphql_schema.py` | 2 |
+| Pipeline rate limiting | `tenant_rate_limiter.py` | 4 |
+| Health monitor tests | `pipeline/health.py` | 8 |
+| CI pipeline job | `.github/workflows/ci.yml` | verified |
 
 ### Statistics
-- **827 passed, 1 skipped** — full regression suite
-- **82 new tests** written in this branch
+- **840 passed, 1 skipped** — full regression suite
+- **95 new tests** written in this branch
 - **0 breaking changes**
 
 ### Documentation Updated
