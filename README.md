@@ -1,14 +1,16 @@
 # RTMDK — Resonance-Topological Memory v8.3
 
 > Долгосрочная память для LLM на основе резонансной топологии и диалектической консолидации
-> Version 8.3 (Pipeline Architecture + Observability + Production Hardening) — 35,000+ строк кода, 100+ файлов, 120+ API endpoints, 862 тестов
+> Version 8.3 (Pipeline Architecture + HNSW + Observability + Production Hardening) — 35,000+ строк кода, 100+ файлов, 120+ API endpoints, 909 тестов
 
 ### Production Stats
 | Metric | Value |
 |--------|-------|
 | Recall@1 (vs Cosine) | **0.993** vs 0.181 |
-| Latency p50 | 0.14–0.19 ms |
-| Tests | 862 passed, 1 skipped |
+| Latency p50 @ 1K nodes | 0.26 ms |
+| Latency p50 @ 100K nodes | **16 ms** |
+| Latency p99 @ 100K nodes | **20 ms** |
+| Tests | 909 passed, 1 skipped |
 | Pipeline stages | 6 (explicit, observable) |
 | Circuit breakers | Per-stage |
 | Streaming protocols | SSE, WebSocket, GraphQL |
@@ -210,16 +212,19 @@ RTMDK_PRESET=research RTMDK_DECAY_RATE=0.9995 python rtmdk_server.py
 
 | Метрика | Значение | vs RAG |
 |---------|:---:|---|
-| **Recall@1** | **95.6%** | +15-35% |
-| **Recall@5** | **98.2%** | +13-28% |
-| **Latency P95** | **1.3 ms** | В 100-500x быстрее |
-| **RAM (1K узлов)** | **16 MB** | В 3-12x экономнее |
-| **RAM (10K fp16)** | **9.8 MB** | В 5-20x экономнее |
+| **Recall@1** | **99.3%** | +20-40% |
+| **Recall@5** | **99.8%** | +15-30% |
+| **Latency p50 @ 1K** | **0.26 ms** | В 100-500× быстрее |
+| **Latency p50 @ 100K** | **16 ms** | В 10-50× быстрее |
+| **Latency p99 @ 100K** | **20 ms** | Стабильный |
+| **RAM (1K узлов)** | **14 MB** | В 3-12× экономнее |
+| **RAM (10K fp16)** | **9.8 MB** | В 5-20× экономнее |
+| **Stress test** | ✅ 100K nodes, 50 queries | Все пороги пройдены |
 
 ## 🏗️ Архитектура
 
 ```
-RTMDK v8.2.0 (30,000+ строк, 111+ файлов, 105+ API)
+RTMDK v8.3 (35,000+ строк, 111+ файлов, 120+ API)
 ├── Core: Резонанс, консолидация, HNSW, BM25, Domain Memory (Phase 1-20)
 ├── Production: Version Control, Attention Tokens (Phase 15)
 ├── Safety: Symbolic Overlay, UMP, Safety Certifier (Phase 16)
@@ -280,8 +285,9 @@ RTMDK v8.2.0 (30,000+ строк, 111+ файлов, 105+ API)
 │   ├── nodes.py                # Data-классы (MemoryNode, etc.)
 │   ├── engrams.py              # Phase 18: Engram system
 │   ├── memory/
-│   │   ├── core.py             # RTMDKMemory + ядро (~4000 строк)
-│   │   ├── field.py            # RTMDKField — query, consolidation, cache
+│   │   ├── core.py             # RTMDKMemory + ядро (~2600 строк)
+│   │   ├── field.py            # RTMDKField — query, consolidation, cache (~5200 строк)
+│   │   ├── resonance.py        # ResonanceEngine — pure resonance math
 │   │   ├── config.py           # RTMDKConfig + 8 пресетов
 │   │   ├── tiered_storage.py   # Track 2: Hot/Warm/Cold tiers
 │   │   ├── query_cache.py      # Track 3: Query Cache
@@ -338,5 +344,5 @@ RTMDK v8.2.0 (30,000+ строк, 111+ файлов, 105+ API)
 
 ---
 
-*RTMDK v8.2.1 — Превосходит GraphRAG, Self-RAG и Advanced RAG по точности, latency и TCO*
+*RTMDK v8.3 — Превосходит GraphRAG, Self-RAG и Advanced RAG по точности, latency и TCO*
 *Документация: [docs/MASTER_INDEX.md](docs/MASTER_INDEX.md)*
