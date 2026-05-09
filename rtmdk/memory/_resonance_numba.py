@@ -22,7 +22,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 
-@njit(fastmath=True, cache=True)
+@njit(fastmath=True, cache=True, parallel=True)
 def _chunk_resonance_scalar_bw(
     positions: NDArray,
     phases: NDArray,
@@ -38,15 +38,12 @@ def _chunk_resonance_scalar_bw(
     use_gates: bool,
     use_causal: bool,
 ) -> NDArray:
-    """Numba kernel for chunk resonance with scalar bandwidth.
-
-    Falls back to numpy if numba is not installed.
-    """
+    """Numba kernel for chunk resonance with scalar bandwidth (parallel)."""
     n = positions.shape[0]
     dim = positions.shape[1]
     out = np.empty(n, dtype=np.float32)
     bw_sq = bw * bw
-    for i in range(n):
+    for i in prange(n):
         dist_sq = 0.0
         for d in range(dim):
             diff = positions[i, d] - query_latent[d]

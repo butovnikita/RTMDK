@@ -207,15 +207,19 @@ class ResonanceEngine:
 
         # Numba fast-path for scalar bandwidth (the common case)
         if is_numba_available() and np.ndim(bw) == 0:
+            # zero-copy only when dtype already matches; otherwise cast
+            def _asf32(a):
+                a = np.asarray(a)
+                return a if a.dtype == np.float32 else a.astype(np.float32)
             return _chunk_resonance_numba(
-                positions.astype(np.float32),
-                phases.astype(np.float32),
-                amplitudes.astype(np.float32),
-                saliences.astype(np.float32),
-                modal_weights.astype(np.float32),
-                gates.astype(np.float32),
-                causal_boost.astype(np.float32),
-                query_latent.astype(np.float32),
+                _asf32(positions),
+                _asf32(phases),
+                _asf32(amplitudes),
+                _asf32(saliences),
+                _asf32(modal_weights),
+                _asf32(gates),
+                _asf32(causal_boost),
+                _asf32(query_latent),
                 float(query_phase),
                 local_bw,
                 pc,

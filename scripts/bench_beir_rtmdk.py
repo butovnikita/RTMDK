@@ -25,9 +25,14 @@ def load_beir_dataset(name: str):
     """Load a BEIR dataset (downloads on first run)."""
     try:
         from beir.datasets.data_loader import GenericDataLoader
+        from beir import util
     except ImportError as exc:
         raise RuntimeError("pip install beir") from exc
+    url = f"https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/{name}.zip"
     data_path = f"./beir_datasets/{name}"
+    if not os.path.exists(os.path.join(data_path, "corpus.jsonl")):
+        print(f"Downloading BEIR dataset '{name}'...")
+        util.download_and_unzip(url, "./beir_datasets")
     corpus, queries, qrels = GenericDataLoader(data_folder=data_path).load(split="test")
     return corpus, queries, qrels
 
@@ -74,7 +79,7 @@ def build_rtmdk(corpus_ids: List[str], corpus_embs: np.ndarray) -> RTMDKMemory:
     print("Ingesting into RTMDK...")
     t0 = time.perf_counter()
     for cid, emb in zip(corpus_ids, corpus_embs):
-        mem.add_node(content={"text": cid}, embedding=emb.astype(np.float32))
+        mem.add_node(content={"text": cid}, embedding=emb.astype(np.float32), node_id=cid)
     print(f"Ingest done in {time.perf_counter() - t0:.1f}s")
     return mem
 
@@ -95,13 +100,8 @@ def evaluate_rtmdk(mem: RTMDKMemory, query_ids: List[str], query_embs: np.ndarra
             continue
 
         t0 = time.perf_counter()
-        results = mem.retrieve_nodes_pipeline("", top_k=top_k)
-        # Fallback: direct field query with embedding
-        if not results.get("nodes"):
-            results = mem.field.query(qemb.astype(np.float32), top_k=top_k)
-            result_ids = [r[0] for r in results]
-        else:
-            result_ids = [n.id for n in results["nodes"]]
+        results = mem.field.query(qemb.astype(np.float32), top_k=top_k)
+        result_ids = [r[0] for r in results]
         latencies.append((time.perf_counter() - t0) * 1000)
 
         # Recall@k

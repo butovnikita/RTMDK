@@ -2930,6 +2930,9 @@ class RTMDKField:
             "modalities": modalities if modalities else ["text"] * n,
         })
         self._dirty = True
+        # Pre-build node cache to eliminate first-query penalty
+        if self._cached_positions is not None:
+            self._build_node_cache()
         return batch_nids
 
     def delete_nodes(self, node_ids: List[str]) -> None:
