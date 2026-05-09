@@ -1527,7 +1527,7 @@ class RTMDKMemory(BaseModel):
                 results = cached
             else:
                 results = self._retrieve_nodes_impl(query, embedding, top_k, session_id, sparse_vec)
-                self.field.query_cache.set_raw(cache_key, results)
+                self.field.query_cache.put_raw(cache_key, results)
         else:
             results = self._retrieve_nodes_impl(query, embedding, top_k, session_id, sparse_vec)
 

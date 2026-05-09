@@ -601,4 +601,33 @@ python -m build
 - **151 new tests** written in this branch
 - **0 breaking changes**
 
+## ✅ 20. RAG Comparison Document v2 + QueryCache Bugfix (completed 2026-05-09)
+
+**Goal:** Update RAG comparison with real industry data and fix critical bug.
+
+### Changes Made
+- **`docs/24_RAG_COMPARISON.md`**: Complete rewrite with industry benchmark data
+  - MTEB leaderboard top models (Gemini Embedding 2: 67.71 nDCG@10, Voyage 4: 66.0, etc.)
+  - Vector DB comparison table (Qdrant, Pinecone, Milvus, Weaviate, pgvectorscale)
+  - MS MARCO passage ranking benchmarks
+  - BEIR benchmark context
+  - Cost analysis with real vendor pricing
+  - Migration path with planner and cost tracking phases
+- **`rtmdk/memory/core.py`**: Fixed `QueryCache.set_raw()` → `put_raw()` bug in `retrieve_nodes()`
+  - Legacy retrieve_nodes() path was broken when query_cache enabled
+  - All query_cache tests pass (7/7)
+
+### Research Sources
+- MTEB leaderboard (Hugging Face, Apr 2026)
+- BEIR benchmark papers and leaderboards
+- Qdrant, Pinecone, Milvus, pgvectorscale vendor benchmarks
+- ann-benchmarks.com (HNSW/IVF recall-latency tradeoffs)
+
+---
+
+## Statistics
+- **902 passed, 1 skipped** — full regression suite
+- **151 new tests** written in this branch
+- **0 breaking changes**
+
 *Last updated: 2026-05-09*
