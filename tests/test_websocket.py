@@ -93,6 +93,35 @@ class TestWebSocketMemory:
         finally:
             app_mod.memory = None
 
+    def test_websocket_pipeline_query_stream(self, client):
+        cfg = RTMDKConfig(latent_dim=16, use_hnsw=False)
+        field = RTMDKField(cfg)
+        field.add_node(
+            embedding=np.array([0.0] * 16),
+            content={"content": "hello world"},
+            node_id="n0")
+        mem = RTMDKMemory(config=cfg, embedder=lambda x: np.array([0.0] * 16))
+        mem.field = field
+        app_mod.memory = mem
+
+        try:
+            with client.websocket_connect("/ws/memory") as ws:
+                ws.send_json({"action": "query_pipeline", "query": "hello", "top_k": 5, "stream": True})
+                events = []
+                while True:
+                    resp = ws.receive_json()
+                    if resp["type"] == "pipeline_event":
+                        events.append(resp["event"])
+                        if resp["event"]["event"] == "pipeline_completed":
+                            break
+                    else:
+                        break
+                assert events[0]["event"] == "pipeline_started"
+                assert events[-1]["event"] == "pipeline_completed"
+                assert any(e["event"] == "stage_completed" for e in events)
+        finally:
+            app_mod.memory = None
+
     def test_websocket_invalid_json(self, client):
         with client.websocket_connect("/ws/memory") as ws:
             ws.send_text("not json")

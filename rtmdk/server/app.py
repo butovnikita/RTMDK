@@ -2060,32 +2060,49 @@ async def memory_websocket(websocket: WebSocket):
                     query = msg.get("query", "")
                     top_k = msg.get("top_k", 5)
                     session_id = msg.get("session_id")
+                    use_stream = msg.get("stream", False)
                     if memory and memory.field:
                         try:
-                            result = await memory.retrieve_nodes_pipeline_async(
-                                query, top_k=top_k, session_id=session_id
-                            )
-                            formatted = []
-                            for nid, score, node in result["results"]:
-                                content = ""
-                                if hasattr(node, "content"):
-                                    if isinstance(node.content, dict):
-                                        content = node.content.get("text", str(node.content))
-                                    else:
-                                        content = str(node.content)
-                                formatted.append({
-                                    "node_id": nid,
-                                    "score": round(float(score), 4),
-                                    "content": content,
+                            if use_stream:
+                                from rtmdk.pipeline.streaming import StreamingPipelineExecutor
+                                pipeline = memory.build_pipeline()
+                                streamer = StreamingPipelineExecutor(pipeline.stages)
+                                async for chunk in streamer.run_async(query, top_k=top_k, session_id=session_id):
+                                    # chunk is already SSE-formatted "data: {...}\n\n"
+                                    # strip prefix for WebSocket JSON
+                                    raw = chunk.strip()
+                                    if raw.startswith("data: "):
+                                        raw = raw[6:]
+                                    event_data = json.loads(raw)
+                                    await websocket.send_json({
+                                        "type": "pipeline_event",
+                                        "event": event_data,
+                                    })
+                            else:
+                                result = await memory.retrieve_nodes_pipeline_async(
+                                    query, top_k=top_k, session_id=session_id
+                                )
+                                formatted = []
+                                for nid, score, node in result["results"]:
+                                    content = ""
+                                    if hasattr(node, "content"):
+                                        if isinstance(node.content, dict):
+                                            content = node.content.get("text", str(node.content))
+                                        else:
+                                            content = str(node.content)
+                                    formatted.append({
+                                        "node_id": nid,
+                                        "score": round(float(score), 4),
+                                        "content": content,
+                                    })
+                                await websocket.send_json({
+                                    "type": "pipeline_results",
+                                    "query": query,
+                                    "results": formatted,
+                                    "route": result.get("route"),
+                                    "metrics": result.get("metrics"),
+                                    "total": len(formatted),
                                 })
-                            await websocket.send_json({
-                                "type": "pipeline_results",
-                                "query": query,
-                                "results": formatted,
-                                "route": result.get("route"),
-                                "metrics": result.get("metrics"),
-                                "total": len(formatted),
-                            })
                         except Exception as exc:
                             await websocket.send_json({"type": "error", "message": str(exc)})
                     else:
