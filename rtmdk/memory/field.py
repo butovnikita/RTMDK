@@ -27,6 +27,7 @@ from rtmdk.support.production import ShadowModeEvaluator, RAGASPlusEvaluator, Au
 from rtmdk.memory.projection_manager import ProjectionManager
 from rtmdk.memory.consolidation_manager import ConsolidationManager
 from rtmdk.memory.query_manager import QueryManager
+from rtmdk.memory.routing_manager import RoutingManager
 from rtmdk.memory.scheduler import StepScheduler
 from rtmdk.support.agents import AgentPlanner, HypothesisVerifier, ToolRouter
 from rtmdk.support.healer import TopologyHealer
@@ -1095,6 +1096,7 @@ class RTMDKField:
 
         self._consolidation_mgr = ConsolidationManager(self)
         self._query_mgr = QueryManager(self)
+        self._routing_mgr = RoutingManager(self)
         self._scheduler = StepScheduler(self)
 
     # ------------------------------------------------------------------
@@ -2387,99 +2389,16 @@ class RTMDKField:
     # ========================================================================
 
     def _get_node_shard(self, node_id: str) -> int:
-        """Get shard assignment for a node."""
-        if node_id in self._node_shard_map:
-            return self._node_shard_map[node_id]
-        if node_id in self.nodes:
-            pos = self.nodes[node_id].latent_pos
-            dists = np.linalg.norm(self._index_mgr.shard_centers - pos, axis=1)
-            shard = int(np.argmin(dists))
-            self._node_shard_map[node_id] = shard
-            return shard
-        return 0
+        return self._routing_mgr.get_node_shard(node_id)
 
-    def _route_query(
-            self,
-            query_latent: NDArray,
-            top_shards: int = 3) -> List[int]:
-        """Route query to top_k most relevant shards (softmax-free)."""
-        if self._index_mgr.shard_centers is None:
-            return list(range(self.cfg.num_shards))
-        dists = np.linalg.norm(self._index_mgr.shard_centers - query_latent, axis=1)
-        self.shard_router = 1.0 / (1.0 + dists)
-        return list(np.argsort(self.shard_router)[-top_shards:])
+    def _route_query(self, query_latent: NDArray, top_shards: int = 3) -> List[int]:
+        return self._routing_mgr.route_query(query_latent, top_shards)
 
-    def _update_shard_centers(self):
-        """Update shard centers based on current node distribution."""
-        if self._index_mgr.shard_centers is None or len(self.nodes) < self.cfg.num_shards:
-            return
-        from sklearn.cluster import KMeans
-        positions = np.array([n.latent_pos for n in self.nodes.values()])
-        if len(positions) < self.cfg.num_shards:
-            return
-        kmeans = KMeans(
-            n_clusters=self.cfg.num_shards,
-            n_init=3,
-            random_state=42)
-        labels = kmeans.fit_predict(positions)
-        self._index_mgr.shard_centers = kmeans.cluster_centers_.astype(np.float32)
-        # Update node-shard map
-        self._node_shard_map.clear()
-        for i, nid in enumerate(self.node_index):
-            self._node_shard_map[nid] = int(labels[i])
+    def _update_shard_centers(self) -> None:
+        self._routing_mgr.update_shard_centers()
 
-    def _update_shard_centers_bm25(self):
-        """Build topic-based shards from BM25 term vectors.
-
-        Clusters documents by their top BM25 terms instead of embeddings.
-        More robust when embeddings are weak or documents are short.
-        """
-        if self._index_mgr.bm25_index is None or len(self.nodes) < self.cfg.num_shards:
-            return
-        # Build doc-term matrix from BM25
-        from collections import Counter
-        term_doc = {}  # term -> list of doc indices
-        doc_terms = []  # list of term lists per doc
-        nids = list(self.node_index)
-        for i, nid in enumerate(nids):
-            node = self.nodes[nid]
-            text = node.content.get("text", "")
-            terms = [w for w in text.lower().split() if len(w) > 2]
-            doc_terms.append(terms)
-            for t in set(terms):
-                term_doc.setdefault(t, []).append(i)
-        # Assign each doc to its most discriminative term
-        doc_cluster = {}
-        for i, terms in enumerate(doc_terms):
-            if not terms:
-                continue
-            # Score terms by inverse doc frequency (simulated)
-            best_term = min(terms, key=lambda t: len(term_doc.get(t, [])))
-            doc_cluster[i] = best_term
-        # Group by term, merge small groups
-        groups = {}
-        for i, term in doc_cluster.items():
-            groups.setdefault(term, []).append(i)
-        # Merge until we have num_shards clusters
-        sorted_groups = sorted(groups.items(), key=lambda x: len(x[1]), reverse=True)
-        clusters = []
-        for term, members in sorted_groups:
-            clusters.append(members)
-        # Merge smallest clusters
-        while len(clusters) > self.cfg.num_shards:
-            clusters.sort(key=len)
-            clusters[1].extend(clusters[0])
-            clusters.pop(0)
-        # Assign shard IDs and compute centers as mean latent positions
-        self._node_shard_map.clear()
-        centers = []
-        for shard_id, members in enumerate(clusters):
-            for idx in members:
-                self._node_shard_map[nids[idx]] = shard_id
-            positions = np.array([self.nodes[nids[idx]].latent_pos for idx in members])
-            centers.append(positions.mean(axis=0))
-        self._index_mgr.shard_centers = np.stack(centers).astype(np.float32)
-        logger.info("BM25 topic shards: %d clusters from %d docs", len(clusters), len(nids))
+    def _update_shard_centers_bm25(self) -> None:
+        self._routing_mgr.update_shard_centers_bm25()
 
     # ========================================================================
     # PHASE 12 TRACK 2: COGNITIVE CONTEXT COMPRESSION

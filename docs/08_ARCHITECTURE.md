@@ -62,6 +62,7 @@
 | **ProjectionManager** | Projection + SOT tokenizer lifecycle | `memory/projection_manager.py` |
 | **ConsolidationManager** | Диалектическое слияние узлов с высоким напряжением | `memory/consolidation_manager.py` |
 | **QueryManager** | Все пути query/retrieval + batch resonance | `memory/query_manager.py` |
+| **RoutingManager** | Shard routing и обновление shard centers | `memory/routing_manager.py` |
 | **Riemannian Geometry** | Операции на шаре Пуанкаре (exp/log/midpoint/scalar) | `memory/geometry.py`, `utils/hyperbolic.py` |
 | **Spectral Clustering** | Спектральный графовый Laplacian для глобальной кластеризации перед merge | `memory/spectral.py` |
 | **Kalman Filter** | EKF для отслеживания неопределённости позиций узлов | `memory/kalman.py` |
@@ -419,7 +420,7 @@ rtmdk/
 ├── config.py            # 8 пресетов RTMDKConfig
 │
 ├── memory/              # Core kernel
-│   ├── field.py              # RTMDKField (~2960 lines, 7 managers extracted)
+│   ├── field.py              # RTMDKField (~2880 lines, 8 managers extracted)
 │   ├── core.py               # RTMDKMemory (~2600 lines, pipeline & API)
 │   ├── resonance.py          # ResonanceEngine (math extraction)
 │   ├── cache_manager.py      # NodeCacheManager (cache extraction)
