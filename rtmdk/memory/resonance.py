@@ -15,6 +15,7 @@ from scipy.spatial.distance import cdist
 
 from rtmdk.memory.geometry import poincare_dist
 from rtmdk.memory.utils import cross_modal_resonance
+from rtmdk.memory._resonance_numba import chunk_resonance as _chunk_resonance_numba, is_numba_available
 
 
 class ResonanceEngine:
@@ -188,29 +189,51 @@ class ResonanceEngine:
         amplitudes: NDArray,
         saliences: NDArray,
         modal_weights: NDArray,
+        gates: NDArray,
+        causal_boost: NDArray,
         query_latent: NDArray,
         query_phase: float,
         bw: Optional[Any] = None,
+        use_gates: bool = False,
+        use_causal: bool = False,
     ) -> NDArray:
-        """Compute resonance for a chunk of nodes (used by _query_vectorized).
-
-        Returns base response without gates or causal boost — those are
-        applied by the caller because they depend on runtime config state.
-        """
-        dists = np.linalg.norm(positions - query_latent, axis=1)
+        """Compute resonance for a chunk of nodes (used by _query_vectorized)."""
         if bw is not None:
-            local_bw = np.asarray(bw)
+            local_bw = float(np.asarray(bw))
         else:
             local_bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self.cfg.bandwidth
-        local_bw = np.maximum(local_bw, 1e-8)
-        pc = self._effective_pc
+        local_bw = max(local_bw, 1e-8)
+        pc = float(self._effective_pc)
 
+        # Numba fast-path for scalar bandwidth (the common case)
+        if is_numba_available() and np.ndim(bw) == 0:
+            return _chunk_resonance_numba(
+                positions.astype(np.float32),
+                phases.astype(np.float32),
+                amplitudes.astype(np.float32),
+                saliences.astype(np.float32),
+                modal_weights.astype(np.float32),
+                gates.astype(np.float32),
+                causal_boost.astype(np.float32),
+                query_latent.astype(np.float32),
+                float(query_phase),
+                local_bw,
+                pc,
+                use_gates,
+                use_causal,
+            )
+
+        # Pure-numpy fallback (supports per-node bw vectors)
+        dists = np.linalg.norm(positions - query_latent, axis=1)
         if np.ndim(local_bw) == 0:
             spatial = np.exp(-dists ** 2 / (2 * local_bw ** 2))
         else:
             spatial = np.exp(-dists ** 2 / (2 * local_bw ** 2))
-
-        phase_diff = phases - query_phase
-        phase_align = 0.5 + 0.5 * np.cos(phase_diff)
-        response = spatial * ((1 - pc) + pc * phase_align)
-        return response * amplitudes * saliences * modal_weights
+        phase_align = 0.5 + 0.5 * np.cos(phases - query_phase)
+        resp = spatial * ((1 - pc) + pc * phase_align)
+        resp *= amplitudes * saliences * modal_weights
+        if use_gates:
+            resp *= gates
+        if use_causal:
+            resp *= causal_boost
+        return resp.astype(np.float32)

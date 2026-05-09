@@ -1646,14 +1646,12 @@ class RTMDKField:
             bw: Optional per-node bandwidth vector (same length as positions).
                 If None, uses global bandwidth from config or meta_kernel.
         """
-        resp = self._resonance_engine.chunk_response(
+        return self._resonance_engine.chunk_response(
             positions, phases, amplitudes, saliences,
-            modal_weights, query_latent, query_phase, bw)
-        if self.cfg.soft_gates:
-            resp = resp * gates
-        if self.causal_engine:
-            resp = resp * causal_boost
-        return resp
+            modal_weights, gates, causal_boost,
+            query_latent, query_phase, bw,
+            use_gates=self.cfg.soft_gates,
+            use_causal=self.causal_engine is not None)
 
     def _query_vectorized(self, query_latent: NDArray, query_phase: float,
                           top_k: int, modality: str, session_id: Optional[str],
