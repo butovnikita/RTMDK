@@ -370,6 +370,59 @@ _FIELD_GROUPS: Dict[str, str] = {
     "query_intent_classification_enabled": "SOTConfig",
 }
 
+# Flags present in config but with no implementation anywhere in the codebase.
+# They are kept for backward compatibility but will be removed in v9.0.
+ORPHANED_FLAGS: set = {
+    "adjoint_enabled",
+    "causal_masking",
+    "cpen_child_ode",
+    "cpen_parent_ode",
+    "crystallization_freq",
+    "crystallization_similarity",
+    "curvature",
+    "dreaming_freq",
+    "drift_detection",
+    "drift_threshold",
+    "drift_window",
+    "entropy_high_threshold",
+    "entropy_low_threshold",
+    "entropy_management",
+    "eval_frequency",
+    "vector_storage_dsn",
+    "false_merge_threshold",
+    "goal_directed_routing",
+    "hebbian_learning_rate",
+    "learnable_bandwidth",
+    "learnable_decay",
+    "learnable_phase_coupling",
+    "lyapunov_alpha",
+    "lyapunov_beta",
+    "lyapunov_gamma",
+    "metrics_retention",
+    "ode_atol",
+    "ode_chunk_size",
+    "ode_n_steps",
+    "ode_rtol",
+    "ode_solver",
+    "ode_time_horizon",
+    "pc_latent_dim",
+    "prover_backend",
+    "response_smoothness_target",
+    "sde_noise_level",
+    "self_sup_threshold",
+    "sot_diagonal_ssm",
+    "sot_ssm_sync",
+    "ssm_state_dim",
+    "swarm_consensus_threshold",
+    "swarm_max_agents",
+    "swarm_vote_weight",
+    "symbolic_confidence_threshold",
+    "symbolic_max_tension",
+    "symbolic_min_self_sup",
+    "tier_tension_thresh",
+    "trust_min_reputation",
+}
+
 
 @dataclass
 class CoreConfig:
@@ -988,6 +1041,13 @@ class RTMDKConfig:
     def validate(self) -> list:
         """Check for config conflicts and return list of warning strings."""
         warnings = []
+        # Warn about orphaned flags (no implementation in codebase)
+        active_orphaned = [name for name in ORPHANED_FLAGS if getattr(self, name, False)]
+        if active_orphaned:
+            warnings.append(
+                f"Orphaned config flags enabled (no implementation): {', '.join(active_orphaned)}. "
+                "They will be removed in v9.0."
+            )
         # Check HNSW inconsistencies
         if not self.retrieval.use_hnsw and self.core.hnsw_min_nodes > 0:
             warnings.append(
