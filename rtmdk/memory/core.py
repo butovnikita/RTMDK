@@ -47,6 +47,15 @@ from rtmdk.memory.engram_cache import EngramEmbeddingCache
 from rtmdk.memory.distributed_lock import DistributedLock
 from rtmdk.memory.observability import MemoryMetrics, AlertRule
 from rtmdk.memory.rag_quality import SentenceReranker, QueryDecomposer, FeedbackLoop
+from rtmdk.pipeline import (
+    PipelineExecutor,
+    EmbedStage,
+    RouteStage,
+    RetrieveStage,
+    RerankStage,
+    CalibrateStage,
+    ExplainStage,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1644,6 +1653,73 @@ class RTMDKMemory(BaseModel):
 
         self.field.stats["batch_queries"] = self.field.stats.get("batch_queries", 0) + n_queries
         return results
+
+    # ------------------------------------------------------------------
+    # Pipeline API (v8.3+)
+    # ------------------------------------------------------------------
+    def build_pipeline(self) -> PipelineExecutor:
+        """Build an explicit stage-based pipeline for retrieval.
+
+        Each stage is independently observable and swappable.
+        Stages are constructed from the features enabled in config.
+        """
+        from rtmdk.production.cascade_router import AdaptiveCascadeRouter
+
+        stages = []
+
+        # Stage 1: Embed (optional — caller may provide embedding directly)
+        stages.append(EmbedStage(self.embedder))
+
+        # Stage 2: Route
+        router = None
+        if getattr(self.config, "cascade_enabled", False):
+            router = AdaptiveCascadeRouter()
+        stages.append(RouteStage(router))
+
+        # Stage 3: Retrieve
+        stages.append(RetrieveStage(self.field))
+
+        # Stage 4: Rerank
+        stages.append(RerankStage(self._sentence_reranker))
+
+        # Stage 5: Calibrate
+        calibrator = getattr(self.field, "conformal_calibrator", None)
+        stages.append(CalibrateStage(calibrator))
+
+        # Stage 6: Explain
+        stages.append(ExplainStage(self._result_explainer))
+
+        return PipelineExecutor(stages)
+
+    def retrieve_nodes_pipeline(
+        self,
+        query: str,
+        embedding: Optional[NDArray] = None,
+        top_k: Optional[int] = None,
+        session_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Retrieve nodes using the explicit pipeline API.
+
+        Returns:
+            Dict with keys:
+                - results: List[Tuple[str, float, Any]]
+                - route: str (factual/standard/deep)
+                - explanations: List[Dict]
+                - metrics: per-stage latency breakdown
+        """
+        pipeline = self.build_pipeline()
+        ctx = pipeline.run(
+            query_text=query,
+            top_k=top_k or self.field.cfg.top_k,
+            session_id=session_id,
+            embedding=embedding,
+        )
+        return {
+            "results": ctx.results,
+            "route": ctx.route,
+            "explanations": ctx.explanations,
+            "metrics": ctx.to_dict(),
+        }
 
     def add_feedback(self, query: str, node_id: str, relevant: bool) -> bool:
         """Provide explicit feedback to refine embeddings.

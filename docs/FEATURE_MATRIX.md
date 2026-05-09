@@ -36,3 +36,14 @@
 | `rtmdk/memory/spectral.py` | `spectral_consolidation` | `False` | 2 test(s) | 0 bench | integrated | [DISABLED] | PASS: 4/4 clusters with normalized data + fixed eigengap |
 | `rtmdk/memory/learned_consolidation.py` | `learned_consolidation` | `False` | 0 test(s) | 0 bench | integrated | [DISABLED] | Tiny MLP |
 | `rtmdk/memory/quantization.py` | `quantization` | `none` | 8 test(s) | 1 bench | integrated | [DISABLED] | PASS: 50% fp16 75% int8 reduction |
+
+## Pipeline Stages (v8.3+)
+
+| Stage | Class | Config Flag | Status | Notes |
+|-------|-------|-------------|--------|-------|
+| Embed | `EmbedStage` | — | [ENABLED] | Required |
+| Route | `RouteStage` | `cascade_enabled` | [ENABLED] | 89% fast routing |
+| Retrieve | `RetrieveStage` | — | [ENABLED] | Core resonance |
+| Rerank | `RerankStage` | `sentence_reranker_enabled` | [ENABLED] | 1.0ms latency |
+| Calibrate | `CalibrateStage` | `conformal_prediction` | [ENABLED] | 90.8% coverage |
+| Explain | `ExplainStage` | `result_explainability_enabled` | [ENABLED] | Human-readable |

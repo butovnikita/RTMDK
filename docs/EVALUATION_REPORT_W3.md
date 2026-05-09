@@ -110,7 +110,22 @@ Added two new warnings to `RTMDKConfig.validate()`:
 
 ---
 
-## Final Verdict: All 9 Features
+## 5. Pipeline Architecture (v8.3+)
+
+New explicit stage-based pipeline introduced in `rtmdk/pipeline/`:
+
+```
+Embed → Route → Retrieve → Rerank → Calibrate → Explain
+```
+
+- Each stage has uniform `process(ctx) → ctx` interface
+- Per-stage latency tracking via `StageMetrics`
+- Backward-compatible: legacy `retrieve_nodes()` preserved
+- New API: `memory.retrieve_nodes_pipeline(query, embedding, top_k=5)`
+
+See `docs/PIPELINE_ARCHITECTURE.md` for full documentation.
+
+## Final Verdict: All 10 Features
 
 | Feature | Status | Real-World Use Case |
 |---------|--------|---------------------|
@@ -125,4 +140,4 @@ Added two new warnings to `RTMDKConfig.validate()`:
 | SOT v2 | **GO** | Fallback / low-resource languages |
 | **KalmanFilter** | **GO** | Noisy/drifted embedding tracking |
 
-**Total: 10/10 features validated, 1 critical bug fixed, 0 deletions.**
+**Total: 10/10 features validated, 1 critical bug fixed, 0 deletions, new pipeline architecture.**

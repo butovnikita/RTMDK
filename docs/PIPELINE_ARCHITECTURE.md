@@ -1,0 +1,80 @@
+# RTMDK Pipeline Architecture (v8.3+)
+
+> Status: Beta — backward-compatible with legacy `retrieve_nodes()` API.
+
+## Overview
+
+RTMDK v8.3 introduces an **explicit stage-based retrieval pipeline** that replaces the monolithic `retrieve_nodes()` method with independently observable, swappable, and testable components.
+
+## Pipeline Stages
+
+| # | Stage | Class | Purpose | Config Flag |
+|---|-------|-------|---------|-------------|
+| 1 | **Embed** | `EmbedStage` | Text → embedding vector | — |
+| 2 | **Route** | `RouteStage` | Query classification (factual/exploratory/deep) | `cascade_enabled` |
+| 3 | **Retrieve** | `RetrieveStage` | Core resonance / HNSW / BM25 hybrid | — |
+| 4 | **Rerank** | `RerankStage` | Sentence-level + cross-encoder reranking | `sentence_reranker_enabled` |
+| 5 | **Calibrate** | `CalibrateStage` | Conformal prediction filtering | `conformal_prediction` |
+| 6 | **Explain** | `ExplainStage` | Human-readable result explanations | `result_explainability_enabled` |
+
+## Legacy vs Pipeline API
+
+### Legacy (monolithic)
+```python
+results = memory.retrieve_nodes(query, embedding, top_k=5)
+```
+
+### Pipeline (observable)
+```python
+output = memory.retrieve_nodes_pipeline(query, embedding, top_k=5)
+# output["results"]      — list of (nid, score, node)
+# output["route"]        — "fast" | "standard" | "deep"
+# output["explanations"] — human-readable reasons
+# output["metrics"]      — per-stage latency breakdown
+```
+
+### Custom Pipeline
+```python
+from rtmdk.pipeline import PipelineExecutor, EmbedStage, RetrieveStage
+
+pipeline = PipelineExecutor([
+    EmbedStage(embedder),
+    RetrieveStage(field),
+])
+ctx = pipeline.run("What is the capital of France?", top_k=5)
+print(ctx.to_dict()["stages"])
+```
+
+## Metrics Format
+
+```json
+{
+  "query_text": "What is the capital of France?",
+  "route": "fast",
+  "top_k": 5,
+  "results_count": 5,
+  "explanations_count": 5,
+  "stages": [
+    {"stage": "embed", "latency_ms": 12.5, "input_count": 0, "output_count": 0},
+    {"stage": "route", "latency_ms": 0.1, "input_count": 0, "output_count": 0},
+    {"stage": "retrieve", "latency_ms": 0.8, "input_count": 0, "output_count": 5},
+    {"stage": "rerank", "latency_ms": 1.2, "input_count": 5, "output_count": 5},
+    {"stage": "calibrate", "latency_ms": 0.0, "input_count": 5, "output_count": 5},
+    {"stage": "explain", "latency_ms": 0.3, "input_count": 5, "output_count": 5}
+  ],
+  "total_latency_ms": 14.9
+}
+```
+
+## Backward Compatibility
+
+- `retrieve_nodes()` — **preserved**, no breaking changes.
+- `retrieve_nodes_with_explanations()` — **preserved**.
+- `build_pipeline()` — new, opt-in.
+- All existing configs work unchanged.
+
+## Future Work
+
+- Extract query cache, distributed lock, and query rewrite into separate stages.
+- Add `BatchPipelineExecutor` for vectorized batch retrieval.
+- Plugin registry: load custom stages via entry points.
