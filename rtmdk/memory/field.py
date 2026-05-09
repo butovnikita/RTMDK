@@ -31,6 +31,7 @@ from rtmdk.memory.routing_manager import RoutingManager
 from rtmdk.memory.scheduler import StepScheduler
 from rtmdk.memory.topology_manager import TopologyManager
 from rtmdk.memory.async_pipeline_manager import AsyncPipelineManager
+from rtmdk.memory.crystallization_manager import CrystallizationManager
 from rtmdk.support.agents import AgentPlanner, HypothesisVerifier, ToolRouter
 from rtmdk.support.healer import TopologyHealer
 from rtmdk.support.meta_adaptive import MetaAdaptiveKernel
@@ -1101,6 +1102,7 @@ class RTMDKField:
         self._routing_mgr = RoutingManager(self)
         self._topology_mgr = TopologyManager(self)
         self._async_pipeline_mgr = AsyncPipelineManager(self)
+        self._crystallization_mgr = CrystallizationManager(self)
         self._scheduler = StepScheduler(self)
 
     # ------------------------------------------------------------------
@@ -2276,69 +2278,8 @@ class RTMDKField:
     # PHASE 12 TRACK 3: CRYSTALLIZATION (episodic → semantic/procedural)
     # ========================================================================
 
-    def _crystallize_recurring(
-            self,
-            window: int = 100,
-            similarity_thresh: float = 0.75):
-        """Detect recurring episodic patterns and crystallize into semantic nodes."""
-        recent_ids = self.node_index[-window:]
-        recent = [
-            self.nodes[nid] for nid in recent_ids if nid in self.nodes and getattr(
-                self.nodes[nid],
-                'tier',
-                'semantic') == "episodic" and nid not in self._crystallized_nodes]
-        if len(recent) < 5:
-            return
-
-        try:
-            from sklearn.cluster import DBSCAN
-        except ImportError:
-            return
-
-        pos = np.array([n.latent_pos for n in recent])
-        labels = DBSCAN(
-            eps=0.4,
-            min_samples=self.cfg.crystallization_min_cluster).fit_predict(pos)
-
-        crystallized_count = 0
-        for cluster_id in set(labels):
-            if cluster_id == -1:
-                continue
-            members = [recent[i]
-                       for i, l in enumerate(labels) if l == cluster_id]
-            if len(members) >= self.cfg.crystallization_min_cluster:
-                new_pos = np.mean(
-                    [m.latent_pos for m in members], axis=0).astype(np.float32)
-                # Circular mean for phases: arctan2(mean(sin), mean(cos))
-                phases = np.array([m.phase for m in members])
-                new_phase = float(
-                    np.arctan2(
-                        np.mean(
-                            np.sin(phases)),
-                        np.mean(
-                            np.cos(phases)))) % (2 * np.pi)
-                combined_text = " ".join(
-                    [m.content.get("text", "")[:30] for m in members[:3]])
-                new_content = {
-                    "text": f"Crystallized: {combined_text}...",
-                    "tier": "semantic",
-                    "crystallized_from": [m.id for m in members],
-                    "crystallized_at": time.time(),
-                }
-                new_id = self.add_node(
-                    new_pos, new_content, phase=float(
-                        new_phase %
-                        (2 * np.pi)), skip_projection=True)
-                self.nodes[new_id].tier = "semantic"
-                # Mark originals as archived
-                for m in members:
-                    m.content["archived"] = True
-                    self._crystallized_nodes.add(m.id)
-                crystallized_count += 1
-
-        if crystallized_count > 0:
-            self.stats["crystallizations"] += crystallized_count
-            self.stats["crystallized_clusters"] += crystallized_count
+    def _crystallize_recurring(self, window: int = 100, similarity_thresh: float = 0.75) -> None:
+        self._crystallization_mgr.crystallize_recurring(window, similarity_thresh)
 
     # ========================================================================
     # PHASE 12 TRACK 4: ASYNC MULTI-THREADED EVOLUTION PIPELINE
