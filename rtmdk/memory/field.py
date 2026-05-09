@@ -3018,10 +3018,7 @@ class RTMDKField:
         node.content["synthesis_note"] = f"Consolidated with {pid} at t={time.time():.0f}"
         if "merged_content" not in node.content:
             node.content["merged_content"] = []
-        node.content["merged_content"].append(
-            partner.content.get(
-                "text", "") or partner.content.get(
-                "input_text", ""))
+        node.content["merged_content"].append(self._extract_text(partner.content))
 
         if self.causal_engine:
             for parent, strength in partner.causal_strength.items():
@@ -3137,104 +3134,8 @@ class RTMDKField:
                     continue
                 partner = self.nodes[pid]
 
-                if self.cfg.do_calculus_validation and self.causal_engine:
-                    validation = self.causal_engine.validate_consolidation(
-                        nid, pid)
-                    self.stats["consolidation_validations"] += 1
-                    if not validation["safe"]:
-                        self.stats["blocked_consolidations"] += 1
-                        processed.add(nid)
-                        processed.add(pid)
-                        continue
-
-                # Phase 20: Domain consolidation guard — don't merge nodes from
-                # different domains
-                if self.cfg.domain_consolidation_guard and node.domain != partner.domain:
-                    if partner.id not in node.conflict_with:
-                        node.conflict_with.append(partner.id)
-                    if node.id not in partner.conflict_with:
-                        partner.conflict_with.append(node.id)
-                    processed.add(nid)
-                    processed.add(pid)
-                    continue
-
-                gate = self._soft_gate(max(node.tension, partner.tension))
-
-                if self.cfg.enable_rollback:
-                    node.pre_consolidation_pos = node.latent_pos.copy()
-
-                if self.diff_consolidation and mode == ConsolidationMode.DIALECTICAL:
-                    synth = self.diff_consolidation.compute_synthesis(
-                        node, partner, gate)
-                    if self.cfg.hyperbolic:
-                        node.latent_pos = exp_map_poincare(
-                            log_map_poincare(
-                                synth["latent_pos"],
-                                node.latent_pos,
-                                self.cfg.ball_radius),
-                            node.latent_pos,
-                            self.cfg.ball_radius,
-                        )
-                    else:
-                        node.latent_pos = synth["latent_pos"]
-                    node.phase = synth["phase"]
-                    node.amplitude = synth["amplitude"]
-                    node.salience = synth["salience"]
-                elif mode == ConsolidationMode.DIALECTICAL:
-                    if self.cfg.hyperbolic:
-                        node.latent_pos = poincare_midpoint(
-                            node.latent_pos, partner.latent_pos, self.cfg.ball_radius)
-                    else:
-                        self._merge_latents(node, partner)
-                    node.phase = np.arctan2(0.5 * (np.sin(node.phase) + np.sin(partner.phase)), 0.5 * (
-                        np.cos(node.phase) + np.cos(partner.phase))) % (2 * np.pi)
-                    node.amplitude = min(
-                        1.0, 0.8 * (node.amplitude + partner.amplitude))
-                    node.salience = min(
-                        1.0, 0.7 * (node.salience + partner.salience))
-                else:
-                    # MERGE and PRUNE modes: same spatial merge, keep
-                    # amplitude/salience from survivor
-                    if self.cfg.hyperbolic:
-                        node.latent_pos = poincare_midpoint(
-                            node.latent_pos, partner.latent_pos, self.cfg.ball_radius)
-                    else:
-                        self._merge_latents(node, partner)
-                    node.phase = np.arctan2(0.5 * (np.sin(node.phase) + np.sin(partner.phase)), 0.5 * (
-                        np.cos(node.phase) + np.cos(partner.phase))) % (2 * np.pi)
-
-                node.tension = 0.0
-                node.soft_gate = 1.0
-                node.lineage = [f"{node.id}+{pid}"] + \
-                    node.lineage + partner.lineage
-                # Preserve partner content for traceability
-                node.content["synthesis_note"] = f"Consolidated with {pid} at t={time.time():.0f}"
-                if "merged_content" not in node.content:
-                    node.content["merged_content"] = []
-                node.content["merged_content"].append(
-                    partner.content.get(
-                        "text", "") or partner.content.get(
-                        "input_text", ""))
-
-                if self.causal_engine:
-                    for parent, strength in partner.causal_strength.items():
-                        if parent not in node.causal_strength:
-                            node.causal_strength[parent] = strength
-                        else:
-                            node.causal_strength[parent] = max(
-                                node.causal_strength[parent], strength)
-
-                if self.cfg.use_hnsw:
-                    self._index_mgr.hnsw_remove(pid)
-                    self._index_mgr.hnsw_insert(nid, node.latent_pos)
-                if self.cfg.bm25_fallback and self.bm25_index:
-                    self._index_mgr.bm25_remove(pid)
-
-                pending_deletions.append(pid)
-                processed.add(pid)
-                updated.append(nid)
-                self.stats["consolidations"] += 1
-                processed.add(nid)
+                self._do_merge(
+                    nid, pid, mode, updated, pending_deletions, processed, pre_state)
         else:
             # Fallback: vectorized candidate search without HNSW — O(N) per node via vectorized ops
             # Precompute all positions once (not O(N²) — done once outside
@@ -3279,87 +3180,8 @@ class RTMDKField:
                     continue
                 partner = self.nodes[pid]
 
-                if self.cfg.do_calculus_validation and self.causal_engine:
-                    validation = self.causal_engine.validate_consolidation(
-                        nid, pid)
-                    self.stats["consolidation_validations"] += 1
-                    if not validation["safe"]:
-                        self.stats["blocked_consolidations"] += 1
-                        processed.add(nid)
-                        processed.add(pid)
-                        continue
-
-                # Phase 20: Domain consolidation guard — don't merge nodes from
-                # different domains
-                if self.cfg.domain_consolidation_guard and node.domain != partner.domain:
-                    if partner.id not in node.conflict_with:
-                        node.conflict_with.append(partner.id)
-                    if node.id not in partner.conflict_with:
-                        partner.conflict_with.append(node.id)
-                    processed.add(nid)
-                    processed.add(pid)
-                    continue
-
-                gate = self._soft_gate(max(node.tension, partner.tension))
-
-                if self.cfg.enable_rollback:
-                    node.pre_consolidation_pos = node.latent_pos.copy()
-
-                if self.diff_consolidation and mode == ConsolidationMode.DIALECTICAL:
-                    synth = self.diff_consolidation.compute_synthesis(
-                        node, partner, gate)
-                    if self.cfg.hyperbolic:
-                        node.latent_pos = exp_map_poincare(
-                            log_map_poincare(
-                                synth["latent_pos"],
-                                node.latent_pos,
-                                self.cfg.ball_radius),
-                            node.latent_pos,
-                            self.cfg.ball_radius,
-                        )
-                    else:
-                        node.latent_pos = synth["latent_pos"]
-                    node.phase = synth["phase"]
-                    node.amplitude = synth["amplitude"]
-                    node.salience = synth["salience"]
-                elif mode == ConsolidationMode.DIALECTICAL:
-                    if self.cfg.hyperbolic:
-                        node.latent_pos = poincare_midpoint(
-                            node.latent_pos, partner.latent_pos, self.cfg.ball_radius)
-                    else:
-                        self._merge_latents(node, partner)
-                    node.phase = np.arctan2(0.5 * (np.sin(node.phase) + np.sin(partner.phase)), 0.5 * (
-                        np.cos(node.phase) + np.cos(partner.phase))) % (2 * np.pi)
-                    node.amplitude = min(
-                        1.0, 0.8 * (node.amplitude + partner.amplitude))
-                    node.salience = min(
-                        1.0, 0.7 * (node.salience + partner.salience))
-
-                node.tension = 0.0
-                node.soft_gate = 1.0
-                node.lineage = [f"{node.id}+{pid}"] + \
-                    node.lineage + partner.lineage
-                node.content["synthesis_note"] = f"Consolidated with {pid} at t={time.time():.0f}"
-
-                if self.causal_engine:
-                    for parent, strength in partner.causal_strength.items():
-                        if parent not in node.causal_strength:
-                            node.causal_strength[parent] = strength
-                        else:
-                            node.causal_strength[parent] = max(
-                                node.causal_strength[parent], strength)
-
-                if self.cfg.use_hnsw:
-                    self._index_mgr.hnsw_remove(pid)
-                    self._index_mgr.hnsw_insert(nid, node.latent_pos)
-                if self.cfg.bm25_fallback and self.bm25_index:
-                    self._index_mgr.bm25_remove(pid)
-
-                pending_deletions.append(pid)
-                processed.add(pid)
-                updated.append(nid)
-                self.stats["consolidations"] += 1
-                processed.add(nid)
+                self._do_merge(
+                    nid, pid, mode, updated, pending_deletions, processed, pre_state)
 
         # Fix 2: Apply all deletions after iteration — rebuild node_index once
         # (O(N) instead of O(M×N))
