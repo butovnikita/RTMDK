@@ -49,6 +49,54 @@ class PipelineHealthMonitor:
             return "degraded"
         return "healthy"
 
+    def check_alerts(
+        self,
+        ctx,
+        degraded_threshold: int = 2,
+        latency_threshold_ms: float = 5000.0,
+        error_rate_threshold: float = 0.1,
+    ) -> List[Dict[str, Any]]:
+        """Check pipeline context against alert thresholds.
+
+        Returns list of alert dicts with severity and message.
+        """
+        alerts = []
+        metrics = getattr(ctx, "metrics", [])
+        total_latency = sum(m.latency_ms for m in metrics)
+
+        # Check degraded stages count
+        degraded = [m for m in metrics if m.degraded]
+        if len(degraded) >= degraded_threshold:
+            alerts.append({
+                "severity": "warning",
+                "type": "too_many_degraded_stages",
+                "message": f"{len(degraded)} stages degraded (threshold: {degraded_threshold})",
+                "stages": [m.name for m in degraded],
+            })
+
+        # Check total latency
+        if total_latency > latency_threshold_ms:
+            alerts.append({
+                "severity": "warning",
+                "type": "high_latency",
+                "message": f"Total latency {total_latency:.1f}ms exceeds {latency_threshold_ms}ms",
+                "latency_ms": total_latency,
+            })
+
+        # Check error rate
+        if metrics:
+            errors = [m for m in metrics if m.error]
+            error_rate = len(errors) / len(metrics)
+            if error_rate > error_rate_threshold:
+                alerts.append({
+                    "severity": "critical",
+                    "type": "high_error_rate",
+                    "message": f"Error rate {error_rate*100:.1f}% exceeds {error_rate_threshold*100:.1f}%",
+                    "error_rate": error_rate,
+                })
+
+        return alerts
+
     def to_dict(self) -> Dict[str, Any]:
         """Export all breaker states."""
         return {

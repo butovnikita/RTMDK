@@ -48,3 +48,44 @@ class TestPipelineHealthMonitor:
         data = monitor.to_dict()
         assert "embed" in data
         assert "state" in data["embed"]
+
+    def test_check_alerts_no_alerts(self):
+        from rtmdk.pipeline.base import PipelineContext, StageMetrics
+        monitor = PipelineHealthMonitor()
+        ctx = PipelineContext(query_text="test")
+        ctx.metrics = [StageMetrics(name="embed", latency_ms=10.0, degraded=False)]
+        alerts = monitor.check_alerts(ctx, degraded_threshold=2, latency_threshold_ms=100.0)
+        assert len(alerts) == 0
+
+    def test_check_alerts_degraded_stages(self):
+        from rtmdk.pipeline.base import PipelineContext, StageMetrics
+        monitor = PipelineHealthMonitor()
+        ctx = PipelineContext(query_text="test")
+        ctx.metrics = [
+            StageMetrics(name="embed", latency_ms=10.0, degraded=True, error="timeout"),
+            StageMetrics(name="retrieve", latency_ms=20.0, degraded=True, error="timeout"),
+        ]
+        alerts = monitor.check_alerts(ctx, degraded_threshold=2, error_rate_threshold=1.0)
+        assert len(alerts) == 1
+        assert alerts[0]["type"] == "too_many_degraded_stages"
+        assert "embed" in alerts[0]["stages"]
+
+    def test_check_alerts_high_latency(self):
+        from rtmdk.pipeline.base import PipelineContext, StageMetrics
+        monitor = PipelineHealthMonitor()
+        ctx = PipelineContext(query_text="test")
+        ctx.metrics = [StageMetrics(name="embed", latency_ms=6000.0, degraded=False)]
+        alerts = monitor.check_alerts(ctx, latency_threshold_ms=5000.0)
+        assert len(alerts) == 1
+        assert alerts[0]["type"] == "high_latency"
+
+    def test_check_alerts_high_error_rate(self):
+        from rtmdk.pipeline.base import PipelineContext, StageMetrics
+        monitor = PipelineHealthMonitor()
+        ctx = PipelineContext(query_text="test")
+        ctx.metrics = [
+            StageMetrics(name="embed", latency_ms=10.0, degraded=True, error="fail"),
+            StageMetrics(name="retrieve", latency_ms=10.0, degraded=False),
+        ]
+        alerts = monitor.check_alerts(ctx, degraded_threshold=2, error_rate_threshold=0.3)
+        assert len(alerts) == 1  # only error rate (1 degraded < threshold 2)

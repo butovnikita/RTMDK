@@ -185,6 +185,14 @@ _memory_ref = None  # set in startup_event
 
 def _handle_sigterm(signum, frame):
     logger.info("Received SIGTERM, initiating graceful shutdown...")
+    _shutdown_event.set()
+    # Pipeline-specific cleanup
+    global pipeline_metrics_store
+    if pipeline_metrics_store is not None:
+        try:
+            logger.info("Flushing pipeline metrics store...")
+        except Exception:
+            pass
     if _memory_ref is not None:
         try:
             save_path = _get_save_path(MEMORY_FILE)
@@ -192,11 +200,18 @@ def _handle_sigterm(signum, frame):
             logger.info(f"Memory saved to {save_path} on SIGTERM")
         except Exception:
             logger.exception("Failed to save memory on SIGTERM")
-    # Allow default handler to terminate the process
-    sys.exit(0)
+    # Do NOT call sys.exit(0) — let FastAPI lifespan drain requests
+
+
+def _handle_sigint(signum, frame):
+    logger.info("Received SIGINT, initiating graceful shutdown...")
+    _shutdown_event.set()
+    # Same cleanup as SIGTERM
+    _handle_sigterm(signum, frame)
 
 
 signal.signal(signal.SIGTERM, _handle_sigterm)
+signal.signal(signal.SIGINT, _handle_sigint)
 
 
 @atexit.register

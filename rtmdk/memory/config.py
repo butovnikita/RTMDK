@@ -739,6 +739,10 @@ class ProductionConfig:
         "calibrate": 200.0,
         "explain": 100.0,
     })
+    # Pipeline alerting thresholds
+    pipeline_alert_degraded_stages_threshold: int = 2  # Alert if >= N stages degraded
+    pipeline_alert_latency_threshold_ms: float = 5000.0  # Alert if total latency > N ms
+    pipeline_alert_error_rate_threshold: float = 0.1  # Alert if error rate > 10%
 
 
 @dataclass
