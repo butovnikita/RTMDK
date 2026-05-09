@@ -195,7 +195,37 @@ summary = store.summary()
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/v1/memory/query_pipeline` | Pipeline retrieval with full metrics |
-| GET | `/v1/memory/pipeline/metrics` | Aggregated pipeline metrics summary |
+| GET  | `/v1/memory/pipeline/stream` | SSE streaming of stage events |
+| GET  | `/v1/memory/pipeline/health` | Per-stage health & breaker status |
+| GET  | `/v1/memory/pipeline/metrics` | Aggregated metrics (with ?since=&stage= filters) |
+| GET  | `/v1/memory/pipeline/prometheus` | Prometheus exposition format |
+
+### SSE Streaming
+```bash
+curl -N 'http://localhost:8080/v1/memory/pipeline/stream?query=hello&top_k=5'
+```
+
+Events: `pipeline_started` → `stage_started` → `stage_completed` → `pipeline_completed`
+
+### WebSocket Streaming
+```javascript
+ws.send(JSON.stringify({
+    action: "query_pipeline",
+    query: "hello",
+    top_k: 5,
+    stream: true
+}));
+```
+
+### Prometheus Scraping
+```yaml
+# prometheus.yml
+scrape_configs:
+  - job_name: 'rtmdk-pipeline'
+    static_configs:
+      - targets: ['localhost:8080']
+    metrics_path: '/v1/memory/pipeline/prometheus'
+```
 
 ## Pipeline Migration
 
