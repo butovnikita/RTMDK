@@ -1,6 +1,6 @@
 # RTMDK Production Hardening — Progress Log
 
-## ✅ Pipeline v8.3 — Complete (50 commits, 871 tests)
+## ✅ Pipeline v8.3 — Complete (52 commits, 873 tests)
 
 **Status:** Production-ready. All features implemented, tested, documented.
 
@@ -39,8 +39,8 @@
 | CI pipeline job | `.github/workflows/ci.yml` | verified |
 
 ### Statistics
-- **871 passed, 1 skipped** — full regression suite
-- **126 new tests** written in this branch
+- **873 passed, 1 skipped** — full regression suite
+- **128 new tests** written in this branch
 - **0 breaking changes**
 
 ### Documentation Updated
