@@ -86,13 +86,37 @@ class QueryDecomposer:
     Supports heuristic AND-splitting and optional LLM-based decomposition.
     """
 
+    # Expanded to catch comparative and list structures
+    # NOTE: use non-capturing groups so re.split keeps [before, match, after] shape
     SPLIT_PATTERN = re.compile(
-        r'\b(and|plus|also|additionally|furthermore|moreover)\b',
+        r'\b(and|plus|also|additionally|furthermore|moreover|'
+        r'as well as|together with|in addition to|'
+        r'compare\s+(?:.+?)\s+to|versus|vs|'
+        r'what\s+is\s+the\s+difference\s+between)\b',
         re.IGNORECASE,
     )
 
+    # Known named entities that contain "and" — do NOT split these
+    NOUN_PHRASE_EXCEPTIONS = [
+        re.compile(r'\b(pride\s+and\s+prejudice|north\s+and\s+south|'
+                   r'romeo\s+and\s+juliet|ben\s+and\s+jerry|'
+                   r'rock\s+and\s+roll|rhythm\s+and\s+blues|'
+                   r'bacon\s+and\s+eggs|fish\s+and\s+chips|'
+                   r'peanut\s+butter\s+and\s+jelly)\b', re.I),
+    ]
+
     def __init__(self, llm_client=None):
         self.llm_client = llm_client
+
+    # Special patterns that need custom parsing (not simple split)
+    COMPARE_PATTERN = re.compile(
+        r'compare\s+(.+?)\s+to\s+(.+?)(?:\?|$|\.\s*)',
+        re.IGNORECASE,
+    )
+    DIFF_PATTERN = re.compile(
+        r'what\s+is\s+the\s+difference\s+between\s+(.+?)\s+and\s+(.+?)(?:\?|$|\.\s*)',
+        re.IGNORECASE,
+    )
 
     def decompose(self, query: str) -> List[str]:
         """Split query into sub-queries."""
@@ -107,6 +131,22 @@ class QueryDecomposer:
             except Exception:
                 logger.debug("LLM decomposition failed, falling back to heuristic")
 
+        # Guard against false positives in known noun phrases
+        lower_q = query.lower()
+        for exc in self.NOUN_PHRASE_EXCEPTIONS:
+            if exc.search(lower_q):
+                return [query]
+
+        # Custom comparative parsers
+        m = self.COMPARE_PATTERN.search(query)
+        if m:
+            a, b = m.group(1).strip(), m.group(2).strip()
+            return [f"What is {a}?", f"What is {b}?"]
+        m = self.DIFF_PATTERN.search(query)
+        if m:
+            a, b = m.group(1).strip(), m.group(2).strip()
+            return [f"What is {a}?", f"What is {b}?"]
+
         # Heuristic fallback
         parts = self.SPLIT_PATTERN.split(query)
         if len(parts) == 1:
@@ -117,39 +157,59 @@ class QueryDecomposer:
         for i in range(1, len(parts), 2):
             conjunction = parts[i].strip().lower() if i < len(parts) else ""
             rest = parts[i + 1].strip() if i + 1 < len(parts) else ""
-            if conjunction in ("and", "plus", "also", "additionally"):
+            if conjunction in {"and", "plus", "also", "additionally",
+                               "as well as", "together with", "in addition to"}:
+                if current:
+                    sub_queries.append(current)
+                current = rest
+            elif any(kw in conjunction for kw in {"compare", "versus", "vs",
+                                                   "what is the difference between"}):
+                # Fallback if regex above missed edge cases
                 if current:
                     sub_queries.append(current)
                 current = rest
             else:
-                current = current + " " + conjunction + " " + rest
+                current = f"{current} {conjunction} {rest}"
         if current:
             sub_queries.append(current)
 
         sub_queries = [q for q in sub_queries if len(q) > 8]
-        return sub_queries if sub_queries else [query]
+        # If we produced garbage (single piece or empty), return original
+        if len(sub_queries) < 2:
+            return [query]
+        return sub_queries
 
     def _decompose_llm(self, query: str) -> List[str]:
         """Use LLM to decompose query into sub-queries."""
         prompt = (
-            "Decompose the following user query into 1-3 simpler sub-queries "
-            "that can be answered independently. Return ONLY a JSON array of strings.\n\n"
+            "You are a query decomposer. Split the user query into 1-3 independent "
+            "sub-queries that can each retrieve documents from a knowledge base.\n"
+            "Rules:\n"
+            "- If the query is already atomic, return it unchanged.\n"
+            "- Do NOT split named entities (e.g., 'Pride and Prejudice').\n"
+            "- Return ONLY a JSON array of strings, no markdown, no explanation.\n\n"
             f"Query: {query}\n\n"
-            'Example: ["What is X?", "How does Y work?"]'
+            'Example: ["What is the capital of France?", "Who is the current president?"]'
         )
-        response = self.llm_client.complete(prompt, max_tokens=200)
+        response = self.llm_client.complete(prompt, max_tokens=200, temperature=0.0)
         text = response.strip()
-        # Try to extract JSON array
-        try:
-            # Find JSON array in response
+        # Robust markdown + JSON extraction
+        m = re.search(r'```(?:json)?\s*(\[.*?\])\s*```', text, re.DOTALL)
+        if m:
+            text = m.group(1)
+        else:
             start = text.find("[")
             end = text.rfind("]")
             if start != -1 and end != -1:
-                parsed = json.loads(text[start:end + 1])
-                if isinstance(parsed, list) and len(parsed) > 0:
-                    return [str(q).strip() for q in parsed if len(str(q).strip()) > 5]
+                text = text[start:end + 1]
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, list) and len(parsed) > 0:
+                cleaned = [str(q).strip() for q in parsed if len(str(q).strip()) > 5]
+                if len(cleaned) >= 1:
+                    return cleaned
         except Exception:
-            pass
+            logger.warning("LLM decomposition returned invalid JSON: %s", text[:200])
         return [query]
 
 

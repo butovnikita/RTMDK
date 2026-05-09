@@ -37,19 +37,20 @@ class ConformalCalibrator:
         Returns the minimum resonance score a result must have to be included
         in the prediction set. Guarantees coverage >= 1 - alpha on the
         calibration distribution.
+
+        Uses exact order-statistic formula instead of np.quantile to avoid
+        interpolation ambiguity for small n.
         """
         n = len(self.calibration_scores)
         if n == 0:
             return 0.0
-        # Non-conformity: lower score = higher non-conformity
-        non_conformity = np.array(
-            [1.0 - s for s in self.calibration_scores], dtype=np.float64)
-        # Quantile level per Shafer-Vovk ICP
-        q_level = np.ceil((n + 1) * (1.0 - self.alpha)) / n
-        q_level = min(q_level, 1.0)
-        q_hat = np.quantile(non_conformity, q_level, method="higher")
-        threshold = max(0.0, 1.0 - float(q_hat))
-        return threshold
+        # Shafer-Vovk ICP: k = ceil((n+1)*(1-alpha))
+        k = int(np.ceil((n + 1) * (1.0 - self.alpha)))
+        if k > n:
+            return 0.0  # not enough calibration data: include everything
+        sorted_scores = np.sort(self.calibration_scores)
+        # k-th largest score = element at index n - k in ascending array
+        return max(0.0, float(sorted_scores[n - k]))
 
     def predict(self,
                 scores: List[float],

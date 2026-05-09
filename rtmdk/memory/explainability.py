@@ -125,14 +125,22 @@ class QueryIntentClassifier:
     """
 
     PATTERNS = {
-        "factual": [
-            r"\b(what is|who is|when did|where is|how many|define|explain)\b",
+        "exploratory": [
+            r"\b(tell me about|give me an overview of|what are the latest|"
+            r"latest trends in|can you tell me about|overview of|"
+            r"how has|how have|history of)\b",
         ],
         "comparative": [
             r"\b(compare|difference between|versus|vs\.|pros and cons)\b",
         ],
         "conversational": [
-            r"\b(how are you|hello|hi |hey |good morning|good evening)\b",
+            r"\b(how are you|hello|hi |hey |good morning|good evening|"
+            r"thanks|thank you|bye|goodbye|see you)\b",
+        ],
+        "factual": [
+            r"\b(what is|what are|what was|who is|who was|who wrote|who invented|"
+            r"when did|where is|where are|how many|how much|how does|how do|why is|"
+            r"define|explain|describe)\b",
         ],
     }
 

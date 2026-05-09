@@ -59,20 +59,25 @@ def _spectral_embedding(L: NDArray, k: int) -> Tuple[NDArray, NDArray]:
     return vals[:k], vecs[:, :k]
 
 
-def _eigengap_k(vals: NDArray, max_k: int = 10) -> int:
+def _eigengap_k(vals: NDArray, max_k: int = 10, min_clusters: int = 2) -> int:
     """Select k via eigengap heuristic.
 
-    k* = argmax_{k=1..max_k} (λ_{k+1} - λ_k)
-    Returns at least 2, at most min(max_k, len(vals)-1).
+    For normalized Laplacian λ_0 = 0 always, so we skip the gap at k=0
+    and search among k = 1 .. max_k-1.
+    Returns at least min_clusters, at most min(max_k, len(vals)-1).
     """
     m = min(max_k, len(vals) - 1)
-    if m < 2:
-        return 2
-    gaps = vals[1:m + 1] - vals[:m]
-    # Ignore k=1 if gap is tiny (indicates no structure)
-    best_k = int(np.argmax(gaps[1:]) + 2)  # +2 because we skip k=1
-    if best_k < 2:
-        best_k = 2
+    if m < min_clusters:
+        return max(min_clusters, 2)
+    # gaps[k] = λ_{k+1} - λ_k  for k = 0 .. m-1
+    gaps = vals[1:m] - vals[:m - 1]
+    # Skip k=0 because λ_0 = 0 gives uninformative gap.
+    # Use relative gap to avoid being dominated by large eigenvalues.
+    rel_gaps = gaps[1:] / (vals[2:m] + 1e-12)
+    if len(rel_gaps) == 0:
+        return max(min_clusters, 2)
+    best_k = int(np.argmax(rel_gaps)) + 2  # +2 because we skipped k=0 and k=1 indexing
+    best_k = max(best_k, min_clusters)
     return min(best_k, m)
 
 
@@ -110,11 +115,19 @@ def _kmeans_1d(embeddings: NDArray, k: int, max_iter: int = 20,
     return labels
 
 
+def _auto_sigma(positions: NDArray) -> float:
+    """Data-adaptive Gaussian bandwidth via median pairwise distance."""
+    from scipy.spatial.distance import pdist
+    d = pdist(positions)
+    return float(np.median(d)) if len(d) else 1.0
+
+
 def spectral_cluster_nodes(
     positions: NDArray,
     phases: NDArray,
     max_clusters: int = 10,
-    sigma: float = 1.0,
+    sigma: Optional[float] = None,
+    min_clusters: int = 2,
     timeout_ms: float = 500.0,
     rng: Optional[np.random.Generator] = None,
 ) -> Optional[Dict[int, List[int]]]:
@@ -137,7 +150,8 @@ def spectral_cluster_nodes(
         return None
 
     try:
-        W = _build_affinity(positions, phases, sigma)
+        actual_sigma = sigma if sigma is not None else _auto_sigma(positions)
+        W = _build_affinity(positions, phases, actual_sigma)
         if (time.time() - t0) * 1000 > timeout_ms:
             return None
 
@@ -151,7 +165,7 @@ def spectral_cluster_nodes(
         if (time.time() - t0) * 1000 > timeout_ms:
             return None
 
-        k = _eigengap_k(vals, max_clusters)
+        k = _eigengap_k(vals, max_clusters, min_clusters=min_clusters)
         # Row-normalize embedding (standard spectral clustering)
         embedding = vecs[:, :k]
         norms = np.linalg.norm(embedding, axis=1, keepdims=True)

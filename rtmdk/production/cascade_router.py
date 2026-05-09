@@ -30,6 +30,9 @@ class AdaptiveCascadeRouter:
     # Keywords indicating simple factual intent
     FACTUAL_KEYWORDS = [
         r"\bwho\b", r"\bwhen\b", r"\bwhere\b", r"\bwhat is\b",
+        r"\bwhat are\b", r"\bwhat was\b", r"\bwhat causes\b",
+        r"\bwhich is\b", r"\bwhich are\b", r"\bhow does\b",
+        r"\bhow do\b", r"\bhow many\b", r"\bhow much\b",
         r"\bdefine\b", r"\blist\b", r"\bname\b",
     ]
 

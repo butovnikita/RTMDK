@@ -64,11 +64,20 @@ class TestConformalCalibrator:
         cal_low.fit(scores)
         cal_high = ConformalCalibrator(alpha=0.20)
         cal_high.fit(scores)
-        assert cal_high.get_threshold() <= cal_low.get_threshold()
+        # For small n, k may exceed n → threshold=0 for both.
+        # Use larger n for a meaningful ordering test.
+        scores_big = list(np.linspace(0.1, 0.9, 50))
+        cal_low2 = ConformalCalibrator(alpha=0.05)
+        cal_low2.fit(scores_big)
+        cal_high2 = ConformalCalibrator(alpha=0.20)
+        cal_high2.fit(scores_big)
+        # Higher alpha (more errors allowed) -> HIGHER threshold (fewer items included)
+        assert cal_high2.get_threshold() >= cal_low2.get_threshold()
 
     def test_prediction_set_filters_low_scores(self):
         cal = ConformalCalibrator(alpha=0.1)
-        cal.fit([0.8, 0.85, 0.9, 0.95])
+        # Need enough samples so that k <= n (threshold > 0)
+        cal.fit([0.8, 0.85, 0.9, 0.95] * 5)  # n=20, k=ceil(21*0.9)=19, thr=sorted[1]
         nids = ["a", "b", "c"]
         scores = [0.96, 0.50, 0.30]
         pred_set, conf, thr = cal.predict(scores, nids)
