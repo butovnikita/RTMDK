@@ -33,11 +33,12 @@ from rtmdk.memory.topology_manager import TopologyManager
 from rtmdk.memory.async_pipeline_manager import AsyncPipelineManager
 from rtmdk.memory.crystallization_manager import CrystallizationManager
 from rtmdk.memory.node_manager import NodeManager
+from rtmdk.memory.cognitive_manager import CognitiveManager
 from rtmdk.support.agents import AgentPlanner, HypothesisVerifier, ToolRouter
 from rtmdk.support.healer import TopologyHealer
 from rtmdk.support.meta_adaptive import MetaAdaptiveKernel
 from rtmdk.engines.causal import CausalInferenceEngine
-from rtmdk.engines.causal_extraction import extract_causal_edges_from_content
+
 from rtmdk.engines.privacy import DifferentialPrivacy
 from rtmdk.engines.predictive import PredictiveCodingModel
 from rtmdk.memory.geometry import exp_map_poincare
@@ -66,7 +67,7 @@ from typing import List, Dict, Optional, Tuple, Callable, Any, Set
 from enum import Enum
 import numpy as np
 from numpy.typing import NDArray
-from scipy.spatial.distance import cdist, pdist
+
 from scipy.spatial import cKDTree
 import logging
 
@@ -74,13 +75,13 @@ import logging
 from rtmdk.support.kuramoto import FederatedRTMDK
 
 try:
-    from rtmdk.support.hnsw_lib import HNSWLibIndex
+
     _HNSWLIB_AVAILABLE = True
 except ImportError:
     _HNSWLIB_AVAILABLE = False
 
 from rtmdk.memory.conformal import ConformalCalibrator
-from rtmdk.memory.spectral import spectral_cluster_nodes
+
 from rtmdk.memory.kalman import KalmanFilter
 from rtmdk.engines.counterfactual import ScenarioPlanner
 from rtmdk.support.goal_tracker import GoalTracker
@@ -1105,6 +1106,7 @@ class RTMDKField:
         self._async_pipeline_mgr = AsyncPipelineManager(self)
         self._crystallization_mgr = CrystallizationManager(self)
         self._node_mgr = NodeManager(self)
+        self._cognitive_mgr = CognitiveManager(self)
         self._scheduler = StepScheduler(self)
 
     # ------------------------------------------------------------------
@@ -1472,56 +1474,14 @@ class RTMDKField:
         """
         return self._consolidation_mgr.consolidate(mode)
 
-    def _self_supervise(self):
-        """Fix: Use local probe instead of np.zeros to prevent false decay of peripheral nodes."""
-        if not self.cfg.self_supervision:
-            return
-        self.stats["self_sup_checks"] += 1
-        for nid in list(self.node_index):
-            if nid not in self.nodes or not self.nodes[nid].lineage:
-                continue
-            node = self.nodes[nid]
-            # FIX: Probe around the node's actual position
-            probe = node.latent_pos + \
-                self._rng.normal(0, 0.05, node.latent_pos.shape)
-            results = self.query(probe, phase=node.phase, top_k=1)
-            if results and results[0][0] == nid:
-                node.self_sup_score = max(0.5, results[0][1])
-            else:
-                node.self_sup_score *= 0.9
+    def _self_supervise(self) -> None:
+        self._cognitive_mgr.self_supervise()
 
-    def _check_tda(self):
-        if not self.cfg.tda_monitoring or not self.tda_monitor:
-            return
-        self.stats["tda_checks"] += 1
-        r = self.tda_monitor.compute_persistence(self.nodes)
-        self.stats["tda_H0"] = r["H0"]
-        self.stats["tda_H1"] = r["H1"]
-        if self.tda_monitor.get_trend() == "growing_contradictions":
-            self.consolidate()
+    def _check_tda(self) -> None:
+        self._cognitive_mgr.check_tda()
 
-    # Phase 11 Track 3: Predictive coding
     def _encode_field_state(self) -> NDArray:
-        """Encode field state into a flat vector for predictive coding."""
-        if not self.nodes:
-            return np.zeros(self.cfg.latent_dim * 4, dtype=np.float32)
-        # Aggregate: mean pos, mean phase, mean amp, mean sal
-        positions = np.array([n.latent_pos for n in self.nodes.values()])
-        phases = np.array([n.phase for n in self.nodes.values()])
-        amps = np.array([n.amplitude for n in self.nodes.values()])
-        sals = np.array([n.salience for n in self.nodes.values()])
-        mean_pos = np.mean(positions, axis=0)
-        mean_phase = np.mean(phases)
-        mean_amp = np.mean(amps)
-        mean_sal = np.mean(sals)
-        # Encode into latent_dim * 4
-        state = np.zeros(self.cfg.latent_dim * 4, dtype=np.float32)
-        pos_dim = min(len(mean_pos), self.cfg.latent_dim)
-        state[:pos_dim] = mean_pos[:pos_dim]
-        state[self.cfg.latent_dim] = mean_phase
-        state[self.cfg.latent_dim * 2] = mean_amp
-        state[self.cfg.latent_dim * 3] = mean_sal
-        return state
+        return self._cognitive_mgr.encode_field_state()
 
     # Phase 11 Track 4: Counterfactual imagination
     def imagine_counterfactual(self, base_query: NDArray,
@@ -1862,43 +1822,8 @@ class RTMDKField:
     # PHASE 12 TRACK 2: COGNITIVE CONTEXT COMPRESSION
     # ========================================================================
 
-    def _cognitive_compress(
-            self, results: List[Tuple[str, float, MemoryNode]]) -> str:
-        """Compress raw memory results into a structured cognitive dump for LLM."""
-        if not results:
-            return "### COGNITIVE_CONTEXT\nNo relevant structures."
-
-        high_res = [(nid, r, n) for nid, r, n in results if r >
-                    self.cfg.high_resonance_threshold]
-        contradictions = [n for _, _, n in results if n.content.get(
-            "causal_flag") == "incompatible"]
-        procedural = [
-            n for _, _, n in results if getattr(
-                n, 'tier', 'semantic') == "procedural"]
-
-        lines = ["### COGNITIVE_CONTEXT"]
-        if high_res:
-            summaries = []
-            for nid, r, n in high_res:
-                text = n.content.get("text", "unknown")[:60]
-                summaries.append(f"[{text}...](R:{r:.2f},S:{n.salience:.2f})")
-            lines.append(
-                f"• High resonance ({len(high_res)} nodes): " +
-                " | ".join(summaries))
-        if contradictions:
-            texts = [n.content.get("text", "unknown")[:40]
-                     for n in contradictions[:3]]
-            lines.append("[WARN] Conflicting nodes: " + " | ".join(texts))
-        if procedural:
-            lines.append("[TOOL] Procedural patterns available (how-to)")
-
-        # Add lineage summary for complex nodes
-        lineage_nodes = [(nid, n) for nid, r, n in results if n.lineage]
-        if lineage_nodes:
-            lines.append(
-                f"[STATS] Consolidated memories: {len(lineage_nodes)} nodes with synthesis history")
-
-        return "\n".join(lines)
+    def _cognitive_compress(self, results: List[Tuple[str, float, MemoryNode]]) -> str:
+        return self._cognitive_mgr.cognitive_compress(results)
 
     # ========================================================================
     # PHASE 12 TRACK 3: CRYSTALLIZATION (episodic → semantic/procedural)
