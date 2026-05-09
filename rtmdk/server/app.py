@@ -1331,8 +1331,7 @@ async def memory_query_pipeline(req: MemoryQueryPipelineRequest):
 
     t0 = time.time()
     try:
-        result = await run_sync(
-            memory.retrieve_nodes_pipeline,
+        result = await memory.retrieve_nodes_pipeline_async(
             req.query,
             top_k=req.top_k,
             session_id=req.session_id,

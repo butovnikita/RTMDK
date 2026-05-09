@@ -1,5 +1,6 @@
 """Pipeline executor: compose stages and run them in order."""
 from __future__ import annotations
+import asyncio
 from typing import Any, Dict, List, Optional
 
 from rtmdk.pipeline.base import PipelineContext, PipelineStage
@@ -48,6 +49,35 @@ class PipelineExecutor:
             self.run(q, top_k=top_k, session_id=session_id)
             for q in queries
         ]
+
+    async def run_async(
+        self,
+        query_text: str,
+        top_k: int = 5,
+        session_id: Optional[str] = None,
+        embedding: Optional[Any] = None,
+    ) -> PipelineContext:
+        """Async version of run() — executes sync stages in thread pool.
+
+        Useful for FastAPI endpoints to avoid blocking the event loop.
+        """
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None, self.run, query_text, top_k, session_id, embedding
+        )
+
+    async def run_batch_async(
+        self,
+        queries: List[str],
+        top_k: int = 5,
+        session_id: Optional[str] = None,
+    ) -> List[PipelineContext]:
+        """Async batch execution — runs queries concurrently."""
+        tasks = [
+            self.run_async(q, top_k=top_k, session_id=session_id)
+            for q in queries
+        ]
+        return await asyncio.gather(*tasks)
 
     def get_metrics(self, ctx: PipelineContext) -> Dict[str, Any]:
         """Return aggregated metrics for a completed run."""

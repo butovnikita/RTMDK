@@ -1783,6 +1783,30 @@ class RTMDKMemory(BaseModel):
             metrics_store.write(result["metrics"])
         return result
 
+    async def retrieve_nodes_pipeline_async(
+        self,
+        query: str,
+        embedding: Optional[NDArray] = None,
+        top_k: Optional[int] = None,
+        session_id: Optional[str] = None,
+        metrics_store: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        """Async version of retrieve_nodes_pipeline().
+
+        Executes the pipeline in a thread pool to avoid blocking the event loop.
+        """
+        import asyncio
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None,
+            self.retrieve_nodes_pipeline,
+            query,
+            embedding,
+            top_k,
+            session_id,
+            metrics_store,
+        )
+
     def health_check_pipeline(self) -> Dict[str, Any]:
         """Run health checks on every pipeline stage.
 
