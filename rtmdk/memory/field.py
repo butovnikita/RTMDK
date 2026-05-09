@@ -22,7 +22,7 @@ from rtmdk.support.circuit_breaker import CircuitBreaker
 from rtmdk.support.meta_controller import MetaController
 from rtmdk.support.learnable import LearnableKernel, DifferentiableConsolidation
 from rtmdk.support.torch_backend import TorchBackend
-from rtmdk.support.projection import IncPCAProjection, IdentityProjection
+from rtmdk.support.projection import IncPCAProjection
 from rtmdk.support.production import ShadowModeEvaluator, RAGASPlusEvaluator, AutoRollbackManager
 from rtmdk.memory.projection_manager import ProjectionManager
 from rtmdk.memory.consolidation_manager import ConsolidationManager
@@ -43,8 +43,7 @@ from rtmdk.memory.config import (
     RTMDKConfig,
 )
 from rtmdk.nodes import (
-    MemoryNode, CounterfactualResult, AgentPlan, ToolCall,
-    Hypothesis, EvalResult,
+    MemoryNode, CounterfactualResult,
 )
 import asyncio
 import functools
@@ -57,7 +56,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 import copy
 import hashlib
-from collections import deque, defaultdict
+from collections import deque
 from typing import List, Dict, Optional, Tuple, Callable, Any, Set
 from enum import Enum
 import numpy as np
@@ -68,13 +67,13 @@ import logging
 
 # Extracted engine classes (kept in sync with rtmdk/support/ modules)
 from rtmdk.support.kuramoto import FederatedRTMDK
-from rtmdk.support.hnsw import NaiveGraphIndex
+
 try:
     from rtmdk.support.hnsw_lib import HNSWLibIndex
     _HNSWLIB_AVAILABLE = True
 except ImportError:
     _HNSWLIB_AVAILABLE = False
-from rtmdk.support.bm25 import BM25Index
+
 from rtmdk.memory.conformal import ConformalCalibrator
 from rtmdk.memory.spectral import spectral_cluster_nodes
 from rtmdk.memory.kalman import KalmanFilter
@@ -87,7 +86,7 @@ from rtmdk.support.security import SecurityValidator
 from rtmdk.support.threshold import AdaptiveThreshold
 from rtmdk.support.tda import TDAMonitor
 from rtmdk.memory.resonance import ResonanceEngine
-from rtmdk.memory.utils import SecurityViolationError, cross_modal_resonance
+from rtmdk.memory.utils import SecurityViolationError
 
 logger = logging.getLogger(__name__)
 
@@ -148,7 +147,7 @@ _STOP_WORDS = _STOP_WORDS_EN | _STOP_WORDS_RU
 
 # Phase 15: New modules
 try:
-    from rtmdk.support.version_control import VersionControl, NodeDelta
+    from rtmdk.support.version_control import VersionControl
     VC_AVAILABLE = True
 except ImportError:
     VC_AVAILABLE = False
