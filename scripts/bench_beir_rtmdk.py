@@ -94,11 +94,25 @@ def build_rtmdk(corpus_ids: List[str], corpus_embs: np.ndarray,
     return mem
 
 
+def _ndcg_at_k(result_ids: List[str], qrels_dict: Dict[str, str], k: int) -> float:
+    """Compute nDCG@k for a single query."""
+    dcg = 0.0
+    for i, rid in enumerate(result_ids[:k], 1):
+        rel = float(qrels_dict.get(rid, 0))
+        dcg += (2 ** rel - 1) / np.log2(i + 1)
+    # Ideal DCG
+    ideal_rels = sorted([float(v) for v in qrels_dict.values()], reverse=True)
+    idcg = sum((2 ** r - 1) / np.log2(i + 1) for i, r in enumerate(ideal_rels[:k], 1))
+    return dcg / idcg if idcg > 0 else 0.0
+
+
 def evaluate_rtmdk(mem: RTMDKMemory, query_ids: List[str], query_embs: np.ndarray,
                    qrels: Dict, corpus_ids: List[str], top_k: int = 10) -> Dict[str, float]:
-    """Run queries and compute recall@k and MRR."""
+    """Run queries and compute recall@k, MRR, nDCG."""
     recalls = {1: 0.0, 5: 0.0, 10: 0.0}
     mrr_sum = 0.0
+    ndcg5_sum = 0.0
+    ndcg10_sum = 0.0
     n = 0
     latencies = []
 
@@ -122,6 +136,9 @@ def evaluate_rtmdk(mem: RTMDKMemory, query_ids: List[str], query_embs: np.ndarra
             if rid in relevant:
                 mrr_sum += 1.0 / rank
                 break
+
+        ndcg5_sum += _ndcg_at_k(result_ids, qrels[qid], 5)
+        ndcg10_sum += _ndcg_at_k(result_ids, qrels[qid], 10)
         n += 1
 
     if n == 0:
@@ -131,6 +148,8 @@ def evaluate_rtmdk(mem: RTMDKMemory, query_ids: List[str], query_embs: np.ndarra
         "recall@5": recalls[5] / n,
         "recall@10": recalls[10] / n,
         "mrr": mrr_sum / n,
+        "nDCG@5": ndcg5_sum / n,
+        "nDCG@10": ndcg10_sum / n,
         "queries": n,
         "latency_p50_ms": float(np.percentile(latencies, 50)),
         "latency_p99_ms": float(np.percentile(latencies, 99)),
@@ -146,6 +165,8 @@ def evaluate_cosine(corpus_embs: np.ndarray, query_embs: np.ndarray,
 
     recalls = {1: 0.0, 5: 0.0, 10: 0.0}
     mrr_sum = 0.0
+    ndcg5_sum = 0.0
+    ndcg10_sum = 0.0
     n = 0
     latencies = []
 
@@ -170,6 +191,9 @@ def evaluate_cosine(corpus_embs: np.ndarray, query_embs: np.ndarray,
             if rid in relevant:
                 mrr_sum += 1.0 / rank
                 break
+
+        ndcg5_sum += _ndcg_at_k(result_ids, qrels[qid], 5)
+        ndcg10_sum += _ndcg_at_k(result_ids, qrels[qid], 10)
         n += 1
 
     if n == 0:
@@ -179,6 +203,8 @@ def evaluate_cosine(corpus_embs: np.ndarray, query_embs: np.ndarray,
         "recall@5": recalls[5] / n,
         "recall@10": recalls[10] / n,
         "mrr": mrr_sum / n,
+        "nDCG@5": ndcg5_sum / n,
+        "nDCG@10": ndcg10_sum / n,
         "queries": n,
         "latency_p50_ms": float(np.percentile(latencies, 50)),
         "latency_p99_ms": float(np.percentile(latencies, 99)),
@@ -309,7 +335,7 @@ def main():
     print(f"\n{'='*70}")
     print("SUMMARY")
     print(f"{'='*70}")
-    headers = ["dataset", "method", "recall@1", "recall@5", "recall@10", "mrr", "p50_ms", "p99_ms"]
+    headers = ["dataset", "method", "recall@1", "recall@5", "recall@10", "nDCG@5", "nDCG@10", "mrr", "p50_ms", "p99_ms"]
     print("  ".join(f"{h:>12}" for h in headers))
     for dataset, methods in all_results.items():
         for method, metrics in methods.items():
@@ -319,6 +345,8 @@ def main():
                 f"{metrics.get('recall@1', 0):.4f}",
                 f"{metrics.get('recall@5', 0):.4f}",
                 f"{metrics.get('recall@10', 0):.4f}",
+                f"{metrics.get('nDCG@5', 0):.4f}",
+                f"{metrics.get('nDCG@10', 0):.4f}",
                 f"{metrics.get('mrr', 0):.4f}",
                 f"{metrics.get('latency_p50_ms', 0):.2f}",
                 f"{metrics.get('latency_p99_ms', 0):.2f}",
