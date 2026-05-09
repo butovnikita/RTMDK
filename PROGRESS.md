@@ -1,4 +1,43 @@
 # RTMDK Production Hardening — Progress Log
+
+## ✅ 10. Pipeline v2: Batch Execution + Plugin Registry (completed 2026-05-07)
+
+**Goal:** Make the retrieval pipeline extensible and efficient for batch workloads.
+
+### Changes Made
+- **`rtmdk/pipeline/batch.py`**: `BatchPipelineExecutor` for sequential batch retrieval with shared stages
+  - `BatchEmbedStage`: batch-aware embed stage that uses `embed_batch()` if available
+- **`rtmdk/pipeline/registry.py`**: `StageRegistry` + `GLOBAL_REGISTRY`
+  - Register custom stages by name: `registry.register("my_stage", MyStage)`
+  - Instantiate by name: `registry.create("my_stage", **kwargs)`
+  - Duplicate registration raises `ValueError`
+- **`rtmdk/pipeline/__init__.py`**: Auto-registers all 6 default stages in `GLOBAL_REGISTRY`
+- **`tests/test_pipeline_v2.py`**: 9 new tests covering batch execution, stage registry, and integration
+
+### Usage
+```python
+from rtmdk.pipeline import BatchPipelineExecutor, GLOBAL_REGISTRY
+
+# Batch retrieval
+batch = BatchPipelineExecutor(memory.build_pipeline().stages)
+outputs = batch.run_batch(["q1", "q2", "q3"], top_k=5)
+
+# Plugin custom stage
+from rtmdk.pipeline.registry import StageRegistry
+class MyRerankStage(PipelineStage):
+    name = "my_rerank"
+    def process(self, ctx): ...
+
+registry = StageRegistry()
+registry.register("my_rerank", MyRerankStage)
+```
+
+### Test Results
+- 9 new tests — all passing
+- Full regression suite: **738 passed, 1 skipped**
+
+---
+
 ## ✅ 9. Track 2: Tiered Storage (Hot / Warm / Cold) — Shipped
 
 **Goal:** Support unlimited node count without proportional RAM growth.
@@ -281,4 +320,4 @@ python -m build
 
 ---
 
-*Last updated: 2026-05-01*
+*Last updated: 2026-05-07*

@@ -118,8 +118,37 @@ rtmdk_stage_latency_ms{stage="route",error="0",degraded="0"} 0.1
 - `build_pipeline()` — new, opt-in.
 - All existing configs work unchanged.
 
+## Batch Execution
+
+```python
+from rtmdk.pipeline import BatchPipelineExecutor
+
+batch = BatchPipelineExecutor(memory.build_pipeline().stages)
+outputs = batch.run_batch(["q1", "q2", "q3"], top_k=5)
+# outputs is a list of ctx.to_dict()
+```
+
+## Plugin Registry
+
+Register and instantiate custom stages by name:
+
+```python
+from rtmdk.pipeline.registry import StageRegistry
+from rtmdk.pipeline.base import PipelineStage
+
+class MyRerankStage(PipelineStage):
+    name = "my_rerank"
+    def process(self, ctx):
+        # ... custom logic ...
+        return ctx
+
+registry = StageRegistry()
+registry.register("my_rerank", MyRerankStage)
+stage = registry.create("my_rerank")
+```
+
 ## Future Work
 
 - Extract query cache, distributed lock, and query rewrite into separate stages.
-- Add `BatchPipelineExecutor` for vectorized batch retrieval.
-- Plugin registry: load custom stages via entry points.
+- Entry-point discovery for third-party stage plugins.
+- True vectorized batch retrieval in RetrieveStage.

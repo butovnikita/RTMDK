@@ -34,6 +34,16 @@ from rtmdk.pipeline.stages import (
 )
 from rtmdk.pipeline.executor import PipelineExecutor
 from rtmdk.pipeline.metrics import to_prometheus_format
+from rtmdk.pipeline.batch import BatchEmbedStage, BatchPipelineExecutor
+from rtmdk.pipeline.registry import StageRegistry, GLOBAL_REGISTRY
+
+# Register default stages in the global registry
+GLOBAL_REGISTRY.register("embed", EmbedStage)
+GLOBAL_REGISTRY.register("route", RouteStage)
+GLOBAL_REGISTRY.register("retrieve", RetrieveStage)
+GLOBAL_REGISTRY.register("rerank", RerankStage)
+GLOBAL_REGISTRY.register("calibrate", CalibrateStage)
+GLOBAL_REGISTRY.register("explain", ExplainStage)
 
 __all__ = [
     "PipelineStage",
@@ -47,4 +57,8 @@ __all__ = [
     "ExplainStage",
     "PipelineExecutor",
     "to_prometheus_format",
+    "BatchEmbedStage",
+    "BatchPipelineExecutor",
+    "StageRegistry",
+    "GLOBAL_REGISTRY",
 ]
