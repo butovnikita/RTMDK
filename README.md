@@ -92,11 +92,39 @@ tester.compare_batch(["q1", "q2", "q3"], top_k=5)
 ```
 Or run: `python scripts/bench_pipeline_ab.py --queries 100 --nodes 500`
 
-### HTTP endpoint
+### HTTP endpoints
 ```bash
+# Synchronous query
 curl -X POST http://localhost:8080/v1/memory/query_pipeline \
   -H "Content-Type: application/json" \
   -d '{"query": "resonance", "top_k": 5, "session_id": "sess_1"}'
+
+# SSE streaming — live stage events
+curl -N 'http://localhost:8080/v1/memory/pipeline/stream?query=resonance&top_k=5'
+
+# Health check
+ curl http://localhost:8080/v1/memory/pipeline/health
+```
+
+### Async execution
+```python
+# Non-blocking pipeline for FastAPI / asyncio apps
+result = await mem.retrieve_nodes_pipeline_async("query", top_k=5)
+
+# Batch async
+results = await mem.build_pipeline().run_batch_async(["q1", "q2", "q3"], top_k=5)
+```
+
+### WebSocket streaming
+```javascript
+const ws = new WebSocket("ws://localhost:8080/ws/memory");
+ws.send(JSON.stringify({
+    action: "query_pipeline",
+    query: "resonance",
+    top_k: 5,
+    stream: true  // live stage events
+}));
+ws.onmessage = (e) => console.log(JSON.parse(e.data));
 ```
 
 ---

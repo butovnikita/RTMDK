@@ -1454,11 +1454,19 @@ async def memory_pipeline_health():
 
 
 @app.get("/v1/memory/pipeline/metrics")
-async def memory_pipeline_metrics_summary():
-    """Return aggregated pipeline metrics summary."""
+async def memory_pipeline_metrics_summary(
+    since: Optional[float] = Query(None, description="Unix timestamp — only metrics after this time"),
+    stage: Optional[str] = Query(None, description="Filter to a single stage name"),
+):
+    """Return aggregated pipeline metrics summary.
+
+    Query parameters:
+        since — Unix timestamp for time-range filtering
+        stage — filter metrics to a single stage (e.g. embed, retrieve)
+    """
     if pipeline_metrics_store is None:
         return {"enabled": False, "message": "Pipeline metrics store not configured"}
-    summary = pipeline_metrics_store.summary()
+    summary = pipeline_metrics_store.summary(since=since, stage_filter=stage)
     summary["enabled"] = True
     return summary
 

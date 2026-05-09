@@ -74,11 +74,24 @@ class PipelineMetricsStore:
                         records.append(json.loads(line))
         return records
 
-    def summary(self) -> Dict[str, Any]:
-        """Compute aggregate statistics from stored metrics."""
+    def summary(self, since: Optional[float] = None, stage_filter: Optional[str] = None) -> Dict[str, Any]:
+        """Compute aggregate statistics from stored metrics.
+
+        Args:
+            since: Unix timestamp — only include records after this time
+            stage_filter: Only include metrics for this stage name
+        """
         records = self.read_all()
         if not records:
             return {"queries": 0}
+
+        # Filter by time
+        if since is not None:
+            from datetime import datetime, timezone
+            records = [
+                r for r in records
+                if datetime.fromisoformat(r.get("ts", "1970-01-01T00:00:00")).timestamp() >= since
+            ]
 
         total_latency = [r.get("total_latency_ms", 0) for r in records]
         stage_latencies: Dict[str, List[float]] = {}
@@ -88,6 +101,8 @@ class PipelineMetricsStore:
         for r in records:
             for stage in r.get("stages", []):
                 name = stage.get("stage", "unknown")
+                if stage_filter is not None and name != stage_filter:
+                    continue
                 latency = stage.get("latency_ms", 0)
                 stage_latencies.setdefault(name, []).append(latency)
                 if stage.get("error"):
