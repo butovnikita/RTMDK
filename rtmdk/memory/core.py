@@ -1667,6 +1667,7 @@ class RTMDKMemory(BaseModel):
         from rtmdk.production.cascade_router import AdaptiveCascadeRouter
         from rtmdk.pipeline.health import PipelineHealthMonitor
         from rtmdk.pipeline.cache_stages import QueryCacheCheckStage, QueryCacheSaveStage
+        from rtmdk.pipeline.lock_stages import DistributedLockStage, DistributedLockReleaseStage
 
         stages = []
         monitor = PipelineHealthMonitor()
@@ -1697,6 +1698,10 @@ class RTMDKMemory(BaseModel):
                 stage.circuit_breaker.half_open_max_calls = half_open_calls
             return stage
 
+        # Stage -1: Distributed lock acquire (if configured)
+        if self._distributed_lock is not None:
+            stages.append(_attach_breaker(DistributedLockStage(self._distributed_lock)))
+
         # Stage 0: Query cache check (before embed if cache enabled)
         if getattr(self.field, "query_cache", None) is not None:
             stages.append(_attach_breaker(QueryCacheCheckStage(self.field, self)))
@@ -1726,6 +1731,10 @@ class RTMDKMemory(BaseModel):
         # Stage 7: Query cache save (after explain if cache enabled)
         if getattr(self.field, "query_cache", None) is not None:
             stages.append(_attach_breaker(QueryCacheSaveStage(self.field, self)))
+
+        # Stage 8: Distributed lock release (if configured)
+        if self._distributed_lock is not None:
+            stages.append(_attach_breaker(DistributedLockReleaseStage(self._distributed_lock)))
 
         return PipelineExecutor(stages)
 
