@@ -83,6 +83,7 @@ from rtmdk.support.meta_memory import MetaMemoryEvaluator
 from rtmdk.support.security import SecurityValidator
 from rtmdk.support.threshold import AdaptiveThreshold
 from rtmdk.support.tda import TDAMonitor
+from rtmdk.memory.resonance import ResonanceEngine
 from rtmdk.memory.utils import SecurityViolationError, cross_modal_resonance
 
 logger = logging.getLogger(__name__)
@@ -676,6 +677,17 @@ class RTMDKField:
         self.nodes: Dict[str, MemoryNode] = {}
         self.node_index: List[str] = []
 
+        # ResonanceEngine — pure math extracted from field (created early so
+        # subsystems can register themselves)
+        self._resonance_engine = ResonanceEngine(
+            cfg=config,
+            meta_kernel=None,
+            learnable_kernel=None,
+            causal_engine=None,
+            gpu_backend=None,
+            quant=self._quant,
+        )
+
         # Normalize projection_mode and latent_dim for identity
         if config.projection_mode == "identity":
             if config.latent_dim != config.embedding_dim:
@@ -821,6 +833,7 @@ class RTMDKField:
         self.gpu_backend = TorchBackend() if config.backend == Backend.TORCH else None
         if self.gpu_backend and not self.gpu_backend.available:
             self.gpu_backend = None
+        self._resonance_engine.gpu_backend = self.gpu_backend
         if config.use_hnsw:
             if _HNSWLIB_AVAILABLE:
                 self.hnsw_index = HNSWLibIndex(
@@ -858,6 +871,7 @@ class RTMDKField:
                 config.gradient_clip)
             self.diff_consolidation = DifferentiableConsolidation(
                 config.consolidation_loss_weight)
+            self._resonance_engine.learnable_kernel = self.learnable_kernel
 
         self.monitor: Optional[Any] = None
 
@@ -869,6 +883,7 @@ class RTMDKField:
                 config.meta_adaptation_lr,
                 config.kurtosis_target_min,
                 config.kurtosis_target_max)
+            self._resonance_engine.meta_kernel = self.meta_kernel
 
         self.healer: Optional[TopologyHealer] = None
         if config.self_healing:
@@ -1442,56 +1457,15 @@ class RTMDKField:
         # Fix 1: Torch backend auto-switch for batch resonance
         # (Single-node response always uses numpy for simplicity;
         #  batch queries use TorchBackend.batch_resonance via query())
-
-        # Phase 11 Track 2: Hyperbolic distance
+        resp = self._resonance_engine.single_response(
+            query_latent, query_phase, node, query_modality)
+        # Backward-compat: update hyperbolic distance stat
         if self.cfg.hyperbolic:
             dist = poincare_dist(
-                query_latent,
-                node.latent_pos,
-                self.cfg.ball_radius)
+                query_latent, node.latent_pos, self.cfg.ball_radius)
             self.stats["avg_hyperbolic_dist"] = 0.99 * \
                 self.stats["avg_hyperbolic_dist"] + 0.01 * dist
-        else:
-            dist = np.linalg.norm(query_latent - node.latent_pos)
-        phase_diff = node.phase - query_phase
-        bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self._effective_bandwidth
-        bw = max(bw, 1e-8)
-        pc = self._effective_pc
-
-        if self.learnable_kernel:
-            resp = self.learnable_kernel.resonance_response(
-                dist, phase_diff, node.amplitude, node.salience)
-        else:
-            if self.cfg.resonance_kernel in ("gaussian", "gaussian_phase"):
-                spatial = math.exp(-dist ** 2 / (2 * bw ** 2))
-            elif self.cfg.resonance_kernel == "cosine":
-                nq = np.linalg.norm(query_latent)
-                nn = np.linalg.norm(node.latent_pos)
-                spatial = 0.5 + 0.5 * np.dot(query_latent, node.latent_pos) / (
-                    nq * nn + 1e-8) if nq > 1e-8 and nn > 1e-8 else 0.5
-            else:
-                spatial = math.exp(-dist / bw)
-            phase_align = 0.5 + 0.5 * math.cos(phase_diff)
-            resp = spatial * ((1 - pc) + pc * phase_align) * \
-                node.amplitude * node.salience
-
-        gate = node.soft_gate if self.cfg.soft_gates else 1.0
-        if self.causal_engine and node.causal_parents:
-            causal_boost = sum(node.causal_strength.get(p, 0)
-                               for p in node.causal_parents)
-            resp *= (1.0 + 0.1 * causal_boost)
-
-        if self.cfg.cross_modal:
-            resp = cross_modal_resonance(
-                query_modality,
-                node.modality,
-                resp,
-                self.cfg.modal_phase_offsets,
-                self.cfg.cross_modal_kernel_weight)
-            base_val = spatial * node.amplitude * node.salience
-            node.cross_modal_score = resp / base_val if base_val > 1e-8 else 0.0
-
-        return resp * gate * node.modal_weight
+        return resp
 
     def _batch_resonance(self, query_latents: NDArray, query_phases: NDArray,
                          node_ids: List[str]) -> NDArray:
@@ -1514,18 +1488,9 @@ class RTMDKField:
         node_phases = np.array([n.phase for n in nodes])
         node_amplitudes = np.array([n.amplitude for n in nodes])
         node_saliences = np.array([n.salience for n in nodes])
-        dists = cdist(query_latents, node_positions)
-        bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self._effective_bandwidth
-        bw = np.maximum(bw, 1e-8)
-        pc = self._effective_pc
-        if np.ndim(bw) == 0:
-            spatial = np.exp(-dists ** 2 / (2 * bw ** 2))
-        else:
-            spatial = np.exp(-dists ** 2 / (2 * bw[np.newaxis, :] ** 2))
-        phase_diff = query_phases[:, np.newaxis] - node_phases[np.newaxis, :]
-        phase_align = 0.5 + 0.5 * np.cos(phase_diff)
-        response = spatial * ((1 - pc) + pc * phase_align)
-        return response * node_amplitudes[np.newaxis, :] * node_saliences[np.newaxis, :]
+        return self._resonance_engine.batch_response_numpy(
+            query_latents, query_phases,
+            node_positions, node_phases, node_amplitudes, node_saliences)
 
     def _batch_resonance_numpy(
             self,
@@ -1544,22 +1509,9 @@ class RTMDKField:
         node_saliences = np.array(
             [self.nodes[nid].salience for nid in node_ids])
 
-        dists = cdist(query_latents, node_positions)
-        # Gaussian kernel: exp(-d^2/(2*bw^2)) — use meta_kernel if available
-        # (Fix 2: consistency with single-node path)
-        bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self._effective_bandwidth
-        bw = np.maximum(bw, 1e-8)
-        pc = self._effective_pc
-        # Broadcasting: per-node bw across queries
-        if np.ndim(bw) == 0:
-            spatial = np.exp(-dists ** 2 / (2 * bw ** 2))
-        else:
-            spatial = np.exp(-dists ** 2 / (2 * bw[np.newaxis, :] ** 2))
-        phase_diff = query_phases[:, np.newaxis] - node_phases[np.newaxis, :]
-        phase_align = 0.5 + 0.5 * np.cos(phase_diff)
-        response = spatial * ((1 - pc) + pc * phase_align)
-        return response * \
-            node_amplitudes[np.newaxis, :] * node_saliences[np.newaxis, :]
+        return self._resonance_engine.batch_response_numpy(
+            query_latents, query_phases,
+            node_positions, node_phases, node_amplitudes, node_saliences)
 
     def _batch_resonance_cached(
             self,
@@ -1581,22 +1533,12 @@ class RTMDKField:
                            dtype=np.int32)
         if len(indices) == 0:
             return np.empty((len(query_latents), 0), dtype=np.float32)
-        node_positions = self._cached_positions[indices]
-        node_phases = self._cached_phases[indices]
-        node_amplitudes = self._cached_amplitudes[indices]
-        node_saliences = self._cached_saliences[indices]
-        dists = cdist(query_latents, node_positions)
-        bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self._effective_bandwidth
-        bw = np.maximum(bw, 1e-8)
-        pc = self._effective_pc
-        if np.ndim(bw) == 0:
-            spatial = np.exp(-dists ** 2 / (2 * bw ** 2))
-        else:
-            spatial = np.exp(-dists ** 2 / (2 * bw[np.newaxis, :] ** 2))
-        phase_diff = query_phases[:, np.newaxis] - node_phases[np.newaxis, :]
-        phase_align = 0.5 + 0.5 * np.cos(phase_diff)
-        response = spatial * ((1 - pc) + pc * phase_align)
-        return response * node_amplitudes[np.newaxis, :] * node_saliences[np.newaxis, :]
+        return self._resonance_engine.batch_response_numpy(
+            query_latents, query_phases,
+            self._cached_positions[indices],
+            self._cached_phases[indices],
+            self._cached_amplitudes[indices],
+            self._cached_saliences[indices])
 
     def _batch_resonance_torch(
             self,
@@ -1615,15 +1557,10 @@ class RTMDKField:
         node_saliences = np.array(
             [self.nodes[nid].salience for nid in node_ids])
 
-        # Use meta_kernel if available (Fix 2: consistency with single-node
-        # path)
-        bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self.cfg.bandwidth
-        pc = self._effective_pc
-        return self.gpu_backend.batch_resonance(
-            query_latents, query_phases, node_positions, node_phases,
-            node_amplitudes, node_saliences,
-            bw, pc
-        )
+        return self._resonance_engine.batch_response_torch(
+            query_latents, query_phases,
+            node_positions, node_phases,
+            node_amplitudes, node_saliences)
 
     def _build_node_cache(self):
         """Build numpy arrays cache from nodes — called once when cache is dirty."""
@@ -1709,18 +1646,9 @@ class RTMDKField:
             bw: Optional per-node bandwidth vector (same length as positions).
                 If None, uses global bandwidth from config or meta_kernel.
         """
-        dists = np.linalg.norm(positions - query_latent, axis=1)
-        if bw is not None:
-            local_bw = np.asarray(bw)
-        else:
-            local_bw = self.meta_kernel.get_bandwidth(
-            ) if self.meta_kernel else self.cfg.bandwidth
-        local_bw = np.maximum(local_bw, 1e-8)
-        spatial = np.exp(-dists ** 2 / (2 * local_bw ** 2))
-        pc = self._effective_pc
-        phase_align = 0.5 + 0.5 * np.cos(phases - query_phase)
-        resp = spatial * ((1 - pc) + pc * phase_align) * \
-            amplitudes * saliences * modal_weights
+        resp = self._resonance_engine.chunk_response(
+            positions, phases, amplitudes, saliences,
+            modal_weights, query_latent, query_phase, bw)
         if self.cfg.soft_gates:
             resp = resp * gates
         if self.causal_engine:
@@ -2610,6 +2538,7 @@ class RTMDKField:
                 min_samples=self.cfg.causal_discovery_min_samples,
                 p_threshold=self.cfg.causal_p_threshold,
                 adjustment_sets_enabled=self.cfg.causal_adjustment_sets)
+            self._resonance_engine.causal_engine = self._causal_engine
         return self._causal_engine
 
     @causal_engine.setter
