@@ -1,5 +1,37 @@
 # RTMDK Production Hardening — Progress Log
 
+## ✅ 11. Pipeline v3: Circuit Breaker + SLO Enforcement (completed 2026-05-07)
+
+**Goal:** Automatic fault isolation per stage. If a stage is too slow or failing, bypass it instead of crashing the pipeline.
+
+### Changes Made
+- **`rtmdk/pipeline/circuit_breaker.py`**: `CircuitBreaker` with 3 states (closed / open / half-open)
+  - Opens after `failure_threshold` consecutive failures
+  - Opens after `latency_violation_threshold` latency violations (> threshold)
+  - Auto-recovery: transitions to half-open after `recovery_timeout_ms`, closes after successful probes
+- **`rtmdk/pipeline/health.py`**: `PipelineHealthMonitor` manages per-stage SLO thresholds and breakers
+- **`rtmdk/pipeline/base.py`**: `PipelineStage.run()` integrated with circuit breaker
+  - Breaker open → skip `process()`, run `fallback()`, record `circuit_breaker_open` error
+  - Breaker states tracked in `PipelineContext.breaker_states`
+- **`rtmdk/memory/core.py`**: `build_pipeline()` attaches circuit breakers to all 6 stages with default thresholds
+- **`tests/test_pipeline_circuit_breaker.py`**: 13 tests covering failure/latency open, half-open recovery, health monitor, integration
+
+### Default SLO Thresholds
+| Stage | Latency Threshold |
+|-------|------------------|
+| embed | 5000 ms |
+| route | 100 ms |
+| retrieve | 500 ms |
+| rerank | 1000 ms |
+| calibrate | 200 ms |
+| explain | 100 ms |
+
+### Test Results
+- 13 new tests — all passing
+- Full regression suite: **760 passed, 1 skipped**
+
+---
+
 ## ✅ 10. Pipeline v2: Batch Execution + Plugin Registry (completed 2026-05-07)
 
 **Goal:** Make the retrieval pipeline extensible and efficient for batch workloads.

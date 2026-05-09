@@ -7,6 +7,8 @@ import time
 import numpy as np
 from numpy.typing import NDArray
 
+from rtmdk.pipeline.circuit_breaker import CircuitBreaker
+
 
 @dataclass
 class StageMetrics:
@@ -41,6 +43,7 @@ class PipelineContext:
     explanations: List[Dict[str, Any]] = field(default_factory=list)
     metrics: List[StageMetrics] = field(default_factory=list)
     degraded_stages: List[str] = field(default_factory=list)
+    breaker_states: Dict[str, str] = field(default_factory=dict)
 
     def add_metric(self, name: str, latency_ms: float, input_count: int = 0, output_count: int = 0, error: Optional[str] = None, degraded: bool = False):
         self.metrics.append(StageMetrics(
@@ -62,6 +65,7 @@ class PipelineContext:
             "results_count": len(self.results),
             "explanations_count": len(self.explanations),
             "degraded_stages": self.degraded_stages,
+            "breaker_states": self.breaker_states,
             "stages": [m.to_dict() for m in self.metrics],
             "total_latency_ms": round(sum(m.latency_ms for m in self.metrics), 3),
         }
@@ -78,6 +82,7 @@ class PipelineStage(ABC):
 
     name: str = "abstract"
     enabled: bool = True
+    circuit_breaker: Optional[CircuitBreaker] = None
 
     @abstractmethod
     def process(self, ctx: PipelineContext) -> PipelineContext:
@@ -100,9 +105,25 @@ class PipelineStage(ABC):
         return True, None
 
     def run(self, ctx: PipelineContext) -> PipelineContext:
-        """Wrap process() with timing, error handling, and graceful degradation."""
+        """Wrap process() with timing, error handling, circuit breaker, and graceful degradation."""
         if not self.enabled:
             ctx.add_metric(self.name, 0.0, input_count=len(ctx.results), output_count=len(ctx.results))
+            if self.circuit_breaker:
+                ctx.breaker_states[self.name] = self.circuit_breaker.state.value
+            return ctx
+
+        # Circuit breaker check
+        if self.circuit_breaker and not self.circuit_breaker.can_execute():
+            ctx = self.fallback(ctx, RuntimeError(f"Circuit breaker open for {self.name}"))
+            ctx.add_metric(
+                self.name,
+                0.0,
+                input_count=len(ctx.results),
+                output_count=len(ctx.results),
+                error="circuit_breaker_open",
+                degraded=True,
+            )
+            ctx.breaker_states[self.name] = self.circuit_breaker.state.value
             return ctx
 
         t0 = time.perf_counter()
@@ -115,6 +136,9 @@ class PipelineStage(ABC):
                 input_count=getattr(self, "_last_input_count", len(ctx.results)),
                 output_count=len(ctx.results),
             )
+            if self.circuit_breaker:
+                self.circuit_breaker.record_success(latency)
+                ctx.breaker_states[self.name] = self.circuit_breaker.state.value
         except Exception as exc:
             latency = (time.perf_counter() - t0) * 1000
             ctx = self.fallback(ctx, exc)
@@ -126,4 +150,7 @@ class PipelineStage(ABC):
                 error=f"{type(exc).__name__}: {exc}",
                 degraded=True,
             )
+            if self.circuit_breaker:
+                self.circuit_breaker.record_failure(latency)
+                ctx.breaker_states[self.name] = self.circuit_breaker.state.value
         return ctx

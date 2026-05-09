@@ -1662,32 +1662,55 @@ class RTMDKMemory(BaseModel):
 
         Each stage is independently observable and swappable.
         Stages are constructed from the features enabled in config.
+        Circuit breakers are attached for automatic SLO enforcement.
         """
         from rtmdk.production.cascade_router import AdaptiveCascadeRouter
+        from rtmdk.pipeline.health import PipelineHealthMonitor
 
         stages = []
+        monitor = PipelineHealthMonitor()
+
+        # Default SLO thresholds (ms) — can be overridden via config in future
+        monitor.set_threshold("embed", 5000.0)
+        monitor.set_threshold("route", 100.0)
+        monitor.set_threshold("retrieve", 500.0)
+        monitor.set_threshold("rerank", 1000.0)
+        monitor.set_threshold("calibrate", 200.0)
+        monitor.set_threshold("explain", 100.0)
 
         # Stage 1: Embed (optional — caller may provide embedding directly)
-        stages.append(EmbedStage(self.embedder))
+        embed_stage = EmbedStage(self.embedder)
+        embed_stage.circuit_breaker = monitor.get_breaker("embed")
+        stages.append(embed_stage)
 
         # Stage 2: Route
         router = None
         if getattr(self.config, "cascade_enabled", False):
             router = AdaptiveCascadeRouter()
-        stages.append(RouteStage(router))
+        route_stage = RouteStage(router)
+        route_stage.circuit_breaker = monitor.get_breaker("route")
+        stages.append(route_stage)
 
         # Stage 3: Retrieve
-        stages.append(RetrieveStage(self.field))
+        retrieve_stage = RetrieveStage(self.field)
+        retrieve_stage.circuit_breaker = monitor.get_breaker("retrieve")
+        stages.append(retrieve_stage)
 
         # Stage 4: Rerank
-        stages.append(RerankStage(self._sentence_reranker))
+        rerank_stage = RerankStage(self._sentence_reranker)
+        rerank_stage.circuit_breaker = monitor.get_breaker("rerank")
+        stages.append(rerank_stage)
 
         # Stage 5: Calibrate
         calibrator = getattr(self.field, "conformal_calibrator", None)
-        stages.append(CalibrateStage(calibrator))
+        calibrate_stage = CalibrateStage(calibrator)
+        calibrate_stage.circuit_breaker = monitor.get_breaker("calibrate")
+        stages.append(calibrate_stage)
 
         # Stage 6: Explain
-        stages.append(ExplainStage(self._result_explainer))
+        explain_stage = ExplainStage(self._result_explainer)
+        explain_stage.circuit_breaker = monitor.get_breaker("explain")
+        stages.append(explain_stage)
 
         return PipelineExecutor(stages)
 

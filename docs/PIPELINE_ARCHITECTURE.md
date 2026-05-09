@@ -147,6 +147,32 @@ registry.register("my_rerank", MyRerankStage)
 stage = registry.create("my_rerank")
 ```
 
+## Circuit Breaker & SLO Enforcement
+
+Each stage can have a circuit breaker that opens after repeated failures or latency violations.
+When open, the stage is automatically bypassed and its fallback runs.
+
+```python
+from rtmdk.pipeline import CircuitBreaker, PipelineHealthMonitor
+from rtmdk.pipeline.stages import RerankStage
+
+monitor = PipelineHealthMonitor()
+monitor.set_threshold("rerank", latency_ms=200.0)
+
+stage = RerankStage(reranker)
+stage.circuit_breaker = monitor.get_breaker("rerank")
+```
+
+Breaker states: `closed` → `open` (after threshold exceeded) → `half_open` (after recovery timeout) → `closed` (after successful probes).
+
+`build_pipeline()` automatically attaches breakers with default thresholds:
+- embed: 5000ms
+- route: 100ms
+- retrieve: 500ms
+- rerank: 1000ms
+- calibrate: 200ms
+- explain: 100ms
+
 ## Future Work
 
 - Extract query cache, distributed lock, and query rewrite into separate stages.
