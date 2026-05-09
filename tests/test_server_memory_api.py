@@ -216,3 +216,41 @@ def test_memory_query_pipeline_returns_results(client):
         assert data.get("route") is not None or data.get("route") is None  # may be None if no router
     finally:
         app_mod.memory = None
+
+
+def test_memory_pipeline_metrics_not_configured(client):
+    """Pipeline metrics endpoint returns disabled when not configured."""
+    old_store = app_mod.pipeline_metrics_store
+    app_mod.pipeline_metrics_store = None
+    try:
+        resp = client.get("/v1/memory/pipeline/metrics")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["enabled"] is False
+    finally:
+        app_mod.pipeline_metrics_store = old_store
+
+
+def test_memory_pipeline_metrics_summary(client, tmp_path):
+    """Pipeline metrics endpoint returns summary when store has data."""
+    from rtmdk.pipeline.persistence import PipelineMetricsStore
+
+    old_store = app_mod.pipeline_metrics_store
+    store_path = tmp_path / "pipeline_metrics.jsonl"
+    app_mod.pipeline_metrics_store = PipelineMetricsStore(str(store_path))
+    try:
+        app_mod.pipeline_metrics_store.write({
+            "query_text": "q1",
+            "total_latency_ms": 10.0,
+            "stages": [
+                {"stage": "embed", "latency_ms": 5.0, "error": None, "degraded": False},
+            ],
+        })
+        resp = client.get("/v1/memory/pipeline/metrics")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["enabled"] is True
+        assert data["queries"] == 1
+        assert "stages" in data
+    finally:
+        app_mod.pipeline_metrics_store = old_store

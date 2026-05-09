@@ -142,6 +142,9 @@ http_client = httpx.AsyncClient()
 _active_requests = 0
 _shutdown_event = asyncio.Event()
 
+# Pipeline metrics store (optional)
+pipeline_metrics_store = None
+
 
 async def _sot_bootstrap_from_memory():
     """Bootstrap SOT tokenizer from existing memory nodes in background."""
@@ -1355,12 +1358,24 @@ async def memory_query_pipeline(req: MemoryQueryPipelineRequest):
             "metrics": result.get("metrics", {}),
             "total": len(formatted),
         }
+        if pipeline_metrics_store is not None:
+            pipeline_metrics_store.write(result.get("metrics", {}))
         _metric_query_dur.observe(time.time() - t0)
         return resp
     except Exception as exc:
         _metric_query_dur.observe(time.time() - t0)
         logger.warning("Pipeline query failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/v1/memory/pipeline/metrics")
+async def memory_pipeline_metrics_summary():
+    """Return aggregated pipeline metrics summary."""
+    if pipeline_metrics_store is None:
+        return {"enabled": False, "message": "Pipeline metrics store not configured"}
+    summary = pipeline_metrics_store.summary()
+    summary["enabled"] = True
+    return summary
 
 
 @app.post("/v1/memory/batch_query")
