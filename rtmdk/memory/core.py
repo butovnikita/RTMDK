@@ -727,9 +727,9 @@ class RTMDKMemory(BaseModel):
                 logger.warning("Cascade router init failed, disabling", exc_info=True)
 
         # v8.2.1 production distributed features
-        self._init_replication_manager()
+        self._init_backlog_modules()
 
-    def _init_replication_manager(self) -> None:
+    def _init_backlog_modules(self) -> None:
         peers = self.config.replication_peers
         if peers:
             try:
@@ -2025,7 +2025,10 @@ class RTMDKMemory(BaseModel):
         if self.engram_cache is not None:
             self.engram_cache.clear()
         if self.metrics is not None:
+            old_rules = self.metrics.alert_rules
             self.metrics = MemoryMetrics()
+            for rule in old_rules:
+                self.metrics.add_alert_rule(rule)
 
     def inspect_node(self, node_id: str) -> Optional[Dict]:
         if node_id not in self.field.nodes:

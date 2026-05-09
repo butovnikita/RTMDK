@@ -61,7 +61,7 @@ class SIFEmbedder:
         self.word_probs: Dict[int, float] = {}
         self._pc: Optional[np.ndarray] = None  # First principal component
         self._aligner = None  # Optional ProcrustesAligner
-        self._pmi_matrix: Optional[np.ndarray] = None  # Valid-token PMI
+        self._pmi_matrix: Optional[Any] = None  # Valid-token PMI (dense np.ndarray or scipy.sparse matrix)
         self._pmi_idx_map: Optional[Dict[int, int]] = None  # token_id -> pmi row
         self._pmi_valid_idx: Optional[List[int]] = None  # List of valid token IDs
         self.char_ngram_embeddings: Dict[str, np.ndarray] = {}  # "#ea" -> vector
