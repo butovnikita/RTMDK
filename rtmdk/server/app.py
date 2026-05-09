@@ -149,7 +149,7 @@ pipeline_metrics_store = None
 async def _sot_bootstrap_from_memory():
     """Bootstrap SOT tokenizer from existing memory nodes in background."""
     await asyncio.sleep(2)  # Let server finish startup
-    if memory is None or memory.field is None or memory.field.sot_tokenizer is None:
+    if memory is None or memory.field is None or memory.field._projection_mgr.sot_tokenizer is None:
         return
     try:
         texts = []
@@ -158,7 +158,7 @@ async def _sot_bootstrap_from_memory():
             if text:
                 texts.append(text)
         if len(texts) >= 10:
-            memory.field.sot_tokenizer.warm_start_from_corpus(texts)
+            memory.field._projection_mgr.sot_tokenizer.warm_start_from_corpus(texts)
             logger.info(f"SOT bootstrapped from {len(texts)} memory nodes")
     except Exception:
         logger.debug("SOT background bootstrap failed", exc_info=True)
@@ -365,12 +365,12 @@ async def lifespan(app: FastAPI):
     _sot_checkpoint_path = os.path.join(
         os.path.expanduser("~"), ".rtmdk", "sot_checkpoint.json"
     )
-    if memory and memory.field and memory.field.sot_tokenizer:
+    if memory and memory.field and memory.field._projection_mgr.sot_tokenizer:
         if os.path.exists(_sot_checkpoint_path):
             try:
                 with open(_sot_checkpoint_path, "r", encoding="utf-8") as fh:
                     sot_state = json.load(fh)
-                memory.field.sot_tokenizer.load_state(sot_state)
+                memory.field._projection_mgr.sot_tokenizer.load_state(sot_state)
                 logger.info(f"SOT checkpoint loaded ({len(sot_state.get('token_embeddings', {}))} tokens)")
             except Exception:
                 logger.warning("Failed to load SOT checkpoint", exc_info=True)
@@ -416,9 +416,9 @@ async def lifespan(app: FastAPI):
             field._workers.clear()
 
         # SOT checkpoint saving
-        if field and field.sot_tokenizer:
+        if field and field._projection_mgr.sot_tokenizer:
             try:
-                sot_state = field.sot_tokenizer.get_state()
+                sot_state = field._projection_mgr.sot_tokenizer.get_state()
                 _sot_checkpoint_path = os.path.join(
                     os.path.expanduser("~"), ".rtmdk", "sot_checkpoint.json")
                 os.makedirs(os.path.dirname(_sot_checkpoint_path), exist_ok=True)
@@ -802,9 +802,9 @@ async def get_embedding(text: str, model: str = None) -> np.ndarray:
         return cached
 
     # Phase 21: SOT primary embedder — works out-of-the-box without LM Studio
-    if memory and memory.field and memory.field.sot_tokenizer:
+    if memory and memory.field and memory.field._projection_mgr.sot_tokenizer:
         try:
-            sot = memory.field.sot_tokenizer
+            sot = memory.field._projection_mgr.sot_tokenizer
             tokens = sot.encode(text)
             emb = sot.embed(tokens)
             embedder_cache.set(text, emb)
@@ -2321,7 +2321,7 @@ async def sot_status():
     """Get SOT (Self-Organizing Tokenizer) status."""
     if memory is None or memory.field is None:
         raise HTTPException(status_code=503, detail="Memory not initialized")
-    sot = memory.field.sot_tokenizer
+    sot = memory.field._projection_mgr.sot_tokenizer
     if sot is None:
         return {"enabled": False}
     return {
@@ -2342,7 +2342,7 @@ async def sot_vocab(
     """Inspect SOT vocabulary."""
     if memory is None or memory.field is None:
         raise HTTPException(status_code=503, detail="Memory not initialized")
-    sot = memory.field.sot_tokenizer
+    sot = memory.field._projection_mgr.sot_tokenizer
     if sot is None:
         raise HTTPException(status_code=503, detail="SOT not enabled")
     items = []
@@ -2359,7 +2359,7 @@ async def sot_bootstrap(req: SOTBootstrapRequest):
     """Bootstrap SOT from a corpus of texts."""
     if memory is None or memory.field is None:
         raise HTTPException(status_code=503, detail="Memory not initialized")
-    sot = memory.field.sot_tokenizer
+    sot = memory.field._projection_mgr.sot_tokenizer
     if sot is None:
         raise HTTPException(status_code=503, detail="SOT not enabled")
     texts = req.texts

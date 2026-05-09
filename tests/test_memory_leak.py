@@ -65,7 +65,7 @@ class TestMemoryPressure:
             sot_max_cooccurrence=100,
         )
         field = RTMDKField(cfg)
-        tok = field.sot_tokenizer
+        tok = field._projection_mgr.sot_tokenizer
 
         import time
         # Simulate 500 documents
@@ -84,7 +84,7 @@ class TestMemoryPressure:
             sot_enabled=True,
             sot_tokenization_mode="word")
         field = RTMDKField(cfg)
-        tok = field.sot_tokenizer
+        tok = field._projection_mgr.sot_tokenizer
 
         for i in range(100):
             text = f"hello world test {i}"

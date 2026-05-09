@@ -24,6 +24,7 @@ from rtmdk.support.learnable import LearnableKernel, DifferentiableConsolidation
 from rtmdk.support.torch_backend import TorchBackend
 from rtmdk.support.projection import IncPCAProjection, IdentityProjection
 from rtmdk.support.production import ShadowModeEvaluator, RAGASPlusEvaluator, AutoRollbackManager
+from rtmdk.memory.projection_manager import ProjectionManager
 from rtmdk.support.agents import AgentPlanner, HypothesisVerifier, ToolRouter
 from rtmdk.support.healer import TopologyHealer
 from rtmdk.support.meta_adaptive import MetaAdaptiveKernel
@@ -792,27 +793,8 @@ class RTMDKField:
                 ball_radius=config.ball_radius,
             )
 
-        if config.projection_mode == "identity":
-            self.projection_learner = IdentityProjection(
-                config.embedding_dim, config.latent_dim)
-            self._raw_projection = None
-        elif config.learn_projection:
-            self.projection_learner = IncPCAProjection(
-                config.embedding_dim,
-                config.pca_n_components or config.latent_dim,
-                config.projection_lr,
-                config.projection_update_freq,
-                config.l2_regularization)
-            if projection_matrix is not None:
-                self.projection_learner.set_matrix(projection_matrix)
-            self._raw_projection = None
-        else:
-            self.projection_learner = None
-            self._raw_projection = (
-                projection_matrix.astype(
-                    np.float32) if projection_matrix is not None else self._rng.standard_normal(
-                    (config.embedding_dim, config.latent_dim)).astype(
-                    np.float32) * 0.1)
+        self._projection_mgr = ProjectionManager(
+            config, projection_matrix=projection_matrix, rng=self._rng)
 
         self.adaptive_threshold = AdaptiveThreshold(
             config.adaptive_window,
@@ -1130,120 +1112,6 @@ class RTMDKField:
             "conformal_confidence": 0.0,
             "conformal_prediction_set_size": 0,
         }
-        # Phase 21: Self-Organizing Tokenizer + Embedding Field
-        self.sot_tokenizer: Optional[Any] = None
-        self.sot_hebbian: Optional[Any] = None
-        self._sot_field_ema: Optional[NDArray] = None
-        if config.sot_enabled:
-            from rtmdk.memory.self_organizing_field import SOTokenizer, ContrastiveHebbian
-            token_dim = config.sot_token_dim or config.latent_dim
-            self.sot_tokenizer = SOTokenizer(
-                latent_dim=config.latent_dim,
-                token_dim=token_dim,
-                max_vocab=config.sot_max_vocab,
-                seed=config.seed,
-                subword_seed=config.sot_subword_seed,
-                attention_pooling=config.sot_attention_pooling,
-                skipgram_window=config.sot_skipgram_window,
-                tokenization_mode=config.sot_tokenization_mode,
-                max_cooccurrence=config.sot_max_cooccurrence,
-                adaptive_lr=config.sot_adaptive_lr,
-            )
-            # Warm-start from corpus if path provided
-            if config.sot_warm_start_corpus:
-                try:
-                    import json
-                    with open(config.sot_warm_start_corpus, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                    texts = []
-                    if isinstance(data, dict) and 'records' in data:
-                        texts = [
-                            r.get(
-                                'context',
-                                '') +
-                            ' ' +
-                            r.get(
-                                'answer',
-                                '') +
-                            ' ' +
-                            r.get(
-                                'query',
-                                '') for r in data['records']]
-                    elif isinstance(data, list):
-                        texts = [str(item) for item in data]
-                    self.sot_tokenizer.warm_start_from_corpus(texts)
-                except Exception as e:
-                    logger.warning(f"SOT warm-start failed: {e}")
-            # Load external bootstrap projection (e.g. SBERT)
-            if config.sot_bootstrap_projection:
-                try:
-                    from rtmdk.memory.bootstrap_sbert import load_bootstrap
-                    load_bootstrap(
-                        config.sot_bootstrap_projection,
-                        self.sot_tokenizer)
-                except Exception as e:
-                    logger.warning(
-                        f"SOT bootstrap projection load failed: {e}")
-            # Auto-bootstrap from FastText model (lightweight alternative)
-            if config.sot_bootstrap_fasttext_model and config.sot_bootstrap_corpus:
-                try:
-                    import json
-                    with open(config.sot_bootstrap_corpus, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                    texts = []
-                    if isinstance(data, dict) and 'records' in data:
-                        texts = [
-                            r.get(
-                                'context',
-                                '') +
-                            ' ' +
-                            r.get(
-                                'answer',
-                                '') for r in data['records']]
-                    elif isinstance(data, list):
-                        texts = [str(item) for item in data]
-                    from rtmdk.memory.bootstrap_fasttext import run_bootstrap
-                    run_bootstrap(
-                        self.sot_tokenizer,
-                        texts=texts,
-                        model_path=config.sot_bootstrap_fasttext_model)
-                except Exception as e:
-                    logger.warning(f"SOT FastText auto-bootstrap failed: {e}")
-            # Auto-bootstrap from corpus via SBERT if no FastText and no
-            # projection
-            elif config.sot_bootstrap_corpus and not config.sot_bootstrap_projection:
-                try:
-                    import json
-                    with open(config.sot_bootstrap_corpus, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                    texts = []
-                    if isinstance(data, dict) and 'records' in data:
-                        texts = [
-                            r.get(
-                                'context',
-                                '') +
-                            ' ' +
-                            r.get(
-                                'answer',
-                                '') for r in data['records']]
-                    elif isinstance(data, list):
-                        texts = [str(item) for item in data]
-                    from sentence_transformers import SentenceTransformer
-                    teacher = SentenceTransformer(config.sot_bootstrap_model)
-                    self.sot_tokenizer.bootstrap_from_teacher(
-                        texts,
-                        lambda t: teacher.encode(t, show_progress_bar=False),
-                        fit_projection_only=False,
-                        n_epochs=10,
-                        lr=0.05,
-                    )
-                except Exception as e:
-                    logger.warning(f"SOT auto-bootstrap failed: {e}")
-            self.sot_hebbian = ContrastiveHebbian(
-                lr=config.sot_contrastive_lr,
-            )
-            self._sot_field_ema = np.zeros(config.latent_dim, dtype=np.float32)
-
         self._step_counter = 0
         # Rate limiting: track add_node timestamps (max 100 nodes/sec)
         self._add_node_timestamps: deque = deque(maxlen=1000)
@@ -1337,42 +1205,11 @@ class RTMDKField:
         self._cache_mgr.ensure_built(self)
 
     def _project(self, embedding: NDArray) -> NDArray:
-        # Phase 21: If embedding is already latent_dim, use directly
-        if len(embedding) == self.cfg.latent_dim:
-            latent = embedding.astype(np.float32)
-        elif self.projection_learner:
-            latent = self.projection_learner.project(embedding)
-        else:
-            # Normalize before random projection to preserve cosine
-            # relationships in L2 space
-            emb = embedding.astype(np.float32)
-            norm = np.linalg.norm(emb)
-            if norm > 1e-8:
-                emb = emb / norm
-            latent = (emb @ self._raw_projection).astype(np.float32)
-        # Phase 11 Track 2: Hyperbolic projection into Poincare ball
-        if self.cfg.hyperbolic:
-            norm = np.linalg.norm(latent)
-            if norm >= self.cfg.ball_radius:
-                latent = latent * (self.cfg.ball_radius -
-                                   1e-6) / max(norm, 1e-8)
-        return latent
+        return self._projection_mgr.project(embedding)
 
     def _project_batch(self, embeddings: NDArray) -> NDArray:
         """Vectorized projection for batch inserts."""
-        n, d = embeddings.shape
-        if d == self.cfg.latent_dim:
-            return embeddings.astype(np.float32)
-        if self.projection_learner:
-            # Sequential fallback for stateful projection learner
-            return np.array([self.projection_learner.project(e)
-                            for e in embeddings])
-        # Vectorized random projection
-        embs = embeddings.astype(np.float32)
-        norms = np.linalg.norm(embs, axis=1, keepdims=True)
-        norms = np.maximum(norms, 1e-8)
-        embs = embs / norms
-        return embs @ self._raw_projection
+        return self._projection_mgr.project_batch(embeddings)
 
     def _semantic_phase(
             self,
@@ -2273,7 +2110,7 @@ class RTMDKField:
         results = self._apply_conformal_filter(results)
 
         # E: Retrieval-aware feedback for SOT
-        if self.cfg.sot_retrieval_feedback and self.sot_tokenizer and self.sot_hebbian and results:
+        if self.cfg.sot_retrieval_feedback and self._projection_mgr.has_sot and results:
             self._sot_retrieval_feedback(query_latent, results)
 
         # Track 3: Adaptive top_k based on confidence
@@ -2359,15 +2196,7 @@ class RTMDKField:
 
     def fit_projection(self, corpus_embeddings: NDArray) -> None:
         """Batch-fit projection learner on a corpus of embeddings."""
-        if self.projection_learner is None:
-            return
-        if hasattr(self.projection_learner, "fit"):
-            self.projection_learner.fit(corpus_embeddings)
-            logger.info(
-                f"Projection fitted on {corpus_embeddings.shape[0]} samples")
-        else:
-            logger.warning(
-                "projection_learner does not support fit() — skipping corpus fit")
+        self._projection_mgr.fit_projection(corpus_embeddings)
 
     def sot_bootstrap(
             self,
@@ -2375,41 +2204,9 @@ class RTMDKField:
             teacher_model: str = 'all-MiniLM-L6-v2',
             fit_projection_only: bool = True,
             n_epochs: int = 30):
-        """Bootstrap SOT embeddings from a sentence-transformer teacher model.
-
-        This dramatically improves cold-start quality by initializing byte/token
-        embeddings with semantic structure from a pre-trained model.
-
-        Args:
-            texts: Corpus texts to use for bootstrap (e.g. from dataset).
-            teacher_model: Sentence-transformer model name.
-            fit_projection_only: If True, only fit projection matrix (stable).
-                If False, also update token embeddings toward teacher targets.
-            n_epochs: Number of epochs for token embedding updates (only when
-                fit_projection_only=False).
-        """
-        if not self.sot_tokenizer:
-            raise RuntimeError("SOT not enabled in config")
-        try:
-            from sentence_transformers import SentenceTransformer
-            teacher = SentenceTransformer(teacher_model)
-            logger.info(
-                f"SOT bootstrap: loading teacher model {teacher_model}")
-
-            def embed_fn(text):
-                return teacher.encode(text, show_progress_bar=False)
-
-            self.sot_tokenizer.bootstrap_from_teacher(
-                texts, embed_fn,
-                fit_projection_only=fit_projection_only,
-                n_epochs=n_epochs)
-        except ImportError:
-            logger.error(
-                "sentence-transformers not installed, cannot bootstrap SOT")
-            raise
-        except Exception as e:
-            logger.error(f"SOT bootstrap failed: {e}")
-            raise
+        self._projection_mgr.sot_bootstrap(
+            texts, teacher_model=teacher_model,
+            fit_projection_only=fit_projection_only, n_epochs=n_epochs)
 
     def sot_contrastive_step(
         self,
@@ -2418,108 +2215,27 @@ class RTMDKField:
         negative_texts=None,
         lr: float = 0.01,
     ):
-        """Online contrastive learning step for SOT token embeddings.
-
-        Pulls query tokens toward positive text tokens and pushes them
-        away from negative text tokens. This reduces dependence on the
-        teacher model after bootstrap.
-        """
-        if not self.sot_tokenizer:
-            raise RuntimeError("SOT not enabled in config")
-        if negative_texts is None:
-            negative_texts = []
-        self.sot_tokenizer.contrastive_step(
-            query_text, positive_text, negative_texts, lr=lr,
-            adaptive_lr=self.cfg.sot_adaptive_lr,
-        )
+        self._projection_mgr.sot_contrastive_step(
+            query_text, positive_text, negative_texts, lr=lr)
 
     def _sot_retrieval_feedback(
-            self, query_latent: np.ndarray, results: List[Tuple[str, float, MemoryNode]]):
-        """Update SOT embeddings based on retrieval results.
-        Pull query-relevant tokens closer to top results, push away from low-scoring results."""
-        if not self.sot_tokenizer or not self.sot_hebbian:
-            return
-        # Use top result as positive anchor, bottom result as negative anchor
-        top_nid, top_score, top_node = results[0]
-        bottom_nid, bottom_score, bottom_node = results[-1] if len(
-            results) > 1 else (None, 0.0, None)
-
-        if top_score < 0.1:
-            return  # Too uncertain, skip feedback
-
-        # Get query tokens (re-encode from the node's query context if available)
-        # Since we don't have original query text here, we use a heuristic:
-        # update token embeddings of top result toward query latent, away from
-        # bottom
-        top_text = top_node.content.get('text', '')
-        bottom_text = bottom_node.content.get(
-            'text', '') if bottom_node else ''
-
-        top_tokens = self.sot_tokenizer.encode(top_text)
-        if bottom_text:
-            bottom_tokens = self.sot_tokenizer.encode(bottom_text)
-        else:
-            bottom_tokens = []
-
-        # Pull top result tokens toward query direction
-        # (approximate: treat query_latent as target for top tokens)
-        if top_tokens and len(top_tokens) > 1:
-            self.sot_hebbian.update(
-                self.sot_tokenizer.token_embeddings,
-                top_tokens,
-                [t for t in bottom_tokens if t not in top_tokens][:self.cfg.sot_negatives_per_query],
-            )
-
-        # Update projection matrix if token_dim != latent_dim
-        if self.sot_tokenizer.token_dim != self.sot_tokenizer.latent_dim and top_tokens:
-            # Simple gradient: push projection so that top text embeds closer
-            # to query
-            top_emb = self.sot_tokenizer.embed(top_tokens)
-            error = query_latent - top_emb
-            # Gradient clipping (SOT-D)
-            error_norm = np.linalg.norm(error)
-            if error_norm > 1.0:
-                error = error / error_norm
-            for t in top_tokens:
-                if t in self.sot_tokenizer.token_embeddings:
-                    token_vec = self.sot_tokenizer.token_embeddings[t]
-                    delta = 0.001 * np.outer(token_vec, error)
-                    self.sot_tokenizer.projection += delta
-            # NaN guard (SOT-D)
-            if np.isnan(
-                    self.sot_tokenizer.projection).any() or np.isinf(
-                    self.sot_tokenizer.projection).any():
-                logger.warning(
-                    "SOT projection NaN/Inf detected, skipping update")
-                return
-            # Renormalize columns
-            norms = np.linalg.norm(
-                self.sot_tokenizer.projection, axis=0, keepdims=True)
-            self.sot_tokenizer.projection /= np.maximum(norms, 1e-8)
+            self, query_latent: np.ndarray, results: List[Tuple[str, float, Any]]):
+        self._projection_mgr.sot_retrieval_feedback(
+            query_latent, results,
+            negatives_per_query=self.cfg.sot_negatives_per_query)
 
     def query_by_text(self,
                       text: str,
                       top_k: Optional[int] = None,
                       session_id: Optional[str] = None) -> List[Tuple[str,
                                                                       float,
-                                                                      MemoryNode]]:
-        """Query field using SOT tokenizer (no external embedder required).
-
-        Args:
-            text: Raw query text.
-            top_k: Number of results.
-            session_id: Optional session filter.
-
-        Returns:
-            List of (node_id, resonance_score, node) tuples.
-        """
+                                                                      Any]]:
+        """Query field using SOT tokenizer (no external embedder required)."""
         top_k = top_k or self.cfg.top_k
-        if self.sot_tokenizer and self.cfg.sot_use_for_query:
-            tokens = self.sot_tokenizer.encode(text)
-            query_latent = self.sot_tokenizer.embed(tokens)
+        query_latent = self._projection_mgr.sot_query_latent(text)
+        if query_latent is not None:
             return self.query(query_latent, phase=0.0, top_k=top_k,
                               modality="text", session_id=session_id)
-        # Fallback: use standard query path if SOT not enabled for queries
         return []
 
     # B2: Lazy property for causal engine
@@ -2614,17 +2330,10 @@ class RTMDKField:
         elif len(embedding) == self.cfg.latent_dim:
             # Phase 21: SOT embeddings are already latent_dim — use directly
             latent = embedding.astype(np.float32)
-        elif self.projection_learner:
-            latent = self.projection_learner.update(embedding)
-            self.stats["projection_updates"] += 1
         else:
-            latent = self._project(embedding)
-        # Phase 11 Track 2: Ensure all nodes live inside Poincaré ball
-        if self.cfg.hyperbolic:
-            norm = np.linalg.norm(latent)
-            if norm >= self.cfg.ball_radius:
-                latent = latent * (self.cfg.ball_radius -
-                                   1e-6) / max(norm, 1e-8)
+            latent = self._projection_mgr.update_projection(embedding)
+            if self._projection_mgr.projection_learner is not None:
+                self.stats["projection_updates"] += 1
 
         # Track 1: Quantize latent position to reduce RAM usage
         latent, latent_scale, latent_zero_point = self._quant.quantize_with_meta(latent)
@@ -2799,14 +2508,6 @@ class RTMDKField:
         # Vectorized normalization
         norms = np.linalg.norm(latents, axis=1, keepdims=True)
         latents = latents / np.maximum(norms, 1e-8)
-
-        # Vectorized hyperbolic clamp
-        if self.cfg.hyperbolic:
-            norms = np.linalg.norm(latents, axis=1, keepdims=True)
-            mask = norms.flatten() >= self.cfg.ball_radius
-            if np.any(mask):
-                latents[mask] = latents[mask] * \
-                    (self.cfg.ball_radius - 1e-6) / np.maximum(norms[mask], 1e-8)
 
         # Track 1: Quantize (loop — quantizer may not be vectorizable)
         _q_results = [self._quant.quantize_with_meta(vec) for vec in latents]
@@ -4104,10 +3805,9 @@ class RTMDKField:
                 text = content.get("text", "")
 
                 # Phase 21: SOT tokenization and optional query-by-text
-                sot_tokens = None
-                if self.sot_tokenizer and text:
-                    sot_tokens = self.sot_tokenizer.encode(text)
-                    self.sot_tokenizer.record_cooccurrence(sot_tokens)
+                sot_tokens = self._projection_mgr.sot_encode(text)
+                if sot_tokens:
+                    self._projection_mgr.sot_record_cooccurrence(sot_tokens)
 
                 # Validate embedding dimension — allow both embedding_dim and
                 # latent_dim
@@ -4163,7 +3863,7 @@ class RTMDKField:
                         modality=modality)
 
                 # Phase 21: Contrastive Hebbian update on field nodes
-                if self.sot_hebbian and results and len(self.node_index) > 1:
+                if self._projection_mgr.has_sot_hebbian and results and len(self.node_index) > 1:
                     snap_id_to_idx = {
                         nid: idx for idx, nid in enumerate(
                             self.node_index)}
@@ -4185,7 +3885,7 @@ class RTMDKField:
                     if pos_indices:
                         positions = np.array([self.nodes[self.node_index[i]].latent_pos for i in range(
                             len(self.node_index))], dtype=np.float32)
-                        self.sot_hebbian.field_update(
+                        self._projection_mgr.sot_contrastive_hebbian_field_update(
                             positions, pos_indices, neg_indices)
                         # Write back
                         for i in range(len(self.node_index)):
@@ -4193,41 +3893,24 @@ class RTMDKField:
                                        ].latent_pos = positions[i]
 
                 # Phase 21: Contrastive Hebbian update on token embeddings
-                if self.sot_hebbian and self.sot_tokenizer and sot_tokens and len(
-                        sot_tokens) > 1:
-                    vocab_ids = list(
-                        self.sot_tokenizer.token_embeddings.keys())
+                if sot_tokens and len(sot_tokens) > 1:
+                    vocab_ids = self._projection_mgr.sot_vocab_ids()
                     n_neg = min(
                         self.cfg.sot_negatives_per_query,
                         len(vocab_ids) - len(sot_tokens))
-                    if self.cfg.sot_hard_negatives and n_neg > 0:
-                        # Use hard negative mining: closest non-positive
-                        # embeddings
-                        self.sot_hebbian.update_with_hard_negatives(
-                            self.sot_tokenizer.token_embeddings,
-                            sot_tokens,
-                            vocab_ids,
-                            n_negatives=n_neg,
-                        )
-                    else:
-                        negatives = []
-                        if n_neg > 0:
-                            available = [
-                                v for v in vocab_ids if v not in sot_tokens]
-                            if available:
-                                negatives = self._rng.choice(available, size=min(
-                                    n_neg, len(available)), replace=False).tolist()
-                        self.sot_hebbian.update(
-                            self.sot_tokenizer.token_embeddings, sot_tokens, negatives)
+                    self._projection_mgr.sot_contrastive_hebbian_token_update(
+                        sot_tokens, vocab_ids,
+                        negatives_per_query=self.cfg.sot_negatives_per_query,
+                        hard_negatives=self.cfg.sot_hard_negatives)
 
                 # Phase 21: Periodic merge
-                if self.sot_tokenizer and self._step_counter % self.cfg.sot_merge_freq == 0 and self._step_counter > 0:
-                    candidates = self.sot_tokenizer.propose_merges(5)
+                if self._projection_mgr.has_sot and self._step_counter % self.cfg.sot_merge_freq == 0 and self._step_counter > 0:
+                    candidates = self._projection_mgr.sot_propose_merges(5)
                     for pair in candidates:
-                        score = self.sot_tokenizer.cooccurrence.get(pair, 0.0)
+                        score = self._projection_mgr.sot_cooccurrence_score(pair)
                         if score >= self.cfg.sot_merge_threshold and score >= self.cfg.sot_min_cooccurrence:
                             try:
-                                self.sot_tokenizer.merge(pair)
+                                self._projection_mgr.sot_merge(pair)
                             except RuntimeError:
                                 break  # Max vocab reached
 
@@ -5039,22 +4722,13 @@ class RTMDKField:
         state: Dict[str, Any] = {
             "step_counter": self._step_counter,
         }
-        if self.sot_tokenizer:
-            state["sot_tokenizer"] = self.sot_tokenizer.get_state()
-        if self.sot_hebbian:
-            state["sot_hebbian"] = {"lr": self.sot_hebbian.lr}
-        if self._sot_field_ema is not None:
-            state["sot_field_ema"] = self._sot_field_ema.tolist()
+        state.update(self._projection_mgr.get_state())
         return state
 
     def load_state(self, state: Dict[str, Any]):
         """Load lightweight state dict for SOT persistence."""
         self._step_counter = state.get("step_counter", self._step_counter)
-        if self.sot_tokenizer and "sot_tokenizer" in state:
-            self.sot_tokenizer.load_state(state["sot_tokenizer"])
-        if self._sot_field_ema is not None and "sot_field_ema" in state:
-            self._sot_field_ema = np.array(
-                state["sot_field_ema"], dtype=np.float32)
+        self._projection_mgr.load_state(state)
 
     @classmethod
     def import_field(cls, path: str, embedder: Callable,
@@ -5083,10 +4757,7 @@ class RTMDKField:
             "config": cd,
             "nodes": nodes_data,
             "stats": self.stats}
-        if self.projection_learner:
-            data["projection_state"] = self.projection_learner.get_state()
-        elif self._raw_projection is not None:
-            data["projection"] = self._raw_projection.tolist()
+        data.update(self._projection_mgr.get_state())
         if self.learnable_kernel:
             data["learnable_kernel"] = self.learnable_kernel.get_state()
         if self.meta_kernel:
@@ -5122,11 +4793,6 @@ class RTMDKField:
             data["scenario_planner"] = self.scenario_planner.get_state()
         if self.engram_manager:
             data["engram_manager"] = self.engram_manager.get_state()
-        # Phase 21: SOT state
-        if self.sot_tokenizer:
-            data["sot_tokenizer"] = self.sot_tokenizer.get_state()
-        if self._sot_field_ema is not None:
-            data["sot_field_ema"] = self._sot_field_ema.tolist()
         return data
 
     @classmethod
@@ -5157,12 +4823,7 @@ class RTMDKField:
             from rtmdk.memory.core import RTMDKMemory
         memory = RTMDKMemory(config=config, embedder=embedder)
 
-        if memory.field.projection_learner is not None and "projection_state" in data:
-            memory.field.projection_learner.load_state(
-                data["projection_state"])
-        elif "projection" in data and memory.field._raw_projection is not None:
-            memory.field._raw_projection = np.array(
-                data["projection"], dtype=np.float32)
+        memory.field._projection_mgr.load_state(data)
         if config.differentiable and "learnable_kernel" in data:
             memory.field.learnable_kernel.load_state(data["learnable_kernel"])
         if config.meta_adaptive and "meta_kernel" in data:

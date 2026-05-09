@@ -128,11 +128,8 @@ class FieldSerializer:
             "stats": field.stats,
         }
 
-        # Add projection state
-        if field.projection_learner:
-            data["projection_state"] = field.projection_learner.get_state()
-        else:
-            data["projection"] = field._raw_projection.tolist()
+        # Add projection + SOT state
+        data.update(field._projection_mgr.get_state())
 
         # Add submodule states
         for attr, key, config_flag in FieldSerializer.STATE_MODULES:
@@ -325,13 +322,8 @@ class FieldSerializer:
             embedder=embedder,
             wal_path=wal_path)
 
-        # Load projection
-        if config.learn_projection and "projection_state" in data:
-            memory.field.projection_learner.load_state(
-                data["projection_state"])
-        elif "projection" in data:
-            memory.field._raw_projection = np.array(
-                data["projection"], dtype=np.float32)
+        # Load projection + SOT state
+        memory.field._projection_mgr.load_state(data)
 
         # Load submodule states
         if config.differentiable and "learnable_kernel" in data:
@@ -364,10 +356,6 @@ class FieldSerializer:
             memory.field.security.load_state(data["security"])
         if getattr(config, "learned_consolidation", False) and "learned_consolidator" in data and memory.field.learned_consolidator is not None:
             memory.field.learned_consolidator.load_state(data["learned_consolidator"])
-        if config.sot_enabled and "sot_tokenizer" in data:
-            if memory.field.sot_tokenizer is not None:
-                memory.field.sot_tokenizer.load_state(data["sot_tokenizer"])
-
         # Load nodes
         logger.info(f"import_field: loading {len(data['nodes'])} nodes")
         for nd in data["nodes"]:

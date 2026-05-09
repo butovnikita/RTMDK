@@ -235,9 +235,9 @@ def test_5_projection_logic(memory):
 
         # Test projection_learner if exists
         if hasattr(
-                memory.field,
-                'projection_learner') and memory.field.projection_learner is not None:
-            proj = memory.field.projection_learner
+                memory.field._projection_mgr,
+                'projection_learner') and memory.field._projection_mgr.projection_learner is not None:
+            proj = memory.field._projection_mgr.projection_learner
             result = proj.project(test_embedding)
             assert result.shape == (
                 256,), f"Expected shape (256,), got {result.shape}"
