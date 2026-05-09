@@ -15,8 +15,9 @@ rtmdk/memory/       — Core memory system (core.py, field.py, config.py)
 rtmdk/memory/sot_v2/ — SOT v2.0 embedder (SIF + contrastive fine-tuning)
 rtmdk/production/   — Production features (reranker, cascade router, BM25)
 rtmdk/engines/      — Causal traversal, planners, evaluators
-rtmdk/support/      — HNSW, projection, BM25
+rtmdk/support/      — HNSW, projection, BM25, circuit breaker
 rtmdk/server/       — FastAPI / GraphQL / WebSocket server
+rtmdk/utils/        — JSON logging, async embedder
 docs/               — Architecture, API reference, setup guides
 tests/              — 738 tests (pytest)
 scripts/            — Benchmarks and diagnostics
@@ -60,9 +61,47 @@ scripts/            — Benchmarks and diagnostics
   - `SentenceReranker` used in `retrieve_nodes()` after cache
   - `FeedbackLoop` accessible via `RTMDKMemory.add_feedback(query, node_id, relevant)`
 
+### Explainability (`rtmdk/memory/explainability.py`)
+- **ResultExplainer:** Human-readable explanations for why a memory was retrieved.
+- **QueryRewriter:** Auto-rewrite query when top-score < threshold.
+- **QueryIntentClassifier:** Classify intent as factual/exploratory/conversational/comparative.
+- **Config:** `sot.result_explainability_enabled`, `sot.query_rewrite_enabled`, `sot.query_rewrite_threshold`, `sot.query_intent_classification_enabled`.
+- **API:** `retrieve_nodes_with_explanations(query, embedding, ...)` → `{results, explanations, intent}`.
+
+### Safety (`rtmdk/memory/safety.py`)
+- **RollbackManager:** Capture snapshots and rollback memory to previous state.
+- **PoisonedMemoryDetector:** Detect nodes with high out-degree, repetitive content, extreme sentiment.
+- **API:** `memory.take_snapshot()`, `memory.rollback(timestamp)`, `memory.detect_poisoned_memories()`.
+
+### Timeline & Narrative (`rtmdk/memory/timeline.py`)
+- **MemoryTimeline:** Chronological view of memories per session/tier/time range.
+- **MemoryNarrator:** Generate human-readable stories from episodic memories. Markdown export.
+- **API:** `timeline.get_timeline(session_id=...)`, `narrator.narrate_session(session_id)`, `narrator.export_markdown(path)`.
+
 ### State Persistence
 - `RTMDKMemory.save_state(dir_path)` — persists engram cache, feedback buffer, metrics snapshot.
 - `RTMDKMemory.load_state(dir_path)` — restores engram cache, feedback loop.
+
+### JSON Logging (`rtmdk/utils/json_logger.py`)
+- Structured JSON logging for ELK/Loki integration.
+- Usage: `setup_json_logging(level=logging.INFO)`.
+
+### Async Embedder (`rtmdk/utils/async_embedder.py`)
+- Async wrapper with request batching for high-throughput scenarios.
+- Usage: `async_embedder = AsyncEmbedder(embed_fn, batch_size=16)`.
+
+### Config Validation
+- `RTMDKConfig.validate()` → list of warning strings for conflicting settings.
+- Auto-called on initialization with `logger.warning`.
+
+### Health Check
+- `RTMDKMemory.health_check()` → `{"status": "healthy"|"degraded"|"unhealthy", "checks": {...}}`.
+- Includes: node count, memory, disk, circuit breaker state, metrics snapshot.
+
+### Circuit Breaker for Embedder
+- `CircuitBreaker` from `rtmdk/support/circuit_breaker.py` wraps embedder.
+- After 3 consecutive failures → returns zero vector and logs warning.
+- Config: `embedder_circuit_breaker_enabled` (default `True`), `embedder_cb_threshold`, `embedder_cb_recovery`.
 
 ## Critical Constraints
 1. **SIF OOM boundary:** Dense PMI matrix in `sif_embedder.fit()` scales as `O(n_valid²)`. For vocab > 5000, sparse PMI path (`scipy.sparse` + `TruncatedSVD`) activates automatically.

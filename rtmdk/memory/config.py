@@ -364,6 +364,10 @@ _FIELD_GROUPS: Dict[str, str] = {
     "query_decomposition_enabled": "SOTConfig",
     "feedback_loop_enabled": "SOTConfig",
     "feedback_loop_persist_path": "SOTConfig",
+    "query_rewrite_enabled": "SOTConfig",
+    "query_rewrite_threshold": "SOTConfig",
+    "result_explainability_enabled": "SOTConfig",
+    "query_intent_classification_enabled": "SOTConfig",
 }
 
 
@@ -751,6 +755,10 @@ class SOTConfig:
     query_decomposition_enabled: bool = False
     feedback_loop_enabled: bool = False
     feedback_loop_persist_path: Optional[str] = None
+    query_rewrite_enabled: bool = False
+    query_rewrite_threshold: float = 0.3
+    result_explainability_enabled: bool = False
+    query_intent_classification_enabled: bool = False
 
 
 @dataclass(init=False, repr=False, eq=False)
@@ -976,3 +984,38 @@ class RTMDKConfig:
             }
         if self.core.pca_n_components is None:
             self.core.pca_n_components = self.core.latent_dim
+
+    def validate(self) -> list:
+        """Check for config conflicts and return list of warning strings."""
+        warnings = []
+        # Check HNSW inconsistencies
+        if not self.retrieval.use_hnsw and self.core.hnsw_min_nodes > 0:
+            warnings.append(
+                f"hnsw_min_nodes={self.core.hnsw_min_nodes} but use_hnsw=False. "
+                "HNSW routing will be disabled."
+            )
+        # Check distributed lock backend
+        if self.sot.distributed_lock_backend == "redis" and not self.sot.distributed_lock_redis_url:
+            warnings.append(
+                "distributed_lock_backend='redis' but distributed_lock_redis_url is not set. "
+                "Will fall back to file backend."
+            )
+        # Check feedback loop without persist path
+        if self.sot.feedback_loop_enabled and not self.sot.feedback_loop_persist_path:
+            warnings.append(
+                "feedback_loop_enabled=True but feedback_loop_persist_path is not set. "
+                "Feedback will be lost on restart."
+            )
+        # Check alert handlers without observability
+        if (self.sot.alert_webhook_url or self.sot.alert_slack_url or self.sot.alert_pagerduty_key) and not self.sot.observability_enabled:
+            warnings.append(
+                "Alert handlers configured but observability_enabled=False. "
+                "Alerts will not fire."
+            )
+        # Check matryoshka mode without truncation dim
+        if getattr(self, "matryoshka_mode", False) and getattr(self, "matryoshka_hnsw_dim", self.core.latent_dim) >= self.core.embedding_dim:
+            warnings.append(
+                f"matryoshka_hnsw_dim ({getattr(self, 'matryoshka_hnsw_dim', self.core.latent_dim)}) >= embedding_dim ({self.core.embedding_dim}). "
+                "No actual truncation will occur."
+            )
+        return warnings

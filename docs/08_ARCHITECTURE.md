@@ -560,3 +560,38 @@ rtmdk/
 ### RAG Quality
 - File: tmdk/memory/rag_quality.py`n- Purpose: Query decomposition, sentence-level reranking, explicit feedback loop.
 - Config: sot.sentence_reranker_enabled, sot.query_decomposition_enabled, sot.feedback_loop_enabled`n
+
+
+## Production Hardening (v8.2.1)
+
+### Observability
+- MemoryMetrics with latency percentiles, cache hit ratio, Prometheus export
+- Alert handlers: Webhook, Slack, PagerDuty
+- JSON structured logging via rtmdk.utils.json_logger
+
+### Distributed Lock
+- File-based (msvcrt/fcntl) and Redis backends
+- Intra-process thread safety
+
+### RAG Quality
+- QueryDecomposer: heuristic AND-split + optional LLM-based decomposition
+- SentenceReranker: sentence-level cosine with batch embedding
+- FeedbackLoop: SOT embedder updates with JSON persistence
+- QueryRewriter: auto-rewrite on low retrieval quality
+- QueryIntentClassifier: factual/exploratory/conversational/comparative
+- ResultExplainer: human-readable retrieval reasons
+
+### Safety
+- RollbackManager: snapshot and rollback memory state
+- PoisonedMemoryDetector: anomaly detection for injected/spam nodes
+- CircuitBreaker for embedder with automatic recovery
+
+### Performance
+- AsyncEmbedder: async batching wrapper for high throughput
+- EngramEmbeddingCache: hot/warm/cold tiers with NPZ save/load
+- Sparse PMI for SIF: scipy.sparse + TruncatedSVD for vocab > 5000
+
+### UX
+- MemoryTimeline: chronological session view
+- MemoryNarrator: story generation and Markdown export
+

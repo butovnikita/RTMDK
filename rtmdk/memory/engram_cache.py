@@ -20,11 +20,12 @@ class EngramEmbeddingCache:
     Cold tier: not stored in memory (falls back to TieredNodeStore).
     """
 
-    def __init__(self, max_hot: int = 10_000, max_warm: int = 90_000):
+    def __init__(self, max_hot: int = 10_000, max_warm: int = 90_000, mmap_path: Optional[str] = None):
         self._hot: OrderedDict[str, np.ndarray] = OrderedDict()
         self._warm: OrderedDict[str, np.ndarray] = OrderedDict()
         self._max_hot = max_hot
         self._max_warm = max_warm
+        self._mmap_path = mmap_path
         self._lock = threading.RLock()
 
     def add(self, node_id: str, embedding: np.ndarray) -> None:

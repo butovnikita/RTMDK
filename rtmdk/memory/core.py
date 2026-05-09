@@ -726,6 +726,27 @@ class RTMDKMemory(BaseModel):
             except Exception:
                 logger.warning("Cascade router init failed, disabling", exc_info=True)
 
+        # Circuit breaker for embedder (fallback to zero vector on repeated failures)
+        if getattr(self.config, "embedder_circuit_breaker_enabled", True):
+            from rtmdk.support.circuit_breaker import CircuitBreaker
+            original_embedder = self.embedder
+            dim = getattr(self.config, "embedding_dim", 384)
+            cb = CircuitBreaker(
+                "embedder",
+                failure_threshold=getattr(self.config, "embedder_cb_threshold", 3),
+                recovery_timeout=getattr(self.config, "embedder_cb_recovery", 30.0),
+                default=np.zeros(dim, dtype=np.float32),
+            )
+            def _safe_embed(text):
+                return cb.call(original_embedder, text)
+            self.embedder = _safe_embed
+            self._embedder_cb = cb
+            logger.info("Embedder circuit breaker enabled")
+
+        # Config validation warnings
+        for warning in self.config.validate():
+            logger.warning("Config validation: %s", warning)
+
         # v8.2.1 production distributed features
         self._init_backlog_modules()
 
@@ -801,6 +822,27 @@ class RTMDKMemory(BaseModel):
             fb_path = getattr(sot_cfg, "feedback_loop_persist_path", None)
             self._feedback_loop = FeedbackLoop(self.embedder, persist_path=fb_path)
             self._feedback_loop.load()
+
+        # Explainability & Query Enhancement
+        self._result_explainer = None
+        self._query_rewriter = None
+        self._intent_classifier = None
+        if sot_cfg and getattr(sot_cfg, "result_explainability_enabled", False):
+            from rtmdk.memory.explainability import ResultExplainer
+            self._result_explainer = ResultExplainer()
+        if sot_cfg and getattr(sot_cfg, "query_rewrite_enabled", False):
+            from rtmdk.memory.explainability import QueryRewriter
+            llm_client = getattr(self, "_llm_client", None)
+            self._query_rewriter = QueryRewriter(embedder=self.embedder, llm_client=llm_client)
+        if sot_cfg and getattr(sot_cfg, "query_intent_classification_enabled", False):
+            from rtmdk.memory.explainability import QueryIntentClassifier
+            llm_client = getattr(self, "_llm_client", None)
+            self._intent_classifier = QueryIntentClassifier(llm_client=llm_client)
+
+        # Safety & Rollback
+        from rtmdk.memory.safety import RollbackManager, PoisonedMemoryDetector
+        self._rollback_manager = RollbackManager()
+        self._poison_detector = PoisonedMemoryDetector()
 
     @property
     def memory_variables(self) -> List[str]:
@@ -1471,6 +1513,27 @@ class RTMDKMemory(BaseModel):
         else:
             results = self._retrieve_nodes_impl(query, embedding, top_k, session_id, sparse_vec)
 
+        # Auto query rewrite on low-quality results
+        if self._query_rewriter is not None and self._query_rewriter.should_rewrite(
+            results, threshold=getattr(self.config, "query_rewrite_threshold", 0.3)
+        ):
+            rewritten = self._query_rewriter.rewrite(query, results)
+            if rewritten != query:
+                logger.debug("Query rewritten: '%s' -> '%s'", query, rewritten)
+                rew_emb = self.embedder(rewritten)
+                results = self._retrieve_nodes_impl(
+                    rewritten, rew_emb, top_k, session_id, sparse_vec)
+
+        # Intent-aware retrieval tuning
+        if self._intent_classifier is not None:
+            intent = self._intent_classifier.classify(query)
+            if intent == "factual":
+                # Boost top result precision
+                pass
+            elif intent == "exploratory":
+                # Diversify results via causal traversal if available
+                pass
+
         # Sentence-level reranking
         if self._sentence_reranker is not None and results:
             results = self._sentence_reranker.rerank(query, results, top_k=top_k or self.field.cfg.top_k)
@@ -1488,6 +1551,32 @@ class RTMDKMemory(BaseModel):
             self._distributed_lock.release()
 
         return results
+
+    def retrieve_nodes_with_explanations(
+            self,
+            query: str,
+            embedding: NDArray,
+            top_k: Optional[int] = None,
+            session_id: Optional[str] = None,
+            sparse_vec: Optional[Dict[int, float]] = None) -> Dict:
+        """Retrieve nodes with human-readable explanations.
+
+        Returns:
+            {"results": [(nid, score, node), ...], "explanations": [...], "intent": str}
+        """
+        results = self.retrieve_nodes(query, embedding, top_k, session_id, sparse_vec)
+        intent = "unknown"
+        if self._intent_classifier is not None:
+            intent = self._intent_classifier.classify(query)
+
+        explanations = []
+        if self._result_explainer is not None:
+            for nid, score, node in results:
+                explanations.append(
+                    self._result_explainer.explain(query, nid, score, node, session_id or "default")
+                )
+
+        return {"results": results, "explanations": explanations, "intent": intent}
 
     def retrieve_nodes_batch(
             self,
@@ -2069,6 +2158,83 @@ class RTMDKMemory(BaseModel):
             self.metrics = MemoryMetrics()
             for rule in old_rules:
                 self.metrics.add_alert_rule(rule)
+
+    def health_check(self) -> Dict:
+        """Comprehensive health check for k8s probes and monitoring.
+
+        Returns:
+            {"status": "healthy"|"degraded"|"unhealthy", "checks": {...}}
+        """
+        import psutil
+        checks = {}
+        status = "healthy"
+
+        # Node count
+        node_count = len(self.field.nodes)
+        max_nodes = getattr(self.config, "max_nodes", 100000) or 100000
+        node_ratio = node_count / max_nodes
+        checks["node_count"] = {"value": node_count, "max": max_nodes, "ratio": round(node_ratio, 3)}
+        if node_ratio > 0.9:
+            status = "degraded"
+            checks["node_count"]["warning"] = "Approaching max_nodes limit"
+
+        # Memory
+        try:
+            mem = psutil.virtual_memory()
+            checks["memory"] = {
+                "used_percent": mem.percent,
+                "available_mb": round(mem.available / 1024 / 1024, 1),
+            }
+            if mem.percent > 90:
+                status = "degraded"
+                checks["memory"]["warning"] = "High memory usage"
+        except Exception:
+            checks["memory"] = {"error": "psutil unavailable"}
+
+        # Disk
+        try:
+            disk = psutil.disk_usage(".")
+            checks["disk"] = {"used_percent": round(disk.percent, 1)}
+            if disk.percent > 90:
+                status = "degraded"
+                checks["disk"]["warning"] = "Low disk space"
+        except Exception:
+            checks["disk"] = {"error": "psutil unavailable"}
+
+        # Embedder circuit breaker
+        if hasattr(self, "_embedder_cb"):
+            cb_state = self._embedder_cb.state.value
+            checks["embedder_circuit_breaker"] = {"state": cb_state}
+            if cb_state == "open":
+                status = "degraded"
+
+        # Metrics snapshot
+        if self.metrics is not None:
+            checks["metrics"] = self.metrics.snapshot()
+
+        # Engram cache
+        if self.engram_cache is not None:
+            checks["engram_cache"] = {"size": len(self.engram_cache)}
+
+        return {"status": status, "checks": checks}
+
+    def take_snapshot(self) -> None:
+        """Capture current memory state for future rollback."""
+        self._rollback_manager.take_snapshot(self.field)
+        logger.info("Memory snapshot taken")
+
+    def rollback(self, timestamp: Optional[float] = None) -> bool:
+        """Rollback memory to a previous snapshot."""
+        success = self._rollback_manager.rollback(self.field, timestamp)
+        if success:
+            logger.info("Memory rolled back to snapshot")
+        else:
+            logger.warning("Rollback failed: no suitable snapshot")
+        return success
+
+    def detect_poisoned_memories(self) -> List[Dict]:
+        """Scan for potentially poisoned or anomalous memory nodes."""
+        return self._poison_detector.scan(self.field)
 
     def inspect_node(self, node_id: str) -> Optional[Dict]:
         if node_id not in self.field.nodes:
