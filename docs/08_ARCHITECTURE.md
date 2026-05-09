@@ -418,7 +418,7 @@ rtmdk/
 ├── config.py            # 8 пресетов RTMDKConfig
 │
 ├── memory/              # Core kernel
-│   ├── field.py         # RTMDKField (~5200 lines, декомпозируется)
+│   ├── field.py         # RTMDKField (~4500 lines, 4 managers extracted)
 │   ├── core.py          # RTMDKMemory (~2600 lines, pipeline & API)
 │   ├── resonance.py     # ResonanceEngine (math extraction)
 │   ├── cache_manager.py # NodeCacheManager (cache extraction)

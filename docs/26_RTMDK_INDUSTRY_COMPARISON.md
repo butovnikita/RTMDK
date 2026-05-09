@@ -210,8 +210,11 @@ RTMDK evaluated on standard BEIR datasets with `sentence-transformers/all-MiniLM
 | **NFCorpus** | Cosine | 0.040 | 0.112 | 0.153 | 0.505 | 0.13ms |
 | **NFCorpus** | FAISS IVF | 0.035 | 0.087 | 0.124 | 0.471 | **0.02ms** |
 | **NFCorpus** | **RTMDK** | 0.041 | 0.112 | 0.153 | **0.508** | 0.41ms |
+| **ArguAna** | Cosine | 0.000 | 0.581 | 0.761 | 0.248 | 0.20ms |
+| **ArguAna** | FAISS IVF | 0.000 | 0.578 | 0.755 | 0.246 | **0.05ms** |
+| **ArguAna** | **RTMDK** | 0.000 | 0.581 | 0.761 | 0.248 | 1.14ms |
 
-**Interpretation:**
+**Interpretation:
 - RTMDK achieves **identical recall to exact cosine** on identity projection (expected — same unit-sphere embeddings)
 - On NFCorpus, RTMDK **slightly wins on MRR** (0.508 vs 0.505) — likely due to phase resonance gating on edge cases
 - FAISS IVF is 10-20× faster but loses 2-5% recall — standard ANN trade-off
