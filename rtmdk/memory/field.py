@@ -1873,6 +1873,91 @@ class RTMDKField:
         else:
             return results[:5]
 
+    def query_batch(
+        self,
+        embeddings: NDArray,
+        phase: float = 0.0,
+        top_k: Optional[int] = None,
+        modality: str = "text",
+        session_id: Optional[str] = None,
+        query_texts: Optional[List[str]] = None,
+    ) -> List[List[Tuple[str, float, MemoryNode]]]:
+        """Batch query — vectorized resonance for multiple queries at once.
+
+        Returns a list of result lists, one per query.
+        Uses _batch_resonance for efficient SIMD computation.
+        """
+        t0 = time.time()
+        top_k = top_k or self.cfg.top_k
+        n_queries = len(embeddings)
+
+        # Project all embeddings at once
+        query_latents = np.array([self._project(e) for e in embeddings])
+        for ql in query_latents:
+            self._ensure_adaptive_pc(ql)
+
+        # Build cache if dirty
+        if self._cache_dirty or self._cached_positions is None:
+            self._build_node_cache()
+
+        n_nodes = len(self.node_index)
+        if n_nodes == 0:
+            return [[] for _ in range(n_queries)]
+
+        # Batch resonance over ALL nodes for ALL queries
+        query_phases = np.full(n_queries, phase, dtype=np.float32)
+        all_scores = self._batch_resonance(
+            query_latents, query_phases, self.node_index
+        )  # shape: (n_queries, n_nodes)
+
+        # Apply session boost and threshold filter per query
+        results_per_query: List[List[Tuple[str, float, MemoryNode]]] = []
+        for qi in range(n_queries):
+            scores = all_scores[qi]
+            if session_id and session_id != "default":
+                session_boosts = np.array([
+                    1.3 if self.nodes[nid].content.get("session") == session_id else 1.0
+                    for nid in self.node_index
+                ], dtype=np.float32)
+                scores = scores * session_boosts
+
+            above = scores >= self.cfg.min_response
+            indices = np.where(above)[0]
+            if len(indices) == 0:
+                results_per_query.append([])
+                continue
+
+            filtered_scores = scores[indices]
+            n_results = min(len(indices), top_k * 2)
+            if len(indices) > top_k * 3:
+                partition_idx = np.argpartition(filtered_scores, -n_results)[-n_results:]
+                top_local = partition_idx[np.argsort(filtered_scores[partition_idx])[::-1][:top_k]]
+            else:
+                top_local = np.argsort(filtered_scores)[::-1][:top_k]
+
+            top_indices = indices[top_local]
+            top_scores = filtered_scores[top_local]
+
+            query_results = []
+            for idx, score in zip(top_indices, top_scores):
+                nid = self.node_index[idx]
+                node = self.nodes[nid]
+                node.last_resonated = time.time()
+                query_results.append((nid, float(score), node))
+            results_per_query.append(query_results)
+
+        self.stats["total_queries"] += n_queries
+        for results in results_per_query:
+            if results:
+                self.stats["avg_response"] = 0.9 * self.stats["avg_response"] + 0.1 * results[0][1]
+
+        if self.cfg.sparse_routing:
+            elapsed_ms = (time.time() - t0) * 1000
+            self.stats["avg_shard_query_time_ms"] = (
+                0.95 * self.stats["avg_shard_query_time_ms"] + 0.05 * elapsed_ms)
+
+        return results_per_query
+
     def query(self,
               embedding: NDArray,
               phase: float = 0.0,

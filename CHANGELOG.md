@@ -52,13 +52,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 95+ new tests covering all pipeline modules
 - Dedicated `pipeline-integration` job in GitHub Actions
 - Pipeline benchmark smoke test in CI
+- `scripts/stress_test_100k.py` — enterprise stress test with tiered storage v2
+- `tests/test_batch_pipeline.py` — batch query and pipeline executor tests
+
+#### Batch & Vectorized Retrieval
+- `RTMDKField.query_batch()` — true batch resonance across all cached nodes via `_batch_resonance`
+- `BatchPipelineExecutor` v2 with real batch embed + batch retrieve optimization
+- `BatchPipelineExecutor` backward-compatible fallback when `field` not provided
+
+#### Monitoring & Deployment
+- `docs/25_MONITORING_DEPLOYMENT.md` — complete guide for Prometheus + Grafana + Alertmanager stack
 
 ### Changed
 - Legacy `retrieve_nodes()` delegates to pipeline when `pipeline_enabled=True`
 - Updated `README.md`, `docs/01_API_REFERENCE.md`, `docs/PIPELINE_ARCHITECTURE.md`
+- `MemoryNode.from_dict()` now filters to known fields — robust against extra keys from tiered storage serialization
 
 ### Fixed
 - Circuit breaker auto-recovery from half-open to closed after successful probes
+- **Tiered Storage v2 warm-tier bug**: `_promote_from_warm` and `_demote_to_warm` now use `latent_pos` instead of `embedding`, preserving `MemoryNode` deserialization integrity
+- **Tiered Storage v2 warm-tier slot reuse**: `_evict_warm_to_cold` now correctly returns freed slot index instead of decrementing `_warm_next_idx`, preventing `IndexError: index N is out of bounds`
+- **Tiered Storage v2 cold-tier serialization**: `_write_cold` and `_read_cold` now preserve full node dict and `latent_pos` vector
 
 ## [8.2.1] — 2026-04-XX
 

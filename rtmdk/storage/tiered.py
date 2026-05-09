@@ -110,14 +110,17 @@ class TieredNodeStore:
     def _write_cold(self, key: str, data: Dict[str, Any]) -> None:
         """Write node data to cold tier (compressed JSON)."""
         path = self._cold_path(key)
-        # Serialize embedding separately as bytes, rest as JSON
-        payload = {
-            "text": data.get("text", ""),
-            "meta": data.get("meta", {}),
-            "embedding": data["embedding"].tolist() if "embedding" in data else None,
-        }
+        # Serialize latent_pos separately, rest as JSON-serializable dict
+        import json as _json
+        payload = {k: v for k, v in data.items() if k != "latent_pos"}
+        if data.get("latent_pos") is not None:
+            payload["latent_pos"] = data["latent_pos"].tolist()
+        # Convert numpy arrays to lists for JSON serialization
+        for k, v in list(payload.items()):
+            if isinstance(v, np.ndarray):
+                payload[k] = v.tolist()
         with gzip.open(path, "wt", encoding="utf-8") as f:
-            json.dump(payload, f)
+            _json.dump(payload, f)
         self._cold_manifest[key] = {"size": path.stat().st_size, "tier": "cold"}
 
     def _read_cold(self, key: str) -> Optional[Dict[str, Any]]:
@@ -127,8 +130,8 @@ class TieredNodeStore:
             return None
         with gzip.open(path, "rt", encoding="utf-8") as f:
             payload = json.load(f)
-        if payload.get("embedding"):
-            payload["embedding"] = np.array(payload["embedding"], dtype=np.float32)
+        if payload.get("latent_pos"):
+            payload["latent_pos"] = np.array(payload["latent_pos"], dtype=np.float32)
         return payload
 
     def _delete_cold(self, key: str) -> None:
@@ -140,40 +143,47 @@ class TieredNodeStore:
 
     def _demote_to_warm(self, entry: _TieredEntry) -> None:
         """Move a node from hot to warm tier."""
-        if self._warm_next_idx >= self._warm_capacity:
-            # Warm full: evict oldest warm to cold
-            self._evict_warm_to_cold()
-        idx = self._warm_next_idx
-        self._warm_next_idx += 1
+        if len(self._warm_meta) >= self._warm_capacity or self._warm_next_idx >= self._warm_capacity:
+            # Warm full: evict oldest warm to cold and reuse its slot
+            idx = self._evict_warm_to_cold()
+        else:
+            idx = self._warm_next_idx
+            self._warm_next_idx += 1
         self._warm_index[entry.key] = idx
-        if entry.data.get("embedding") is not None:
-            self._warm_mmap[idx] = entry.data["embedding"]
-        self._warm_meta[entry.key] = {k: v for k, v in entry.data.items() if k != "embedding"}
+        # Store latent_pos vector in memmap; keep remaining metadata separate
+        if entry.data.get("latent_pos") is not None:
+            self._warm_mmap[idx] = entry.data["latent_pos"]
+        self._warm_meta[entry.key] = {k: v for k, v in entry.data.items() if k != "latent_pos"}
         entry.tier = "warm"
 
-    def _evict_warm_to_cold(self) -> None:
-        """Evict least-frequently-used warm entry to cold."""
+    def _evict_warm_to_cold(self) -> int:
+        """Evict least-frequently-used warm entry to cold.
+
+        Returns the freed slot index for reuse.
+        """
         if not self._warm_meta:
-            return
+            # All warm slots freed (promoted back to hot); reset counter
+            self._warm_next_idx = 0
+            return 0
         # Find oldest / least accessed (simplified: oldest)
         lfu_key = min(self._warm_meta.keys(), key=lambda k: self._warm_meta[k].get("_last_access", 0))
         data = dict(self._warm_meta[lfu_key])
         idx = self._warm_index[lfu_key]
-        data["embedding"] = np.array(self._warm_mmap[idx])
+        data["latent_pos"] = np.array(self._warm_mmap[idx])
         self._write_cold(lfu_key, data)
         # Clear warm slot
         del self._warm_meta[lfu_key]
         del self._warm_index[lfu_key]
         self._warm_mmap[idx] = 0
-        self._warm_next_idx = max(0, self._warm_next_idx - 1)
         self._demotions += 1
+        return idx
 
     def _promote_from_warm(self, key: str) -> Dict[str, Any]:
         """Load node from warm into hot."""
         idx = self._warm_index[key]
-        embedding = np.array(self._warm_mmap[idx])
+        latent_pos = np.array(self._warm_mmap[idx])
         data = dict(self._warm_meta[key])
-        data["embedding"] = embedding
+        data["latent_pos"] = latent_pos
         # Clear warm slot
         del self._warm_meta[key]
         del self._warm_index[key]
