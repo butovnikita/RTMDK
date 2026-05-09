@@ -107,7 +107,7 @@ class TieredNodeStoreAdapter(MutableMapping):
         return list(self._store._cold_manifest.keys())
 
     def get_batch(self, node_ids):
-        """Retrieve multiple nodes by ID."""
+        """Retrieve multiple nodes by ID (with promotion)."""
         result = []
         for nid in node_ids:
             try:
@@ -115,6 +115,11 @@ class TieredNodeStoreAdapter(MutableMapping):
             except KeyError:
                 pass
         return result
+
+    def peek_batch(self, node_ids):
+        """Read multiple nodes WITHOUT promotion — fast bulk access."""
+        raw_list = self._store.peek_batch(node_ids)
+        return [self._data_to_node(data) for data in raw_list]
 
     def close(self) -> None:
         self._store.close()

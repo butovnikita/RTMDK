@@ -68,6 +68,7 @@ class RetrieveStage(PipelineStage):
             top_k=ctx.top_k,
             session_id=ctx.session_id,
             modality=self.modality,
+            query_text=ctx.query_text,
         )
         return ctx
 

@@ -343,6 +343,7 @@ _FIELD_GROUPS: Dict[str, str] = {
     "tiered_storage_path": "MemorySystemConfig",
     "tiered_hot_pct": "MemorySystemConfig",
     "tiered_warm_pct": "MemorySystemConfig",
+    "tiered_fallback_enabled": "MemorySystemConfig",
     "tda_check_freq": "RetrievalConfig",
     "tda_monitoring": "RetrievalConfig",
     "tension_spike_threshold": "ProductionConfig",
@@ -693,6 +694,7 @@ class MemorySystemConfig:
     tiered_storage_path: Optional[str] = None
     tiered_hot_pct: float = 0.01
     tiered_warm_pct: float = 0.09
+    tiered_fallback_enabled: bool = True  # Enable warm/cold tier fallback in query()
 
 
 @dataclass

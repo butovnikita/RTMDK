@@ -134,7 +134,7 @@ def run_stress_test(
         min_response=0.001,
         bandwidth=1.0,
         phase_coupling=0.0,
-        use_hnsw=True,
+        use_hnsw=False,
         learn_projection=False,
         projection_mode="identity",
         pipeline_enabled=True,

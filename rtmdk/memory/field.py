@@ -1498,6 +1498,35 @@ class RTMDKField:
         """Batch resonance computation. Pre-selected backend avoids hot-path branching."""
         return self._batch_resonance_fn(query_latents, query_phases, node_ids)
 
+    def _batch_resonance_nodes(
+            self,
+            query_latents: NDArray,
+            query_phases: NDArray,
+            nodes: List[Any]) -> NDArray:
+        """Batch resonance over a pre-materialized list of MemoryNode objects.
+
+        Avoids self.nodes[nid] lookups — critical for tiered storage where
+        __getitem__ triggers promotion/demotion.
+        """
+        if not nodes:
+            return np.empty((len(query_latents), 0), dtype=np.float32)
+        node_positions = np.array([n.latent_pos for n in nodes])
+        node_phases = np.array([n.phase for n in nodes])
+        node_amplitudes = np.array([n.amplitude for n in nodes])
+        node_saliences = np.array([n.salience for n in nodes])
+        dists = cdist(query_latents, node_positions)
+        bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self._effective_bandwidth
+        bw = np.maximum(bw, 1e-8)
+        pc = self._effective_pc
+        if np.ndim(bw) == 0:
+            spatial = np.exp(-dists ** 2 / (2 * bw ** 2))
+        else:
+            spatial = np.exp(-dists ** 2 / (2 * bw[np.newaxis, :] ** 2))
+        phase_diff = query_phases[:, np.newaxis] - node_phases[np.newaxis, :]
+        phase_align = 0.5 + 0.5 * np.cos(phase_diff)
+        response = spatial * ((1 - pc) + pc * phase_align)
+        return response * node_amplitudes[np.newaxis, :] * node_saliences[np.newaxis, :]
+
     def _batch_resonance_numpy(
             self,
             query_latents: NDArray,
@@ -2055,17 +2084,19 @@ class RTMDKField:
                 query_latent, phase, top_k, modality, session_id, t0)
 
         # Track 2: Fallback to warm/cold tiers if tiered storage is enabled
-        if self._tiered_store is not None and len(results) < top_k:
+        if (self._tiered_store is not None and
+                self.cfg.tiered_fallback_enabled and
+                len(results) < top_k):
             needed = top_k - len(results)
-            # Warm candidates
+            # Warm candidates — peek without promotion (fast bulk read)
             warm_ids = self._tiered_store.warm_ids()
             if warm_ids:
-                warm_nodes = self._tiered_store.get_batch(warm_ids)
+                warm_nodes = self._tiered_store.peek_batch(warm_ids)
                 if warm_nodes:
-                    scores = self._batch_resonance(
+                    scores = self._batch_resonance_nodes(
                         query_latent[np.newaxis, :],
                         np.array([phase], dtype=np.float32),
-                        [n.id for n in warm_nodes],
+                        warm_nodes,
                     )[0]
                     for idx, node in enumerate(warm_nodes):
                         resp = float(
@@ -2081,12 +2112,12 @@ class RTMDKField:
                     import random
                     sample_size = min(len(cold_ids), needed * 5)
                     sample_ids = random.sample(cold_ids, sample_size)
-                    cold_nodes = self._tiered_store.get_batch(sample_ids)
+                    cold_nodes = self._tiered_store.peek_batch(sample_ids)
                     if cold_nodes:
-                        scores = self._batch_resonance(
+                        scores = self._batch_resonance_nodes(
                             query_latent[np.newaxis, :],
                             np.array([phase], dtype=np.float32),
-                            [n.id for n in cold_nodes],
+                            cold_nodes,
                         )[0]
                         for idx, node in enumerate(cold_nodes):
                             resp = float(scores[idx]) * (

@@ -11,7 +11,7 @@ from rtmdk.pipeline.planned_executor import PlannedPipelineExecutor
 
 
 class DummyField:
-    def query(self, embedding, top_k=5, session_id=None, modality="text"):
+    def query(self, embedding, top_k=5, session_id=None, modality="text", **kwargs):
         return [(f"node_{i}", 0.9 - i * 0.05, None) for i in range(top_k)]
 
 

@@ -248,6 +248,43 @@ class TieredNodeStore:
 
             return None
 
+    def peek(self, key: str) -> Optional[Dict[str, Any]]:
+        """Read a node WITHOUT promoting — used for batch query fallback.
+
+        Checks hot, warm, and cold tiers in order but leaves the node in
+        its current tier.  Much faster than get() for bulk reads.
+        """
+        with self._lock:
+            # Hot
+            if key in self._hot:
+                return self._hot[key].data
+            # Warm
+            if key in self._warm_meta:
+                idx = self._warm_index[key]
+                data = dict(self._warm_meta[key])
+                data["latent_pos"] = np.array(self._warm_mmap[idx])
+                return data
+            # Cold
+            return self._read_cold(key)
+
+    def peek_batch(self, keys: List[str]) -> List[Dict[str, Any]]:
+        """Batch peek without promotion."""
+        with self._lock:
+            results = []
+            for key in keys:
+                data = None
+                if key in self._hot:
+                    data = self._hot[key].data
+                elif key in self._warm_meta:
+                    idx = self._warm_index[key]
+                    data = dict(self._warm_meta[key])
+                    data["latent_pos"] = np.array(self._warm_mmap[idx])
+                else:
+                    data = self._read_cold(key)
+                if data is not None:
+                    results.append(data)
+            return results
+
     def delete(self, key: str) -> bool:
         """Remove a node from all tiers."""
         with self._lock:
