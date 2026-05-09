@@ -2504,13 +2504,9 @@ class RTMDKMemory(BaseModel):
         if name == "get_dashboard":
             return self.field.get_field_health
         _proxy_methods = {
-            "get_field_health", "trigger_healing",
+            "get_field_health",
             "counterfactual_query", "get_causal_summary",
-            "evolve_continuous", "get_response_smoothness",
-            "create_plan", "verify_hypothesis", "execute_tool",
-            "register_tool", "evaluate_response", "compare_shadow",
-            "get_cross_modal_stats", "get_meta_controller_state",
-            "get_federated_status", "export_field", "import_field",
+            "export_field", "import_field",
         }
         if name in _proxy_methods:
             return getattr(self.field, name)

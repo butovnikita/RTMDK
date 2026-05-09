@@ -640,32 +640,6 @@ def _locked(method):
     return wrapper
 
 
-def _copy_node(node):
-    """Shallow copy of a MemoryNode with copied mutable fields."""
-    n = copy.copy(node)
-    n.latent_pos = node.latent_pos.copy()
-    n.lineage = list(node.lineage)
-    n.content = dict(node.content)
-    n.causal_strength = dict(node.causal_strength)
-    n.causal_parents = list(node.causal_parents)
-    n.conflict_with = list(node.conflict_with)
-    if node.pre_consolidation_pos is not None:
-        n.pre_consolidation_pos = node.pre_consolidation_pos.copy()
-    if node.gradient_cache is not None:
-        n.gradient_cache = node.gradient_cache.copy()
-    if node.velocity is not None:
-        n.velocity = node.velocity.copy()
-    if node.acceleration is not None:
-        n.acceleration = node.acceleration.copy()
-    if node.modal_embedding is not None:
-        n.modal_embedding = node.modal_embedding.copy()
-    if node.covariance is not None:
-        n.covariance = node.covariance.copy()
-    n.do_interventions = {k: (v.copy() if isinstance(v, np.ndarray) else v)
-                          for k, v in node.do_interventions.items()}
-    return n
-
-
 class RTMDKField:
     def __init__(
             self,
@@ -1226,6 +1200,14 @@ class RTMDKField:
     def _ensure_cache(self) -> None:
         """Lazy cache rebuild if dirty."""
         self._cache_mgr.ensure_built(self)
+
+    @staticmethod
+    def _extract_text(content: Dict) -> str:
+        """Extract primary text from node content, handling v1/v2 formats."""
+        text = content.get("text", "")
+        if text:
+            return text
+        return f"{content.get('input_text', '')} {content.get('output_text', '')}".strip()
 
     def _project(self, embedding: NDArray) -> NDArray:
         return self._projection_mgr.project(embedding)
@@ -2039,14 +2021,9 @@ class RTMDKField:
                     self.stats["cross_modal_recall"] + 0.1 * float(np.mean(cm_scores))
 
         if len(results) == 0 and self.cfg.bm25_fallback and self.bm25_index:
-            # Handle both v1 (text) and v2 (input_text + output_text) nodes
             texts = []
             for nid in self.node_index[:100]:
-                content = self.nodes[nid].content
-                t = content.get("text", "")
-                if not t:
-                    t = f"{content.get('input_text', '')} {content.get('output_text', '')}".strip(
-                    )
+                t = self._extract_text(self.nodes[nid].content)
                 if t:
                     texts.append(t)
             fallback_query = query_text if query_text else " ".join(texts)
@@ -2467,12 +2444,7 @@ class RTMDKField:
         if self.cfg.use_hnsw and self.hnsw_index:
             self._index_mgr.hnsw_insert(nid, latent)
         if self.cfg.bm25_fallback and self.bm25_index:
-            # Handle both v1 (text) and v2 (input_text + output_text) nodes
-            text = content.get("text", "")
-            if not text:
-                input_t = content.get("input_text", "")
-                output_t = content.get("output_text", "")
-                text = f"{input_t} {output_t}".strip()
+            text = self._extract_text(content)
             if text:
                 self._index_mgr.bm25_add(nid, text)
 
@@ -2619,11 +2591,7 @@ class RTMDKField:
         # --- Batch BM25 insert ---
         if self.cfg.bm25_fallback and self.bm25_index:
             for i, nid in enumerate(batch_nids):
-                text = contents[i].get("text", "")
-                if not text:
-                    input_t = contents[i].get("input_text", "")
-                    output_t = contents[i].get("output_text", "")
-                    text = f"{input_t} {output_t}".strip()
+                text = self._extract_text(contents[i])
                 if text:
                     self._index_mgr.bm25_add(nid, text)
 
@@ -3672,146 +3640,6 @@ class RTMDKField:
             "issues": issues[:20],
         }
 
-    def evolve_continuous(self,
-                          inputs: Optional[List[Dict]] = None,
-                          use_sde: bool = False) -> NDArray:
-        return np.array([])
-
-    def _ode_evolve_placeholder(self):
-        """ODE dynamics removed in v8.2.2 cleanup."""
-        pass
-
-    def _compute_topology_gradient(self,
-                          inputs: Optional[List[Dict]] = None,
-                          use_sde: bool = False) -> NDArray:
-        # Fix 2: Deterministic node order via node_index
-        ordered_nodes = [self.nodes[nid]
-                         for nid in self.node_index if nid in self.nodes]
-        initial_state = np.array(
-            [n.latent_pos for n in ordered_nodes]).flatten()
-        input_signal = None
-        if inputs:
-            input_signal = np.array(
-                [self._project(inp["embedding"]) for inp in inputs]).flatten()
-            # Validate input_signal length matches node count to prevent ODE
-            # reshape crash
-            expected_len = len(ordered_nodes) * self.cfg.latent_dim
-            if len(input_signal) != expected_len:
-                logger.warning(
-                    f"ODE input_signal length {len(input_signal)} != "
-                    f"expected {expected_len} (nodes={len(ordered_nodes)}). "
-                    f"Falling back to no input signal.")
-                input_signal = None
-        return np.array([])
-        # H2: Validate trajectory size before reshape to prevent silent
-        # corruption
-        expected_size = len(ordered_nodes) * self.cfg.latent_dim
-        if trajectory[-1].size != expected_size:
-            logger.warning(
-                f"ODE trajectory size {trajectory[-1].size} != expected {expected_size}. Skipping update.")
-            return trajectory
-        final_state = trajectory[-1].reshape(
-            len(ordered_nodes), self.cfg.latent_dim)
-        for i, nid in enumerate(self.node_index):
-            if nid in self.nodes and i < len(final_state):
-                old_pos = self.nodes[nid].latent_pos.copy()
-                self.nodes[nid].latent_pos = final_state[i].astype(np.float32)
-                self.nodes[nid].velocity = (
-                    self.nodes[nid].latent_pos -
-                    old_pos).astype(
-                    np.float32)
-        return trajectory
-
-    def create_plan(
-            self,
-            goal: str,
-            available_tools: List[str],
-            context: Optional[Dict] = None) -> AgentPlan:
-        if not self.agent_planner:
-            return AgentPlan(
-                goal=goal,
-                subtasks=[],
-                tools_needed=[],
-                estimated_steps=0,
-                confidence=0.0,
-                reasoning="Agent orchestration not enabled")
-        self.stats["plans_created"] += 1
-        ctx = context or {}
-        ctx["hypothesis_verification"] = self.cfg.hypothesis_verification
-        return self.agent_planner.create_plan(goal, available_tools, ctx)
-
-    def verify_hypothesis(self, hypothesis: str,
-                          active_nodes: Optional[List[str]] = None) -> Hypothesis:
-        if not self.hypothesis_verifier or not self.causal_engine:
-            return Hypothesis(
-                statement=hypothesis,
-                confidence=0.5,
-                evidence_nodes=[],
-                causal_path=[],
-                verified=False,
-                verification_score=0.5)
-        self.stats["hypotheses_verified"] += 1
-        nodes = active_nodes or self.node_index
-        return self.hypothesis_verifier.verify(
-            hypothesis, self.causal_engine, nodes)
-
-    def execute_tool(self,
-                     tool_name: str,
-                     arguments: Dict[str,
-                                     Any]) -> ToolCall:
-        if not self.tool_router:
-            return ToolCall(
-                tool_name=tool_name,
-                arguments=arguments,
-                error="Tool router not enabled")
-        if self.agent_planner and not self.agent_planner.can_call_tool(
-                tool_name):
-            return ToolCall(
-                tool_name=tool_name,
-                arguments=arguments,
-                error="Tool call limit reached")
-        self.stats["tool_calls"] += 1
-        if self.agent_planner:
-            self.agent_planner.record_tool_call(tool_name)
-        result = self.tool_router.execute(tool_name, arguments)
-        if result.success:
-            self.stats["tool_misuse_rate"] = self.tool_router.get_misuse_rate()
-        return result
-
-    def register_tool(self, name: str, func: Callable):
-        if self.tool_router:
-            self.tool_router.register_tool(name, func)
-
-    def evaluate_response(
-            self,
-            question: str,
-            answer: str,
-            contexts: List[str],
-            ground_truth: Optional[str] = None) -> EvalResult:
-        if not self.ragas_evaluator:
-            return EvalResult()
-        self.stats["evaluations"] += 1
-        causal_edges = None
-        if self.causal_engine:
-            causal_edges = [(k[0], k[1], v.strength)
-                            for k, v in self.causal_engine.causal_effects.items()]
-        result = self.ragas_evaluator.evaluate(
-            question, answer, contexts, ground_truth, causal_edges)
-        self.stats["ragas_overall"] = result.overall_score
-        if self.rollback_manager:
-            needs_rollback = self.rollback_manager.record_score(
-                result.overall_score)
-            if needs_rollback:
-                self.stats["rollbacks"] += 1
-        return result
-
-    def compare_shadow(self, shadow_score: float,
-                       production_score: float) -> Dict[str, Any]:
-        if not self.shadow_evaluator:
-            return {}
-        self.stats["shadow_comparisons"] += 1
-        return self.shadow_evaluator.compare(shadow_score, production_score)
-
     def step(self, inputs: Optional[List[Dict]] = None):
         self._step_counter += 1
 
@@ -4299,26 +4127,6 @@ class RTMDKField:
                 key=lambda x: x[1], reverse=True)[:10],
         }
 
-    # Track 10: Cross-modal, Meta-controller, Federated stats
-    def get_cross_modal_stats(self) -> Dict:
-        return {
-            "cross_modal_enabled": self.cfg.cross_modal,
-            "cross_modal_queries": self.stats.get("cross_modal_queries", 0),
-            "cross_modal_recall": self.stats.get("cross_modal_recall", 0.0),
-            "kernel_weight": self.cfg.cross_modal_kernel_weight,
-            "modal_phase_offsets": self.cfg.modal_phase_offsets,
-        }
-
-    def get_meta_controller_state(self) -> Dict:
-        if self.meta_controller:
-            return self.meta_controller.get_state()
-        return {"enabled": False}
-
-    def get_federated_status(self) -> Dict:
-        if self.federated:
-            return self.federated.get_sync_status()
-        return {"enabled": False}
-
     # ========================================================================
     # PHASE 12 TRACK 1: SPARSE RESONANT ROUTING (MoE-memory)
     # ========================================================================
@@ -4653,52 +4461,6 @@ class RTMDKField:
 
     # ========================================================================
     # PHASE 13 TRACK 1: GOAL MANAGEMENT
-    # ========================================================================
-
-    def add_goal(self, description: str, goal_id: Optional[str] = None,
-                 subgoals: Optional[List[str]] = None,
-                 priority: float = 1.0) -> str:
-        """Add a goal to the teleological layer."""
-        if not self.goal_tracker:
-            self.goal_tracker = GoalTracker(
-                self.cfg.max_goals, self.cfg.goal_decay,
-                self.cfg.goal_completion_threshold
-            )
-        return self.goal_tracker.add_goal(
-            description, goal_id, subgoals, priority)
-
-    def update_goal_completion(self, goal_id: str, completion: float,
-                               related_nodes: Optional[List[str]] = None):
-        """Update goal completion progress."""
-        if self.goal_tracker:
-            self.goal_tracker.update_completion(
-                goal_id, completion, related_nodes)
-
-    def get_active_goals(self) -> List[Dict]:
-        """Get current active goals."""
-        if not self.goal_tracker:
-            return []
-        return [g.to_dict() for g in self.goal_tracker.get_active_goals()]
-
-    # ========================================================================
-    # PHASE 13 TRACK 3: RL FEEDBACK
-    # ========================================================================
-
-    def apply_rl_feedback(
-            self,
-            response: str,
-            context_node_ids: List[str]) -> float:
-        """Apply RL feedback from LLM response."""
-        if not self.rl_feedback_loop:
-            self.rl_feedback_loop = RLFeedbackLoop(
-                self.cfg.rl_learning_rate, self.cfg.rl_reward_window
-            )
-        reward = self.rl_feedback_loop.extract_reward_from_response(
-            response, context_node_ids)
-        self.rl_feedback_loop.apply_field_updates(self)
-        self.stats["avg_rl_reward"] = self.rl_feedback_loop.get_average_reward()
-        return reward
-
     @_locked
     def export_field(self, path: str, fmt: Optional[str] = None):
         """Export field state to file.
@@ -4933,16 +4695,6 @@ class RTMDKField:
             memory.field.node_index.append(node.id)
         memory.field.stats = data.get("stats", memory.field.stats)
         return memory
-
-    def shutdown(self):
-        """Graceful shutdown: wait for background consolidation to finish."""
-        if self._consolidation_future is not None and not self._consolidation_future.done():
-            try:
-                self._consolidation_future.result(timeout=120)
-            except Exception:
-                pass
-        self._consolidation_executor.shutdown(wait=False)
-
 
 # ============================================================================
 # RTMDKMemory v7
