@@ -1105,4 +1105,32 @@ class RTMDKConfig:
                 "query_rewrite_enabled=True but no embedder provided to RTMDKMemory. "
                 "Heuristic rewrite will be skipped; LLM fallback required."
             )
+        # Pipeline breaker validation
+        prod = self.production
+        if prod.pipeline_breaker_failure_threshold < 1:
+            warnings.append(
+                f"pipeline_breaker_failure_threshold={prod.pipeline_breaker_failure_threshold} but must be >= 1. "
+                "Circuit breaker will not trip."
+            )
+        if prod.pipeline_breaker_latency_violation_threshold < 1:
+            warnings.append(
+                f"pipeline_breaker_latency_violation_threshold={prod.pipeline_breaker_latency_violation_threshold} but must be >= 1. "
+                "Latency-based breaker will not trip."
+            )
+        if prod.pipeline_breaker_recovery_timeout_ms < 1000:
+            warnings.append(
+                f"pipeline_breaker_recovery_timeout_ms={prod.pipeline_breaker_recovery_timeout_ms} is very low. "
+                "Breaker may flap between open and half-open."
+            )
+        if prod.pipeline_breaker_half_open_max_calls < 1:
+            warnings.append(
+                f"pipeline_breaker_half_open_max_calls={prod.pipeline_breaker_half_open_max_calls} but must be >= 1. "
+                "Half-open probing disabled."
+            )
+        for stage_name, threshold in prod.pipeline_breaker_thresholds.items():
+            if threshold <= 0:
+                warnings.append(
+                    f"pipeline_breaker_thresholds['{stage_name}']={threshold} must be > 0. "
+                    "Stage breaker will trip on any latency."
+                )
         return warnings
