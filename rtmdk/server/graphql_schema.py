@@ -3,7 +3,7 @@
 Basic GraphQL API for querying memory, nodes, and health.
 """
 
-from typing import List, Optional
+from typing import AsyncGenerator, List, Optional
 
 import strawberry
 
@@ -146,6 +146,18 @@ class Query:
 
 
 @strawberry.type
+class PipelineStreamEvent:
+    event_type: str
+    stage: Optional[str] = None
+    latency_ms: Optional[float] = None
+    output_count: Optional[int] = None
+    degraded: Optional[bool] = None
+    breaker_state: Optional[str] = None
+    total_latency_ms: Optional[float] = None
+    results: Optional[List[MemoryResult]] = None
+
+
+@strawberry.type
 class Mutation:
     @strawberry.mutation
     def create_node(self, content: str, salience: Optional[float] = None) -> MemoryNode:
@@ -179,4 +191,46 @@ class Mutation:
         return False
 
 
-schema = strawberry.Schema(query=Query, mutation=Mutation)
+@strawberry.type
+class Subscription:
+    @strawberry.subscription
+    async def pipeline_stream(self, query: str, top_k: int = 5, session_id: Optional[str] = None) -> AsyncGenerator[PipelineStreamEvent, None]:
+        """Stream pipeline stage events via GraphQL subscription."""
+        import rtmdk.server.app as app_mod
+        memory = getattr(app_mod, "memory", None)
+        if memory is None or memory.field is None:
+            raise Exception("Memory not initialized")
+
+        from rtmdk.pipeline.streaming import StreamingPipelineExecutor
+        import json
+
+        pipeline = memory.build_pipeline()
+        streamer = StreamingPipelineExecutor(pipeline.stages)
+
+        async for chunk in streamer.run_async(query, top_k=top_k, session_id=session_id):
+            raw = chunk.strip()
+            if raw.startswith("data: "):
+                raw = raw[6:]
+            event_data = json.loads(raw)
+            event_type = event_data.get("event", "unknown")
+
+            results = None
+            if "results" in event_data and event_data["results"]:
+                results = [
+                    MemoryResult(node_id=r.get("node_id", ""), score=r.get("score", 0.0), content=r.get("content", ""))
+                    for r in event_data["results"]
+                ]
+
+            yield PipelineStreamEvent(
+                event_type=event_type,
+                stage=event_data.get("stage"),
+                latency_ms=event_data.get("latency_ms"),
+                output_count=event_data.get("output_count"),
+                degraded=event_data.get("degraded"),
+                breaker_state=event_data.get("breaker_state"),
+                total_latency_ms=event_data.get("total_latency_ms"),
+                results=results,
+            )
+
+
+schema = strawberry.Schema(query=Query, mutation=Mutation, subscription=Subscription)
