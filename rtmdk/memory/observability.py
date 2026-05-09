@@ -1,9 +1,10 @@
-"""Observability: latency tracking, metrics, and alerting for RTMDK.
+"""Observability: latency tracking, metrics, alerting, and export for RTMDK.
 
 Lightweight implementation without external deps (no OpenTelemetry agent
 required).  Metrics are stored in-memory and can be exported periodically.
 """
 from __future__ import annotations
+import json
 import time
 import logging
 import threading
@@ -63,6 +64,93 @@ class LatencyTracker:
             return float(np.mean(self._window))
 
 
+class AlertHandler:
+    """Base class for alert handlers."""
+
+    def __call__(self, alert_name: str, value: float) -> None:
+        raise NotImplementedError
+
+
+class WebhookAlertHandler(AlertHandler):
+    """Send alerts to a webhook URL."""
+
+    def __init__(self, url: str, headers: Optional[Dict[str, str]] = None):
+        self.url = url
+        self.headers = headers or {}
+
+    def __call__(self, alert_name: str, value: float) -> None:
+        try:
+            import urllib.request
+            payload = json.dumps({
+                "alert": alert_name,
+                "value": value,
+                "timestamp": time.time(),
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                self.url,
+                data=payload,
+                headers={**self.headers, "Content-Type": "application/json"},
+                method="POST",
+            )
+            urllib.request.urlopen(req, timeout=5)
+        except Exception:
+            logger.warning("Webhook alert failed for %s", alert_name, exc_info=True)
+
+
+class SlackAlertHandler(AlertHandler):
+    """Send alerts to Slack via incoming webhook."""
+
+    def __init__(self, webhook_url: str):
+        self.webhook_url = webhook_url
+
+    def __call__(self, alert_name: str, value: float) -> None:
+        try:
+            import urllib.request
+            payload = json.dumps({
+                "text": f"🚨 RTMDK Alert: *{alert_name}* | value={value:.2f}",
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                self.webhook_url,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            urllib.request.urlopen(req, timeout=5)
+        except Exception:
+            logger.warning("Slack alert failed for %s", alert_name, exc_info=True)
+
+
+class PagerDutyAlertHandler(AlertHandler):
+    """Send alerts to PagerDuty Events API v2."""
+
+    def __init__(self, routing_key: str, severity: str = "warning"):
+        self.routing_key = routing_key
+        self.severity = severity
+
+    def __call__(self, alert_name: str, value: float) -> None:
+        try:
+            import urllib.request
+            payload = json.dumps({
+                "routing_key": self.routing_key,
+                "event_action": "trigger",
+                "payload": {
+                    "summary": f"RTMDK alert: {alert_name}={value:.2f}",
+                    "severity": self.severity,
+                    "source": "rtmdk",
+                    "custom_details": {"value": value},
+                },
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                "https://events.pagerduty.com/v2/enqueue",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            urllib.request.urlopen(req, timeout=5)
+        except Exception:
+            logger.warning("PagerDuty alert failed for %s", alert_name, exc_info=True)
+
+
 class MemoryMetrics:
     """In-memory metrics collector for RTMDK retrieval pipeline."""
 
@@ -73,7 +161,7 @@ class MemoryMetrics:
         self.query_cache_misses = 0
         self.consolidation_count = 0
         self.alert_rules: List[AlertRule] = []
-        self._alert_handlers: List[Callable[[str, float], None]] = []
+        self._alert_handlers: List[AlertHandler] = []
         self._lock = threading.Lock()
 
     def record_query(self, latency_ms: float, cache_hit: bool) -> None:
@@ -102,7 +190,7 @@ class MemoryMetrics:
         with self._lock:
             self.alert_rules.append(rule)
 
-    def add_alert_handler(self, handler: Callable[[str, float], None]) -> None:
+    def add_alert_handler(self, handler: AlertHandler) -> None:
         with self._lock:
             self._alert_handlers.append(handler)
 
@@ -138,3 +226,19 @@ class MemoryMetrics:
             "cache_hit_ratio": self.cache_hit_ratio(),
             "consolidation_count": self.consolidation_count,
         }
+
+    def to_prometheus(self) -> str:
+        """Export metrics in Prometheus text format."""
+        lines = []
+        p = self.query_latency.percentiles()
+        lines.append(f'rtmdk_query_latency_p50 {p["p50"]:.3f}')
+        lines.append(f'rtmdk_query_latency_p95 {p["p95"]:.3f}')
+        lines.append(f'rtmdk_query_latency_p99 {p["p99"]:.3f}')
+        lines.append(f'rtmdk_cache_hit_ratio {self.cache_hit_ratio():.3f}')
+        lines.append(f'rtmdk_consolidation_count {self.consolidation_count}')
+        return "\n".join(lines)
+
+    def flush_to_file(self, path: str) -> None:
+        """Write snapshot to JSON file."""
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(self.snapshot(), f, indent=2)

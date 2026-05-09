@@ -4,6 +4,8 @@ Prevents TieredNodeStore from scanning cold disk layers during
 engram similarity searches.
 """
 from __future__ import annotations
+import json
+import os
 import threading
 from collections import OrderedDict
 from typing import Dict, Optional, Iterator, Tuple
@@ -30,12 +32,10 @@ class EngramEmbeddingCache:
         with self._lock:
             self._hot[node_id] = embedding.copy()
             self._hot.move_to_end(node_id)
-            # Evict from hot to warm if over limit
             while len(self._hot) > self._max_hot:
                 oldest_nid, oldest_emb = self._hot.popitem(last=False)
                 self._warm[oldest_nid] = oldest_emb
                 self._warm.move_to_end(oldest_nid)
-            # Evict from warm if over limit
             while len(self._warm) > self._max_warm:
                 self._warm.popitem(last=False)
 
@@ -56,10 +56,8 @@ class EngramEmbeddingCache:
                 return emb.copy()
             emb = self._warm.pop(node_id, None)
             if emb is not None:
-                # Promote to hot
                 self._hot[node_id] = emb
                 self._hot.move_to_end(node_id)
-                # Cascade eviction
                 if len(self._hot) > self._max_hot:
                     oldest_nid, oldest_emb = self._hot.popitem(last=False)
                     self._warm[oldest_nid] = oldest_emb
@@ -95,3 +93,26 @@ class EngramEmbeddingCache:
         with self._lock:
             self._hot.clear()
             self._warm.clear()
+
+    def save(self, path: str) -> None:
+        """Serialize cache to NPZ file."""
+        with self._lock:
+            data = {k: v for k, v in {**self._warm, **self._hot}.items()}
+        if not data:
+            np.savez(path, _empty=True)
+            return
+        np.savez(path, **{k.replace("/", "_"): v for k, v in data.items()})
+
+    def load(self, path: str) -> None:
+        """Deserialize cache from NPZ file."""
+        if not os.path.exists(path):
+            return
+        with self._lock:
+            self._hot.clear()
+            self._warm.clear()
+            archive = np.load(path, allow_pickle=False)
+            if "_empty" in archive:
+                return
+            for key in archive.files:
+                nid = key.replace("_", "/")
+                self._hot[nid] = archive[key]

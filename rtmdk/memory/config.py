@@ -354,10 +354,16 @@ _FIELD_GROUPS: Dict[str, str] = {
     "engram_cache_max_hot": "SOTConfig",
     "engram_cache_max_warm": "SOTConfig",
     "distributed_lock_path": "SOTConfig",
+    "distributed_lock_backend": "SOTConfig",
+    "distributed_lock_redis_url": "SOTConfig",
     "observability_enabled": "SOTConfig",
+    "alert_webhook_url": "SOTConfig",
+    "alert_slack_url": "SOTConfig",
+    "alert_pagerduty_key": "SOTConfig",
     "sentence_reranker_enabled": "SOTConfig",
     "query_decomposition_enabled": "SOTConfig",
     "feedback_loop_enabled": "SOTConfig",
+    "feedback_loop_persist_path": "SOTConfig",
 }
 
 
@@ -733,12 +739,18 @@ class SOTConfig:
     engram_cache_max_warm: int = 90_000
     # --- Distributed locking ---
     distributed_lock_path: Optional[str] = None
+    distributed_lock_backend: str = "file"  # "file" | "redis"
+    distributed_lock_redis_url: Optional[str] = None
     # --- Observability ---
     observability_enabled: bool = False
+    alert_webhook_url: Optional[str] = None
+    alert_slack_url: Optional[str] = None
+    alert_pagerduty_key: Optional[str] = None
     # --- RAG Quality ---
     sentence_reranker_enabled: bool = False
     query_decomposition_enabled: bool = False
     feedback_loop_enabled: bool = False
+    feedback_loop_persist_path: Optional[str] = None
 
 
 @dataclass(init=False, repr=False, eq=False)

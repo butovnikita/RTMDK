@@ -758,8 +758,11 @@ class RTMDKMemory(BaseModel):
 
         # Distributed lock
         lock_path = getattr(sot_cfg, "distributed_lock_path", None) if sot_cfg else None
+        lock_backend = getattr(sot_cfg, "distributed_lock_backend", "file")
+        redis_url = getattr(sot_cfg, "distributed_lock_redis_url", None)
         if lock_path:
-            self._distributed_lock = DistributedLock(lock_path)
+            self._distributed_lock = DistributedLock(
+                lock_path, backend=lock_backend, redis_url=redis_url)
         else:
             self._distributed_lock = None
 
@@ -768,6 +771,19 @@ class RTMDKMemory(BaseModel):
             self.metrics = MemoryMetrics()
             self.metrics.add_alert_rule(AlertRule("high_latency", "query_p99", threshold=100.0))
             self.metrics.add_alert_rule(AlertRule("low_cache", "cache_hit_ratio", threshold=0.3, comparison="lt"))
+            # Alert handlers
+            webhook_url = getattr(sot_cfg, "alert_webhook_url", None)
+            slack_url = getattr(sot_cfg, "alert_slack_url", None)
+            pagerduty_key = getattr(sot_cfg, "alert_pagerduty_key", None)
+            if webhook_url:
+                from rtmdk.memory.observability import WebhookAlertHandler
+                self.metrics.add_alert_handler(WebhookAlertHandler(webhook_url))
+            if slack_url:
+                from rtmdk.memory.observability import SlackAlertHandler
+                self.metrics.add_alert_handler(SlackAlertHandler(slack_url))
+            if pagerduty_key:
+                from rtmdk.memory.observability import PagerDutyAlertHandler
+                self.metrics.add_alert_handler(PagerDutyAlertHandler(pagerduty_key))
         else:
             self.metrics = None
 
@@ -778,9 +794,13 @@ class RTMDKMemory(BaseModel):
         if sot_cfg and getattr(sot_cfg, "sentence_reranker_enabled", False):
             self._sentence_reranker = SentenceReranker(self.embedder)
         if sot_cfg and getattr(sot_cfg, "query_decomposition_enabled", False):
-            self._query_decomposer = QueryDecomposer()
+            # Optional LLM client for advanced decomposition
+            llm_client = getattr(self, "_llm_client", None)
+            self._query_decomposer = QueryDecomposer(llm_client=llm_client)
         if sot_cfg and getattr(sot_cfg, "feedback_loop_enabled", False):
-            self._feedback_loop = FeedbackLoop(self.embedder)
+            fb_path = getattr(sot_cfg, "feedback_loop_persist_path", None)
+            self._feedback_loop = FeedbackLoop(self.embedder, persist_path=fb_path)
+            self._feedback_loop.load()
 
     @property
     def memory_variables(self) -> List[str]:
@@ -2010,6 +2030,26 @@ class RTMDKMemory(BaseModel):
     async def _evolve_field_async(self):
         await asyncio.sleep(0.01)
         self.field.step()
+
+    def save_state(self, dir_path: str) -> None:
+        """Persist backlog module state to disk."""
+        import os
+        os.makedirs(dir_path, exist_ok=True)
+        if self.engram_cache is not None:
+            self.engram_cache.save(os.path.join(dir_path, "engram_cache.npz"))
+        if self._feedback_loop is not None and self._feedback_loop.persist_path:
+            self._feedback_loop._flush()
+        if self.metrics is not None:
+            self.metrics.flush_to_file(os.path.join(dir_path, "metrics.json"))
+
+    def load_state(self, dir_path: str) -> None:
+        """Restore backlog module state from disk."""
+        import os
+        cache_path = os.path.join(dir_path, "engram_cache.npz")
+        if self.engram_cache is not None and os.path.exists(cache_path):
+            self.engram_cache.load(cache_path)
+        if self._feedback_loop is not None:
+            self._feedback_loop.load()
 
     def clear(self) -> None:
         # Fix 3: Cancel background workers before replacing field

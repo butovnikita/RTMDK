@@ -106,6 +106,20 @@ class TestEngramEmbeddingCache:
         cache.add("n1", np.array([1.0]))
         assert len(cache) == 1
 
+    def test_save_load(self):
+        from rtmdk.memory.engram_cache import EngramEmbeddingCache
+        cache = EngramEmbeddingCache(max_hot=10, max_warm=10)
+        cache.add("n1", np.array([1.0, 2.0]))
+        cache.add("n2", np.array([3.0, 4.0]))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "cache.npz")
+            cache.save(path)
+            cache2 = EngramEmbeddingCache(max_hot=10, max_warm=10)
+            cache2.load(path)
+            assert len(cache2) == 2
+            np.testing.assert_array_equal(cache2.get("n1"), np.array([1.0, 2.0]))
+            np.testing.assert_array_equal(cache2.get("n2"), np.array([3.0, 4.0]))
+
 
 class TestObservability:
     def test_record_latency_percentiles(self):
@@ -143,6 +157,27 @@ class TestObservability:
         alerts = metrics.check_alerts()
         assert len(alerts) >= 1
         assert "high_latency" in alerts[0]
+
+    def test_prometheus_export(self):
+        from rtmdk.memory.observability import MemoryMetrics
+        metrics = MemoryMetrics()
+        metrics.record_query(10.0, cache_hit=False)
+        prom = metrics.to_prometheus()
+        assert "rtmdk_query_latency_p50" in prom
+        assert "rtmdk_cache_hit_ratio" in prom
+
+    def test_flush_to_file(self):
+        from rtmdk.memory.observability import MemoryMetrics
+        metrics = MemoryMetrics()
+        metrics.record_query(10.0, cache_hit=True)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "metrics.json")
+            metrics.flush_to_file(path)
+            assert os.path.exists(path)
+            import json
+            with open(path) as f:
+                data = json.load(f)
+            assert data["cache_hit_ratio"] == 1.0
 
 
 class TestDistributedLock:
@@ -190,6 +225,19 @@ class TestDistributedLock:
                 t.join()
             assert len(acquired) == 5
 
+    def test_redis_fallback_when_unavailable(self):
+        from rtmdk.memory.distributed_lock import DistributedLock
+        with tempfile.TemporaryDirectory() as tmpdir:
+            lock = DistributedLock(
+                os.path.join(tmpdir, "lock"),
+                backend="redis",
+                redis_url="redis://localhost:9999/0",
+            )
+            # Should fall back to file backend
+            assert lock.backend == "file"
+            assert lock.acquire(blocking=False)
+            lock.release()
+
 
 class TestRAGQuality:
     def test_query_decomposer_splits_multi_hop(self):
@@ -204,6 +252,17 @@ class TestRAGQuality:
         dec = QueryDecomposer()
         sub = dec.decompose("simple query")
         assert sub == ["simple query"]
+
+    def test_query_decomposer_llm_fallback(self):
+        from rtmdk.memory.rag_quality import QueryDecomposer
+
+        class BadLLM:
+            def complete(self, prompt, max_tokens=200):
+                raise RuntimeError("fail")
+
+        dec = QueryDecomposer(llm_client=BadLLM())
+        sub = dec.decompose("What is X and who invented Y")
+        assert len(sub) >= 1
 
     def test_sentence_reranker_returns_top_k(self):
         from rtmdk.memory.rag_quality import SentenceReranker
@@ -224,13 +283,39 @@ class TestRAGQuality:
         reranked = reranker.rerank("query", results, top_k=3)
         assert len(reranked) == 3
 
-    def test_feedback_loop_requires_sot_embedder(self):
+    def test_feedback_loop_records(self):
         from rtmdk.memory.rag_quality import FeedbackLoop
-
+        class MockSIF:
+            word_embeddings = {0: np.ones(4), 1: np.ones(4)}
+            def _embed_sentence_raw(self, tokens):
+                return np.ones(4)
         class MockEmbedder:
-            def __call__(self, text):
-                return np.ones(4, dtype=np.float32)
-
+            _vocab = {"q1": 0, "node": 1}
+            _embedder = MockSIF()
+            def _word_tokenize(self, text):
+                return text.lower().split()
         fl = FeedbackLoop(MockEmbedder())
-        # Mock embedder lacks SOTv2 internals, so add_feedback should return False
-        assert not fl.add_feedback("q1", "node text", True)
+        assert fl.add_feedback("q1", "node", True)
+        assert fl.feedback_count == 1
+
+    def test_feedback_loop_persistence(self):
+        from rtmdk.memory.rag_quality import FeedbackLoop
+        class MockSIF:
+            word_embeddings = {0: np.ones(4), 1: np.ones(4)}
+            def _embed_sentence_raw(self, tokens):
+                return np.ones(4)
+        class MockEmbedder:
+            _vocab = {"q1": 0, "node": 1}
+            _embedder = MockSIF()
+            def _word_tokenize(self, text):
+                return text.lower().split()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "feedback.json")
+            fl = FeedbackLoop(MockEmbedder(), persist_path=path)
+            fl.add_feedback("q1", "node", True)
+            fl.add_feedback("q1", "node", False)
+            fl._flush()
+            assert os.path.exists(path)
+            fl2 = FeedbackLoop(MockEmbedder(), persist_path=path)
+            fl2.load()
+            assert fl2.feedback_count == 2
