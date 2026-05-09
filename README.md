@@ -82,6 +82,16 @@ batch = BatchPipelineExecutor(mem.build_pipeline().stages)
 outputs = batch.run_batch(["q1", "q2", "q3"], top_k=5)
 ```
 
+### A/B Testing
+Compare pipeline vs legacy before enabling in production:
+```python
+from rtmdk.pipeline import PipelineABTester
+
+tester = PipelineABTester(mem)
+tester.compare_batch(["q1", "q2", "q3"], top_k=5)
+```
+Or run: `python scripts/bench_pipeline_ab.py --queries 100 --nodes 500`
+
 ### HTTP endpoint
 ```bash
 curl -X POST http://localhost:8080/v1/memory/query_pipeline \

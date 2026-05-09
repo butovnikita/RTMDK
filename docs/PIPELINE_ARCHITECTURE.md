@@ -238,6 +238,32 @@ my_rerank = "my_package.stages:MyRerankStage"
 
 Stages are discovered automatically on `import rtmdk.pipeline`.
 
+## A/B Testing
+
+Compare pipeline vs legacy retrieval before enabling in production:
+
+```python
+from rtmdk.pipeline import PipelineABTester
+
+tester = PipelineABTester(memory)
+tester.compare_batch(["q1", "q2", "q3"], top_k=5)
+summary = tester.summary()
+
+print(f"Jaccard overlap: {summary['jaccard_overlap']['mean']:.4f}")
+print(f"Kendall tau: {summary['kendall_tau']['mean']:.4f}")
+print(f"Pipeline faster: {summary['pipeline_faster_count']}/{summary['runs']}")
+```
+
+Or run from command line:
+```bash
+python scripts/bench_pipeline_ab.py --queries 100 --nodes 500 --top-k 5
+```
+
+Metrics computed:
+- **Jaccard overlap** — result set similarity (1.0 = identical)
+- **Kendall tau** — ranking correlation (1.0 = same order)
+- **Latency delta** — pipeline vs legacy per query
+
 ## Future Work
 
 - Extract query rewrite and intent classification into separate stages.
