@@ -201,3 +201,32 @@ def test_analytics_report_returns_combined_data(client):
     finally:
         app_mod.memory = None
         app_mod.analytics_dashboard = None
+
+
+def test_analytics_pipeline_503_when_not_initialized(client):
+    """Pipeline analytics returns 503 when dashboard not initialized."""
+    resp = client.get("/v1/analytics/pipeline")
+    assert resp.status_code == 503
+    assert "not available" in resp.json()["detail"]
+
+
+def test_analytics_pipeline_returns_metrics(client):
+    """Pipeline analytics returns stage metrics and health."""
+    mem, dash = _make_memory()
+    app_mod.memory = mem
+    app_mod.analytics_dashboard = dash
+    try:
+        resp = client.get("/v1/analytics/pipeline")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["enabled"] is True
+        assert "overall" in data
+        assert "stages" in data
+        assert data["total_stages"] >= 1
+        for stage in data["stages"]:
+            assert "name" in stage
+            assert "enabled" in stage
+            assert "breaker_state" in stage
+    finally:
+        app_mod.memory = None
+        app_mod.analytics_dashboard = None

@@ -1994,6 +1994,19 @@ async def analytics_events(limit: int = Query(50, ge=1, le=500),
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+@app.get("/v1/analytics/pipeline")
+async def analytics_pipeline():
+    """Pipeline-specific metrics for dashboard display."""
+    if analytics_dashboard is None:
+        raise HTTPException(status_code=503,
+                            detail="Analytics dashboard not available")
+    try:
+        return analytics_dashboard.get_pipeline_metrics()
+    except Exception as exc:
+        logger.warning("Pipeline analytics failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @app.get("/v1/analytics/report")
 async def analytics_report():
     """Full analytics report combining all metrics."""
