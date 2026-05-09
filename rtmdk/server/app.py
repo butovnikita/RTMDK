@@ -303,6 +303,16 @@ async def lifespan(app: FastAPI):
     global _memory_ref
     _memory_ref = memory
 
+    # Validate pipeline configuration on startup
+    if memory and hasattr(memory, "config"):
+        warnings = memory.config.validate()
+        pipeline_warnings = [w for w in warnings if "pipeline" in w.lower()]
+        if pipeline_warnings:
+            for w in pipeline_warnings:
+                logger.warning(f"Pipeline config issue: {w}")
+        else:
+            logger.info("Pipeline configuration validated successfully")
+
     # Initialize production performance modules
     query_cache = QueryCache(max_size=10000, ttl_seconds=3600)
     embedding_cache = EmbeddingCache(
