@@ -26,6 +26,7 @@ from rtmdk.support.projection import IncPCAProjection, IdentityProjection
 from rtmdk.support.production import ShadowModeEvaluator, RAGASPlusEvaluator, AutoRollbackManager
 from rtmdk.memory.projection_manager import ProjectionManager
 from rtmdk.memory.consolidation_manager import ConsolidationManager
+from rtmdk.memory.scheduler import StepScheduler
 from rtmdk.support.agents import AgentPlanner, HypothesisVerifier, ToolRouter
 from rtmdk.support.healer import TopologyHealer
 from rtmdk.support.meta_adaptive import MetaAdaptiveKernel
@@ -1097,6 +1098,7 @@ class RTMDKField:
         self._active_node_history: deque = deque(maxlen=50)
 
         self._consolidation_mgr = ConsolidationManager(self)
+        self._scheduler = StepScheduler(self)
 
     # ------------------------------------------------------------------
     # Projection-manager aliases (backward-compatible during refactor)
@@ -3161,206 +3163,11 @@ class RTMDKField:
         self._run_periodic_tasks(backpressure_ok)
 
     def _run_periodic_tasks(self, backpressure_ok: bool) -> None:
-        """Execute all periodic maintenance tasks (consolidation, decay, pruning, etc.)."""
-        # Consolidation: adaptive frequency based on field size.
-        n_nodes = len(self.nodes)
-        if n_nodes > 10:
-            if n_nodes < 1000:
-                consolidation_freq = 100
-            elif n_nodes < 10000:
-                consolidation_freq = 50
-            else:
-                consolidation_freq = 20
-            if self._step_counter % consolidation_freq == 0:
-                if self.cfg.consolidation_async:
-                    if self._consolidation_future is None or self._consolidation_future.done():
-                        self._consolidation_future = self._consolidation_executor.submit(
-                            self._circuit_breakers["Consolidate"].call, self.consolidate
-                        )
-                else:
-                    self._circuit_breakers["Consolidate"].call(self.consolidate)
+        """Execute all periodic maintenance tasks (consolidation, decay, pruning, etc.).
 
-        # Self-healing: every N steps
-        if self.cfg.self_healing and self._step_counter % self.cfg.healing_check_freq == 0:
-            self._circuit_breakers["SelfHeal"].call(self._self_heal)
-
-        # Tier-specific decay: every step (cheap)
-        tier_counts: Dict[str, int] = {}
-        tier_amplitudes: Dict[str, List[float]] = {}
-        for node in self.nodes.values():
-            tier = getattr(node, 'tier', 'semantic')
-            tier_counts[tier] = tier_counts.get(tier, 0) + 1
-            dk = self.cfg.tier_decay.get(tier, self.cfg.decay_rate)
-            if self.learnable_kernel:
-                dk = max(dk, self.learnable_kernel.decay_rate)
-            node.amplitude *= dk
-            node.salience *= dk
-            node.amplitude = float(np.clip(node.amplitude, self.cfg.min_amplitude, 1.0))
-            node.salience = float(np.clip(node.salience, self.cfg.min_amplitude * 0.5, 1.0))
-            tier_amplitudes.setdefault(tier, []).append(node.amplitude)
-        self.stats["tier_distribution"] = tier_counts
-        if tier_amplitudes:
-            coherences = []
-            for amps in tier_amplitudes.values():
-                coherences.append(1.0 - np.std(amps) if len(amps) > 1 else 1.0)
-            self.stats["tier_coherence"] = float(np.mean(coherences)) if coherences else 0.0
-
-        # Predictive coding: every 5 steps
-        if self.predictor and self.nodes and self._step_counter % 5 == 0:
-            state = self._encode_field_state()
-            self._state_history.append(state)
-            if len(self._state_history) >= 2:
-                fe = self._circuit_breakers["PredictorFreeEnergy"].call(
-                    self.predictor.compute_free_energy, self._state_history[-2], self._state_history[-1])
-                self.stats["free_energy"] = fe
-                self.stats["prediction_error"] = float(np.mean((self.predictor.predict(
-                    self._state_history[-2]) - self._state_history[-1]) ** 2))
-                self.stats["surprise_level"] = float(np.clip(fe, 0, 1))
-                if fe > 0.3 and len(self.nodes) > 10:
-                    self._circuit_breakers["Consolidate"].call(self.consolidate)
-                if fe > 0.01:
-                    self._circuit_breakers["PredictorUpdate"].call(
-                        self.predictor.update, self._state_history[-2], self._state_history[-1], lr=self.cfg.pc_lr)
-
-        # Max nodes pruning: every 10 steps
-        if self.cfg.max_nodes and len(self.nodes) > self.cfg.max_nodes and self._step_counter % 10 == 0:
-            sorted_nodes = sorted(
-                self.node_index,
-                key=lambda nid: self.nodes[nid].salience * self.nodes[nid].amplitude)
-            n_pruned = len(self.nodes) - self.cfg.max_nodes
-            pruned_ids = set(sorted_nodes[:n_pruned])
-            if pruned_ids:
-                self.wal.append_delete(list(pruned_ids))
-            for nid in pruned_ids:
-                if self.cfg.use_hnsw:
-                    self._index_mgr.hnsw_remove(nid)
-                if self.cfg.bm25_fallback:
-                    self._index_mgr.bm25_remove(nid)
-                del self.nodes[nid]
-            self.node_index = [nid for nid in self.node_index if nid not in pruned_ids]
-            if n_pruned > 0:
-                self._invalidate_tension_cache()
-
-        # Self-supervision: every 20 steps
-        if self.cfg.self_supervision and self._step_counter % 20 == 0:
-            self._circuit_breakers["SelfSupervise"].call(self._self_supervise)
-
-        # TDA: every N steps (Throttled)
-        if backpressure_ok and self.cfg.tda_monitoring and self._step_counter % self.cfg.tda_check_freq == 0:
-            self._circuit_breakers["TDA"].call(self._check_tda)
-
-        # Meta-kernel adaptation: every 5 steps
-        if self.meta_kernel and self._step_counter % 5 == 0:
-            self._circuit_breakers["MetaKernelAdapt"].call(self.meta_kernel.adapt)
-            self.stats["meta_kurtosis"] = self.meta_kernel.compute_resonance_kurtosis()
-            self.stats["meta_bandwidth"] = self.meta_kernel.get_bandwidth()
-            self.stats["meta_phase_coupling"] = self.meta_kernel.get_phase_coupling()
-
-        # Meta-controller optimization: every N steps (Throttled)
-        if backpressure_ok and self.meta_controller and self.meta_controller.should_optimize() \
-                and self._step_counter % self.cfg.meta_opt_freq == 0:
-            best_params = self._circuit_breakers["MetaControllerOptimize"].call(
-                self.meta_controller.optimize, self)
-            if best_params:
-                self._circuit_breakers["MetaControllerApply"].call(
-                    self.meta_controller.apply_params, self, best_params)
-                self.stats["meta_optimizations"] += 1
-                self.stats["meta_best_params"] = best_params
-
-        # Federated sync: every N steps
-        if self.federated and self._step_counter > 0 and self._step_counter % self.cfg.federated_sync_freq == 0:
-            local_phases = {nid: n.phase for nid, n in self.nodes.items()}
-            local_params = {
-                "decay_rate": self.cfg.decay_rate,
-                "tension_threshold": self.cfg.tension_threshold,
-                "phase_coupling": self.cfg.phase_coupling,
-                "bandwidth": self.cfg.bandwidth,
-            }
-            self._circuit_breakers["FederatedSync"].call(
-                self.federated.sync_with_peers, local_phases, local_params)
-
-        # Shard center updates: every 100 steps
-        if self.cfg.sparse_routing and self._step_counter % 100 == 0 and len(self.nodes) > self.cfg.num_shards * 2:
-            if getattr(self.cfg, "bm25_topic_shards", False):
-                self._circuit_breakers["ShardUpdate"].call(self._update_shard_centers_bm25)
-            else:
-                self._circuit_breakers["ShardUpdate"].call(self._update_shard_centers)
-            self.stats["avg_rl_reward"] = self.rl_feedback_loop.get_average_reward()
-
-        # Event-driven processing: every 10 steps
-        if self.event_scheduler and self._step_counter % 10 == 0:
-            processed = self.event_scheduler.process_pending(self, max_events=5)
-            self.stats["events_processed"] += processed
-            self.stats["event_queue_depth"] = len(self.event_scheduler._event_queue)
-
-        # Low-rank compression: every N steps
-        if self.low_rank_compressor and self._step_counter % self.cfg.compression_freq == 0:
-            self._compress_field()
-
-        # Learnable kernel step: every 5 steps
-        if self.learnable_kernel and self._step_counter % 5 == 0:
-            self.learnable_kernel.step()
-
-        # Causal discovery: every N steps
-        causal_freq = getattr(self.cfg, "causal_discovery_freq", 50)
-        if self.causal_engine and self._step_counter % max(causal_freq, 1) == 0:
-            self.causal_engine.discover_causal_structure()
-            for (cause, effect), edge in self.causal_engine.causal_effects.items():
-                if effect in self.nodes:
-                    if cause not in self.nodes[effect].causal_parents:
-                        self.nodes[effect].causal_parents.append(cause)
-                    self.nodes[effect].causal_strength[cause] = edge.strength
-                if cause in self.nodes:
-                    self.nodes[cause].causal_effects[effect] = edge.strength
-            self.stats["causal_edges"] = len(self.causal_engine.causal_effects)
-            if self.cfg.contradiction_detection:
-                self.causal_engine.detect_contradictions(self.cfg.contradiction_threshold)
-                self.stats["contradictions"] = len(self.causal_engine.contradictions)
-
-        # Security / integrity / stats
-        if self.security and self.cfg.causal_graph_integrity_check and self._step_counter % 100 == 0:
-            integrity = self.security.validate_causal_graph_integrity(self.causal_engine)
-            if not integrity["is_valid"]:
-                self.stats["security_violations"] += len(integrity["issues"])
-
-        if self.meta_memory_eval and self.meta_memory_eval.should_reflect():
-            self.meta_memory_eval.self_reflect(self)
-            self.stats["meta_reflections"] += 1
-            adaptive = self.meta_memory_eval.get_adaptive_params()
-            if adaptive["consolidation_multiplier"] != 1.0:
-                self.cfg.tension_threshold *= adaptive["consolidation_multiplier"]
-                self.cfg.tension_threshold = max(0.05, min(0.5, self.cfg.tension_threshold))
-
-        if self.security:
-            self.stats["security_violations"] = len(self.security._violation_log)
-
-        if self.version_control:
-            self.stats["current_version"] = self.version_control.current_version
-            self.stats["n_versions"] = self.version_control.n_versions
-
-        if self.role_router and self._step_counter % 5 == 0:
-            self.role_router.update_kuramoto_phases(self.nodes)
-            self.stats["n_shards"] = len(self.role_router.shards)
-            self.stats["shard_distribution"] = {
-                r: len(s.node_ids) for r, s in self.role_router.shards.items()
-            }
-            self.stats["role_router_enabled"] = True
-            self.stats["cross_shard_exchanges"] = sum(
-                s.n_cross_shard_exchanges for s in self.role_router.shards.values())
-
-        if self._step_counter % 100 == 0:
-            integrity = self._check_field_integrity()
-            if integrity["n_issues"] > 0:
-                logger.warning(
-                    f"Field integrity issues at step {self._step_counter}: {integrity['n_issues']} issues")
-                self.stats["field_integrity_issues"] = integrity["n_issues"]
-
-        if self._step_counter % 50 == 0:
-            total = self._tension_cache_hits + self._tension_cache_misses
-            self.stats["tension_cache_hits"] = self._tension_cache_hits
-            self.stats["tension_cache_misses"] = self._tension_cache_misses
-            self.stats["tension_cache_hit_rate"] = (
-                self._tension_cache_hits / total) if total > 0 else 0.0
+        Delegated to StepScheduler for maintainability.
+        """
+        self._scheduler.run(backpressure_ok)
 
     def _self_heal(self) -> List[Dict]:
         if not self.healer or len(self.nodes) < 3:

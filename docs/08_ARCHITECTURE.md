@@ -418,13 +418,14 @@ rtmdk/
 ├── config.py            # 8 пресетов RTMDKConfig
 │
 ├── memory/              # Core kernel
-│   ├── field.py              # RTMDKField (~4050 lines, 5 managers extracted)
+│   ├── field.py              # RTMDKField (~3850 lines, 6 managers extracted)
 │   ├── core.py               # RTMDKMemory (~2600 lines, pipeline & API)
 │   ├── resonance.py          # ResonanceEngine (math extraction)
 │   ├── cache_manager.py      # NodeCacheManager (cache extraction)
 │   ├── index_manager.py      # IndexManager (HNSW+BM25+shards extraction)
 │   ├── projection_manager.py # ProjectionManager (projection + SOT lifecycle)
 │   ├── consolidation_manager.py # ConsolidationManager (merge + spectral clustering)
+│   ├── scheduler.py          # StepScheduler (periodic task orchestration)
 │   ├── geometry.py           # Пуанкаре-операции (exp/log/midpoint/scalar)
 │   ├── conformal.py          # ICP калибровка retrieval confidence
 │   ├── spectral.py           # Spectral Graph Laplacian для consolidation
