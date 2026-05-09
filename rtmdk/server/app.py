@@ -594,11 +594,18 @@ async def rate_limit_middleware(request: Request, call_next):
         # If auth disabled, rate-limit by IP
         tenant_id = request.client.host if request.client else "anonymous"
 
-    if tenant_rate_limiter is not None and not tenant_rate_limiter.allow_request(tenant_id):
-        remaining = tenant_rate_limiter.get_remaining(tenant_id)
-        return JSONResponse(
-            status_code=429,
-            content={"error": "Rate limit exceeded", "remaining": remaining})
+    if tenant_rate_limiter is not None:
+        is_pipeline = request.url.path.startswith("/v1/memory/pipeline/")
+        allowed = (
+            tenant_rate_limiter.allow_pipeline_request(tenant_id)
+            if is_pipeline
+            else tenant_rate_limiter.allow_request(tenant_id)
+        )
+        if not allowed:
+            remaining = tenant_rate_limiter.get_remaining(tenant_id)
+            return JSONResponse(
+                status_code=429,
+                content={"error": "Rate limit exceeded", "remaining": remaining})
 
     return await call_next(request)
 

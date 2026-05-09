@@ -106,3 +106,41 @@ class TestTenantRateLimiter:
         assert rem["per_minute"] == 4
         assert rem["per_hour"] == 9
         assert rem["per_day"] == 99
+
+    def test_pipeline_rate_limit_stricter(self):
+        trl = TenantRateLimiter(
+            default_per_minute=5,
+            pipeline_per_minute=2,
+        )
+        assert trl.allow_pipeline_request("t1") is True
+        assert trl.allow_pipeline_request("t1") is True
+        assert trl.allow_pipeline_request("t1") is False
+        # Regular requests still allowed
+        assert trl.allow_request("t1") is True
+
+    def test_pipeline_rate_limit_with_override(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "keys.json")
+            mgr = APIKeyManager(storage_path=path)
+            raw, rec = mgr.create_key(
+                tenant_id="t1",
+                rate_limit_override={"pipeline_per_minute": 1},
+            )
+            trl = TenantRateLimiter(
+                api_key_manager=mgr,
+                default_per_minute=10,
+                pipeline_per_minute=5,
+            )
+            assert trl.allow_pipeline_request("t1") is True
+            assert trl.allow_pipeline_request("t1") is False
+
+    def test_reset_tenant_clears_both(self):
+        trl = TenantRateLimiter(
+            default_per_minute=1,
+            pipeline_per_minute=1,
+        )
+        trl.allow_request("t1")
+        trl.allow_pipeline_request("t1")
+        trl.reset_tenant("t1")
+        assert trl.allow_request("t1") is True
+        assert trl.allow_pipeline_request("t1") is True
