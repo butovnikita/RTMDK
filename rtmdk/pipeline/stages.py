@@ -1,10 +1,13 @@
 """Concrete pipeline stages for RTMDK retrieval."""
 from __future__ import annotations
 from typing import Any, Callable, Optional
+import logging
 import numpy as np
 from numpy.typing import NDArray
 
 from rtmdk.pipeline.base import PipelineContext, PipelineStage
+
+logger = logging.getLogger(__name__)
 
 
 class EmbedStage(PipelineStage):
@@ -16,12 +19,20 @@ class EmbedStage(PipelineStage):
         self.embedder = embedder
 
     def process(self, ctx: PipelineContext) -> PipelineContext:
-        ctx.embedding = self.embedder(ctx.query_text)
+        if ctx.embedding is None:
+            ctx.embedding = self.embedder(ctx.query_text)
+        return ctx
+
+    def fallback(self, ctx: PipelineContext, exc: Exception) -> PipelineContext:
+        logger.warning("EmbedStage failed for query '%s...': %s", ctx.query_text[:30], exc)
+        # If embedding is already present (e.g. from cache), proceed
+        if ctx.embedding is None:
+            raise  # Cannot recover without embedding
         return ctx
 
 
 class RouteStage(PipelineStage):
-    """Stage 2: Cascade routing (factual → fast, exploratory → standard, etc.)."""
+    """Stage 2: Cascade routing (factual/exploratory/deep)."""
 
     name = "route"
 
@@ -31,6 +42,11 @@ class RouteStage(PipelineStage):
     def process(self, ctx: PipelineContext) -> PipelineContext:
         if self.router is not None:
             ctx.route = self.router.route(ctx.query_text)
+        return ctx
+
+    def fallback(self, ctx: PipelineContext, exc: Exception) -> PipelineContext:
+        logger.warning("RouteStage failed: %s. Defaulting to 'standard'.", exc)
+        ctx.route = "standard"
         return ctx
 
 
@@ -54,6 +70,10 @@ class RetrieveStage(PipelineStage):
             modality=self.modality,
         )
         return ctx
+
+    def fallback(self, ctx: PipelineContext, exc: Exception) -> PipelineContext:
+        logger.error("RetrieveStage failed: %s. This is unrecoverable.", exc)
+        raise  # Core retrieval cannot be skipped
 
 
 class RerankStage(PipelineStage):
@@ -80,6 +100,10 @@ class RerankStage(PipelineStage):
             pass
         return ctx
 
+    def fallback(self, ctx: PipelineContext, exc: Exception) -> PipelineContext:
+        logger.warning("RerankStage failed: %s. Returning unranked results.", exc)
+        return ctx  # Skip reranking, keep original results
+
 
 class CalibrateStage(PipelineStage):
     """Stage 5: Conformal prediction filtering."""
@@ -101,6 +125,10 @@ class CalibrateStage(PipelineStage):
                 if nid in pred_set
             ]
         return ctx
+
+    def fallback(self, ctx: PipelineContext, exc: Exception) -> PipelineContext:
+        logger.warning("CalibrateStage failed: %s. Returning uncalibrated results.", exc)
+        return ctx  # Skip calibration, keep all results
 
 
 class ExplainStage(PipelineStage):
@@ -124,4 +152,9 @@ class ExplainStage(PipelineStage):
                 )
                 for nid, score, node in ctx.results
             ]
+        return ctx
+
+    def fallback(self, ctx: PipelineContext, exc: Exception) -> PipelineContext:
+        logger.warning("ExplainStage failed: %s. Returning results without explanations.", exc)
+        ctx.explanations = []
         return ctx

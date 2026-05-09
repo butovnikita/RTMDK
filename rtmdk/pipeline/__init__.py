@@ -33,6 +33,7 @@ from rtmdk.pipeline.stages import (
     ExplainStage,
 )
 from rtmdk.pipeline.executor import PipelineExecutor
+from rtmdk.pipeline.metrics import to_prometheus_format
 
 __all__ = [
     "PipelineStage",
@@ -45,4 +46,5 @@ __all__ = [
     "CalibrateStage",
     "ExplainStage",
     "PipelineExecutor",
+    "to_prometheus_format",
 ]

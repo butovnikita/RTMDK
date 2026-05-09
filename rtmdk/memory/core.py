@@ -1721,6 +1721,26 @@ class RTMDKMemory(BaseModel):
             "metrics": ctx.to_dict(),
         }
 
+    def health_check_pipeline(self) -> Dict[str, Any]:
+        """Run health checks on every pipeline stage.
+
+        Returns:
+            {"healthy": bool, "stages": [{"stage": str, "healthy": bool, "reason": str}]}
+        """
+        pipeline = self.build_pipeline()
+        stage_health = []
+        all_healthy = True
+        for stage in pipeline.stages:
+            healthy, reason = stage.health_check()
+            if not healthy:
+                all_healthy = False
+            stage_health.append({
+                "stage": stage.name,
+                "healthy": healthy,
+                "reason": reason,
+            })
+        return {"healthy": all_healthy, "stages": stage_health}
+
     def add_feedback(self, query: str, node_id: str, relevant: bool) -> bool:
         """Provide explicit feedback to refine embeddings.
 

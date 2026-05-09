@@ -66,6 +66,51 @@ print(ctx.to_dict()["stages"])
 }
 ```
 
+## Graceful Degradation
+
+Every stage implements `fallback(ctx, exc) → ctx`:
+
+| Stage | Failure Mode | Fallback Behavior |
+|-------|--------------|-------------------|
+| Embed | embedder crash | Propagate error (unrecoverable) |
+| Route | router exception | Default to `"standard"` route |
+| Retrieve | field exception | Propagate error (unrecoverable) |
+| Rerank | reranker exception | Skip reranking, keep original results |
+| Calibrate | calibrator exception | Skip filtering, keep all results |
+| Explain | explainer exception | Return results without explanations |
+
+Failed stages are marked `degraded: true` in metrics but the pipeline continues.
+
+## Health Checks
+
+```python
+health = memory.health_check_pipeline()
+# {"healthy": True, "stages": [{"stage": "embed", "healthy": True, "reason": None}, ...]}
+```
+
+Each stage can override `health_check()` to implement component-specific probes.
+
+## Prometheus Metrics
+
+```python
+from rtmdk.pipeline import to_prometheus_format
+
+output = memory.retrieve_nodes_pipeline(query, embedding)
+prom_text = to_prometheus_format(output["metrics"])
+```
+
+Example output:
+```
+# HELP rtmdk_query_latency_ms Total query latency
+# TYPE rtmdk_query_latency_ms gauge
+rtmdk_query_latency_ms{query="What is the capital of France?"} 14.9
+
+# HELP rtmdk_stage_latency_ms Per-stage latency
+# TYPE rtmdk_stage_latency_ms gauge
+rtmdk_stage_latency_ms{stage="embed",error="0",degraded="0"} 12.5
+rtmdk_stage_latency_ms{stage="route",error="0",degraded="0"} 0.1
+```
+
 ## Backward Compatibility
 
 - `retrieve_nodes()` — **preserved**, no breaking changes.

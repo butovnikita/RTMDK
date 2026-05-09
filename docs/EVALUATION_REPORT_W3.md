@@ -120,6 +120,9 @@ Embed → Route → Retrieve → Rerank → Calibrate → Explain
 
 - Each stage has uniform `process(ctx) → ctx` interface
 - Per-stage latency tracking via `StageMetrics`
+- **Graceful degradation**: every stage implements `fallback()` — pipeline continues on partial failure
+- **Health checks**: `memory.health_check_pipeline()` probes every stage
+- **Prometheus metrics**: `to_prometheus_format()` exports per-stage latency with error/degraded labels
 - Backward-compatible: legacy `retrieve_nodes()` preserved
 - New API: `memory.retrieve_nodes_pipeline(query, embedding, top_k=5)`
 
