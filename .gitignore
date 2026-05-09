@@ -32,6 +32,7 @@ desktop.ini
 !rtmdk_config.yaml
 !eval_report.json
 !swarm_report.json
+!monitoring/*.json
 !swarm_report_agent_0.json
 !swarm_report_agent_1.json
 !swarm_report_agent_2.json

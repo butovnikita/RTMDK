@@ -630,4 +630,40 @@ python -m build
 - **151 new tests** written in this branch
 - **0 breaking changes**
 
+## ✅ 21. Query Planner A/B Benchmark + Cost Dashboard + ADR (completed 2026-05-09)
+
+**Goal:** Measure real planner savings, visualize costs, document architecture decisions.
+
+### Changes Made
+- **`scripts/bench_planner_savings.py`**: A/B benchmark comparing baseline vs planned pipeline
+  - Measures latency reduction and cost reduction per query
+  - Supports any dataset (default: comprehensive_500.json)
+  - Note: Savings depend on config; max theoretical ~40% when rerank + calibrate + explain enabled
+- **`monitoring/grafana-dashboard-cost.json`**: Grafana dashboard for cost analysis
+  - Cost per query (avg), cost by stage (pie chart)
+  - Cost vs latency scatter plot
+  - Queries by cost bucket (histogram)
+  - Top 10 most expensive queries (table)
+  - Stage cost breakdown (time series)
+- **`docs/ADR_001_PIPELINE_V83.md`**: Architecture Decision Record
+  - Context: monolithic retrieve_nodes() was unobservable
+  - Decision: explicit 6-stage pipeline with circuit breakers
+  - Consequences: +observability, +optimization, +complexity
+  - Alternatives: microservices (rejected due to network overhead)
+- **`.github/workflows/ci.yml`**: Added `performance-regression` job
+  - Runs planner A/B benchmark
+  - Runs regression check (pipeline vs legacy latency)
+
+### Benchmark Results (comprehensive_500, n=100, default config)
+- Baseline p50: 68.58ms
+- Planned p50: 68.25ms
+- Latency reduction: 0.5% (expected: expensive stages disabled by default)
+
+---
+
+## Statistics
+- **902 passed, 1 skipped** — full regression suite
+- **151 new tests** written in this branch
+- **0 breaking changes**
+
 *Last updated: 2026-05-09*
