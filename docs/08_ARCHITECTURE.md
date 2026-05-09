@@ -55,16 +55,18 @@
 | Компонент | Описание | Файл |
 |-----------|----------|------|
 | **MemoryNode** | Узел памяти: фаза, амплитуда, салентность, латентная позиция | `memory/core.py` (inline), `nodes.py` (standalone) |
-| **RTMDKField** | Поле памяти: резонанс, консолидация, decay | `memory/core.py` |
-| **Resonance** | K_spatial × K_phase × A × S — мера релевантности | `memory/core.py` |
-| **Consolidation** | Диалектическое слияние узлов с высоким напряжением | `memory/core.py` |
+| **RTMDKField** | Поле памяти: маршрутизация, консолидация, decay | `memory/field.py` |
+| **ResonanceEngine** | K_spatial × K_phase × A × S — чистая математика резонанса | `memory/resonance.py` |
+| **NodeCacheManager** | Предвычисленные numpy-массивы для векторизованного query | `memory/cache_manager.py` |
+| **IndexManager** | HNSW + BM25 + sparse shard routing | `memory/index_manager.py` |
+| **Consolidation** | Диалектическое слияние узлов с высоким напряжением | `memory/field.py` |
 | **Riemannian Geometry** | Операции на шаре Пуанкаре (exp/log/midpoint/scalar) | `memory/geometry.py`, `utils/hyperbolic.py` |
 | **Spectral Clustering** | Спектральный графовый Laplacian для глобальной кластеризации перед merge | `memory/spectral.py` |
 | **Kalman Filter** | EKF для отслеживания неопределённости позиций узлов | `memory/kalman.py` |
 | **Conformal Prediction** | ICP-калибровка score-threshold для гарантий coverage | `memory/conformal.py` |
-| **Local Bandwidth** | Адаптивная k-NN KDE ширина ядра per-node | `memory/core.py` (cache) |
-| **HNSW** | Приближённый поиск O(log N) | `support/hnsw.py` |
-| **BM25** | Текстовый поиск fallback | `support/bm25.py` |
+| **Local Bandwidth** | Адаптивная k-NN KDE ширина ядра per-node | `memory/field.py` (cache) |
+| **HNSW** | Приближённый поиск O(log N) | `support/hnsw.py`, `memory/index_manager.py` |
+| **BM25** | Текстовый поиск fallback | `support/bm25.py`, `memory/index_manager.py` |
 | **IncPCA** | Инкрементальная проекция | `support/projection.py` |
 
 ### Phase 15: Version Control & Attention
@@ -415,7 +417,11 @@ rtmdk/
 ├── config.py            # 8 пресетов RTMDKConfig
 │
 ├── memory/              # Core kernel
-│   ├── core.py          # RTMDKField, RTMDKMemory (~5000 lines)
+│   ├── field.py         # RTMDKField (~5200 lines, декомпозируется)
+│   ├── core.py          # RTMDKMemory (~2600 lines, pipeline & API)
+│   ├── resonance.py     # ResonanceEngine (math extraction)
+│   ├── cache_manager.py # NodeCacheManager (cache extraction)
+│   ├── index_manager.py # IndexManager (HNSW+BM25+shards extraction)
 │   ├── geometry.py      # Пуанкаре-операции (exp/log/midpoint/scalar)
 │   ├── conformal.py     # ICP калибровка retrieval confidence
 │   ├── spectral.py      # Spectral Graph Laplacian для consolidation
@@ -549,16 +555,20 @@ rtmdk/
 ## Backlog Modules (v8.2.1)
 
 ### EngramEmbeddingCache
-- File: tmdk/memory/engram_cache.py`n- Purpose: Hot/warm/cold tiered cache for node embeddings to avoid TieredNodeStore disk scans.
+- File: 
+tmdk/memory/engram_cache.py`n- Purpose: Hot/warm/cold tiered cache for node embeddings to avoid TieredNodeStore disk scans.
 - Config: sot.engram_cache_enabled, sot.engram_cache_max_hot, sot.engram_cache_max_warm`n
 ### Observability
-- File: tmdk/memory/observability.py`n- Purpose: Latency histograms (p50/p95/p99), cache hit ratio, threshold alerting.
+- File: 
+tmdk/memory/observability.py`n- Purpose: Latency histograms (p50/p95/p99), cache hit ratio, threshold alerting.
 - Config: sot.observability_enabled`n
 ### DistributedLock
-- File: tmdk/memory/distributed_lock.py`n- Purpose: File-based inter-process lock with intra-process thread safety.
+- File: 
+tmdk/memory/distributed_lock.py`n- Purpose: File-based inter-process lock with intra-process thread safety.
 - Config: sot.distributed_lock_path`n
 ### RAG Quality
-- File: tmdk/memory/rag_quality.py`n- Purpose: Query decomposition, sentence-level reranking, explicit feedback loop.
+- File: 
+tmdk/memory/rag_quality.py`n- Purpose: Query decomposition, sentence-level reranking, explicit feedback loop.
 - Config: sot.sentence_reranker_enabled, sot.query_decomposition_enabled, sot.feedback_loop_enabled`n
 
 
