@@ -38,6 +38,7 @@ from rtmdk.pipeline.batch import BatchEmbedStage, BatchPipelineExecutor
 from rtmdk.pipeline.registry import StageRegistry, GLOBAL_REGISTRY
 from rtmdk.pipeline.circuit_breaker import CircuitBreaker
 from rtmdk.pipeline.health import PipelineHealthMonitor
+from rtmdk.pipeline.persistence import PipelineMetricsStore
 
 # Register default stages in the global registry
 GLOBAL_REGISTRY.register("embed", EmbedStage)
@@ -65,4 +66,5 @@ __all__ = [
     "GLOBAL_REGISTRY",
     "CircuitBreaker",
     "PipelineHealthMonitor",
+    "PipelineMetricsStore",
 ]
