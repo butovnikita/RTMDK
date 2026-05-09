@@ -1,0 +1,39 @@
+# Prometheus alert rules for RTMDK Pipeline
+
+groups:
+  - name: rtmdk-pipeline
+    rules:
+      - alert: PipelineHighLatency
+        expr: rtmdk_pipeline_stage_latency_ms{quantile="0.95"} > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Pipeline stage {{ $labels.stage }} latency is high"
+          description: "p95 latency for {{ $labels.stage }} is {{ $value }}ms"
+
+      - alert: PipelineCircuitBreakerOpen
+        expr: rtmdk_pipeline_breaker_state == 2
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Circuit breaker open for stage {{ $labels.stage }}"
+          description: "Stage {{ $labels.stage }} is bypassed due to failures"
+
+      - alert: PipelineHighErrorRate
+        expr: rate(rtmdk_pipeline_stage_errors_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate in pipeline"
+          description: "Error rate is {{ $value }} errors/sec"
+
+      - alert: PipelineStageDisabled
+        expr: rtmdk_pipeline_stage_enabled == 0
+        for: 1m
+        labels:
+          severity: info
+        annotations:
+          summary: "Pipeline stage {{ $labels.stage }} is disabled"

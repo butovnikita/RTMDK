@@ -157,3 +157,27 @@ class TestServerSSEEndpoint:
     def test_pipeline_prometheus_no_memory(self, client):
         resp = client.get("/v1/memory/pipeline/prometheus")
         assert resp.status_code == 503
+
+    def test_pipeline_dag_endpoint(self, client):
+        mem = make_memory()
+        app_mod.memory = mem
+
+        try:
+            resp = client.get("/v1/memory/pipeline/dag")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert "nodes" in data
+            assert "edges" in data
+            assert data["total_stages"] >= 1
+            assert len(data["nodes"]) == data["total_stages"]
+            assert len(data["edges"]) == data["total_stages"] - 1
+            for node in data["nodes"]:
+                assert "id" in node
+                assert "enabled" in node
+                assert "has_breaker" in node
+        finally:
+            app_mod.memory = None
+
+    def test_pipeline_dag_no_memory(self, client):
+        resp = client.get("/v1/memory/pipeline/dag")
+        assert resp.status_code == 503

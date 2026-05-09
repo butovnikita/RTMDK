@@ -1465,6 +1465,44 @@ async def memory_pipeline_stream(
     )
 
 
+@app.get("/v1/memory/pipeline/dag")
+async def memory_pipeline_dag():
+    """Return pipeline stage dependency graph for visualization.
+
+    Returns DAG structure showing stage order, dependencies,
+    and breaker configuration.
+    """
+    if not memory or not memory.field:
+        raise HTTPException(status_code=503, detail="Memory not initialized")
+
+    pipeline = memory.build_pipeline()
+    nodes = []
+    edges = []
+
+    for i, stage in enumerate(pipeline.stages):
+        nodes.append({
+            "id": stage.name,
+            "label": stage.name,
+            "enabled": stage.enabled,
+            "has_breaker": stage.circuit_breaker is not None,
+            "breaker_state": stage.circuit_breaker.state.value if stage.circuit_breaker else None,
+            "has_fallback": hasattr(stage, "fallback") and stage.fallback is not None,
+        })
+        if i > 0:
+            edges.append({
+                "from": pipeline.stages[i - 1].name,
+                "to": stage.name,
+            })
+
+    return {
+        "nodes": nodes,
+        "edges": edges,
+        "total_stages": len(nodes),
+        "enabled_stages": sum(1 for n in nodes if n["enabled"]),
+        "stages_with_breakers": sum(1 for n in nodes if n["has_breaker"]),
+    }
+
+
 @app.get("/v1/memory/pipeline/health")
 async def memory_pipeline_health():
     """Return per-stage health status for the pipeline.
