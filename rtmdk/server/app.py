@@ -1367,6 +1367,48 @@ async def memory_query_pipeline(req: MemoryQueryPipelineRequest):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+@app.get("/v1/memory/pipeline/stream")
+async def memory_pipeline_stream(
+    query: str = Query(..., min_length=1, description="Search query"),
+    top_k: int = Query(5, ge=1, le=50, description="Number of results"),
+    session_id: Optional[str] = Query(None, description="Session ID"),
+):
+    """Stream pipeline stage events via Server-Sent Events.
+
+    Each event carries the completion status of a single stage,
+    enabling live progress bars in dashboards and debug UIs.
+
+    Example (JavaScript):
+        const es = new EventSource(
+            '/v1/memory/pipeline/stream?query=hello&top_k=5'
+        );
+        es.addEventListener('message', e => console.log(JSON.parse(e.data)));
+    """
+    if not memory or not memory.field:
+        async def _error():
+            yield f"data: {json.dumps({'event': 'error', 'message': 'Memory not initialized'})}\n\n"
+        return StreamingResponse(_error(), media_type="text/event-stream")
+
+    from rtmdk.pipeline.streaming import StreamingPipelineExecutor
+
+    pipeline = memory.build_pipeline()
+    streamer = StreamingPipelineExecutor(pipeline.stages)
+
+    async def _generator():
+        async for chunk in streamer.run_async(query, top_k=top_k, session_id=session_id):
+            yield chunk
+
+    return StreamingResponse(
+        _generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @app.get("/v1/memory/pipeline/metrics")
 async def memory_pipeline_metrics_summary():
     """Return aggregated pipeline metrics summary."""
