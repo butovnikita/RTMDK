@@ -826,34 +826,19 @@ class RTMDKField:
         self.adaptive_threshold = AdaptiveThreshold(
             config.adaptive_window,
             config.tension_threshold) if config.adaptive_threshold else None
-        self.bm25_index = BM25Index(
-            config.bm25_k1,
-            config.bm25_b) if config.bm25_fallback else None
         self.tda_monitor = TDAMonitor() if config.tda_monitoring else None
         self.gpu_backend = TorchBackend() if config.backend == Backend.TORCH else None
         if self.gpu_backend and not self.gpu_backend.available:
             self.gpu_backend = None
         self._resonance_engine.gpu_backend = self.gpu_backend
-        if config.use_hnsw:
-            if _HNSWLIB_AVAILABLE:
-                self.hnsw_index = HNSWLibIndex(
-                    dim=config.latent_dim,
-                    m=config.hnsw_m,
-                    ef_construction=config.hnsw_ef_construction)
-            else:
-                self.hnsw_index = NaiveGraphIndex(
-                    config.hnsw_m, config.hnsw_ef_construction)
-        else:
-            self.hnsw_index = None
 
-        self._async_index_builder: Optional[Any] = None
-        if config.use_hnsw and config.async_hnsw_build and self.hnsw_index:
-            from rtmdk.memory.async_index import AsyncIndexBuilder
-            self._async_index_builder = AsyncIndexBuilder(
-                self.hnsw_index,
-                interval_ms=config.async_hnsw_interval_ms,
-                batch_size=config.async_hnsw_batch_size,
-            )
+        from rtmdk.memory.index_manager import IndexManager
+        self._index_mgr = IndexManager(config, config.latent_dim, self._rng, self._quant)
+        # Backward-compatible aliases
+        self.bm25_index = self._index_mgr.bm25_index
+        self.hnsw_index = self._index_mgr.hnsw_index
+        self.shard_centers = self._index_mgr.shard_centers
+        self._async_index_builder = self._index_mgr._async_builder
 
         # Pre-select batch resonance backend to avoid branching in hot path
         if self.gpu_backend and self.gpu_backend.available:
@@ -958,12 +943,9 @@ class RTMDKField:
                 config.dp_epsilon, config.dp_delta, config.dp_max_norm)
 
         # Phase 12 Track 1: Sparse resonant routing (MoE-memory)
-        self.shard_centers: Optional[NDArray] = None
         self.shard_router: Optional[NDArray] = None
         self._node_shard_map: Dict[str, int] = {}
         if config.sparse_routing:
-            self.shard_centers = self._rng.standard_normal(
-                (config.num_shards, config.latent_dim)).astype(np.float32)
             self.shard_router = np.zeros(config.num_shards, dtype=np.float32)
 
         # Phase 12 Track 3: Crystallization
@@ -1984,7 +1966,7 @@ class RTMDKField:
                 self.bm25_index is not None and
                 len(self.nodes) > self.cfg.bm25_first_stage_k):
             candidate_ids = [
-                nid for nid, _ in self.bm25_index.search(query_text, self.cfg.bm25_first_stage_k)
+                nid for nid, _ in self._index_mgr.bm25_search(query_text, self.cfg.bm25_first_stage_k)
                 if nid in self.nodes
             ]
             if candidate_ids:
@@ -2008,12 +1990,13 @@ class RTMDKField:
         # Fix 1: HNSW auto-intercept for large N (>50 nodes).
         # For small datasets, full vectorized scan is more accurate and still
         # fast (SIMD).
-        elif self.cfg.use_hnsw and self.hnsw_index and len(
-                self.hnsw_index.positions) > getattr(self.cfg, "hnsw_min_nodes", 50):
-            n_pos = len(self.hnsw_index.positions)
-            hnsw_k = min(n_pos, max(top_k * 20, min(n_pos // 20, 2000)))
-            candidate_ids = self.hnsw_index.search(query_latent, hnsw_k)
-            candidate_ids = [nid for nid in candidate_ids if nid in self.nodes]
+        elif self.cfg.use_hnsw:
+            candidate_ids: List[str] = []
+            n_pos = self._index_mgr.hnsw_count()
+            if n_pos > getattr(self.cfg, "hnsw_min_nodes", 50):
+                hnsw_k = min(n_pos, max(top_k * 20, min(n_pos // 20, 2000)))
+                candidate_ids = self._index_mgr.hnsw_search(query_latent, hnsw_k)
+                candidate_ids = [nid for nid in candidate_ids if nid in self.nodes]
             # Vectorized batch resonance on HNSW candidates using cached arrays
             if candidate_ids:
                 scores = self._batch_resonance_cached(
@@ -2048,9 +2031,13 @@ class RTMDKField:
                         node = self.nodes[nid]
                         node.last_resonated = time.time()
                         results.append((nid, float(filtered_scores[ti]), node))
+            elif n_pos <= getattr(self.cfg, "hnsw_min_nodes", 50):
+                # Small dataset — full vectorized scan is more accurate and still fast
+                results = self._query_vectorized(
+                    query_latent, phase, top_k, modality, session_id, t0)
             else:
                 results = []
-        elif self.cfg.sparse_routing and self.shard_centers is not None and len(self.nodes) > self.cfg.num_shards * 2:
+        elif self.cfg.sparse_routing and self._index_mgr.shard_centers is not None and len(self.nodes) > self.cfg.num_shards * 2:
             active_shards = self._route_query(
                 query_latent, self.cfg.top_shards)
             candidate_ids = [
@@ -2196,7 +2183,7 @@ class RTMDKField:
                     texts.append(t)
             fallback_query = query_text if query_text else " ".join(texts)
             if fallback_query:
-                for doc_id, score in self.bm25_index.search(fallback_query, top_k):
+                for doc_id, score in self._index_mgr.bm25_search(fallback_query, top_k):
                     if doc_id in self.nodes:
                         results.append(
                             (doc_id, score * 0.1, self.nodes[doc_id]))
@@ -2315,15 +2302,14 @@ class RTMDKField:
         phases_arr = np.array(phases, dtype=np.float32)
 
         # HNSW fast path: collect union candidates, single batch resonance call
-        if self.cfg.use_hnsw and self.hnsw_index and len(
-                self.hnsw_index.positions) > getattr(self.cfg, "hnsw_min_nodes", 50):
-            n_pos = len(self.hnsw_index.positions)
+        n_pos = self._index_mgr.hnsw_count()
+        if self.cfg.use_hnsw and n_pos > getattr(self.cfg, "hnsw_min_nodes", 50):
             hnsw_k = min(n_pos, max(top_k * 20, min(n_pos // 20, 2000)))
             per_query_candidates: List[List[str]] = []
             all_candidate_ids: List[str] = []
             candidate_set: Set[str] = set()
             for ql in query_latents:
-                cands = self.hnsw_index.search(ql, hnsw_k)
+                cands = self._index_mgr.hnsw_search(ql, hnsw_k)
                 cands = [nid for nid in cands if nid in self.nodes]
                 per_query_candidates.append(cands)
                 for nid in cands:
@@ -2739,10 +2725,7 @@ class RTMDKField:
             self.stats["role_router_enabled"] = True
 
         if self.cfg.use_hnsw and self.hnsw_index:
-            if self._async_index_builder:
-                self._async_index_builder.submit(nid, latent)
-            else:
-                self.hnsw_index.insert(nid, latent)
+            self._index_mgr.hnsw_insert(nid, latent)
         if self.cfg.bm25_fallback and self.bm25_index:
             # Handle both v1 (text) and v2 (input_text + output_text) nodes
             text = content.get("text", "")
@@ -2751,7 +2734,7 @@ class RTMDKField:
                 output_t = content.get("output_text", "")
                 text = f"{input_t} {output_t}".strip()
             if text:
-                self.bm25_index.add_document(nid, text)
+                self._index_mgr.bm25_add(nid, text)
 
         # Phase 13 Track 1: Event-driven trigger for node added
         if self.event_scheduler:
@@ -2899,13 +2882,7 @@ class RTMDKField:
 
         # --- Batch HNSW insert ---
         if self.cfg.use_hnsw and self.hnsw_index:
-            if self._async_index_builder:
-                self._async_index_builder.submit_batch(batch_nids, latents)
-            elif hasattr(self.hnsw_index, "insert_batch"):
-                self.hnsw_index.insert_batch(batch_nids, latents)
-            else:
-                for nid, latent in zip(batch_nids, latents):
-                    self.hnsw_index.insert(nid, latent)
+            self._index_mgr.hnsw_insert_batch(batch_nids, latents)
 
         # --- Batch BM25 insert ---
         if self.cfg.bm25_fallback and self.bm25_index:
@@ -2916,7 +2893,7 @@ class RTMDKField:
                     output_t = contents[i].get("output_text", "")
                     text = f"{input_t} {output_t}".strip()
                 if text:
-                    self.bm25_index.add_document(nid, text)
+                    self._index_mgr.bm25_add(nid, text)
 
         # Track 3: Invalidate query cache once
         if self.query_cache is not None:
@@ -2943,12 +2920,8 @@ class RTMDKField:
         # Rebuild node_index (remove deleted, preserve order)
         self.node_index = [nid for nid in self.node_index if nid in self.nodes]
         if self.cfg.use_hnsw and self.hnsw_index:
-            if self._async_index_builder:
-                for nid in node_ids:
-                    self._async_index_builder.remove(nid)
-            else:
-                for nid in node_ids:
-                    self.hnsw_index.remove(nid)
+            for nid in node_ids:
+                self._index_mgr.hnsw_remove(nid)
         # Track 5: WAL durability for explicit deletions
         self.wal.append_delete(node_ids)
         # Invalidate caches
@@ -3090,9 +3063,8 @@ class RTMDKField:
         k_neighbors = 10
         neighbor_ids = []
 
-        if self.cfg.use_hnsw and self.hnsw_index and len(
-                self.hnsw_index.positions) > k_neighbors:
-            candidate_ids = self.hnsw_index.search(
+        if self.cfg.use_hnsw and self._index_mgr.hnsw_count() > k_neighbors:
+            candidate_ids = self._index_mgr.hnsw_search(
                 node.latent_pos, top_k=k_neighbors + 1)
             neighbor_ids = [
                 nid for nid in candidate_ids if nid != node_id and nid in self.nodes]
@@ -3359,11 +3331,11 @@ class RTMDKField:
                     node.causal_strength[parent] = max(
                         node.causal_strength[parent], strength)
 
-        if self.cfg.use_hnsw and self.hnsw_index:
-            self.hnsw_index.remove(pid)
-            self.hnsw_index.insert(nid, node.latent_pos)
-        if self.cfg.bm25_fallback and self.bm25_index:
-            self.bm25_index.remove_document(pid)
+        if self.cfg.use_hnsw:
+            self._index_mgr.hnsw_remove(pid)
+            self._index_mgr.hnsw_insert(nid, node.latent_pos)
+        if self.cfg.bm25_fallback:
+            self._index_mgr.bm25_remove(pid)
 
         pending_deletions.append(pid)
         processed.add(pid)
@@ -3443,7 +3415,7 @@ class RTMDKField:
                     continue
                 node = self.nodes[nid]
                 # HNSW search for neighbors within distance 2.5
-                candidate_ids = self.hnsw_index.search(
+                candidate_ids = self._index_mgr.hnsw_search(
                     node.latent_pos, top_k=min(50, n_snap))
                 candidates = []
                 for oid in candidate_ids:
@@ -3552,11 +3524,11 @@ class RTMDKField:
                             node.causal_strength[parent] = max(
                                 node.causal_strength[parent], strength)
 
-                if self.cfg.use_hnsw and self.hnsw_index:
-                    self.hnsw_index.remove(pid)
-                    self.hnsw_index.insert(nid, node.latent_pos)
+                if self.cfg.use_hnsw:
+                    self._index_mgr.hnsw_remove(pid)
+                    self._index_mgr.hnsw_insert(nid, node.latent_pos)
                 if self.cfg.bm25_fallback and self.bm25_index:
-                    self.bm25_index.remove_document(pid)
+                    self._index_mgr.bm25_remove(pid)
 
                 pending_deletions.append(pid)
                 processed.add(pid)
@@ -3677,11 +3649,11 @@ class RTMDKField:
                             node.causal_strength[parent] = max(
                                 node.causal_strength[parent], strength)
 
-                if self.cfg.use_hnsw and self.hnsw_index:
-                    self.hnsw_index.remove(pid)
-                    self.hnsw_index.insert(nid, node.latent_pos)
+                if self.cfg.use_hnsw:
+                    self._index_mgr.hnsw_remove(pid)
+                    self._index_mgr.hnsw_insert(nid, node.latent_pos)
                 if self.cfg.bm25_fallback and self.bm25_index:
-                    self.bm25_index.remove_document(pid)
+                    self._index_mgr.bm25_remove(pid)
 
                 pending_deletions.append(pid)
                 processed.add(pid)
@@ -3916,10 +3888,10 @@ class RTMDKField:
         if to_remove:
             self.wal.append_delete(to_remove)
         for nid in to_remove:
-            if self.cfg.use_hnsw and self.hnsw_index:
-                self.hnsw_index.remove(nid)
-            if self.cfg.bm25_fallback and self.bm25_index:
-                self.bm25_index.remove_document(nid)
+            if self.cfg.use_hnsw:
+                self._index_mgr.hnsw_remove(nid)
+            if self.cfg.bm25_fallback:
+                self._index_mgr.bm25_remove(nid)
             del self.nodes[nid]
         # B1: Invalidate cache on node pruning
         if to_remove:
@@ -4334,10 +4306,10 @@ class RTMDKField:
             if pruned_ids:
                 self.wal.append_delete(list(pruned_ids))
             for nid in pruned_ids:
-                if self.cfg.use_hnsw and self.hnsw_index:
-                    self.hnsw_index.remove(nid)
-                if self.cfg.bm25_fallback and self.bm25_index:
-                    self.bm25_index.remove_document(nid)
+                if self.cfg.use_hnsw:
+                    self._index_mgr.hnsw_remove(nid)
+                if self.cfg.bm25_fallback:
+                    self._index_mgr.bm25_remove(nid)
                 del self.nodes[nid]
             # Rebuild index in O(N) instead of O(N²) list.remove calls
             self.node_index = [
@@ -4643,7 +4615,7 @@ class RTMDKField:
             return self._node_shard_map[node_id]
         if node_id in self.nodes:
             pos = self.nodes[node_id].latent_pos
-            dists = np.linalg.norm(self.shard_centers - pos, axis=1)
+            dists = np.linalg.norm(self._index_mgr.shard_centers - pos, axis=1)
             shard = int(np.argmin(dists))
             self._node_shard_map[node_id] = shard
             return shard
@@ -4654,15 +4626,15 @@ class RTMDKField:
             query_latent: NDArray,
             top_shards: int = 3) -> List[int]:
         """Route query to top_k most relevant shards (softmax-free)."""
-        if self.shard_centers is None:
+        if self._index_mgr.shard_centers is None:
             return list(range(self.cfg.num_shards))
-        dists = np.linalg.norm(self.shard_centers - query_latent, axis=1)
+        dists = np.linalg.norm(self._index_mgr.shard_centers - query_latent, axis=1)
         self.shard_router = 1.0 / (1.0 + dists)
         return list(np.argsort(self.shard_router)[-top_shards:])
 
     def _update_shard_centers(self):
         """Update shard centers based on current node distribution."""
-        if self.shard_centers is None or len(self.nodes) < self.cfg.num_shards:
+        if self._index_mgr.shard_centers is None or len(self.nodes) < self.cfg.num_shards:
             return
         from sklearn.cluster import KMeans
         positions = np.array([n.latent_pos for n in self.nodes.values()])
@@ -4673,7 +4645,7 @@ class RTMDKField:
             n_init=3,
             random_state=42)
         labels = kmeans.fit_predict(positions)
-        self.shard_centers = kmeans.cluster_centers_.astype(np.float32)
+        self._index_mgr.shard_centers = kmeans.cluster_centers_.astype(np.float32)
         # Update node-shard map
         self._node_shard_map.clear()
         for i, nid in enumerate(self.node_index):
@@ -4685,7 +4657,7 @@ class RTMDKField:
         Clusters documents by their top BM25 terms instead of embeddings.
         More robust when embeddings are weak or documents are short.
         """
-        if self.bm25_index is None or len(self.nodes) < self.cfg.num_shards:
+        if self._index_mgr.bm25_index is None or len(self.nodes) < self.cfg.num_shards:
             return
         # Build doc-term matrix from BM25
         from collections import Counter
@@ -4729,7 +4701,7 @@ class RTMDKField:
                 self._node_shard_map[nids[idx]] = shard_id
             positions = np.array([self.nodes[nids[idx]].latent_pos for idx in members])
             centers.append(positions.mean(axis=0))
-        self.shard_centers = np.stack(centers).astype(np.float32)
+        self._index_mgr.shard_centers = np.stack(centers).astype(np.float32)
         logger.info("BM25 topic shards: %d clusters from %d docs", len(clusters), len(nids))
 
     # ========================================================================

@@ -154,18 +154,34 @@ def run_stress_test(
     embedder = _make_embedder(latent_dim)
     memory = RTMDKMemory(config=cfg, embedder=embedder)
 
-    # Phase 1: Insert nodes
-    print(f"Inserting {nodes:,} nodes...")
+    # Phase 1: Insert nodes (batched for throughput)
+    print(f"Inserting {nodes:,} nodes (batched)...")
     gc.collect()
     t0 = time.perf_counter()
     batch_size = 1000
+    batch_embs: List[np.ndarray] = []
+    batch_contents: List[Dict] = []
     for i in range(nodes):
         text = f"document about topic {i % 100} aspect {i} keywords {' '.join(random.choices(['neural', 'embedding', 'search', 'vector', 'memory'], k=5))}"
         emb = embedder(text)
-        memory.add_node(content={"text": text}, embedding=emb)
-        if i > 0 and i % batch_size == 0:
+        batch_embs.append(emb)
+        batch_contents.append({"text": text})
+        if len(batch_embs) >= batch_size:
+            memory.add_nodes_batch(
+                embeddings=np.stack(batch_embs, dtype=np.float32),
+                contents=batch_contents,
+            )
+            batch_embs.clear()
+            batch_contents.clear()
             elapsed = time.perf_counter() - t0
-            print(f"  {i:,} nodes ({i/elapsed:,.0f}/sec, {get_memory_mb():.0f}MB)")
+            print(f"  {i+1:,} nodes ({(i+1)/elapsed:,.0f}/sec, {get_memory_mb():.0f}MB)")
+    if batch_embs:
+        memory.add_nodes_batch(
+            embeddings=np.stack(batch_embs, dtype=np.float32),
+            contents=batch_contents,
+        )
+        batch_embs.clear()
+        batch_contents.clear()
     insert_time = time.perf_counter() - t0
     mem_after_insert = get_memory_mb()
 
