@@ -1,6 +1,6 @@
 # RTMDK Production Hardening — Progress Log
 
-## ✅ Pipeline v8.3 — Complete (22 commits, 802 tests)
+## ✅ Pipeline v8.3 — Complete (26 commits, 812 tests)
 
 **Status:** Production-ready. All features implemented, tested, documented.
 
@@ -23,10 +23,13 @@
 | Entry-point discovery | `registry.py` | 3 |
 | A/B testing framework | `ab_testing.py` | 5 |
 | Benchmark script | `scripts/bench_pipeline_ab.py` | verified |
+| Async execution | `executor.py`, `core.py` | 4 |
+| Memory profiler | `profiler.py` | 4 |
+| GraphQL pipeline query | `graphql_schema.py` | 2 |
 
 ### Statistics
-- **802 passed, 1 skipped** — full regression suite
-- **59 new tests** written in this branch
+- **812 passed, 1 skipped** — full regression suite
+- **67 new tests** written in this branch
 - **0 breaking changes**
 
 ### Documentation Updated

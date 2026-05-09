@@ -264,6 +264,49 @@ Metrics computed:
 - **Kendall tau** — ranking correlation (1.0 = same order)
 - **Latency delta** — pipeline vs legacy per query
 
+## Memory Profiling
+
+Track peak RAM per stage to identify memory bottlenecks:
+
+```python
+from rtmdk.pipeline import PipelineMemoryProfiler
+from rtmdk.pipeline.executor import PipelineExecutor
+
+pipeline = mem.build_pipeline()
+ctx, profiler = pipeline.run_with_profiler("query", top_k=5)
+
+for stage_name, stats in profiler.get_summary().items():
+    print(f"{stage_name}: {stats['peak_mb_max']:.2f} MB peak")
+```
+
+## Async Execution
+
+Run pipeline without blocking the event loop:
+
+```python
+# Single query
+ctx = await pipeline.run_async("query", top_k=5)
+
+# Concurrent batch
+ctxs = await pipeline.run_batch_async(["q1", "q2", "q3"], top_k=5)
+```
+
+Server endpoint `/v1/memory/query_pipeline` uses async execution automatically.
+
+## GraphQL
+
+```graphql
+query {
+  queryPipeline(query: "resonance", topK: 5) {
+    query
+    results { nodeId score content }
+    route
+    total
+    metrics { totalLatencyMs stages { stage latencyMs } }
+  }
+}
+```
+
 ## Future Work
 
 - Extract query rewrite and intent classification into separate stages.
