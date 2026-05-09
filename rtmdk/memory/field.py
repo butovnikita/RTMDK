@@ -35,6 +35,7 @@ from rtmdk.memory.crystallization_manager import CrystallizationManager
 from rtmdk.memory.node_manager import NodeManager
 from rtmdk.memory.cognitive_manager import CognitiveManager
 from rtmdk.memory.operational_manager import OperationalManager
+from rtmdk.memory.merge_manager import MergeManager
 from rtmdk.support.agents import AgentPlanner, HypothesisVerifier, ToolRouter
 from rtmdk.support.healer import TopologyHealer
 from rtmdk.support.meta_adaptive import MetaAdaptiveKernel
@@ -695,6 +696,7 @@ class RTMDKField:
         self._node_mgr = NodeManager(self)
         self._cognitive_mgr = CognitiveManager(self)
         self._operational_mgr = OperationalManager(self)
+        self._merge_mgr = MergeManager(self)
         self._scheduler = StepScheduler(self)
 
     # ------------------------------------------------------------------
@@ -1083,52 +1085,10 @@ class RTMDKField:
         return self._operational_mgr.get_causal_summary()
 
     def _merge_latents(self, node, partner):
-        """Merge two node latent positions using learned or heuristic method."""
-        if self.learned_consolidator is not None and self.learned_consolidator._trained:
-            # Undo quantization for learned merge (needs float32 latent)
-            latent_a = self._quant.dequantize(
-                node.latent_pos, node.latent_scale, node.latent_zero_point)
-            latent_b = self._quant.dequantize(
-                partner.latent_pos, partner.latent_scale, partner.latent_zero_point)
-            merged = self.learned_consolidator.predict(
-                latent_a, latent_b,
-                node.phase, partner.phase,
-                node.amplitude, partner.amplitude,
-                node.salience, partner.salience,
-            )
-            # Re-quantize
-            merged_q, scale, zp = self._quant.quantize_with_meta(merged)
-            node.latent_pos = merged_q
-            node.latent_scale = scale
-            node.latent_zero_point = zp
-        else:
-            # Heuristic average (preserves existing behaviour)
-            node.latent_pos = 0.5 * (node.latent_pos + partner.latent_pos)
+        self._merge_mgr.merge_latents(node, partner)
 
     def _train_learned_consolidator(self):
-        """Collect synthetic merge examples and train the consolidator MLP."""
-        if self.learned_consolidator is None:
-            return
-        n = len(self.nodes)
-        if n < 4:
-            return
-        # Sample random node pairs as synthetic merge examples
-        rng = np.random.default_rng(42)
-        node_list = list(self.nodes.values())
-        for _ in range(min(50, n * 2)):
-            a, b = rng.choice(node_list, size=2, replace=False)
-            # Dequantize latents for training
-            la = self._quant.dequantize(a.latent_pos, a.latent_scale, a.latent_zero_point)
-            lb = self._quant.dequantize(b.latent_pos, b.latent_scale, b.latent_zero_point)
-            # Queries = the parent latents themselves (proxy)
-            self.learned_consolidator.add_example(
-                la, lb,
-                queries=[la, lb],
-                phase_a=a.phase, phase_b=b.phase,
-                amp_a=a.amplitude, amp_b=b.amplitude,
-                sal_a=a.salience, sal_b=b.salience,
-            )
-        self.learned_consolidator.train(epochs=10, lr=0.005)
+        self._merge_mgr.train_learned_consolidator()
 
     def _prune_dead_nodes(self) -> None:
         self._topology_mgr.prune_dead_nodes()
