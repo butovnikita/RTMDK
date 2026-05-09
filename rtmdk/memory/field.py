@@ -29,6 +29,7 @@ from rtmdk.memory.consolidation_manager import ConsolidationManager
 from rtmdk.memory.query_manager import QueryManager
 from rtmdk.memory.routing_manager import RoutingManager
 from rtmdk.memory.scheduler import StepScheduler
+from rtmdk.memory.topology_manager import TopologyManager
 from rtmdk.support.agents import AgentPlanner, HypothesisVerifier, ToolRouter
 from rtmdk.support.healer import TopologyHealer
 from rtmdk.support.meta_adaptive import MetaAdaptiveKernel
@@ -1097,6 +1098,7 @@ class RTMDKField:
         self._consolidation_mgr = ConsolidationManager(self)
         self._query_mgr = QueryManager(self)
         self._routing_mgr = RoutingManager(self)
+        self._topology_mgr = TopologyManager(self)
         self._scheduler = StepScheduler(self)
 
     # ------------------------------------------------------------------
@@ -1816,137 +1818,17 @@ class RTMDKField:
     def _apply_conformal_filter(self, results: List[Tuple[str, float, MemoryNode]]) -> List[Tuple[str, float, MemoryNode]]:
         return self._query_mgr._apply_conformal_filter(results)
 
-    def _invalidate_tension_cache(self, node_id: Optional[str] = None):
-        """B1: Invalidate tension cache. If node_id given, invalidate that node and neighbors.
-        Otherwise, invalidate entire cache. Also cleans entries for deleted nodes."""
-        # H8: Clean up entries for deleted nodes on every call
-        dead_keys = [k for k in self._tension_cache if k not in self.nodes]
-        for k in dead_keys:
-            self._tension_cache.pop(k, None)
+    def _invalidate_tension_cache(self, node_id: Optional[str] = None) -> None:
+        self._topology_mgr.invalidate_tension_cache(node_id)
 
-        if node_id is not None:
-            # Remove specific node and mark neighbors for refresh
-            self._tension_cache.pop(node_id, None)
-            # Invalidate cache for nodes near the changed one
-            node = self.nodes.get(node_id)
-            if node:
-                for nid in list(self._tension_cache.keys()):
-                    if nid == node_id:
-                        continue
-                    # Simple proximity check: invalidate ~20% of cache
-                    if hash(nid) % 5 == 0:
-                        self._tension_cache.pop(nid, None)
-        else:
-            # Full invalidation
-            self._tension_cache.clear()
+    def _sweep_tension_cache(self) -> None:
+        self._topology_mgr.sweep_tension_cache()
 
-    def _sweep_tension_cache(self):
-        """Remove stale tension cache entries for live nodes (Fix 3: prevent unbounded cache growth)."""
-        if not self._tension_cache:
-            return
-        # Only sweep if cache is large (more than 2x number of nodes)
-        if len(self._tension_cache) <= len(self.nodes) * 2:
-            return
-        current_step = self._step_counter
-        keys_to_remove = [
-            k for k, (tension, step) in self._tension_cache.items()
-            if current_step - step > self._tension_cache_max_age * 3
-            and k in self.nodes  # Only remove for live nodes
-        ]
-        for k in keys_to_remove:
-            self._tension_cache.pop(k, None)
-
-    def _compute_tension(
-            self,
-            node_id: str,
-            neighborhood_radius: float = 2.0) -> float:
-        # B1: Tension cache check
-        if node_id in self._tension_cache:
-            cached_tension, cached_step = self._tension_cache[node_id]
-            if self._step_counter - cached_step < self._tension_cache_max_age:
-                self._tension_cache_hits += 1
-                return cached_tension
-
-        self._tension_cache_misses += 1
-
-        node = self.nodes[node_id]
-
-        # Use HNSW for fast k-NN, else fallback to deterministic k-NN via cdist
-        k_neighbors = 10
-        neighbor_ids = []
-
-        if self.cfg.use_hnsw and self._index_mgr.hnsw_count() > k_neighbors:
-            candidate_ids = self._index_mgr.hnsw_search(
-                node.latent_pos, top_k=k_neighbors + 1)
-            neighbor_ids = [
-                nid for nid in candidate_ids if nid != node_id and nid in self.nodes]
-        else:
-            # Deterministic fallback: compute distances to a limited window
-            ids_to_check = self.node_index
-            max_scan = 200  # Limit scan for performance
-            if len(ids_to_check) > max_scan:
-                # Use reservoir-style sample with deterministic seed based on
-                # node_id
-                rng = np.random.RandomState(
-                    int(hashlib.md5(node_id.encode()).hexdigest(), 16) % 2**32)
-                ids_to_check = list(
-                    rng.choice(
-                        ids_to_check,
-                        size=max_scan,
-                        replace=False))
-
-            if len(ids_to_check) < 2:
-                return 0.0
-
-            # Compute distances and select k nearest within radius
-            others = [(oid, self.nodes[oid])
-                      for oid in ids_to_check if oid != node_id and oid in self.nodes]
-            if not others:
-                return 0.0
-
-            other_positions = np.array([n.latent_pos for _, n in others])
-            other_ids = [oid for oid, _ in others]
-            dists = np.linalg.norm(other_positions - node.latent_pos, axis=1)
-
-            # Filter by radius and select k nearest
-            within_radius = dists < neighborhood_radius
-            if not np.any(within_radius):
-                # Fallback: take k nearest regardless of radius
-                k = min(k_neighbors, len(dists))
-                nearest_idx = np.argsort(dists)[:k]
-                neighbor_ids = [other_ids[i] for i in nearest_idx]
-            else:
-                radius_dists = [(other_ids[i], dists[i])
-                                for i in range(len(dists)) if within_radius[i]]
-                radius_dists.sort(key=lambda x: x[1])
-                neighbor_ids = [oid for oid, _ in radius_dists[:k_neighbors]]
-
-        if len(neighbor_ids) < 2:
-            tension = 0.0
-        else:
-            neighbors = [self.nodes[oid] for oid in neighbor_ids]
-            phases = np.array([n.phase for n in neighbors])
-            saliences = np.array([n.salience for n in neighbors])
-            tension = 0.6 * (np.std(np.cos(phases)) +
-                             np.std(np.sin(phases))) + 0.4 * np.std(saliences)
-
-        # Phase 14 Track 2: Security - detect tension spikes
-        if self.security and not self.security.validate_tension_spike(
-                float(tension)):
-            self.stats["tension_spikes_blocked"] += 1
-
-        # B1: Cache the computed tension
-        result = float(tension)
-        self._tension_cache[node_id] = (result, self._step_counter)
-        return result
+    def _compute_tension(self, node_id: str, neighborhood_radius: float = 2.0) -> float:
+        return self._topology_mgr.compute_tension(node_id, neighborhood_radius)
 
     def _soft_gate(self, tension: float) -> float:
-        if not self.cfg.soft_gates:
-            return 1.0
-        eff = self.adaptive_threshold.get_threshold(
-        ) if self.adaptive_threshold else self.cfg.tension_threshold
-        return float(
-            1 / (1 + math.exp(-(tension - eff) / self.cfg.gate_temperature)))
+        return self._topology_mgr.soft_gate(tension)
 
     def get_effective_threshold(self) -> float:
         return self.adaptive_threshold.get_threshold(
@@ -2068,65 +1950,11 @@ class RTMDKField:
             )
         self.learned_consolidator.train(epochs=10, lr=0.005)
 
-    def _prune_dead_nodes(self):
-        to_remove = [nid for nid in self.node_index
-                     if self.nodes[nid].amplitude < self.cfg.min_amplitude
-                     or self.nodes[nid].salience < self.cfg.min_amplitude * 0.5]
-        if to_remove:
-            self.wal.append_delete(to_remove)
-        for nid in to_remove:
-            if self.cfg.use_hnsw:
-                self._index_mgr.hnsw_remove(nid)
-            if self.cfg.bm25_fallback:
-                self._index_mgr.bm25_remove(nid)
-            del self.nodes[nid]
-        # B1: Invalidate cache on node pruning
-        if to_remove:
-            self._invalidate_tension_cache()
-            self._cache_dirty = True
-        # FIX: Rebuild node_index once instead of O(N) remove per node
-        self.node_index = [nid for nid in self.node_index if nid in self.nodes]
+    def _prune_dead_nodes(self) -> None:
+        self._topology_mgr.prune_dead_nodes()
 
     def _check_field_integrity(self) -> Dict[str, Any]:
-        """Check for NaN/inf in nodes, report issues, and heal them (Fix 11)."""
-        issues = []
-        n_nan = 0
-        n_inf = 0
-        healed = []
-        for nid, node in self.nodes.items():
-            needs_heal = False
-            if np.any(np.isnan(node.latent_pos)):
-                n_nan += 1
-                issues.append(f"NaN in {nid} — will heal")
-                needs_heal = True
-            if np.any(np.isinf(node.latent_pos)):
-                n_inf += 1
-                issues.append(f"Inf in {nid} — will heal")
-                needs_heal = True
-            if np.isnan(node.phase) or np.isinf(node.phase):
-                issues.append(f"Invalid phase in {nid} — will heal")
-                needs_heal = True
-                node.phase = 0.0
-            if np.isnan(node.amplitude) or node.amplitude < 0:
-                issues.append(f"Invalid amplitude in {nid} — will heal")
-                needs_heal = True
-                node.amplitude = self.cfg.min_amplitude
-            # Fix 11: Actually heal NaN positions by resetting to small random
-            # values
-            if needs_heal:
-                node.latent_pos = self._rng.standard_normal(
-                    self.cfg.latent_dim).astype(np.float32) * 0.01
-                healed.append(nid)
-                self.stats["field_integrity_issues"] = self.stats.get(
-                    "field_integrity_issues", 0) + 1
-        return {
-            "n_issues": len(issues),
-            "n_nan": n_nan,
-            "n_in": n_inf,
-            "healed": healed,
-            "issues": issues[:20],
-        }
-
+        return self._topology_mgr.check_field_integrity()
     def step(self, inputs: Optional[List[Dict]] = None):
         self._step_counter += 1
 
