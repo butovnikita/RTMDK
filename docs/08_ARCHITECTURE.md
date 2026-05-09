@@ -59,6 +59,7 @@
 | **ResonanceEngine** | K_spatial × K_phase × A × S — чистая математика резонанса | `memory/resonance.py` |
 | **NodeCacheManager** | Предвычисленные numpy-массивы для векторизованного query | `memory/cache_manager.py` |
 | **IndexManager** | HNSW + BM25 + sparse shard routing | `memory/index_manager.py` |
+| **ProjectionManager** | Projection + SOT tokenizer lifecycle | `memory/projection_manager.py` |
 | **Consolidation** | Диалектическое слияние узлов с высоким напряжением | `memory/field.py` |
 | **Riemannian Geometry** | Операции на шаре Пуанкаре (exp/log/midpoint/scalar) | `memory/geometry.py`, `utils/hyperbolic.py` |
 | **Spectral Clustering** | Спектральный графовый Laplacian для глобальной кластеризации перед merge | `memory/spectral.py` |
