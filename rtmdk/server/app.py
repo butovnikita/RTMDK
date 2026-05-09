@@ -1453,6 +1453,59 @@ async def memory_pipeline_health():
     }
 
 
+@app.get("/v1/memory/pipeline/prometheus")
+async def memory_pipeline_prometheus():
+    """Return pipeline metrics in Prometheus exposition format.
+
+    Compatible with Prometheus scraping and Grafana dashboards.
+    """
+    if not memory or not memory.field:
+        raise HTTPException(status_code=503, detail="Memory not initialized")
+
+    pipeline = memory.build_pipeline()
+    lines = [
+        "# HELP rtmdk_pipeline_stages_total Number of configured pipeline stages",
+        "# TYPE rtmdk_pipeline_stages_total gauge",
+        f"rtmdk_pipeline_stages_total {len(pipeline.stages)}",
+        "",
+        "# HELP rtmdk_pipeline_stage_enabled Whether a stage is enabled",
+        "# TYPE rtmdk_pipeline_stage_enabled gauge",
+    ]
+    for stage in pipeline.stages:
+        enabled = 1 if stage.enabled else 0
+        lines.append(f'rtmdk_pipeline_stage_enabled{{stage="{stage.name}"}} {enabled}')
+
+    lines.extend([
+        "",
+        "# HELP rtmdk_pipeline_breaker_state Circuit breaker state (0=closed, 1=half_open, 2=open)",
+        "# TYPE rtmdk_pipeline_breaker_state gauge",
+    ])
+    state_map = {"closed": 0, "half_open": 1, "open": 2}
+    for stage in pipeline.stages:
+        if stage.circuit_breaker is not None:
+            state_val = state_map.get(stage.circuit_breaker.state.value, -1)
+            lines.append(f'rtmdk_pipeline_breaker_state{{stage="{stage.name}"}} {state_val}')
+
+    # Include metrics store stats if available
+    if pipeline_metrics_store is not None:
+        summary = pipeline_metrics_store.summary()
+        lines.extend([
+            "",
+            "# HELP rtmdk_pipeline_queries_total Total pipeline queries",
+            "# TYPE rtmdk_pipeline_queries_total counter",
+            f"rtmdk_pipeline_queries_total {summary.get('queries', 0)}",
+        ])
+        for stage_name, stage_data in summary.get("stages", {}).items():
+            lat = stage_data.get("latency_ms", {})
+            if lat:
+                lines.append(f'rtmdk_pipeline_stage_latency_ms{{stage="{stage_name}",quantile="0.5"}} {lat.get("median", 0)}')
+                lines.append(f'rtmdk_pipeline_stage_latency_ms{{stage="{stage_name}",quantile="0.95"}} {lat.get("p95", 0)}')
+            err_count = stage_data.get("errors", 0)
+            lines.append(f'rtmdk_pipeline_stage_errors_total{{stage="{stage_name}"}} {err_count}')
+
+    return Response(content="\n".join(lines) + "\n", media_type="text/plain")
+
+
 @app.get("/v1/memory/pipeline/metrics")
 async def memory_pipeline_metrics_summary(
     since: Optional[float] = Query(None, description="Unix timestamp — only metrics after this time"),

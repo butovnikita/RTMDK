@@ -138,3 +138,22 @@ class TestServerSSEEndpoint:
     def test_pipeline_health_no_memory(self, client):
         resp = client.get("/v1/memory/pipeline/health")
         assert resp.status_code == 503
+
+    def test_pipeline_prometheus_endpoint(self, client):
+        mem = make_memory()
+        app_mod.memory = mem
+
+        try:
+            resp = client.get("/v1/memory/pipeline/prometheus")
+            assert resp.status_code == 200
+            assert resp.headers["content-type"] == "text/plain; charset=utf-8"
+            body = resp.text
+            assert "rtmdk_pipeline_stages_total" in body
+            assert "rtmdk_pipeline_stage_enabled" in body
+            assert "rtmdk_pipeline_breaker_state" in body
+        finally:
+            app_mod.memory = None
+
+    def test_pipeline_prometheus_no_memory(self, client):
+        resp = client.get("/v1/memory/pipeline/prometheus")
+        assert resp.status_code == 503
