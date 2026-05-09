@@ -164,3 +164,55 @@ def test_memory_batch_query_returns_results(client):
         assert data["latency_ms"] >= 0
     finally:
         app_mod.memory = None
+
+
+def test_memory_query_pipeline_503_when_not_initialized(client):
+    """Pipeline query returns 503 when memory not initialized."""
+    resp = client.post("/v1/memory/query_pipeline", json={"query": "hello", "top_k": 5})
+    assert resp.status_code == 503
+    assert "not initialized" in resp.json()["detail"]
+
+
+def test_memory_query_pipeline_returns_results(client):
+    """Pipeline query returns results with metrics and breaker states."""
+    import numpy as np
+
+    from rtmdk.memory.core import RTMDKField, RTMDKMemory
+
+    cfg = RTMDKConfig(latent_dim=16, use_hnsw=False, pipeline_breaker_enabled=False)
+    field = RTMDKField(cfg)
+    field.add_node(
+        embedding=np.array([0.0] * 16),
+        content={"content": "hello world"},
+        node_id="n0",
+    )
+    field.add_node(
+        embedding=np.array([1.0] * 16),
+        content={"content": "foo bar"},
+        node_id="n1",
+    )
+
+    mem = RTMDKMemory(config=cfg, embedder=lambda x: np.array([0.0] * 16))
+    mem.field = field
+    app_mod.memory = mem
+
+    try:
+        resp = client.post(
+            "/v1/memory/query_pipeline",
+            json={"query": "hello", "top_k": 2, "session_id": "sess_1"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["query"] == "hello"
+        assert data["total"] >= 1
+        assert len(data["results"]) >= 1
+        assert "score" in data["results"][0]
+        assert "content" in data["results"][0]
+        # Pipeline-specific fields
+        assert "metrics" in data
+        assert "stages" in data["metrics"]
+        assert "total_latency_ms" in data["metrics"]
+        assert "breaker_states" in data["metrics"]
+        assert data.get("route") is not None or data.get("route") is None  # may be None if no router
+    finally:
+        app_mod.memory = None

@@ -1136,6 +1136,24 @@ class MemoryQueryRequest(BaseModel):
     }
 
 
+class MemoryQueryPipelineRequest(BaseModel):
+    """Query the memory field using the explicit pipeline API."""
+
+    query: str = Field(..., min_length=1, description="Search query")
+    top_k: int = Field(5, ge=1, le=50, description="Number of results")
+    session_id: Optional[str] = Field(None, description="Session ID for session boosting")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "query": "What is the capital of France?",
+                "top_k": 5,
+                "session_id": "sess_123",
+            }
+        }
+    }
+
+
 class BatchQueryRequest(BaseModel):
     """Batch query the memory field."""
 
@@ -1299,6 +1317,49 @@ async def memory_query(req: MemoryQueryRequest):
     except Exception as exc:
         _metric_query_dur.observe(time.time() - t0)
         logger.warning("Memory query failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/v1/memory/query_pipeline")
+async def memory_query_pipeline(req: MemoryQueryPipelineRequest):
+    """Query memory using the explicit pipeline API with per-stage metrics."""
+    if not memory:
+        raise HTTPException(status_code=503, detail="Memory not initialized")
+
+    t0 = time.time()
+    try:
+        result = await run_sync(
+            memory.retrieve_nodes_pipeline,
+            req.query,
+            top_k=req.top_k,
+            session_id=req.session_id,
+        )
+        # Format results
+        formatted = []
+        for nid, score, node in result["results"]:
+            formatted.append({
+                "id": nid,
+                "content": (
+                    node.content.get("content", node.content)
+                    if isinstance(node.content, dict)
+                    else str(node.content)
+                ),
+                "score": round(float(score), 4),
+            })
+
+        resp = {
+            "query": req.query,
+            "results": formatted,
+            "route": result.get("route"),
+            "explanations": result.get("explanations", []),
+            "metrics": result.get("metrics", {}),
+            "total": len(formatted),
+        }
+        _metric_query_dur.observe(time.time() - t0)
+        return resp
+    except Exception as exc:
+        _metric_query_dur.observe(time.time() - t0)
+        logger.warning("Pipeline query failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
