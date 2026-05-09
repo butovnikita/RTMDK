@@ -21,7 +21,8 @@ import tempfile
 import os
 
 from rtmdk import RTMDKMemory, RTMDKConfig, MemoryNode
-from rtmdk.memory.core import ContextFormat, format_context
+from rtmdk.memory.core import ContextFormat
+from rtmdk.utils.formatting import format_context
 from rtmdk.utils.domain_classifier import detect_domain
 
 
