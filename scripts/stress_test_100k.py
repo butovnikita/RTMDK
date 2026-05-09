@@ -37,7 +37,9 @@ def _make_embedder(dim: int = 384):
     def embed(text: str) -> np.ndarray:
         h = hash(text) % (2 ** 32)
         rng = np.random.default_rng(h)
-        return rng.standard_normal(dim, dtype=np.float32)
+        vec = rng.standard_normal(dim, dtype=np.float32)
+        norm = np.linalg.norm(vec)
+        return vec / norm if norm > 1e-8 else vec
     return embed
 
 
@@ -136,6 +138,7 @@ def run_stress_test(
         phase_coupling=0.0,
         use_hnsw=True,
         hnsw_min_nodes=10,
+        bm25_fallback=False,
         learn_projection=False,
         projection_mode="identity",
         pipeline_enabled=True,
@@ -168,6 +171,8 @@ def run_stress_test(
 
     # Phase 2: Query
     print(f"Running {queries} queries...")
+    # Warmup: trigger cache build so first measured query isn't an outlier
+    _ = memory.retrieve_nodes_pipeline("warmup query", top_k=5)
     latencies = []
     stage_acc: Dict[str, List[float]] = {}
     query_texts = [f"document about topic {i % 100}" for i in range(queries)]

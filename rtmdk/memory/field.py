@@ -1561,6 +1561,43 @@ class RTMDKField:
         return response * \
             node_amplitudes[np.newaxis, :] * node_saliences[np.newaxis, :]
 
+    def _batch_resonance_cached(
+            self,
+            query_latents: NDArray,
+            query_phases: NDArray,
+            node_ids: List[str]) -> NDArray:
+        """Batch resonance using pre-cached numpy arrays — O(1) lookup per node.
+
+        Avoids expensive self.nodes[nid] Python dict lookups by mapping
+        node_ids to cached array indices.
+        """
+        if not node_ids:
+            return np.empty((len(query_latents), 0), dtype=np.float32)
+        # Build cache if missing mapping (should not happen in steady state)
+        if getattr(self, '_node_id_to_cached_idx', None) is None or self._cache_dirty:
+            self._build_node_cache()
+        mapping = self._node_id_to_cached_idx
+        indices = np.array([mapping[nid] for nid in node_ids if nid in mapping],
+                           dtype=np.int32)
+        if len(indices) == 0:
+            return np.empty((len(query_latents), 0), dtype=np.float32)
+        node_positions = self._cached_positions[indices]
+        node_phases = self._cached_phases[indices]
+        node_amplitudes = self._cached_amplitudes[indices]
+        node_saliences = self._cached_saliences[indices]
+        dists = cdist(query_latents, node_positions)
+        bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self._effective_bandwidth
+        bw = np.maximum(bw, 1e-8)
+        pc = self._effective_pc
+        if np.ndim(bw) == 0:
+            spatial = np.exp(-dists ** 2 / (2 * bw ** 2))
+        else:
+            spatial = np.exp(-dists ** 2 / (2 * bw[np.newaxis, :] ** 2))
+        phase_diff = query_phases[:, np.newaxis] - node_phases[np.newaxis, :]
+        phase_align = 0.5 + 0.5 * np.cos(phase_diff)
+        response = spatial * ((1 - pc) + pc * phase_align)
+        return response * node_amplitudes[np.newaxis, :] * node_saliences[np.newaxis, :]
+
     def _batch_resonance_torch(
             self,
             query_latents: NDArray,
@@ -1652,6 +1689,7 @@ class RTMDKField:
         self._cached_causal_boost = causal_boost
         self._cache_dirty = False
         self.node_index = [nid for nid, _ in valid_entries]
+        self._node_id_to_cached_idx = {nid: i for i, (nid, _) in enumerate(valid_entries)}
 
     def _compute_resonance_chunk(
             self,
@@ -2050,23 +2088,40 @@ class RTMDKField:
             hnsw_k = min(n_pos, max(top_k * 20, min(n_pos // 20, 2000)))
             candidate_ids = self.hnsw_index.search(query_latent, hnsw_k)
             candidate_ids = [nid for nid in candidate_ids if nid in self.nodes]
-            # Vectorized batch resonance on HNSW candidates (avoids slow Python
-            # loop)
+            # Vectorized batch resonance on HNSW candidates using cached arrays
             if candidate_ids:
-                scores = self._batch_resonance(
+                scores = self._batch_resonance_cached(
                     query_latent[np.newaxis, :],
                     np.array([phase], dtype=np.float32),
                     candidate_ids,
                 )[0]
-                results = []
-                for idx, nid in enumerate(candidate_ids):
-                    node = self.nodes[nid]
-                    resp = float(
-                        scores[idx]) * (1.3 if session_id and node.content.get("session") == session_id else 1.0)
-                    if resp >= self.cfg.min_response:
-                        results.append((nid, resp, node))
+                # Vectorized session boost and threshold filter
+                if session_id and session_id != "default":
+                    session_boosts = np.array([
+                        1.3 if self.nodes[nid].content.get("session") == session_id else 1.0
+                        for nid in candidate_ids
+                    ], dtype=np.float32)
+                    scores = scores * session_boosts
+                above = scores >= self.cfg.min_response
+                indices = np.where(above)[0]
+                if len(indices) == 0:
+                    results = []
+                else:
+                    filtered_scores = scores[indices]
+                    filtered_ids = [candidate_ids[i] for i in indices]
+                    n_results = min(len(filtered_scores), top_k)
+                    if len(filtered_scores) > top_k * 2:
+                        partition_idx = np.argpartition(filtered_scores, -n_results)[-n_results:]
+                        top_local = partition_idx[np.argsort(filtered_scores[partition_idx])[::-1]]
+                    else:
+                        top_local = np.argsort(filtered_scores)[::-1]
+                    top_local = top_local[:top_k]
+                    results = []
+                    for ti in top_local:
+                        nid = filtered_ids[ti]
+                        node = self.nodes[nid]
                         node.last_resonated = time.time()
-                results.sort(key=lambda x: x[1], reverse=True)
+                        results.append((nid, float(filtered_scores[ti]), node))
             else:
                 results = []
         elif self.cfg.sparse_routing and self.shard_centers is not None and len(self.nodes) > self.cfg.num_shards * 2:
