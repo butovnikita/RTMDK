@@ -32,6 +32,40 @@
 
 ---
 
+## ✅ 12. Config-Driven Circuit Breaker Thresholds (completed 2026-05-07)
+
+**Goal:** Remove hardcoded SLO thresholds from `build_pipeline()`.
+
+### Changes Made
+- **`rtmdk/memory/config.py`**: Added 6 new fields to `ProductionConfig`:
+  - `pipeline_breaker_enabled` (default True)
+  - `pipeline_breaker_failure_threshold` (default 5)
+  - `pipeline_breaker_latency_violation_threshold` (default 3)
+  - `pipeline_breaker_recovery_timeout_ms` (default 30_000)
+  - `pipeline_breaker_half_open_max_calls` (default 3)
+  - `pipeline_breaker_thresholds` (dict per stage, defaults provided)
+- **`rtmdk/memory/core.py`**: `build_pipeline()` now reads all breaker settings from config
+- **`tests/test_pipeline_circuit_breaker.py`**: 2 new tests verifying config read and disable
+
+### Usage
+```python
+config = RTMDKConfig(
+    pipeline_breaker_enabled=True,
+    pipeline_breaker_failure_threshold=3,
+    pipeline_breaker_thresholds={
+        "embed": 2000.0,
+        "retrieve": 100.0,
+        "rerank": 500.0,
+    },
+)
+```
+
+### Test Results
+- 2 new tests — all passing
+- Full regression suite: **762 passed, 1 skipped**
+
+---
+
 ## ✅ 10. Pipeline v2: Batch Execution + Plugin Registry (completed 2026-05-07)
 
 **Goal:** Make the retrieval pipeline extensible and efficient for batch workloads.

@@ -139,6 +139,50 @@ class TestPipelineHealthMonitor:
         assert d["embed"]["state"] == "closed"
 
 
+class TestConfigDrivenBreakers:
+    def test_build_pipeline_reads_config(self):
+        from rtmdk.memory.core import RTMDKMemory
+        from rtmdk.memory.config import RTMDKConfig
+
+        cfg = RTMDKConfig(
+            latent_dim=64, embedding_dim=64, top_k=5,
+            pipeline_breaker_enabled=True,
+            pipeline_breaker_failure_threshold=2,
+            pipeline_breaker_thresholds={"embed": 10.0, "retrieve": 10.0},
+        )
+
+        def embed(text):
+            h = hash(text) % (2 ** 32)
+            rng = np.random.default_rng(h)
+            return rng.standard_normal(64, dtype=np.float32)
+
+        mem = RTMDKMemory(config=cfg, embedder=embed)
+        pipeline = mem.build_pipeline()
+        for stage in pipeline.stages:
+            assert stage.circuit_breaker is not None
+            assert stage.circuit_breaker.failure_threshold == 2
+            assert stage.name in ("embed", "route", "retrieve", "rerank", "calibrate", "explain")
+
+    def test_build_pipeline_can_disable_breakers(self):
+        from rtmdk.memory.core import RTMDKMemory
+        from rtmdk.memory.config import RTMDKConfig
+
+        cfg = RTMDKConfig(
+            latent_dim=64, embedding_dim=64, top_k=5,
+            pipeline_breaker_enabled=False,
+        )
+
+        def embed(text):
+            h = hash(text) % (2 ** 32)
+            rng = np.random.default_rng(h)
+            return rng.standard_normal(64, dtype=np.float32)
+
+        mem = RTMDKMemory(config=cfg, embedder=embed)
+        pipeline = mem.build_pipeline()
+        for stage in pipeline.stages:
+            assert stage.circuit_breaker is None
+
+
 class TestPipelineContextBreakerStates:
     def test_breaker_states_in_to_dict(self):
         stage = SlowStage()

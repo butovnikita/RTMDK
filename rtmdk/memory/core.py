@@ -1670,47 +1670,53 @@ class RTMDKMemory(BaseModel):
         stages = []
         monitor = PipelineHealthMonitor()
 
-        # Default SLO thresholds (ms) — can be overridden via config in future
-        monitor.set_threshold("embed", 5000.0)
-        monitor.set_threshold("route", 100.0)
-        monitor.set_threshold("retrieve", 500.0)
-        monitor.set_threshold("rerank", 1000.0)
-        monitor.set_threshold("calibrate", 200.0)
-        monitor.set_threshold("explain", 100.0)
+        # Load breaker settings from config
+        breaker_enabled = getattr(self.config, "pipeline_breaker_enabled", True)
+        breaker_thresholds = getattr(
+            self.config, "pipeline_breaker_thresholds",
+            {"embed": 5000.0, "route": 100.0, "retrieve": 500.0,
+             "rerank": 1000.0, "calibrate": 200.0, "explain": 100.0}
+        )
+        failure_thresh = getattr(self.config, "pipeline_breaker_failure_threshold", 5)
+        latency_violation_thresh = getattr(self.config, "pipeline_breaker_latency_violation_threshold", 3)
+        recovery_ms = getattr(self.config, "pipeline_breaker_recovery_timeout_ms", 30_000.0)
+        half_open_calls = getattr(self.config, "pipeline_breaker_half_open_max_calls", 3)
+
+        for stage_name, threshold in breaker_thresholds.items():
+            monitor.set_threshold(stage_name, threshold)
+
+        def _attach_breaker(stage):
+            if breaker_enabled:
+                stage.circuit_breaker = monitor.get_breaker(
+                    stage.name,
+                    failure_threshold=failure_thresh,
+                    latency_violation_threshold=latency_violation_thresh,
+                    recovery_timeout_ms=recovery_ms,
+                )
+                stage.circuit_breaker.half_open_max_calls = half_open_calls
+            return stage
 
         # Stage 1: Embed (optional — caller may provide embedding directly)
-        embed_stage = EmbedStage(self.embedder)
-        embed_stage.circuit_breaker = monitor.get_breaker("embed")
-        stages.append(embed_stage)
+        stages.append(_attach_breaker(EmbedStage(self.embedder)))
 
         # Stage 2: Route
         router = None
         if getattr(self.config, "cascade_enabled", False):
             router = AdaptiveCascadeRouter()
-        route_stage = RouteStage(router)
-        route_stage.circuit_breaker = monitor.get_breaker("route")
-        stages.append(route_stage)
+        stages.append(_attach_breaker(RouteStage(router)))
 
         # Stage 3: Retrieve
-        retrieve_stage = RetrieveStage(self.field)
-        retrieve_stage.circuit_breaker = monitor.get_breaker("retrieve")
-        stages.append(retrieve_stage)
+        stages.append(_attach_breaker(RetrieveStage(self.field)))
 
         # Stage 4: Rerank
-        rerank_stage = RerankStage(self._sentence_reranker)
-        rerank_stage.circuit_breaker = monitor.get_breaker("rerank")
-        stages.append(rerank_stage)
+        stages.append(_attach_breaker(RerankStage(self._sentence_reranker)))
 
         # Stage 5: Calibrate
         calibrator = getattr(self.field, "conformal_calibrator", None)
-        calibrate_stage = CalibrateStage(calibrator)
-        calibrate_stage.circuit_breaker = monitor.get_breaker("calibrate")
-        stages.append(calibrate_stage)
+        stages.append(_attach_breaker(CalibrateStage(calibrator)))
 
         # Stage 6: Explain
-        explain_stage = ExplainStage(self._result_explainer)
-        explain_stage.circuit_breaker = monitor.get_breaker("explain")
-        stages.append(explain_stage)
+        stages.append(_attach_breaker(ExplainStage(self._result_explainer)))
 
         return PipelineExecutor(stages)
 
