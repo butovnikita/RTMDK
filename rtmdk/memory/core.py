@@ -1726,8 +1726,12 @@ class RTMDKMemory(BaseModel):
         embedding: Optional[NDArray] = None,
         top_k: Optional[int] = None,
         session_id: Optional[str] = None,
+        metrics_store: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """Retrieve nodes using the explicit pipeline API.
+
+        Args:
+            metrics_store: Optional PipelineMetricsStore to persist query metrics.
 
         Returns:
             Dict with keys:
@@ -1743,12 +1747,15 @@ class RTMDKMemory(BaseModel):
             session_id=session_id,
             embedding=embedding,
         )
-        return {
+        result = {
             "results": ctx.results,
             "route": ctx.route,
             "explanations": ctx.explanations,
             "metrics": ctx.to_dict(),
         }
+        if metrics_store is not None:
+            metrics_store.write(result["metrics"])
+        return result
 
     def health_check_pipeline(self) -> Dict[str, Any]:
         """Run health checks on every pipeline stage.

@@ -99,6 +99,25 @@ class TestRetrieveNodesPipeline:
         assert result["metrics"]["results_count"] == 0
 
 
+class TestMetricsStoreIntegration:
+    def test_metrics_store_persists(self, tmp_path):
+        from rtmdk.pipeline.persistence import PipelineMetricsStore
+
+        cfg = RTMDKConfig(latent_dim=64, embedding_dim=64, top_k=5)
+        mem = RTMDKMemory(config=cfg, embedder=_make_embedder(64))
+        for i in range(10):
+            emb = _make_embedder(64)(f"metrics doc {i}")
+            mem.add_node(embedding=emb, content={"text": f"metrics doc {i}"}, node_id=f"n{i}")
+
+        store = PipelineMetricsStore(str(tmp_path / "metrics.jsonl"))
+        result = mem.retrieve_nodes_pipeline("metrics doc 3", top_k=3, metrics_store=store)
+        assert len(result["results"]) > 0
+
+        records = store.read_all()
+        assert len(records) == 1
+        assert records[0]["query_text"] == "metrics doc 3"
+
+
 class TestBatchPipelineIntegration:
     def test_batch_pipeline_executor(self):
         cfg = RTMDKConfig(latent_dim=64, embedding_dim=64, top_k=5)
