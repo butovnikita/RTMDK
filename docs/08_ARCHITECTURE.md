@@ -60,7 +60,7 @@
 | **NodeCacheManager** | Предвычисленные numpy-массивы для векторизованного query | `memory/cache_manager.py` |
 | **IndexManager** | HNSW + BM25 + sparse shard routing | `memory/index_manager.py` |
 | **ProjectionManager** | Projection + SOT tokenizer lifecycle | `memory/projection_manager.py` |
-| **Consolidation** | Диалектическое слияние узлов с высоким напряжением | `memory/field.py` |
+| **ConsolidationManager** | Диалектическое слияние узлов с высоким напряжением | `memory/consolidation_manager.py` |
 | **Riemannian Geometry** | Операции на шаре Пуанкаре (exp/log/midpoint/scalar) | `memory/geometry.py`, `utils/hyperbolic.py` |
 | **Spectral Clustering** | Спектральный графовый Laplacian для глобальной кластеризации перед merge | `memory/spectral.py` |
 | **Kalman Filter** | EKF для отслеживания неопределённости позиций узлов | `memory/kalman.py` |
@@ -418,17 +418,19 @@ rtmdk/
 ├── config.py            # 8 пресетов RTMDKConfig
 │
 ├── memory/              # Core kernel
-│   ├── field.py         # RTMDKField (~4500 lines, 4 managers extracted)
-│   ├── core.py          # RTMDKMemory (~2600 lines, pipeline & API)
-│   ├── resonance.py     # ResonanceEngine (math extraction)
-│   ├── cache_manager.py # NodeCacheManager (cache extraction)
-│   ├── index_manager.py # IndexManager (HNSW+BM25+shards extraction)
-│   ├── geometry.py      # Пуанкаре-операции (exp/log/midpoint/scalar)
-│   ├── conformal.py     # ICP калибровка retrieval confidence
-│   ├── spectral.py      # Spectral Graph Laplacian для consolidation
-│   ├── kalman.py        # Riemannian EKF неопределённости узлов
-│   ├── serialization.py # Экспорт/импорт полей (msgpack/zlib/JSON)
-│   ├── snapshot.py      # Дельта-версионирование
+│   ├── field.py              # RTMDKField (~4050 lines, 5 managers extracted)
+│   ├── core.py               # RTMDKMemory (~2600 lines, pipeline & API)
+│   ├── resonance.py          # ResonanceEngine (math extraction)
+│   ├── cache_manager.py      # NodeCacheManager (cache extraction)
+│   ├── index_manager.py      # IndexManager (HNSW+BM25+shards extraction)
+│   ├── projection_manager.py # ProjectionManager (projection + SOT lifecycle)
+│   ├── consolidation_manager.py # ConsolidationManager (merge + spectral clustering)
+│   ├── geometry.py           # Пуанкаре-операции (exp/log/midpoint/scalar)
+│   ├── conformal.py          # ICP калибровка retrieval confidence
+│   ├── spectral.py           # Spectral Graph Laplacian для consolidation
+│   ├── kalman.py             # Riemannian EKF неопределённости узлов
+│   ├── serialization.py      # Экспорт/импорт полей (msgpack/zlib/JSON)
+│   ├── snapshot.py           # Дельта-версионирование
 │   └── __init__.py
 │
 ├── nodes.py             # Standalone dataclasses (MemoryNode, CausalEdge)
