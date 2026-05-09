@@ -92,7 +92,7 @@ from rtmdk.support.security import SecurityValidator
 from rtmdk.support.threshold import AdaptiveThreshold
 from rtmdk.support.tda import TDAMonitor
 from rtmdk.memory.resonance import ResonanceEngine
-from rtmdk.memory.utils import SecurityViolationError
+from rtmdk.memory.utils import SecurityViolationError, _sanitize_path
 
 logger = logging.getLogger(__name__)
 
@@ -215,26 +215,6 @@ HEALING_CHECK_FREQ = 50
 SYMBOLIC_OVERLAY_FREQ = 50
 META_KERNEL_ADAPT_FREQ = 5
 MAX_NODES_PRUNE_CHECK_FREQ = 10
-
-
-# ============================================================================
-# SECURITY UTILITIES
-# ============================================================================
-
-def _sanitize_path(path: str) -> str:
-    """Sanitize file path to prevent directory traversal attacks.
-
-    Rejects paths containing '..' (path traversal).
-    Returns normalized path.
-    """
-    import os
-    # Reject parent directory references BEFORE normalization
-    # (normpath collapses 'a/../b' to 'b', which would hide the attack)
-    if ".." in path.replace("\\", "/").split("/"):
-        raise SecurityViolationError(f"Path traversal detected: {path}")
-    # Normalize to catch unicode tricks and mixed separators
-    normalized = os.path.normpath(path)
-    return normalized
 
 
 def _enum_value(val, default):
