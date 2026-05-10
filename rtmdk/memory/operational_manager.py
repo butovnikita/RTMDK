@@ -175,3 +175,17 @@ class OperationalManager:
                  for k, v in field.causal_engine.causal_effects.items()],
                 key=lambda x: x[1], reverse=True)[:10],
         }
+
+    def compress_field(self) -> None:
+        """Compress node latent positions via incremental SVD."""
+        field = self._field
+        if not field.low_rank_compressor or len(field.nodes) < 10:
+            return
+        positions = np.array([n.latent_pos for n in field.nodes.values()])
+        compressed, reconstructed = field.low_rank_compressor.compress(positions)
+        ratio = field.low_rank_compressor.get_compression_ratio(positions.shape)
+        field.stats["compression_ratio"] = ratio
+        field.stats["compression_updates"] = field.low_rank_compressor._update_count
+        for i, nid in enumerate(field.node_index):
+            if i < len(reconstructed) and nid in field.nodes:
+                field.nodes[nid].latent_pos = reconstructed[i].astype(np.float32)

@@ -759,21 +759,8 @@ class RTMDKField:
     # ========================================================================
 
     def _compress_field(self):
-        """Compress node latent positions via incremental SVD."""
-        if not self.low_rank_compressor or len(self.nodes) < 10:
-            return
-        positions = np.array([n.latent_pos for n in self.nodes.values()])
-        compressed, reconstructed = self.low_rank_compressor.compress(
-            positions)
-        ratio = self.low_rank_compressor.get_compression_ratio(positions.shape)
-        self.stats["compression_ratio"] = ratio
-        self.stats["compression_updates"] = self.low_rank_compressor._update_count
-        # Update node positions with reconstructed (lossy but preserves
-        # resonance)
-        for i, nid in enumerate(self.node_index):
-            if i < len(reconstructed) and nid in self.nodes:
-                self.nodes[nid].latent_pos = reconstructed[i].astype(
-                    np.float32)
+        """Compress node latent positions — delegated to OperationalManager."""
+        self._operational_mgr.compress_field()
 
     # ========================================================================
     # PHASE 13 TRACK 1: GOAL MANAGEMENT
