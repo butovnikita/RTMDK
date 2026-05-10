@@ -111,7 +111,7 @@ embedding = embedder("Your query text here")
 SOT v2.0 now estimates `a` automatically from corpus statistics (10th
 percentile of word probabilities), so manual tuning is rarely needed.
 
-## New in v8.2.2 — Breakthrough Features
+## New in v8.3 — Breakthrough Features
 
 ### 1. Semantic Phase Learning
 Node phases are no longer random (`time.time()*0.01`).  They are derived

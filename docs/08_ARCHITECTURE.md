@@ -232,7 +232,7 @@ EngramPattern                    EngramIndex                    PatternCompleter
 ---
 ---
 
-### Phase 23: Leadership Cleanup — Architecture Decoupling (v8.3-alpha)
+### Phase 23: Leadership Cleanup — Architecture Decoupling (v8.3.0)
 
 **Цель:** Разбить монолитные `RTMDKField` (5265 строк) и `RTMDKMemory` (2603 строка) на сфокусированные подсистемы, устранить дублирование, упростить тестирование и onboarding.
 
@@ -617,15 +617,15 @@ rtmdk/
 | **Профилей** | 8 |
 | **Phases** | 21 (Mathematical Track P0–P2) |
 | **Документации** | 8 файлов |
-| **Тестов** | 203 |
+| **Тестов** | 1112 |
 
 ---
 
 *Документ создан: Апрель 2026, RTMDK v8.1*
-*Обновлён: Май 2026 (post-audit)*
+*Обновлён: Май 2026 (v8.3.0 release)*
 
 
-## Backlog Modules (v8.2.1)
+## Backlog Modules (v8.3.0)
 
 ### EngramEmbeddingCache
 - File: 
@@ -645,7 +645,7 @@ tmdk/memory/rag_quality.py`n- Purpose: Query decomposition, sentence-level reran
 - Config: sot.sentence_reranker_enabled, sot.query_decomposition_enabled, sot.feedback_loop_enabled`n
 
 
-## Production Hardening (v8.2.1)
+## Production Hardening (v8.3.0)
 
 ### Observability
 - MemoryMetrics with latency percentiles, cache hit ratio, Prometheus export

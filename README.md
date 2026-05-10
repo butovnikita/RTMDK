@@ -1,7 +1,7 @@
 # RTMDK — Resonance-Topological Memory v8.3
 
 > Долгосрочная память для LLM на основе резонансной топологии и диалектической консолидации
-> Version 8.3 (Pipeline Architecture + HNSW + Observability + Production Hardening) — 41,000+ строк кода, 200+ файлов, 120+ API endpoints, 1112 тестов
+> Version 8.3 (Pipeline Architecture + HNSW + Observability + Production Hardening) — 191,000+ строк кода, 1000+ файлов, 44 API endpoints, 1112 тестов
 
 ### Production Stats
 | Metric | Value |
@@ -225,7 +225,7 @@ RTMDK_PRESET=research RTMDK_DECAY_RATE=0.9995 python rtmdk_server.py
 ## 🏗️ Архитектура
 
 ```
-RTMDK v8.3 (35,000+ строк, 120+ файлов, 120+ API)
+RTMDK v8.3 (191,000+ строк, 1000+ файлов, 44 API)
 ├── Core (decoupled v8.3-alpha): RTMDKField + RTMDKMemory facades delegate to 21 subsystems
 │   ├── Initializers: FieldInitializer, ContextManager, MemoryPostInitializer, BacklogModulesInitializer, PipelineBuilder
 │   ├── Managers: NodeManager, QueryManager, TopologyManager, AsyncPipelineManager, CrystallizationManager, MergeManager, RoutingManager, IndexManager, ProjectionManager, ConsolidationManager, CognitiveManager, OperationalManager, Scheduler, EngramManager
@@ -233,7 +233,7 @@ RTMDK v8.3 (35,000+ строк, 120+ файлов, 120+ API)
 ├── Production: Version Control, Attention Tokens (Phase 15)
 ├── Safety: Symbolic Overlay, UMP, Safety Certifier (Phase 16)
 ├── Scale: Role Sharding, Swarm Memory (Phase 17)
-├── Tracks (v8.2):
+├── Tracks (v8.3):
 │   ├── Track 1: fp16 Quantization (2× RAM savings)
 │   ├── Track 2: Tiered Storage — Hot/Warm/Cold tiers
 │   ├── Track 3: Query Cache + Adaptive top_k
@@ -332,7 +332,7 @@ RTMDK v8.3 (35,000+ строк, 120+ файлов, 120+ API)
 | **19** | Offline Dreaming, Causal Traversal, SSM/Mamba, Trust Consensus, Neuro-Symbolic Prover | ✅ |
 | **20** | **Domain Memory** — Domain Hierarchy, Concept Lifecycle, Evidence Spans, Bi-temporal Facts | ✅ |
 
-## 🚀 Tracks v8.2 (Production Hardening)
+## 🚀 Tracks v8.3 (Production Hardening)
 
 | Track | Фича | Статус |
 |-------|------|:---:|

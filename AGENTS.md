@@ -4,7 +4,7 @@
 
 ## Project
 - **Name:** RTMDK (Resonance-Topological Memory)
-- **Version:** 8.2.1
+- **Version:** 8.3.0
 - **Language:** Python 3.10
 - **OS:** Windows (primary dev), Linux (production Docker)
 - **GPU:** CUDA 12.8, torch 2.12.0.dev
@@ -19,11 +19,11 @@ rtmdk/support/      — HNSW, projection, BM25, circuit breaker
 rtmdk/server/       — FastAPI / GraphQL / WebSocket server
 rtmdk/utils/        — JSON logging, async embedder
 docs/               — Architecture, API reference, setup guides
-tests/              — 738 tests (pytest)
+tests/              — 1112 tests (pytest)
 scripts/            — Benchmarks and diagnostics
 ```
 
-## Backlog Modules (v8.2.1)
+## Backlog Modules (v8.3.0)
 
 ### EngramEmbeddingCache (`rtmdk/memory/engram_cache.py`)
 - **Purpose:** Hot/warm/cold tiered cache to avoid TieredNodeStore disk scans during engram retrieval.

@@ -301,4 +301,4 @@ pre-commit run --all-files
 
 ---
 
-*Инструкция актуальна для RTMDK v8.1 с unified config architecture.*
+*Инструкция актуальна для RTMDK v8.3 с unified config architecture.*

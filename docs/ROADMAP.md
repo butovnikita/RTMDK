@@ -1,7 +1,7 @@
 # RTMDK — Полная Дорожная Карта Коммерческого Продукта
 # Complete Commercial Product Roadmap
 
-> **Версия:** 2.1 | **Дата:** Апрель 2026 | **Статус:** Phase 20 (Domain Memory) завершён, аудит безопасности пройден, O(n²) исправлено
+> **Версия:** 2.2 | **Дата:** Май 2026 | **Статус:** Phase 23 (Pipeline Architecture) завершён, v8.3.0 релизнут на PyPI
 
 ---
 
@@ -56,7 +56,7 @@
 
 | Компонент | Статус | Описание |
 |-----------|:---:|-----------|
-| Ядро RTMDK v8.1 | ✅ | 25,000+ строк, 20 фаз, Domain Memory, исправлены критические баги |
+| Ядро RTMDK v8.3 | ✅ | 191,000+ строк, 23 фазы, Pipeline Architecture, Domain Memory, исправлены критические баги |
 | Unified Config | ✅ | Единый RTMDKConfig, 8 пресетов, 59 env vars |
 | OpenAI-совместимый API | ✅ | /v1/chat/completions, /v1/embeddings, /v1/models |
 | SillyTavern Integration | ✅ | Proxy + Monolith, streaming save fixed |

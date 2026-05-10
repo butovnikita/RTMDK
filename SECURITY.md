@@ -1,6 +1,6 @@
 # RTMDK Security Checklist
 
-> Version: 8.2.1 | Last updated: 2026-05-07
+> Version: 8.3.0 | Last updated: 2026-05-07
 > Status: Production-ready for single-node deployment
 
 ---

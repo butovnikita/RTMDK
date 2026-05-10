@@ -2,15 +2,15 @@
 PRODUCTION GUIDE: RTMDK Scaling Roadmap
 ================================================================================
 
-> ⚠️ **IMPORTANT DISCLAIMER (2026-05-06):** This document describes a **roadmap**
-> and **planned architecture**, not implemented features. As of v8.1, the following
+> ⚠️ **IMPORTANT DISCLAIMER (2026-05-07):** This document describes a **roadmap**
+> and **planned architecture**, not implemented features. As of v8.3, the following
 > components do **NOT** exist in the codebase:
 > - Product Quantization (PQ-64)
 > - Distributed sharding with coordinator
 > - Raft consensus and replication
 > - Tiered routing or cold/hot separation
 >
-> Verified production capabilities (v8.1):
+> Verified production capabilities (v8.3):
 > - Single-machine deployment up to ~10K nodes (tested)
 > - HNSW approximate search (optional, recommended for >5K nodes)
 > - Async consolidation (non-blocking)
@@ -30,7 +30,7 @@ This document explains:
 PART 1: SCALING TO 100K NODES (Single Machine)
 ================================================================================
 
-Current limits (v8.1, tested on Windows 11, Python 3.10, Ryzen 5):
+Current limits (v8.3, tested on Windows 11, Python 3.10, Ryzen 5):
 - N=1,000: 95.6% R@1, <1ms P95 latency, ~16MB RAM
 - N=5,000: 100% R@1*, 1.4ms P95 latency, ~300MB RAM
 - N=10,000: 100% R@1*, 1.9ms P99 latency, ~333MB RAM

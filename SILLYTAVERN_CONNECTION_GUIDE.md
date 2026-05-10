@@ -12,7 +12,7 @@ All endpoints tested and verified:
 - `/api/backends/text-completions/status` → ST status check (WORKS)
 - `/dashboard` → Web UI (WORKS)
 
-**Streaming fix (v8.1.0):** AI responses are now automatically saved to memory even when streaming is enabled.
+**Streaming fix (v8.3.0):** AI responses are now automatically saved to memory even when streaming is enabled.
 
 ## Подключение
 

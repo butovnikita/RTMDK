@@ -1,6 +1,6 @@
 # RTMDK Admin Panel
 
-React-based visual administration interface for RTMDK v8.2.1.
+React-based visual administration interface for RTMDK v8.3.0.
 
 ## Features
 

@@ -1,6 +1,6 @@
 # RTMDK — Полная документация
 
-> Версия 8.1 | Модульная архитектура | 45+ модулей | 27 UX-функций | 100+ файлов | Mathematical Enhancement Track (P0–P2) завершён
+> Версия 8.3 | Pipeline Architecture | HNSW + Observability | 266 модулей | 44 API endpoints | 1112 тестов | Production Hardening
 
 ---
 

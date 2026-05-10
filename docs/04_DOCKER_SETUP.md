@@ -1,4 +1,4 @@
-# RTMDK Docker + SillyTavern Setup Guide v8.1
+# RTMDK Docker + SillyTavern Setup Guide v8.3
 
 > Полная инструкция по запуску RTMDK через Docker с unified config и SillyTavern
 
@@ -23,7 +23,7 @@ curl http://localhost:5000/health        # SillyTavern Proxy
 
 **Ожидаемый ответ:**
 ```json
-{"status": "ok", "version": "8.0.0", "lm_studio": true, "memory_nodes": 0}
+{"status": "ok", "version": "8.3.0", "lm_studio": true, "memory_nodes": 0}
 ```
 
 ---
@@ -237,4 +237,4 @@ config = RTMDKConfig.local()  # latent_dim=128
 
 ---
 
-*Инструкция актуальна для RTMDK v8.1 с unified config architecture.*
+*Инструкция актуальна для RTMDK v8.3 с unified config architecture.*

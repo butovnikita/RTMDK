@@ -1,9 +1,9 @@
 # RTMDK Development Backlog
 
 > Last updated: 2026-05-07
-> Current version: 8.3.0-dev
-> Test status: 956 passed, 1 skipped
-> Branch: `refactor/leadership-cleanup`
+> Current version: 8.3.0
+> Test status: 1112 passed, 2 skipped
+> Branch: `main`
 
 ---
 
