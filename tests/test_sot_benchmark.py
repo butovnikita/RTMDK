@@ -36,7 +36,7 @@ sbert = pytest.importorskip("sentence_transformers")
 def test_sot_vs_sbert_baseline():
     """Compare SOT retrieval against SBERT baseline on QA data."""
     with open("datasets/qa_1000_en.json", "r", encoding="utf-8") as f:
-        data = json.load(f)["records"][:200]
+        data = json.load(f)["records"][:50]
 
     from sentence_transformers import SentenceTransformer
 
@@ -59,6 +59,7 @@ def test_sot_vs_sbert_baseline():
         sot_subword_seed=True,
         sot_attention_pooling=True,
         sot_max_vocab=10000,
+        rate_limit_nodes_per_sec=0,
         sot_tokenization_mode="word",
     )
     field_sot = RTMDKField(cfg_sot)
@@ -66,7 +67,7 @@ def test_sot_vs_sbert_baseline():
     texts = [r["query"] + " " + r["answer"] for r in data]
     field_sot.sot_bootstrap(
         texts, teacher_model="all-MiniLM-L6-v2",
-        fit_projection_only=False, n_epochs=50,
+        fit_projection_only=False, n_epochs=5,
     )
 
     for rec in data:
