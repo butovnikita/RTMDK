@@ -103,27 +103,12 @@ _STOP_WORDS = _STOP_WORDS_EN | _STOP_WORDS_RU
 
 # Phase 5: dataclass nodes extracted to rtmdk.nodes
 
-# Phase 15: New modules
-try:
-    from rtmdk.support.version_control import VersionControl
-    VC_AVAILABLE = True
-except ImportError:
-    VC_AVAILABLE = False
-
 # Phase 16: New modules (cleaned: removed toy implementations)
 
 try:
     UMP_AVAILABLE = True
 except ImportError:
     UMP_AVAILABLE = False
-
-# Phase 17: RoleShardRouter
-try:
-    from rtmdk.support.role_shard_router import RoleShardRouter, DEFAULT_ROLE
-    ROLE_SHARD_AVAILABLE = True
-except ImportError:
-    ROLE_SHARD_AVAILABLE = False
-    DEFAULT_ROLE = "default"  # Fallback
 
 # Torch availability check
 try:

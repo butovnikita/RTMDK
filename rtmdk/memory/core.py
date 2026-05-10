@@ -30,7 +30,6 @@ import asyncio
 import functools
 import json
 import time
-import threading
 import os
 import copy
 from typing import List, Dict, Optional, Tuple, Callable, Any
@@ -61,13 +60,6 @@ try:
     UMP_AVAILABLE = True
 except ImportError:
     UMP_AVAILABLE = False
-
-# Phase 17: RoleShardRouter
-try:
-    from rtmdk.support.role_shard_router import DEFAULT_ROLE
-    ROLE_SHARD_AVAILABLE = True
-except ImportError:
-    ROLE_SHARD_AVAILABLE = False
 
 # Torch availability check
 try:
