@@ -22,6 +22,7 @@ from rtmdk.memory.field import RTMDKField
 from rtmdk.memory.config import (
     ContextFormat, RTMDKConfig,
 )
+from rtmdk.memory.context_manager import ContextManager
 from rtmdk.nodes import (
     MemoryNode, ContradictionRecord, CounterfactualResult, AgentPlan,
     ToolCall, Hypothesis, EvalResult,
@@ -348,6 +349,8 @@ class RTMDKMemory(BaseModel):
 
         # v8.2.1 production distributed features
         self._init_backlog_modules()
+        # Context manager handles save/load context pipelines
+        object.__setattr__(self, "_context_mgr", ContextManager(self))
 
     def _init_backlog_modules(self) -> None:
         peers = self.config.replication_peers
@@ -746,161 +749,8 @@ class RTMDKMemory(BaseModel):
             query: str,
             embedding: NDArray,
             session_id: str) -> str:
-        """Core retrieval pipeline shared by load_memory_variables and with_embedding."""
-        # Query decomposition for multi-hop retrieval
-        if self._query_decomposer is not None:
-            sub_queries = self._query_decomposer.decompose(query)
-        else:
-            sub_queries = [query]
-
-        all_results = []
-        for sub_q in sub_queries:
-            sub_emb = self.embedder(sub_q)
-            phase = self._get_phase(session_id, sub_emb)
-
-            # Phase 18: Engram-based retrieval (if enabled)
-            if self.engram_manager is not None and self.engram_manager.index.size > 0:
-                if self.engram_cache is not None and len(self.engram_cache) > 0:
-                    node_embs = self.engram_cache.get_all()
-                else:
-                    node_embs = {}
-                    for nid, node in self.field.nodes.items():
-                        emb = self._get_node_embedding(nid, node)
-                        if emb is not None:
-                            node_embs[nid] = emb
-
-                engram_results = self.engram_manager.retrieve_engrams(
-                    sub_emb, node_embs, top_k=self.field.cfg.top_k
-                )
-
-                if engram_results:
-                    results = self.engram_manager.expand_engrams(
-                        engram_results, self.field, top_k=self.field.cfg.top_k
-                    )
-                    self.field.stats["engram_retrievals"] += 1
-                else:
-                    results = self.field.query(
-                        sub_emb,
-                        phase,
-                        top_k=self.field.cfg.top_k,
-                        session_id=session_id)
-            else:
-                results = self.field.query(
-                    sub_emb,
-                    phase,
-                    top_k=self.field.cfg.top_k,
-                    session_id=session_id)
-            all_results.extend(results)
-
-        # Deduplicate and re-rank combined results
-        seen = set()
-        results = []
-        for nid, score, node in sorted(all_results, key=lambda x: x[1], reverse=True):
-            if nid not in seen:
-                results.append((nid, score, node))
-                seen.add(nid)
-
-        # Session-scoped retrieval: filter results by session_id, with global
-        # fallback
-        if session_id and session_id != "default" and results:
-            session_results = [
-                (nid, score, node) for nid, score, node in results
-                if node.content.get("session") == session_id
-            ]
-            if len(session_results) < self.field.cfg.top_k:
-                global_results = [
-                    (nid, score, node) for nid, score, node in results
-                    if node.content.get("session") != session_id
-                ]
-                needed = self.field.cfg.top_k - len(session_results)
-                session_results.extend(global_results[:needed])
-            boosted = []
-            for nid, score, node in session_results:
-                if node.content.get("session") == session_id:
-                    score *= 1.5  # 50% boost for session match
-                boosted.append((nid, score, node))
-            boosted.sort(key=lambda x: x[1], reverse=True)
-            results = boosted[:self.field.cfg.top_k]
-            self.field.stats["session_scoped_retrievals"] = self.field.stats.get(
-                "session_scoped_retrievals", 0) + 1
-
-        # Phase 1: Hybrid retrieval — blend RTMDK resonance with BM25 text
-        # scores
-        if self.field.cfg.hybrid_alpha < 1.0 and self.field.bm25_index is not None and results:
-            bm25_results = self.field.bm25_index.search(
-                query, self.field.cfg.top_k * 2)
-            if bm25_results:
-                bm25_scores = {nid: score for nid, score in bm25_results}
-                max_bm25 = max(bm25_scores.values()) if bm25_scores else 1.0
-                if max_bm25 > 0:
-                    bm25_scores = {
-                        nid: s / max_bm25 for nid,
-                        s in bm25_scores.items()}
-
-                alpha = self.field.cfg.hybrid_alpha
-                blended = []
-                for nid, score, node in results:
-                    bm25_score = bm25_scores.get(nid, 0.0)
-                    blended_score = alpha * score + (1 - alpha) * bm25_score
-                    blended.append((nid, blended_score, node))
-
-                for nid, bm25_score in bm25_scores.items():
-                    if nid not in [
-                            n[0] for n in blended] and bm25_score > self.field.cfg.min_response:
-                        node = self.field.nodes.get(nid)
-                        if node:
-                            blended_score = alpha * 0.0 + \
-                                (1 - alpha) * bm25_score
-                            blended.append((nid, blended_score, node))
-
-                blended.sort(key=lambda x: x[1], reverse=True)
-                results = blended[:self.field.cfg.top_k]
-                self.field.stats["hybrid_retrievals"] = self.field.stats.get(
-                    "hybrid_retrievals", 0) + 1
-
-        # Phase 15 Track 2: Proactive Clarification
-        if self.config.proactive_clarification and results:
-            max_score = results[0][1] if results else 0.0
-            threshold = self.field.cfg.min_response * \
-                self.config.clarification_threshold_ratio
-            if 0 < max_score < threshold:
-                clarification = self._generate_clarification(results, query)
-                self.field.stats["clarifications_generated"] += 1
-                return clarification
-
-        # Context formatting
-        if self.config.attention_tokens and results:
-            context = format_context(results, ContextFormat.ATTENTION)
-        elif self.config.attention_bias and results:
-            context = format_cognitive_context(results, bias_applied=True)
-            self.field.stats["attention_bias_applied"] += 1
-        elif self.config.cognitive_compression and results:
-            context = self.field._cognitive_compress(results)
-            raw_context = format_context(results, self.config.context_format)
-            tokens_saved = max(0, len(raw_context) - len(context))
-            self.field.stats["context_tokens_saved"] += tokens_saved
-            self.field.stats["cognitive_compressions"] += 1
-        else:
-            context = format_context(results, self.config.context_format)
-
-        # Phase 16 Track 1: SymbolicOverlay
-        if self.config.symbolic_overlay and self.field.symbolic_overlay and results:
-            facts = []
-            for nid, score, node in results[:3]:
-                text = node.content.get("text", "")
-                concepts = self.field.symbolic_overlay._extract_concepts(text)
-                facts.extend(concepts)
-            if facts:
-                symbolic_ctx = self.field.symbolic_overlay.get_symbolic_context(
-                    facts, max_depth=2)
-                if symbolic_ctx:
-                    context += "\n\n" + symbolic_ctx
-                    self.field.stats["n_symbolic_inferences"] += 1
-                    n_conflicts = sum(
-                        1 for r in self.field.symbolic_overlay.rules.values() if r.is_contextual_exception)
-                    self.field.stats["n_symbolic_conflicts"] = n_conflicts
-
-        return context
+        """Core retrieval pipeline — delegated to ContextManager."""
+        return self._context_mgr.retrieve_and_format(query, embedding, session_id)
 
     def load_memory_variables(self, inputs: Dict[str, str]) -> Dict[str, str]:
         query = inputs.get("input", inputs.get("query", ""))
@@ -1643,109 +1493,12 @@ class RTMDKMemory(BaseModel):
             session_id=session_id)
 
     def _detect_tags(self, text: str) -> List[str]:
-        """Auto-detect memory tags from text content."""
-        tags = []
-        lower = text.lower()
-
-        # Greeting/name tags
-        if any(
-            w in lower for w in [
-                "hello",
-                "hi ",
-                "hey",
-                "привет",
-                "здравствуй",
-                "hi,",
-                "hey,"]):
-            tags.append("greeting")
-        if any(
-            w in lower for w in [
-                "my name is",
-                "i'm ",
-                "i am ",
-                "меня зовут",
-                "мое имя"]):
-            tags.append("name")
-
-        # Topic tags
-        if any(
-            w in lower for w in [
-                "code",
-                "program",
-                "python",
-                "java",
-                "javascript",
-                "функци",
-                "код",
-                "програм"]):
-            tags.append("coding")
-        if any(
-            w in lower for w in [
-                "coffee",
-                "tea",
-                "food",
-                "drink",
-                "кофе",
-                "чай",
-                "еда"]):
-            tags.append("food_drink")
-        if any(
-            w in lower for w in [
-                "love",
-                "like",
-                "prefer",
-                "enjoy",
-                "люб",
-                "нрав",
-                "предпочита"]):
-            tags.append("preference")
-        if any(
-            w in lower for w in [
-                "work",
-                "job",
-                "career",
-                "работ",
-                "карьер",
-                "професс"]):
-            tags.append("work")
-        if any(
-            w in lower for w in [
-                "live",
-                "city",
-                "country",
-                "home",
-                "жив",
-                "город",
-                "стран",
-                "дом"]):
-            tags.append("location")
-        if any(
-            w in lower for w in [
-                "family",
-                "friend",
-                "dog",
-                "cat",
-                "pet",
-                "семь",
-                "друг",
-                "собак",
-                "кот",
-                "питом"]):
-            tags.append("relationships")
-
-        return tags[:5]  # Limit to 5 tags
+        """Auto-detect memory tags — delegated to ContextManager."""
+        return self._context_mgr._detect_tags(text)
 
     def _generate_clarification(self, results: List, query: str) -> str:
-        """Generate a clarification prompt from weak-resonance nodes."""
-        lines = [
-            f"[CLARIFICATION] Не нашёл точных воспоминаний по запросу: \"{query[:80]}\""]
-        lines.append("Полусовпадения (низкий резонанс):")
-        for nid, score, node in results[:3]:
-            text = node.content.get("text", "")[:60]
-            lines.append(f"  [R:{score:.2f}] {text}")
-        lines.append(
-            "Уточните запрос или предоставьте дополнительный контекст.")
-        return "\n".join(lines)
+        """Generate a clarification prompt — delegated to ContextManager."""
+        return self._context_mgr._generate_clarification(results, query)
 
     def get_system_prompt(self, context: str) -> str:
         return build_system_prompt(
@@ -1755,163 +1508,12 @@ class RTMDKMemory(BaseModel):
 
     def save_context(
             self, inputs: Dict[str, str], outputs: Dict[str, str]) -> None:
-        """Save a conversation turn to memory with structured node format.
-
-        Args:
-            inputs: {"input": "user text", "session_id": "...", ...}
-            outputs: {"output": "assistant text", ...}
-
-        Node structure:
-            input_text: User's message
-            output_text: Assistant's response (empty if only input)
-            role: "user" or "assistant"
-            session: Session/character ID
-            timestamp: Unix timestamp
-            emotion: Detected emotion (neutral by default)
-            tags: Auto-detected memory tags
-            tier: episodic/semantic/procedural
-            context: Additional metadata
-        """
-        input_text = inputs.get("input", "")
-        output_text = outputs.get("output", "")
-
-        # If output is empty, still save the input
-        if not output_text.strip():
-            if not input_text.strip():
-                return
-            text_for_embedding = input_text
-        else:
-            text_for_embedding = output_text if len(
-                output_text) > len(input_text) else input_text
-
-        session_id = inputs.get("session_id", "default")
-        timestamp = time.time()
-
-        # Detect emotion from text
-        emotion = "neutral"
-        if input_text:
-            lower_input = input_text.lower()
-            if any(
-                w in lower_input for w in [
-                    "happy",
-                    "love",
-                    "great",
-                    "wonderful",
-                    "amazing",
-                    "рад",
-                    "люб",
-                    "отличн",
-                    "прекрасн"]):
-                emotion = "positive"
-            elif any(w in lower_input for w in [
-                    "sad", "hate", "bad", "terrible", "angry",
-                    "грустн", "ненавиж", "плох", "зл"]):
-                emotion = "negative"
-            elif any(w in lower_input for w in [
-                    "?", "what", "why", "how", "when",
-                    "где", "что", "как", "когда", "почему"]):
-                emotion = "questioning"
-
-        # Auto-detect tags from text
-        all_text = f"{input_text} {output_text}"
-        tags = self._detect_tags(all_text)
-
-        # Build structured node content
-        content = {
-            "input_text": input_text,
-            "output_text": output_text,
-            "role": "assistant" if output_text.strip() else "user",
-            "session": session_id,
-            "timestamp": timestamp,
-            "emotion": emotion,
-            "tags": tags,
-            "tier": "episodic",  # Will be refined by tier detection
-            "context": {
-                k: v for k, v in inputs.items()
-                if k not in ["input", "query", "session_id", "embedding"]
-            },
-            "version": "2.0",  # Structured node version
-        }
-
-        embedding = self.embedder(text_for_embedding)
-        phase = self._get_phase(session_id, embedding)
-        modality = detect_modality(
-            text_for_embedding) if self.config.cross_modal else "text"
-
-        # Detect memory tier
-        tier = detect_tier(text_for_embedding, inputs)
-        content["tier"] = tier
-
-        try:
-            nid = self.field.add_node(
-                embedding,
-                content,
-                phase,
-                session_id=session_id,
-                modality=modality)
-        except SecurityViolationError:
-            return
-
-        # Set tier on the newly added node
-        if nid in self.field.nodes:
-            self.field.nodes[nid].tier = tier
-
-        # Phase 18: Create/update engrams from co-activated nodes
-        # Use retrieval instead of O(N) scan for scalability
-        if self.engram_manager is not None:
-            # Fast path: retrieve top-k similar nodes via HNSW/resonance
-            try:
-                retrieved = self.retrieve_nodes(
-                    text_for_embedding, embedding,
-                    top_k=self.config.engram_max_nodes * 2,
-                    session_id=session_id)
-                related_nodes = []
-                for rnid, rscore, _ in retrieved:
-                    if rscore >= self.config.min_response:
-                        related_nodes.append((rnid, float(rscore)))
-            except Exception:
-                related_nodes = []
-            related_nodes.append((nid, 1.0))
-
-            if len(related_nodes) >= self.config.engram_min_nodes:
-                node_embs = {}
-                for rnid, _ in related_nodes:
-                    emb = self._get_node_embedding(
-                        rnid, self.field.nodes.get(rnid))
-                    if emb is not None:
-                        node_embs[rnid] = emb
-
-                self.engram_manager.create_engram_from_nodes(
-                    activated_nodes=related_nodes[:self.config.engram_max_nodes],
-                    node_embeddings=node_embs,
-                    semantic_core=text_for_embedding[:100],
-                    context_tags=set(tags + [tier, session_id]),
-                    tier=tier,
-                )
-
-        if self.config.enable_async:
-            # Fix 4: Lazy async worker startup
-            if self.config.async_pipeline and not self.field._workers_started:
-                try:
-                    loop = asyncio.get_running_loop()
-                    loop.create_task(self.field._start_workers())
-                    self.field._workers_started = True
-                    # Enqueue for async processing
-                    loop.create_task(self.field.evolve_q.put({"inputs": None}))
-                except RuntimeError:
-                    self.field.step()
-            else:
-                try:
-                    asyncio.get_running_loop()
-                    asyncio.create_task(self._evolve_field_async())
-                except RuntimeError:
-                    self.field.step()
-        else:
-            self.field.step()
+        """Save a conversation turn — delegated to ContextManager."""
+        return self._context_mgr.save_context(inputs, outputs)
 
     async def _evolve_field_async(self):
-        await asyncio.sleep(0.01)
-        self.field.step()
+        """Async field evolution — delegated to ContextManager."""
+        return await self._context_mgr._evolve_field_async()
 
     def save_state(self, dir_path: str) -> None:
         """Persist backlog module state to disk."""
