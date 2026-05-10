@@ -45,16 +45,7 @@ from rtmdk.memory.utils import (
 )
 from rtmdk.utils.formatting import build_system_prompt
 from rtmdk.memory.observability import MemoryMetrics
-from rtmdk.pipeline import (
-    PipelineExecutor,
-    PlannedPipelineExecutor,
-    EmbedStage,
-    RouteStage,
-    RetrieveStage,
-    RerankStage,
-    CalibrateStage,
-    ExplainStage,
-)
+from rtmdk.memory.pipeline_builder import PipelineBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -844,92 +835,9 @@ class RTMDKMemory(BaseModel):
     # ------------------------------------------------------------------
     # Pipeline API (v8.3+)
     # ------------------------------------------------------------------
-    def build_pipeline(self) -> PipelineExecutor:
-        """Build an explicit stage-based pipeline for retrieval.
-
-        Each stage is independently observable and swappable.
-        Stages are constructed from the features enabled in config.
-        Circuit breakers are attached for automatic SLO enforcement.
-        """
-        from rtmdk.production.cascade_router import AdaptiveCascadeRouter
-        from rtmdk.pipeline.health import PipelineHealthMonitor
-        from rtmdk.pipeline.cache_stages import QueryCacheCheckStage, QueryCacheSaveStage
-        from rtmdk.pipeline.lock_stages import DistributedLockStage, DistributedLockReleaseStage
-
-        stages = []
-        monitor = PipelineHealthMonitor()
-
-        # Load breaker settings from config
-        breaker_enabled = getattr(self.config, "pipeline_breaker_enabled", True)
-        breaker_thresholds = getattr(
-            self.config, "pipeline_breaker_thresholds",
-            {"embed": 5000.0, "route": 100.0, "retrieve": 500.0,
-             "rerank": 1000.0, "calibrate": 200.0, "explain": 100.0}
-        )
-        failure_thresh = getattr(self.config, "pipeline_breaker_failure_threshold", 5)
-        latency_violation_thresh = getattr(self.config, "pipeline_breaker_latency_violation_threshold", 3)
-        recovery_ms = getattr(self.config, "pipeline_breaker_recovery_timeout_ms", 30_000.0)
-        half_open_calls = getattr(self.config, "pipeline_breaker_half_open_max_calls", 3)
-
-        for stage_name, threshold in breaker_thresholds.items():
-            monitor.set_threshold(stage_name, threshold)
-
-        def _attach_breaker(stage):
-            if breaker_enabled:
-                stage.circuit_breaker = monitor.get_breaker(
-                    stage.name,
-                    failure_threshold=failure_thresh,
-                    latency_violation_threshold=latency_violation_thresh,
-                    recovery_timeout_ms=recovery_ms,
-                )
-                stage.circuit_breaker.half_open_max_calls = half_open_calls
-            return stage
-
-        # Stage -1: Distributed lock acquire (if configured)
-        if self._distributed_lock is not None:
-            stages.append(_attach_breaker(DistributedLockStage(self._distributed_lock)))
-
-        # Stage 0: Query cache check (before embed if cache enabled)
-        if getattr(self.field, "query_cache", None) is not None:
-            stages.append(_attach_breaker(QueryCacheCheckStage(self.field, self)))
-
-        # Stage 1: Embed (optional — caller may provide embedding directly)
-        stages.append(_attach_breaker(EmbedStage(self.embedder)))
-
-        # Stage 2: Route
-        router = None
-        if getattr(self.config, "cascade_enabled", False):
-            router = AdaptiveCascadeRouter()
-        stages.append(_attach_breaker(RouteStage(router)))
-
-        # Stage 3: Retrieve
-        stages.append(_attach_breaker(RetrieveStage(self.field)))
-
-        # Stage 4: Rerank
-        stages.append(_attach_breaker(RerankStage(self._sentence_reranker)))
-
-        # Stage 5: Calibrate
-        calibrator = getattr(self.field, "conformal_calibrator", None)
-        stages.append(_attach_breaker(CalibrateStage(calibrator)))
-
-        # Stage 6: Explain
-        stages.append(_attach_breaker(ExplainStage(self._result_explainer)))
-
-        # Stage 7: Query cache save (after explain if cache enabled)
-        if getattr(self.field, "query_cache", None) is not None:
-            stages.append(_attach_breaker(QueryCacheSaveStage(self.field, self)))
-
-        # Stage 8: Distributed lock release (if configured)
-        if self._distributed_lock is not None:
-            stages.append(_attach_breaker(DistributedLockReleaseStage(self._distributed_lock)))
-
-        # Use planned executor if query planner is enabled
-        planner_enabled = getattr(self.config, "pipeline_planner_enabled", False)
-        if planner_enabled:
-            from rtmdk.pipeline.planner import QueryPlanner
-            planner = QueryPlanner()
-            return PlannedPipelineExecutor(stages, planner=planner)
-        return PipelineExecutor(stages)
+    def build_pipeline(self):
+        """Build an explicit stage-based pipeline — delegated to PipelineBuilder."""
+        return PipelineBuilder(self).build()
 
     def retrieve_nodes_pipeline(
         self,
