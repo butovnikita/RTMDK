@@ -52,7 +52,7 @@ class AnalyticsDashboard:
                 ),
             },
             "health": self._health.check_health() if self._health else None,
-            "version": "8.2.0",
+            "version": "8.3.0",
         }
 
     def get_memory_analytics(self) -> Dict[str, Any]:

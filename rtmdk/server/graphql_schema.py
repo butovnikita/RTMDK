@@ -64,7 +64,7 @@ class Query:
         node_count = 0
         if memory and memory.field is not None:
             node_count = len(memory.field.nodes)
-        return Health(status="ok", version="8.2.0", memory_nodes=node_count)
+        return Health(status="ok", version="8.3.0", memory_nodes=node_count)
 
     @strawberry.field
     def node(self, id: str) -> Optional[MemoryNode]:

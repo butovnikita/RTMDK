@@ -292,7 +292,7 @@ async def lifespan(app: FastAPI):
             setup_json_logging()
         except Exception:
             pass
-    logger.info("Starting RTMDK Production API v8.2.0")
+    logger.info("Starting RTMDK Production API v8.3.0")
     logger.info(f"Memory file: {MEMORY_FILE}")
     logger.info(f"LM Studio URL: {LM_STUDIO_URL}")
 
@@ -442,7 +442,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="RTMDK Production API",
     description="OpenAI-compatible API with Resonance-Topological Memory (No SillyTavern)",
-    version="8.2.0",
+    version="8.3.0",
     lifespan=lifespan,
 )
 
@@ -1926,7 +1926,7 @@ async def health():
     """Health check with production metrics."""
     base = {
         "status": "ok",
-        "version": "8.2.0",
+        "version": "8.3.0",
         "lm_studio": lm_studio_available,
         "memory_nodes": len(memory.field.nodes) if memory else 0,
     }
@@ -2019,7 +2019,7 @@ async def health_deep():
 
     return {
         "status": overall,
-        "version": "8.2.0",
+        "version": "8.3.0",
         "checks": checks,
     }
 
@@ -2656,7 +2656,7 @@ app.include_router(create_dashboard_router(lambda: memory, _ux_config))
 
 def main():
     print("=" * 60)
-    print("  RTMDK Production API v8.2.0")
+    print("  RTMDK Production API v8.3.0")
     print("  (No SillyTavern modules)")
     print("=" * 60)
     print()
