@@ -7,6 +7,9 @@ from __future__ import annotations
 from typing import Dict, Any, List, Optional, TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
+from scipy.spatial import cKDTree
+
+from rtmdk.memory.config import FieldHealth
 
 if TYPE_CHECKING:
     from rtmdk.memory.field import RTMDKField
@@ -95,6 +98,46 @@ class OperationalManager:
             diagnostics["kurtosis"] = field.stats.get("meta_kurtosis", 3.0)
             return diagnostics
         return {"health": "unknown", "kurtosis": 3.0}
+
+    def self_heal(self) -> List[Dict]:
+        """Run self-healing on the field (dead zones, hyperconvergence, fragmentation)."""
+        field = self._field
+        if not field.healer or len(field.nodes) < 3:
+            return []
+        health, diagnostics = field.healer.compute_field_health(field.nodes)
+        field.stats["field_health"] = health.value
+        healed = []
+        if health == FieldHealth.STABLE:
+            for nid in field.node_index:
+                field.nodes[nid].is_healing = False
+                field.nodes[nid].healing_origin = None
+            return []
+        field.stats["field_health"] = FieldHealth.HEALING.value
+        if diagnostics.get("dead_zones", 0) > 0:
+            healed.extend(
+                field.healer.heal_dead_zones(
+                    field.nodes,
+                    diagnostics["dead_zone_nodes"]))
+        if diagnostics.get("hyperconvergence", False):
+            healed.extend(field.healer.heal_hyperconvergence(field.nodes))
+        if diagnostics.get("fragmentation", 0) > field.cfg.fragmentation_threshold:
+            if len(field.nodes) >= 2:
+                positions = np.array(
+                    [n.latent_pos for n in field.nodes.values()])
+                tree = cKDTree(positions)
+                neighbors = tree.query_ball_point(positions, 2.0)
+                isolated = [field.node_index[i] for i in range(
+                    len(field.node_index)) if len(neighbors[i]) <= 1]
+                if isolated:
+                    healed.extend(
+                        field.healer.heal_fragmentation(
+                            field.nodes, isolated))
+        if healed:
+            field.stats["healing_events"] += len(healed)
+            field.stats["healing_history"].extend(healed)
+            if len(field.stats["healing_history"]) > 1000:
+                field.stats["healing_history"] = field.stats["healing_history"][-500:]
+        return healed
 
     def counterfactual_query(self,
                              intervention: Dict[str, Any],

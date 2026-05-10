@@ -46,7 +46,7 @@ from rtmdk.engines.predictive import PredictiveCodingModel
 from rtmdk.memory.geometry import exp_map_poincare
 from rtmdk.memory.quantization import QuantizationHelper
 from rtmdk.memory.config import (
-    ConsolidationMode, Backend, ContextFormat, FieldHealth, EvalMode,
+    ConsolidationMode, Backend, ContextFormat, EvalMode,
     RTMDKConfig,
 )
 from rtmdk.nodes import (
@@ -70,7 +70,7 @@ from enum import Enum
 import numpy as np
 from numpy.typing import NDArray
 
-from scipy.spatial import cKDTree
+
 import logging
 
 # Extracted engine classes (kept in sync with rtmdk/support/ modules)
@@ -1230,48 +1230,9 @@ class RTMDKField:
         self._scheduler.run(backpressure_ok)
 
     def _self_heal(self) -> List[Dict]:
-        if not self.healer or len(self.nodes) < 3:
-            return []
-        health, diagnostics = self.healer.compute_field_health(self.nodes)
-        self.stats["field_health"] = health.value
-        healed = []
-        if health == FieldHealth.STABLE:
-            for nid in self.node_index:
-                self.nodes[nid].is_healing = False
-                self.nodes[nid].healing_origin = None
-            return []
-        self.stats["field_health"] = FieldHealth.HEALING.value
-        if diagnostics.get("dead_zones", 0) > 0:
-            healed.extend(
-                self.healer.heal_dead_zones(
-                    self.nodes,
-                    diagnostics["dead_zone_nodes"]))
-        if diagnostics.get("hyperconvergence", False):
-            healed.extend(self.healer.heal_hyperconvergence(self.nodes))
-        if diagnostics.get("fragmentation",
-                           0) > self.cfg.fragmentation_threshold:
-            if len(self.nodes) >= 2:
-                positions = np.array(
-                    [n.latent_pos for n in self.nodes.values()])
-                tree = cKDTree(positions)
-                neighbors = tree.query_ball_point(positions, 2.0)
-                isolated = [self.node_index[i] for i in range(
-                    len(self.node_index)) if len(neighbors[i]) <= 1]
-                if isolated:
-                    healed.extend(
-                        self.healer.heal_fragmentation(
-                            self.nodes, isolated))
-        if healed:
-            self.stats["healing_events"] += len(healed)
-            self.stats["healing_history"].extend(healed)
-            # Fix 3: Trim on every overflow, not just when exceeding 1000 —
-            # prevents unbounded growth
-            if len(self.stats["healing_history"]) > 1000:
-                self.stats["healing_history"] = self.stats["healing_history"][-500:]
-        return healed
+        return self._operational_mgr.self_heal()
 
-
-    # ========================================================================
+    # ======================================================================
     # PHASE 12 TRACK 1: SPARSE RESONANT ROUTING (MoE-memory)
     # ========================================================================
 

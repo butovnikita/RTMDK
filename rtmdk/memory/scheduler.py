@@ -48,7 +48,7 @@ class StepScheduler:
 
         # Self-healing
         if cfg.self_healing and step % cfg.healing_check_freq == 0:
-            field._circuit_breakers["SelfHeal"].call(field._self_heal)
+            field._circuit_breakers["SelfHeal"].call(field._operational_mgr.self_heal)
 
         # Tier decay
         tier_counts: Dict[str, int] = {}
