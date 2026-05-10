@@ -1,6 +1,7 @@
-# Архитектура RTMDK v8.1
+# Архитектура RTMDK v8.3
 
 > Полный обзор всех фаз, модулей и компонентов системы
+> Обновлено после Leadership Cleanup (v8.3-alpha) — декомпозиция monolithic field.py / core.py
 
 ---
 
@@ -8,7 +9,7 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│                        RTMDK v8.1 Architecture                       │
+│                        RTMDK v8.3 Architecture                       │
 ├──────────────────────────────────────────────────────────────────────┤
 │                                                                      │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────┐  │
@@ -23,15 +24,19 @@
 │           │             │ /api/config │               │              │
 │           │             └──────┬──────┘               │              │
 │  ┌────────┴────────────────────┴──────────────────────┴───────────┐  │
-│  │                     RTMDKMemory (Unified)                       │  │
-│  │  ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────────┐  │  │
-│  │  │ RTMDKField│ │ EngramMgr │ │ Causal    │ │ SSM Dynamics  │  │  │
-│  │  │ (nodes)   │ │ (Phase 18)│ │ Traversal │ │ (Phase 19)    │  │  │
-│  │  └───────────┘ └───────────┘ └───────────┘ └───────────────┘  │  │
-│  │  ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────────┐  │  │
-│  │  │ HNSW      │ │ BM25      │ │ Symbolic  │ │ Trust         │  │  │
-│  │  │ Index     │ │ Fallback  │ │ Overlay   │ │ Consensus     │  │  │
-│  │  └───────────┘ └───────────┘ └───────────┘ └───────────────┘  │  │
+│  │                     RTMDKMemory (Facade)                        │  │
+│  │         Delegates to: ContextManager, PipelineBuilder           │  │
+│  │         Backlog: BacklogModulesInitializer, MemoryPostInit      │  │
+│  └────────────────────────────────────────────────────────────────┘  │
+│                              │                                       │
+│  ┌───────────────────────────┴───────────────────────────────────┐  │
+│  │                     RTMDKField (Coordinator)                    │  │
+│  │   ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌────────┐  │  │
+│  │   │NodeMgr  │ │QueryMgr │ │TopoMgr  │ │AsyncMgr │ │Sched   │  │  │
+│  │   │CrystMgr │ │IndexMgr │ │ProjMgr  │ │OperMgr  │ │CognMgr │  │  │
+│  │   │MergeMgr │ │RoutMgr  │ │ConsolMgr│ │EngramMgr│ │LearnMgr│  │  │
+│  │   └─────────┘ └─────────┘ └─────────┘ └─────────┘ └────────┘  │  │
+│  │   FieldInitializer wires all subsystems at construction time   │  │
 │  └────────────────────────────────────────────────────────────────┘  │
 │                                                                      │
 │  ┌────────────────────────────────────────────────────────────────┐  │
@@ -227,12 +232,49 @@ EngramPattern                    EngramIndex                    PatternCompleter
 ---
 ---
 
+### Phase 23: Leadership Cleanup — Architecture Decoupling (v8.3-alpha)
+
+**Цель:** Разбить монолитные `RTMDKField` (5265 строк) и `RTMDKMemory` (2603 строка) на сфокусированные подсистемы, устранить дублирование, упростить тестирование и onboarding.
+
+**Результат:**
+- `RTMDKField` → 844 строк (−84%) — координатор, делегирует всю работу менеджерам
+- `RTMDKMemory` → ~1380 строк (−47%) — фасад + pipeline builder
+- 21 извлечённый компонент
+
+| Компонент | Откуда извлечён | Файл | Строки | Ответственность |
+|-----------|----------------|------|--------|-----------------|
+| **FieldInitializer** | `RTMDKField.__init__` (~460 строк) | `memory/field_initializer.py` | ~460 | Проводка всех подсистем: движки, индексы, менеджеры, security, scheduler |
+| **ContextManager** | `RTMDKMemory.save_context`, `_retrieve_and_format` | `memory/context_manager.py` | ~160 | Сохранение контекста, retrieval pipeline, proactive clarification, symbolic overlay |
+| **MemoryPostInitializer** | `RTMDKMemory.model_post_init` (~160 строк) | `memory/memory_post_initializer.py` | ~160 | Проводка backlog-модулей после создания поля: async workers, engrams, causal traversal |
+| **BacklogModulesInitializer** | `RTMDKMemory._init_backlog_modules` (~95 строк) | `memory/backlog_modules_initializer.py` | ~95 | Инициализация production-модулей: Dreamer, Prover, Trust, Cache, MCTS |
+| **PipelineBuilder** | `RTMDKMemory.build_pipeline`, `_attach_breaker` | `memory/pipeline_builder.py` | ~120 | Конструирование PipelineExecutor с circuit breakers и health checks |
+| **OperationalManager** (расширен) | `RTMDKField._compress_field`, `_self_heal`, calibrate, rollback | `memory/operational_manager.py` | ~195 | Компрессия поля, rollback, intervention, causal summary, self-healing |
+
+**Менеджеры (Phase 1–14, расширены в Cleanup):**
+- `NodeManager`, `QueryManager`, `TopologyManager`, `AsyncPipelineManager`
+- `CrystallizationManager`, `MergeManager`, `RoutingManager`
+- `IndexManager`, `ProjectionManager`, `ConsolidationManager`
+- `CognitiveManager`, `Scheduler`, `EngramManager`
+
+**Ключевые архитектурные решения:**
+1. **FieldInitializer как constructor-injection** — все зависимости `RTMDKField` создаются в одном месте, упрощая тестирование с моками.
+2. **Thin wrappers + `__getattr__`** — публичный API `RTMDKMemory` сохранён полностью. Удалённые методы проксируются через `__getattr__` или делегируют в менеджеры.
+3. **No-deletion policy** — Экспериментальный код сохранён; устаревшие флаги депрекированы, но оставлены для backward compatibility v8.x.
+4. **Import cycle resolution** — `MemoryNode` импортируется через `rtmdk.nodes`, а не из `rtmdk.memory.core`, разрывая циклическую зависимость.
+
+**Backward compatibility:**
+- Все публичные методы `RTMDKField` и `RTMDKMemory` работают без изменений
+- `ContextFormat` и `SecurityViolationError` re-export из `rtmdk.memory.core` для старых импортов
+
+---
+---
+
 ## Конфигурационная система (Unified Config)
 
-RTMDK v8.1 использует **единый** `RTMDKConfig` dataclass из `rtmdk/memory/core.py`:
+RTMDK v8.3 использует **единый** `RTMDKConfig` dataclass из `rtmdk/memory/config.py`:
 
 ```
-rtmdk/memory/core.py     ← ЕДИНСТВЕННЫЙ RTMDKConfig dataclass (~150 полей)
+rtmdk/memory/config.py   ← ЕДИНСТВЕННЫЙ RTMDKConfig dataclass (~150 полей)
         │
         ├── re-export через rtmdk/config.py (пресеты)
         ├── re-export через rtmdk/__init__.py (main package)
@@ -425,8 +467,22 @@ rtmdk/
 ├── config.py            # 8 пресетов RTMDKConfig
 │
 ├── memory/              # Core kernel
-│   ├── field.py              # RTMDKField (~2100 lines, 13 managers extracted)
-│   ├── core.py               # RTMDKMemory (~2600 lines, pipeline & API)
+│   ├── field.py              # RTMDKField (~840 lines, coordinator facade)
+│   ├── core.py               # RTMDKMemory (~1380 lines, facade + pipeline)
+│   ├── field_initializer.py  # FieldInitializer (~460 lines, subsystem wiring)
+│   ├── context_manager.py    # ContextManager (~160 lines, save/load context)
+│   ├── memory_post_initializer.py # MemoryPostInitializer (~160 lines, backlog wiring)
+│   ├── backlog_modules_initializer.py # BacklogModulesInitializer (~95 lines, production modules)
+│   ├── pipeline_builder.py   # PipelineBuilder (~120 lines, circuit breaker assembly)
+│   ├── node_manager.py       # NodeManager (add/delete/batch/queue nodes)
+│   ├── query_manager.py      # QueryManager (retrieval + batch resonance)
+│   ├── topology_manager.py   # TopologyManager (tension, soft gates, pruning)
+│   ├── async_pipeline_manager.py # AsyncPipelineManager (bg workers, evolve, save)
+│   ├── crystallization_manager.py # CrystallizationManager (DBSCAN recurring patterns)
+│   ├── merge_manager.py      # MergeManager (learned consolidation + quant pruning)
+│   ├── routing_manager.py    # RoutingManager (shard routing + center updates)
+│   ├── cognitive_manager.py  # CognitiveManager (self-supervision, TDA, compression)
+│   ├── operational_manager.py # OperationalManager (calibrate, rollback, compress)
 │   ├── resonance.py          # ResonanceEngine (math extraction)
 │   ├── cache_manager.py      # NodeCacheManager (cache extraction)
 │   ├── index_manager.py      # IndexManager (HNSW+BM25+shards extraction)
@@ -439,6 +495,12 @@ rtmdk/
 │   ├── kalman.py             # Riemannian EKF неопределённости узлов
 │   ├── serialization.py      # Экспорт/импорт полей (msgpack/zlib/JSON)
 │   ├── snapshot.py           # Дельта-версионирование
+│   ├── wal.py                # Write-Ahead Log (fsync, crash recovery)
+│   ├── distributed_lock.py   # File-based + Redis distributed locking
+│   ├── observability.py      # MemoryMetrics + Prometheus export
+│   ├── rag_quality.py        # Query decomposition + sentence reranking
+│   ├── safety.py             # PoisonedMemoryDetector + rollback
+│   ├── learned_consolidation.py # Differentiable consolidation
 │   └── __init__.py
 │
 ├── nodes.py             # Standalone dataclasses (MemoryNode, CausalEdge)
