@@ -18,6 +18,7 @@ class NodeCacheManager:
     def __init__(self):
         self._cached_positions: Optional[NDArray] = None  # (N, D)
         self._cached_scales: Optional[NDArray] = None  # (N,) — int8 only
+        self._cached_norms_sq: Optional[NDArray] = None  # (N,) — precomputed ||p||^2
         self._cached_phases: Optional[NDArray] = None  # (N,)
         self._cached_amplitudes: Optional[NDArray] = None  # (N,)
         self._cached_saliences: Optional[NDArray] = None  # (N,)
@@ -64,6 +65,11 @@ class NodeCacheManager:
         return self._cached_scales
 
     @property
+    def norms_sq(self) -> Optional[NDArray]:
+        """Precomputed squared norms of cached positions."""
+        return self._cached_norms_sq
+
+    @property
     def dirty(self) -> bool:
         return self._cache_dirty
 
@@ -80,6 +86,7 @@ class NodeCacheManager:
     def clear(self) -> None:
         self._cached_positions = None
         self._cached_scales = None
+        self._cached_norms_sq = None
         self._cached_phases = None
         self._cached_amplitudes = None
         self._cached_saliences = None
@@ -150,6 +157,7 @@ class NodeCacheManager:
 
         self._cached_positions = positions
         self._cached_scales = scales
+        self._cached_norms_sq = np.einsum("ij,ij->i", positions.astype(np.float32), positions.astype(np.float32))
         self._cached_phases = phases
         self._cached_amplitudes = amplitudes
         self._cached_saliences = saliences

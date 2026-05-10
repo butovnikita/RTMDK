@@ -4,6 +4,7 @@ Handles all query paths (BM25 first-stage, HNSW, sparse routing,
 vectorized fallback), batch resonance computation, and post-query
 filtering (conformal, adaptive top-k, attention bias).
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -82,12 +83,9 @@ class QueryManager:
             threshold = getattr(f.cfg, "adaptive_pc_disable_threshold", 0.93)
             if recall1 >= threshold:
                 f._adaptive_pc_value = 0.0
-                logger.info(
-                    "Adaptive PC: embeddings strong (recall@1=%.2f >= %.2f) -> pc=0.0",
-                    recall1, threshold)
+                logger.info("Adaptive PC: embeddings strong (recall@1=%.2f >= %.2f) -> pc=0.0", recall1, threshold)
             else:
-                pc = f._estimate_optimal_pc_fn(
-                    doc_embs, sample_queries, sample_targets, sample_size=sample_size)
+                pc = f._estimate_optimal_pc_fn(doc_embs, sample_queries, sample_targets, sample_size=sample_size)
                 f._adaptive_pc_value = float(pc)
                 logger.info("Adaptive phase coupling estimated: pc=%.2f", f._adaptive_pc_value)
         except Exception as exc:
@@ -151,9 +149,7 @@ class QueryManager:
         query_modality: str = "text",
     ) -> float:
         f = self.field
-        resp = f._resonance_engine.single_response(
-            query_latent, query_phase, node, query_modality
-        )
+        resp = f._resonance_engine.single_response(query_latent, query_phase, node, query_modality)
         if f.cfg.hyperbolic:
             dist = poincare_dist(query_latent, node.latent_pos, f.cfg.ball_radius)
             f.stats["avg_hyperbolic_dist"] = 0.99 * f.stats["avg_hyperbolic_dist"] + 0.01 * dist
@@ -162,14 +158,10 @@ class QueryManager:
     # ------------------------------------------------------------------
     # Batch resonance variants
     # ------------------------------------------------------------------
-    def _batch_resonance(
-        self, query_latents: NDArray, query_phases: NDArray, node_ids: List[str]
-    ) -> NDArray:
+    def _batch_resonance(self, query_latents: NDArray, query_phases: NDArray, node_ids: List[str]) -> NDArray:
         return self.field._batch_resonance_fn(query_latents, query_phases, node_ids)
 
-    def _batch_resonance_nodes(
-        self, query_latents: NDArray, query_phases: NDArray, nodes: List[Any]
-    ) -> NDArray:
+    def _batch_resonance_nodes(self, query_latents: NDArray, query_phases: NDArray, nodes: List[Any]) -> NDArray:
         if not nodes:
             return np.empty((len(query_latents), 0), dtype=np.float32)
         node_positions = np.array([n.latent_pos for n in nodes])
@@ -177,13 +169,15 @@ class QueryManager:
         node_amplitudes = np.array([n.amplitude for n in nodes])
         node_saliences = np.array([n.salience for n in nodes])
         return self.field._resonance_engine.batch_response_numpy(
-            query_latents, query_phases,
-            node_positions, node_phases, node_amplitudes, node_saliences,
+            query_latents,
+            query_phases,
+            node_positions,
+            node_phases,
+            node_amplitudes,
+            node_saliences,
         )
 
-    def _batch_resonance_numpy(
-        self, query_latents: NDArray, query_phases: NDArray, node_ids: List[str]
-    ) -> NDArray:
+    def _batch_resonance_numpy(self, query_latents: NDArray, query_phases: NDArray, node_ids: List[str]) -> NDArray:
         if not node_ids:
             return np.empty((len(query_latents), 0), dtype=np.float32)
         f = self.field
@@ -192,33 +186,46 @@ class QueryManager:
         node_amplitudes = np.array([f.nodes[nid].amplitude for nid in node_ids])
         node_saliences = np.array([f.nodes[nid].salience for nid in node_ids])
         return f._resonance_engine.batch_response_numpy(
-            query_latents, query_phases,
-            node_positions, node_phases, node_amplitudes, node_saliences,
+            query_latents,
+            query_phases,
+            node_positions,
+            node_phases,
+            node_amplitudes,
+            node_saliences,
         )
 
-    def _batch_resonance_cached(
-        self, query_latents: NDArray, query_phases: NDArray, node_ids: List[str]
-    ) -> NDArray:
+    def _batch_resonance_cached(self, query_latents: NDArray, query_phases: NDArray, node_ids: List[str]) -> NDArray:
         if not node_ids:
             return np.empty((len(query_latents), 0), dtype=np.float32)
         f = self.field
-        if getattr(f, '_node_id_to_cached_idx', None) is None or f._cache_dirty:
+        if getattr(f, "_node_id_to_cached_idx", None) is None or f._cache_dirty:
             f._build_node_cache()
         mapping = f._node_id_to_cached_idx
         indices = np.array([mapping[nid] for nid in node_ids if nid in mapping], dtype=np.int32)
         if len(indices) == 0:
             return np.empty((len(query_latents), 0), dtype=np.float32)
+        # Fast path for int8 cached positions: avoid cdist float64 cast
+        if f._cached_positions.dtype == np.int8 and f._cached_norms_sq is not None:
+            return f._resonance_engine.batch_response_numpy_int8(
+                query_latents,
+                query_phases,
+                f._cached_positions[indices],
+                f._cached_norms_sq[indices],
+                f._cached_scales[indices],
+                f._cached_phases[indices],
+                f._cached_amplitudes[indices],
+                f._cached_saliences[indices],
+            )
         return f._resonance_engine.batch_response_numpy(
-            query_latents, query_phases,
+            query_latents,
+            query_phases,
             f._cached_positions[indices],
             f._cached_phases[indices],
             f._cached_amplitudes[indices],
             f._cached_saliences[indices],
         )
 
-    def _batch_resonance_torch(
-        self, query_latents: NDArray, query_phases: NDArray, node_ids: List[str]
-    ) -> NDArray:
+    def _batch_resonance_torch(self, query_latents: NDArray, query_phases: NDArray, node_ids: List[str]) -> NDArray:
         if not node_ids:
             return np.empty((len(query_latents), 0), dtype=np.float32)
         f = self.field
@@ -227,24 +234,45 @@ class QueryManager:
         node_amplitudes = np.array([f.nodes[nid].amplitude for nid in node_ids])
         node_saliences = np.array([f.nodes[nid].salience for nid in node_ids])
         return f._resonance_engine.batch_response_torch(
-            query_latents, query_phases,
-            node_positions, node_phases, node_amplitudes, node_saliences,
+            query_latents,
+            query_phases,
+            node_positions,
+            node_phases,
+            node_amplitudes,
+            node_saliences,
         )
 
     def _compute_resonance_chunk(
-        self, positions, phases, amplitudes, saliences,
-        modal_weights, gates, causal_boost,
-        query_latent, query_phase, bw=None, pc=None,
+        self,
+        positions,
+        phases,
+        amplitudes,
+        saliences,
+        modal_weights,
+        gates,
+        causal_boost,
+        query_latent,
+        query_phase,
+        bw=None,
+        pc=None,
     ):
         f = self.field
         return f._resonance_engine.chunk_response(
-            positions, phases, amplitudes, saliences,
-            modal_weights, gates, causal_boost,
-            query_latent, query_phase, bw,
+            positions,
+            phases,
+            amplitudes,
+            saliences,
+            modal_weights,
+            gates,
+            causal_boost,
+            query_latent,
+            query_phase,
+            bw,
             use_gates=f.cfg.soft_gates,
             use_causal=f.causal_engine is not None,
             pc=pc,
         )
+
     # ------------------------------------------------------------------
     # Vectorized query engine
     # ------------------------------------------------------------------
@@ -278,10 +306,9 @@ class QueryManager:
 
         session_mask = None
         if session_id and session_id != "default":
-            session_mask = np.array([
-                f.nodes[nid].content.get("session") == session_id
-                for nid in f.node_index
-            ], dtype=bool)
+            session_mask = np.array(
+                [f.nodes[nid].content.get("session") == session_id for nid in f.node_index], dtype=bool
+            )
             n_session = session_mask.sum()
             if 0 < n_session < n_nodes * 0.3:
                 positions = f._cached_positions[session_mask]
@@ -316,9 +343,17 @@ class QueryManager:
 
         if n <= batch_size:
             resp = self._compute_resonance_chunk(
-                positions, phases, amplitudes, saliences,
-                modal_weights, gates, causal_boost,
-                query_latent, query_phase, bw=bw, pc=pc,
+                positions,
+                phases,
+                amplitudes,
+                saliences,
+                modal_weights,
+                gates,
+                causal_boost,
+                query_latent,
+                query_phase,
+                bw=bw,
+                pc=pc,
             )
             if session_id and session_id != "default" and session_mask is not None and session_indices is None:
                 resp = resp * (1.0 + 0.5 * session_mask.astype(np.float32))
@@ -348,10 +383,17 @@ class QueryManager:
             for start in range(0, n, batch_size):
                 end = min(start + batch_size, n)
                 resp = self._compute_resonance_chunk(
-                    positions[start:end], phases[start:end], amplitudes[start:end],
-                    saliences[start:end], modal_weights[start:end], gates[start:end],
-                    causal_boost[start:end], query_latent, query_phase,
-                    bw=bw, pc=pc,
+                    positions[start:end],
+                    phases[start:end],
+                    amplitudes[start:end],
+                    saliences[start:end],
+                    modal_weights[start:end],
+                    gates[start:end],
+                    causal_boost[start:end],
+                    query_latent,
+                    query_phase,
+                    bw=bw,
+                    pc=pc,
                 )
                 if session_id and session_id != "default" and session_mask is not None and session_indices is None:
                     resp = resp * (1.0 + 0.5 * session_mask[start:end].astype(np.float32))
@@ -403,10 +445,10 @@ class QueryManager:
 
         elapsed_ms = (time.time() - t0) * 1000
         if cfg.sparse_routing:
-            f.stats["avg_shard_query_time_ms"] = (
-                0.95 * f.stats["avg_shard_query_time_ms"] + 0.05 * elapsed_ms)
+            f.stats["avg_shard_query_time_ms"] = 0.95 * f.stats["avg_shard_query_time_ms"] + 0.05 * elapsed_ms
 
         return results
+
     # ------------------------------------------------------------------
     # Public query API
     # ------------------------------------------------------------------
@@ -438,13 +480,14 @@ class QueryManager:
             f.stats["query_cache_misses"] += 1
 
         # P0: BM25 first-stage pre-filtering
-        if (cfg.bm25_first_stage_k > 0 and
-                query_text and
-                f.bm25_index is not None and
-                len(f.nodes) > cfg.bm25_first_stage_k):
+        if (
+            cfg.bm25_first_stage_k > 0
+            and query_text
+            and f.bm25_index is not None
+            and len(f.nodes) > cfg.bm25_first_stage_k
+        ):
             candidate_ids = [
-                nid for nid, _ in f._index_mgr.bm25_search(query_text, cfg.bm25_first_stage_k)
-                if nid in f.nodes
+                nid for nid, _ in f._index_mgr.bm25_search(query_text, cfg.bm25_first_stage_k) if nid in f.nodes
             ]
             if candidate_ids:
                 scores = self._batch_resonance(
@@ -455,7 +498,9 @@ class QueryManager:
                 results = []
                 for idx, nid in enumerate(candidate_ids):
                     node = f.nodes[nid]
-                    resp = float(scores[idx]) * (1.3 if session_id and node.content.get("session") == session_id else 1.0)
+                    resp = float(scores[idx]) * (
+                        1.3 if session_id and node.content.get("session") == session_id else 1.0
+                    )
                     if resp >= cfg.min_response:
                         results.append((nid, resp, node))
                         node.last_resonated = time.time()
@@ -478,10 +523,10 @@ class QueryManager:
                     candidate_ids,
                 )[0]
                 if session_id and session_id != "default":
-                    session_boosts = np.array([
-                        1.3 if f.nodes[nid].content.get("session") == session_id else 1.0
-                        for nid in candidate_ids
-                    ], dtype=np.float32)
+                    session_boosts = np.array(
+                        [1.3 if f.nodes[nid].content.get("session") == session_id else 1.0 for nid in candidate_ids],
+                        dtype=np.float32,
+                    )
                     scores = scores * session_boosts
                 above = scores >= cfg.min_response
                 indices = np.where(above)[0]
@@ -509,17 +554,14 @@ class QueryManager:
                 results = []
         elif cfg.sparse_routing and f._index_mgr.shard_centers is not None and len(f.nodes) > cfg.num_shards * 2:
             active_shards = f._route_query(query_latent, cfg.top_shards)
-            candidate_ids = [
-                nid for nid in f.node_index if f._get_node_shard(nid) in active_shards]
+            candidate_ids = [nid for nid in f.node_index if f._get_node_shard(nid) in active_shards]
             search_nodes = [(nid, f.nodes[nid]) for nid in candidate_ids if nid in f.nodes]
             f.stats["shard_hits"] += len(candidate_ids)
         else:
             results = self._query_vectorized(query_latent, phase, top_k, modality, session_id, t0)
 
         # Track 2: Fallback to warm/cold tiers
-        if (f._tiered_store is not None and
-                cfg.tiered_fallback_enabled and
-                len(results) < top_k):
+        if f._tiered_store is not None and cfg.tiered_fallback_enabled and len(results) < top_k:
             needed = top_k - len(results)
             warm_ids = f._tiered_store.warm_ids()
             if warm_ids:
@@ -531,7 +573,9 @@ class QueryManager:
                         warm_nodes,
                     )[0]
                     for idx, node in enumerate(warm_nodes):
-                        resp = float(scores[idx]) * (1.3 if session_id and node.content.get("session") == session_id else 1.0)
+                        resp = float(scores[idx]) * (
+                            1.3 if session_id and node.content.get("session") == session_id else 1.0
+                        )
                         if resp >= cfg.min_response:
                             results.append((node.id, resp, node))
                             node.last_resonated = time.time()
@@ -549,7 +593,9 @@ class QueryManager:
                             cold_nodes,
                         )[0]
                         for idx, node in enumerate(cold_nodes):
-                            resp = float(scores[idx]) * (1.3 if session_id and node.content.get("session") == session_id else 1.0)
+                            resp = float(scores[idx]) * (
+                                1.3 if session_id and node.content.get("session") == session_id else 1.0
+                            )
                             if resp >= cfg.min_response:
                                 results.append((node.id, resp, node))
                                 node.last_resonated = time.time()
@@ -557,7 +603,7 @@ class QueryManager:
                         results = results[:top_k]
 
         # Fallback loop path (should rarely reach here)
-        if 'results' not in locals():
+        if "results" not in locals():
             search_nodes = [(nid, f.nodes[nid]) for nid in f.node_index if nid in f.nodes]
             if cfg.sparse_routing:
                 f.stats["shard_misses"] += 1
@@ -593,8 +639,10 @@ class QueryManager:
             if f._cached_positions is not None and len(f.nodes) >= f.adaptive_bw.min_nodes:
                 try:
                     optimal_bw = f.adaptive_bw.optimize(
-                        f._cached_positions, f._cached_phases,
-                        f._cached_amplitudes, f._cached_saliences,
+                        f._cached_positions,
+                        f._cached_phases,
+                        f._cached_amplitudes,
+                        f._cached_saliences,
                         top_k=cfg.top_k,
                     )
                     f.stats["adaptive_bw"] = optimal_bw
@@ -605,8 +653,7 @@ class QueryManager:
 
         if cfg.sparse_routing:
             elapsed_ms = (time.time() - t0) * 1000
-            f.stats["avg_shard_query_time_ms"] = (
-                0.95 * f.stats["avg_shard_query_time_ms"] + 0.05 * elapsed_ms)
+            f.stats["avg_shard_query_time_ms"] = 0.95 * f.stats["avg_shard_query_time_ms"] + 0.05 * elapsed_ms
 
         if cfg.cross_modal:
             f.stats["cross_modal_queries"] += 1
@@ -705,6 +752,7 @@ class QueryManager:
             f.query_cache.put_raw(cache_key, final)
 
         return final
+
     def query_batch(
         self,
         embeddings: NDArray,
@@ -737,10 +785,10 @@ class QueryManager:
         for qi in range(n_queries):
             scores = all_scores[qi]
             if session_id and session_id != "default":
-                session_boosts = np.array([
-                    1.3 if f.nodes[nid].content.get("session") == session_id else 1.0
-                    for nid in f.node_index
-                ], dtype=np.float32)
+                session_boosts = np.array(
+                    [1.3 if f.nodes[nid].content.get("session") == session_id else 1.0 for nid in f.node_index],
+                    dtype=np.float32,
+                )
                 scores = scores * session_boosts
 
             above = scores >= f.cfg.min_response
@@ -775,8 +823,7 @@ class QueryManager:
 
         if f.cfg.sparse_routing:
             elapsed_ms = (time.time() - t0) * 1000
-            f.stats["avg_shard_query_time_ms"] = (
-                0.95 * f.stats["avg_shard_query_time_ms"] + 0.05 * elapsed_ms)
+            f.stats["avg_shard_query_time_ms"] = 0.95 * f.stats["avg_shard_query_time_ms"] + 0.05 * elapsed_ms
 
         return results_per_query
 
@@ -832,8 +879,7 @@ class QueryManager:
             return [[] for _ in range(n)]
 
         return [
-            self.query(e, p, top_k=top_k, modality=modality, session_id=session_id)
-            for e, p in zip(embeddings, phases)
+            self.query(e, p, top_k=top_k, modality=modality, session_id=session_id) for e, p in zip(embeddings, phases)
         ]
 
     def query_by_text(

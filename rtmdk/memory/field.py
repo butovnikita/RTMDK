@@ -23,10 +23,12 @@ from rtmdk.engines.causal import CausalInferenceEngine
 
 from rtmdk.memory.geometry import exp_map_poincare
 from rtmdk.memory.config import (
-    ConsolidationMode, RTMDKConfig,
+    ConsolidationMode,
+    RTMDKConfig,
 )
 from rtmdk.nodes import (
-    MemoryNode, CounterfactualResult,
+    MemoryNode,
+    CounterfactualResult,
 )
 import functools
 import math
@@ -49,55 +51,386 @@ from rtmdk.memory.utils import _sanitize_path
 logger = logging.getLogger(__name__)
 
 # Stop-word lists for content-word extraction in semantic phase
-_STOP_WORDS_EN = frozenset({
-    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
-    "have", "has", "had", "do", "does", "did", "will", "would", "could",
-    "should", "may", "might", "must", "shall", "can", "need", "dare",
-    "ought", "used", "to", "of", "in", "for", "on", "with", "at", "by",
-    "from", "as", "into", "through", "during", "before", "after", "above",
-    "below", "between", "under", "again", "further", "then", "once", "here",
-    "there", "when", "where", "why", "how", "all", "each", "few", "more",
-    "most", "other", "some", "such", "no", "nor", "not", "only", "own",
-    "same", "so", "than", "too", "very", "just", "and", "but", "if", "or",
-    "because", "until", "while", "what", "which", "who", "whom", "this",
-    "that", "these", "those", "am", "it", "its", "itself", "they", "them",
-    "their", "theirs", "themselves", "you", "your", "yours", "yourself",
-    "yourselves", "he", "him", "his", "himself", "she", "her", "hers",
-    "herself", "we", "us", "our", "ours", "ourselves", "i", "me", "my",
-    "myself", "mine", "about", "against", "out", "up", "down", "off",
-    "over", "s", "t", "don", "doesn", "didn", "wasn", "weren", "haven",
-    "hasn", "hadn", "won", "wouldn", "shouldn", "isn", "aren", "ain",
-    "let", "ll", "re", "ve", "y", "ma", "d", "o", "an", "any", "both",
-    "each", "few", "more", "most", "other", "some", "such", "no", "nor",
-    "not", "only", "own", "same", "so", "than", "too", "very", "just",
-})
+_STOP_WORDS_EN = frozenset(
+    {
+        "a",
+        "an",
+        "the",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "will",
+        "would",
+        "could",
+        "should",
+        "may",
+        "might",
+        "must",
+        "shall",
+        "can",
+        "need",
+        "dare",
+        "ought",
+        "used",
+        "to",
+        "of",
+        "in",
+        "for",
+        "on",
+        "with",
+        "at",
+        "by",
+        "from",
+        "as",
+        "into",
+        "through",
+        "during",
+        "before",
+        "after",
+        "above",
+        "below",
+        "between",
+        "under",
+        "again",
+        "further",
+        "then",
+        "once",
+        "here",
+        "there",
+        "when",
+        "where",
+        "why",
+        "how",
+        "all",
+        "each",
+        "few",
+        "more",
+        "most",
+        "other",
+        "some",
+        "such",
+        "no",
+        "nor",
+        "not",
+        "only",
+        "own",
+        "same",
+        "so",
+        "than",
+        "too",
+        "very",
+        "just",
+        "and",
+        "but",
+        "if",
+        "or",
+        "because",
+        "until",
+        "while",
+        "what",
+        "which",
+        "who",
+        "whom",
+        "this",
+        "that",
+        "these",
+        "those",
+        "am",
+        "it",
+        "its",
+        "itself",
+        "they",
+        "them",
+        "their",
+        "theirs",
+        "themselves",
+        "you",
+        "your",
+        "yours",
+        "yourself",
+        "yourselves",
+        "he",
+        "him",
+        "his",
+        "himself",
+        "she",
+        "her",
+        "hers",
+        "herself",
+        "we",
+        "us",
+        "our",
+        "ours",
+        "ourselves",
+        "i",
+        "me",
+        "my",
+        "myself",
+        "mine",
+        "about",
+        "against",
+        "out",
+        "up",
+        "down",
+        "off",
+        "over",
+        "s",
+        "t",
+        "don",
+        "doesn",
+        "didn",
+        "wasn",
+        "weren",
+        "haven",
+        "hasn",
+        "hadn",
+        "won",
+        "wouldn",
+        "shouldn",
+        "isn",
+        "aren",
+        "ain",
+        "let",
+        "ll",
+        "re",
+        "ve",
+        "y",
+        "ma",
+        "d",
+        "o",
+        "an",
+        "any",
+        "both",
+        "each",
+        "few",
+        "more",
+        "most",
+        "other",
+        "some",
+        "such",
+        "no",
+        "nor",
+        "not",
+        "only",
+        "own",
+        "same",
+        "so",
+        "than",
+        "too",
+        "very",
+        "just",
+    }
+)
 
-_STOP_WORDS_RU = frozenset({
-    "и", "в", "во", "не", "что", "он", "на", "я", "с", "со", "как",
-    "а", "то", "все", "она", "так", "его", "но", "да", "ты", "к",
-    "у", "же", "вы", "за", "бы", "по", "только", "ее", "мне", "было",
-    "вот", "от", "меня", "еще", "нет", "о", "из", "ему", "теперь",
-    "когда", "даже", "ну", "вдруг", "ли", "если", "уже", "или", "ни",
-    "быть", "был", "него", "до", "вас", "нибудь", "опять", "уж",
-    "вам", "сказал", "ведь", "там", "потом", "себя", "ничего", "ей",
-    "может", "они", "тут", "где", "есть", "надо", "ней", "для", "мы",
-    "тебя", "их", "чем", "была", "сам", "чтоб", "без", "будто",
-    "человек", "чего", "раз", "тоже", "себе", "под", "жизнь", "будет",
-    "ж", "тогда", "кто", "этот", "говорил", "того", "потому", "этого",
-    "какой", "совсем", "ним", "здесь", "этом", "один", "почти", "мой",
-    "тем", "чтобы", "нее", "кажется", "сейчас", "были", "куда", "зачем",
-    "всех", "никогда", "можно", "при", "наконец", "два", "об", "другой",
-    "хоть", "после", "над", "больше", "тот", "через", "эти", "нас",
-    "про", "всего", "них", "какая", "много", "разве", "сказала", "три",
-    "эту", "моя", "впрочем", "хорошо", "свою", "этой", "перед", "иногда",
-    "лучше", "чуть", "том", "нельзя", "такой", "им", "более", "всегда",
-    "конечно", "всю", "между", "это", "который", "которая", "которые",
-    "которых", "которому", "которой", "которым", "которыми", "котором",
-    "котором", "какой", "какая", "какое", "какие", "какого", "какой",
-    "какому", "каким", "каком", "такой", "такая", "такое", "такие",
-    "такого", "такой", "такому", "таким", "таком", "весь", "вся",
-    "все", "всего", "всему", "всем", "всеми", "всех", "всею",
-})
+_STOP_WORDS_RU = frozenset(
+    {
+        "и",
+        "в",
+        "во",
+        "не",
+        "что",
+        "он",
+        "на",
+        "я",
+        "с",
+        "со",
+        "как",
+        "а",
+        "то",
+        "все",
+        "она",
+        "так",
+        "его",
+        "но",
+        "да",
+        "ты",
+        "к",
+        "у",
+        "же",
+        "вы",
+        "за",
+        "бы",
+        "по",
+        "только",
+        "ее",
+        "мне",
+        "было",
+        "вот",
+        "от",
+        "меня",
+        "еще",
+        "нет",
+        "о",
+        "из",
+        "ему",
+        "теперь",
+        "когда",
+        "даже",
+        "ну",
+        "вдруг",
+        "ли",
+        "если",
+        "уже",
+        "или",
+        "ни",
+        "быть",
+        "был",
+        "него",
+        "до",
+        "вас",
+        "нибудь",
+        "опять",
+        "уж",
+        "вам",
+        "сказал",
+        "ведь",
+        "там",
+        "потом",
+        "себя",
+        "ничего",
+        "ей",
+        "может",
+        "они",
+        "тут",
+        "где",
+        "есть",
+        "надо",
+        "ней",
+        "для",
+        "мы",
+        "тебя",
+        "их",
+        "чем",
+        "была",
+        "сам",
+        "чтоб",
+        "без",
+        "будто",
+        "человек",
+        "чего",
+        "раз",
+        "тоже",
+        "себе",
+        "под",
+        "жизнь",
+        "будет",
+        "ж",
+        "тогда",
+        "кто",
+        "этот",
+        "говорил",
+        "того",
+        "потому",
+        "этого",
+        "какой",
+        "совсем",
+        "ним",
+        "здесь",
+        "этом",
+        "один",
+        "почти",
+        "мой",
+        "тем",
+        "чтобы",
+        "нее",
+        "кажется",
+        "сейчас",
+        "были",
+        "куда",
+        "зачем",
+        "всех",
+        "никогда",
+        "можно",
+        "при",
+        "наконец",
+        "два",
+        "об",
+        "другой",
+        "хоть",
+        "после",
+        "над",
+        "больше",
+        "тот",
+        "через",
+        "эти",
+        "нас",
+        "про",
+        "всего",
+        "них",
+        "какая",
+        "много",
+        "разве",
+        "сказала",
+        "три",
+        "эту",
+        "моя",
+        "впрочем",
+        "хорошо",
+        "свою",
+        "этой",
+        "перед",
+        "иногда",
+        "лучше",
+        "чуть",
+        "том",
+        "нельзя",
+        "такой",
+        "им",
+        "более",
+        "всегда",
+        "конечно",
+        "всю",
+        "между",
+        "это",
+        "который",
+        "которая",
+        "которые",
+        "которых",
+        "которому",
+        "которой",
+        "которым",
+        "которыми",
+        "котором",
+        "котором",
+        "какой",
+        "какая",
+        "какое",
+        "какие",
+        "какого",
+        "какой",
+        "какому",
+        "каким",
+        "каком",
+        "такой",
+        "такая",
+        "такое",
+        "такие",
+        "такого",
+        "такой",
+        "такому",
+        "таким",
+        "таком",
+        "весь",
+        "вся",
+        "все",
+        "всего",
+        "всему",
+        "всем",
+        "всеми",
+        "всех",
+        "всею",
+    }
+)
 
 _STOP_WORDS = _STOP_WORDS_EN | _STOP_WORDS_RU
 
@@ -113,6 +446,7 @@ except ImportError:
 # Torch availability check
 try:
     import torch
+
     TORCH_AVAILABLE = True
 except ImportError:
     torch = None
@@ -156,26 +490,24 @@ MAX_NODES_PRUNE_CHECK_FREQ = 10
 
 def _enum_value(val, default):
     """Safely extract enum value for serialization."""
-    return val.value if isinstance(
-        val, Enum) else (
-        val if val is not None else default)
+    return val.value if isinstance(val, Enum) else (val if val is not None else default)
 
 
 def _locked(method):
     """Decorator that wraps method in self._write_lock RLock."""
+
     @functools.wraps(method)
     def wrapper(self, *args, **kwargs):
         with self._write_lock:
             return method(self, *args, **kwargs)
+
     return wrapper
 
 
 class RTMDKField:
     def __init__(
-            self,
-            config: RTMDKConfig,
-            projection_matrix: Optional[NDArray] = None,
-            wal_path: Optional[str] = None):
+        self, config: RTMDKConfig, projection_matrix: Optional[NDArray] = None, wal_path: Optional[str] = None
+    ):
         FieldInitializer(self, config, projection_matrix, wal_path).initialize()
 
     # ------------------------------------------------------------------
@@ -227,6 +559,22 @@ class RTMDKField:
     @_cached_amplitudes.setter
     def _cached_amplitudes(self, v: Optional[NDArray]) -> None:
         self._cache_mgr._cached_amplitudes = v
+
+    @property
+    def _cached_scales(self) -> Optional[NDArray]:
+        return self._cache_mgr._cached_scales
+
+    @_cached_scales.setter
+    def _cached_scales(self, v: Optional[NDArray]) -> None:
+        self._cache_mgr._cached_scales = v
+
+    @property
+    def _cached_norms_sq(self) -> Optional[NDArray]:
+        return self._cache_mgr._cached_norms_sq
+
+    @_cached_norms_sq.setter
+    def _cached_norms_sq(self, v: Optional[NDArray]) -> None:
+        self._cache_mgr._cached_norms_sq = v
 
     @property
     def _cached_saliences(self) -> Optional[NDArray]:
@@ -296,10 +644,10 @@ class RTMDKField:
         return self._projection_mgr.project_batch(embeddings)
 
     def _semantic_phase(
-            self,
-            session_id: Optional[str] = None,
-            content: Optional[Dict] = None,
-            modality: str = "text",
+        self,
+        session_id: Optional[str] = None,
+        content: Optional[Dict] = None,
+        modality: str = "text",
     ) -> float:
         """Compute a semantically meaningful phase from session/topic/content.
 
@@ -353,11 +701,11 @@ class RTMDKField:
         return result
 
     def _get_phase(
-            self,
-            session_id: Optional[str] = None,
-            embedding: Optional[NDArray] = None,
-            modality: str = "text",
-            content: Optional[Dict] = None,
+        self,
+        session_id: Optional[str] = None,
+        embedding: Optional[NDArray] = None,
+        modality: str = "text",
+        content: Optional[Dict] = None,
     ) -> float:
         phase = self._semantic_phase(session_id, content, modality)
         if self.cfg.cross_modal and modality in self.cfg.modal_phase_offsets:
@@ -369,7 +717,9 @@ class RTMDKField:
     def _ensure_adaptive_pc(self, query_latent: NDArray) -> None:
         self._query_mgr._ensure_adaptive_pc(query_latent)
 
-    def _resonance_response(self, query_latent: NDArray, query_phase: float, node: MemoryNode, query_modality: str = "text") -> float:
+    def _resonance_response(
+        self, query_latent: NDArray, query_phase: float, node: MemoryNode, query_modality: str = "text"
+    ) -> float:
         return self._query_mgr._resonance_response(query_latent, query_phase, node, query_modality)
 
     def _batch_resonance(self, query_latents: NDArray, query_phases: NDArray, node_ids: List[str]) -> NDArray:
@@ -387,25 +737,79 @@ class RTMDKField:
     def _batch_resonance_torch(self, query_latents: NDArray, query_phases: NDArray, node_ids: List[str]) -> NDArray:
         return self._query_mgr._batch_resonance_torch(query_latents, query_phases, node_ids)
 
-    def _compute_resonance_chunk(self, positions, phases, amplitudes, saliences, modal_weights, gates, causal_boost, query_latent, query_phase, bw=None, pc=None):
-        return self._query_mgr._compute_resonance_chunk(positions, phases, amplitudes, saliences, modal_weights, gates, causal_boost, query_latent, query_phase, bw, pc)
+    def _compute_resonance_chunk(
+        self,
+        positions,
+        phases,
+        amplitudes,
+        saliences,
+        modal_weights,
+        gates,
+        causal_boost,
+        query_latent,
+        query_phase,
+        bw=None,
+        pc=None,
+    ):
+        return self._query_mgr._compute_resonance_chunk(
+            positions,
+            phases,
+            amplitudes,
+            saliences,
+            modal_weights,
+            gates,
+            causal_boost,
+            query_latent,
+            query_phase,
+            bw,
+            pc,
+        )
 
-    def _query_vectorized(self, query_latent: NDArray, query_phase: float, top_k: int, modality: str, session_id: Optional[str], t0: float) -> List[Tuple[str, float, MemoryNode]]:
+    def _query_vectorized(
+        self, query_latent: NDArray, query_phase: float, top_k: int, modality: str, session_id: Optional[str], t0: float
+    ) -> List[Tuple[str, float, MemoryNode]]:
         return self._query_mgr._query_vectorized(query_latent, query_phase, top_k, modality, session_id, t0)
 
-    def _query_cache_key(self, query_latent: NDArray, phase: float, top_k: int, modality: str, session_id: Optional[str]) -> str:
+    def _query_cache_key(
+        self, query_latent: NDArray, phase: float, top_k: int, modality: str, session_id: Optional[str]
+    ) -> str:
         return self._query_mgr._query_cache_key(query_latent, phase, top_k, modality, session_id)
 
-    def _apply_adaptive_top_k(self, results: List[Tuple[str, float, MemoryNode]]) -> List[Tuple[str, float, MemoryNode]]:
+    def _apply_adaptive_top_k(
+        self, results: List[Tuple[str, float, MemoryNode]]
+    ) -> List[Tuple[str, float, MemoryNode]]:
         return self._query_mgr._apply_adaptive_top_k(results)
 
-    def query_batch(self, embeddings: NDArray, phase: float = 0.0, top_k: Optional[int] = None, modality: str = "text", session_id: Optional[str] = None, query_texts: Optional[List[str]] = None) -> List[List[Tuple[str, float, MemoryNode]]]:
+    def query_batch(
+        self,
+        embeddings: NDArray,
+        phase: float = 0.0,
+        top_k: Optional[int] = None,
+        modality: str = "text",
+        session_id: Optional[str] = None,
+        query_texts: Optional[List[str]] = None,
+    ) -> List[List[Tuple[str, float, MemoryNode]]]:
         return self._query_mgr.query_batch(embeddings, phase, top_k, modality, session_id, query_texts)
 
-    def query(self, embedding: NDArray, phase: float = 0.0, top_k: Optional[int] = None, modality: str = "text", session_id: Optional[str] = None, query_text: Optional[str] = None) -> List[Tuple[str, float, MemoryNode]]:
+    def query(
+        self,
+        embedding: NDArray,
+        phase: float = 0.0,
+        top_k: Optional[int] = None,
+        modality: str = "text",
+        session_id: Optional[str] = None,
+        query_text: Optional[str] = None,
+    ) -> List[Tuple[str, float, MemoryNode]]:
         return self._query_mgr.query(embedding, phase, top_k, modality, session_id, query_text)
 
-    def batch_query(self, embeddings: List[NDArray], phases: Optional[List[float]] = None, top_k: Optional[int] = None, modality: str = "text", session_id: Optional[str] = None) -> List[List[Tuple[str, float, MemoryNode]]]:
+    def batch_query(
+        self,
+        embeddings: List[NDArray],
+        phases: Optional[List[float]] = None,
+        top_k: Optional[int] = None,
+        modality: str = "text",
+        session_id: Optional[str] = None,
+    ) -> List[List[Tuple[str, float, MemoryNode]]]:
         return self._query_mgr.batch_query(embeddings, phases, top_k, modality, session_id)
 
     def fit_projection(self, corpus_embeddings: NDArray) -> None:
@@ -413,14 +817,15 @@ class RTMDKField:
         self._projection_mgr.fit_projection(corpus_embeddings)
 
     def sot_bootstrap(
-            self,
-            texts: List[str],
-            teacher_model: str = 'all-MiniLM-L6-v2',
-            fit_projection_only: bool = True,
-            n_epochs: int = 30):
+        self,
+        texts: List[str],
+        teacher_model: str = "all-MiniLM-L6-v2",
+        fit_projection_only: bool = True,
+        n_epochs: int = 30,
+    ):
         self._projection_mgr.sot_bootstrap(
-            texts, teacher_model=teacher_model,
-            fit_projection_only=fit_projection_only, n_epochs=n_epochs)
+            texts, teacher_model=teacher_model, fit_projection_only=fit_projection_only, n_epochs=n_epochs
+        )
 
     def sot_contrastive_step(
         self,
@@ -429,16 +834,16 @@ class RTMDKField:
         negative_texts=None,
         lr: float = 0.01,
     ):
-        self._projection_mgr.sot_contrastive_step(
-            query_text, positive_text, negative_texts, lr=lr)
+        self._projection_mgr.sot_contrastive_step(query_text, positive_text, negative_texts, lr=lr)
 
-    def _sot_retrieval_feedback(
-            self, query_latent: np.ndarray, results: List[Tuple[str, float, Any]]):
+    def _sot_retrieval_feedback(self, query_latent: np.ndarray, results: List[Tuple[str, float, Any]]):
         self._projection_mgr.sot_retrieval_feedback(
-            query_latent, results,
-            negatives_per_query=self.cfg.sot_negatives_per_query)
+            query_latent, results, negatives_per_query=self.cfg.sot_negatives_per_query
+        )
 
-    def query_by_text(self, text: str, top_k: Optional[int] = None, session_id: Optional[str] = None) -> List[Tuple[str, float, Any]]:
+    def query_by_text(
+        self, text: str, top_k: Optional[int] = None, session_id: Optional[str] = None
+    ) -> List[Tuple[str, float, Any]]:
         return self._query_mgr.query_by_text(text, top_k, session_id)
 
     @property
@@ -447,7 +852,8 @@ class RTMDKField:
             self._causal_engine = CausalInferenceEngine(
                 min_samples=self.cfg.causal_discovery_min_samples,
                 p_threshold=self.cfg.causal_p_threshold,
-                adjustment_sets_enabled=self.cfg.causal_adjustment_sets)
+                adjustment_sets_enabled=self.cfg.causal_adjustment_sets,
+            )
             self._resonance_engine.causal_engine = self._causal_engine
         return self._causal_engine
 
@@ -473,17 +879,47 @@ class RTMDKField:
         self._meta_controller_initialized = value is not None
 
     @_locked
-    def add_node(self, embedding: NDArray, content: Dict, phase: Optional[float] = None, node_id: Optional[str] = None, session_id: Optional[str] = None, modality: str = "text", skip_projection: bool = False, modal_embedding: Optional[NDArray] = None) -> str:
-        return self._node_mgr.add_node(embedding, content, phase, node_id, session_id, modality, skip_projection, modal_embedding)
-    def add_nodes_batch(self, embeddings: NDArray, contents: List[Dict], phases: Optional[NDArray] = None, node_ids: Optional[List[str]] = None, session_ids: Optional[List[str]] = None, modalities: Optional[List[str]] = None, skip_projection: bool = False, modal_embeddings: Optional[NDArray] = None) -> List[str]:
-        return self._node_mgr.add_nodes_batch(embeddings, contents, phases, node_ids, session_ids, modalities, skip_projection, modal_embeddings)
+    def add_node(
+        self,
+        embedding: NDArray,
+        content: Dict,
+        phase: Optional[float] = None,
+        node_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        modality: str = "text",
+        skip_projection: bool = False,
+        modal_embedding: Optional[NDArray] = None,
+    ) -> str:
+        return self._node_mgr.add_node(
+            embedding, content, phase, node_id, session_id, modality, skip_projection, modal_embedding
+        )
+
+    def add_nodes_batch(
+        self,
+        embeddings: NDArray,
+        contents: List[Dict],
+        phases: Optional[NDArray] = None,
+        node_ids: Optional[List[str]] = None,
+        session_ids: Optional[List[str]] = None,
+        modalities: Optional[List[str]] = None,
+        skip_projection: bool = False,
+        modal_embeddings: Optional[NDArray] = None,
+    ) -> List[str]:
+        return self._node_mgr.add_nodes_batch(
+            embeddings, contents, phases, node_ids, session_ids, modalities, skip_projection, modal_embeddings
+        )
 
     def delete_nodes(self, node_ids: List[str]) -> None:
         self._node_mgr.delete_nodes(node_ids)
 
-    def queue_add_nodes(self, embeddings: NDArray, contents: List[Dict], modalities: Optional[List[str]] = None) -> None:
+    def queue_add_nodes(
+        self, embeddings: NDArray, contents: List[Dict], modalities: Optional[List[str]] = None
+    ) -> None:
         self._node_mgr.queue_add_nodes(embeddings, contents, modalities)
-    def _apply_conformal_filter(self, results: List[Tuple[str, float, MemoryNode]]) -> List[Tuple[str, float, MemoryNode]]:
+
+    def _apply_conformal_filter(
+        self, results: List[Tuple[str, float, MemoryNode]]
+    ) -> List[Tuple[str, float, MemoryNode]]:
         return self._query_mgr._apply_conformal_filter(results)
 
     def _invalidate_tension_cache(self, node_id: Optional[str] = None) -> None:
@@ -499,8 +935,7 @@ class RTMDKField:
         return self._topology_mgr.soft_gate(tension)
 
     def get_effective_threshold(self) -> float:
-        return self.adaptive_threshold.get_threshold(
-        ) if self.adaptive_threshold else self.cfg.tension_threshold
+        return self.adaptive_threshold.get_threshold() if self.adaptive_threshold else self.cfg.tension_threshold
 
     @_locked
     def consolidate(self, mode: Optional[ConsolidationMode] = None) -> List[str]:
@@ -522,12 +957,10 @@ class RTMDKField:
     # ========================================================================
     # Operational methods (delegated to OperationalManager)
     # ========================================================================
-    def calibrate(self, query_embedding: NDArray, node_id: str,
-                  is_relevant: bool) -> None:
+    def calibrate(self, query_embedding: NDArray, node_id: str, is_relevant: bool) -> None:
         self._operational_mgr.calibrate(query_embedding, node_id, is_relevant)
 
-    def imagine_counterfactual(self, base_query: NDArray,
-                               intervention: Dict[str, float]) -> List[Dict]:
+    def imagine_counterfactual(self, base_query: NDArray, intervention: Dict[str, float]) -> List[Dict]:
         return self._operational_mgr.imagine_counterfactual(base_query, intervention)
 
     def rollback_consolidation(self, n_steps: int = 1) -> bool:
@@ -542,11 +975,10 @@ class RTMDKField:
     def get_field_health(self) -> Dict:
         return self._operational_mgr.get_field_health()
 
-    def counterfactual_query(self, intervention: Dict[str, Any],
-                             query_nodes: List[str],
-                             evidence: Optional[Dict[str, Any]] = None) -> CounterfactualResult:
-        return self._operational_mgr.counterfactual_query(
-            intervention, query_nodes, evidence)
+    def counterfactual_query(
+        self, intervention: Dict[str, Any], query_nodes: List[str], evidence: Optional[Dict[str, Any]] = None
+    ) -> CounterfactualResult:
+        return self._operational_mgr.counterfactual_query(intervention, query_nodes, evidence)
 
     def get_causal_summary(self) -> Dict:
         return self._operational_mgr.get_causal_summary()
@@ -562,6 +994,7 @@ class RTMDKField:
 
     def _check_field_integrity(self) -> Dict[str, Any]:
         return self._topology_mgr.check_field_integrity()
+
     def step(self, inputs: Optional[List[Dict]] = None):
         self._step_counter += 1
 
@@ -585,34 +1018,24 @@ class RTMDKField:
                 # Validate embedding dimension — allow both embedding_dim and
                 # latent_dim
                 emb_dim = len(emb)
-                if emb_dim not in (
-                        self.cfg.embedding_dim,
-                        self.cfg.latent_dim):
+                if emb_dim not in (self.cfg.embedding_dim, self.cfg.latent_dim):
                     logger.warning(
                         f"Embedding dimension mismatch in step(): "
                         f"expected {self.cfg.embedding_dim} or "
-                        f"{self.cfg.latent_dim}, got {emb_dim}. Skipping.")
+                        f"{self.cfg.latent_dim}, got {emb_dim}. Skipping."
+                    )
                     continue
 
-                results = self.query(
-                    emb,
-                    phase,
-                    top_k=max(
-                        1,
-                        self.cfg.sot_negatives_per_query +
-                        1),
-                    modality=modality)
+                results = self.query(emb, phase, top_k=max(1, self.cfg.sot_negatives_per_query + 1), modality=modality)
                 if results and results[0][1] > 0.3:
                     nid, _, node = results[0]
-                    target = emb if emb_dim == self.cfg.latent_dim else self._project(
-                        emb)
+                    target = emb if emb_dim == self.cfg.latent_dim else self._project(emb)
                     if self.cfg.hyperbolic:
                         # Riemannian SGD: gradient is scaled by conformal
                         # factor 1/λ²
                         grad_e = target - node.latent_pos
-                        norm_sq = np.sum(node.latent_pos ** 2)
-                        conformal = (1.0 - norm_sq /
-                                     (self.cfg.ball_radius ** 2)) ** 2 / 4.0
+                        norm_sq = np.sum(node.latent_pos**2)
+                        conformal = (1.0 - norm_sq / (self.cfg.ball_radius**2)) ** 2 / 4.0
                         grad_r = conformal * grad_e
                         node.latent_pos = exp_map_poincare(
                             -self.cfg.attraction_lr * grad_r,
@@ -620,64 +1043,58 @@ class RTMDKField:
                             self.cfg.ball_radius,
                         )
                     else:
-                        node.latent_pos += self.cfg.attraction_lr * \
-                            (target - node.latent_pos)
+                        node.latent_pos += self.cfg.attraction_lr * (target - node.latent_pos)
                     pd = (phase - node.phase + np.pi) % (2 * np.pi) - np.pi
-                    node.phase = (
-                        node.phase + self.cfg.phase_sync_lr * pd) % (2 * np.pi)
+                    node.phase = (node.phase + self.cfg.phase_sync_lr * pd) % (2 * np.pi)
                     node.amplitude = min(1.0, node.amplitude + 0.05)
                     node.salience = min(1.0, node.salience + 0.03)
                 else:
-                    self.add_node(
-                        emb,
-                        content,
-                        phase,
-                        session_id=session_id,
-                        modality=modality)
+                    self.add_node(emb, content, phase, session_id=session_id, modality=modality)
 
                 # Phase 21: Contrastive Hebbian update on field nodes
                 if self._projection_mgr.has_sot_hebbian and results and len(self.node_index) > 1:
-                    snap_id_to_idx = {
-                        nid: idx for idx, nid in enumerate(
-                            self.node_index)}
+                    snap_id_to_idx = {nid: idx for idx, nid in enumerate(self.node_index)}
                     pos_indices = []
                     for nid, _, _ in results:
                         idx = snap_id_to_idx.get(nid)
                         if idx is not None:
                             pos_indices.append(idx)
-                    n_neg = min(
-                        self.cfg.sot_negatives_per_query, len(
-                            self.node_index) - len(pos_indices))
+                    n_neg = min(self.cfg.sot_negatives_per_query, len(self.node_index) - len(pos_indices))
                     neg_indices = []
                     if n_neg > 0:
                         all_idx = set(range(len(self.node_index)))
                         available = list(all_idx - set(pos_indices))
                         if available:
-                            neg_indices = self._rng.choice(available, size=min(
-                                n_neg, len(available)), replace=False).tolist()
+                            neg_indices = self._rng.choice(
+                                available, size=min(n_neg, len(available)), replace=False
+                            ).tolist()
                     if pos_indices:
-                        positions = np.array([self.nodes[self.node_index[i]].latent_pos for i in range(
-                            len(self.node_index))], dtype=np.float32)
-                        self._projection_mgr.sot_contrastive_hebbian_field_update(
-                            positions, pos_indices, neg_indices)
+                        positions = np.array(
+                            [self.nodes[self.node_index[i]].latent_pos for i in range(len(self.node_index))],
+                            dtype=np.float32,
+                        )
+                        self._projection_mgr.sot_contrastive_hebbian_field_update(positions, pos_indices, neg_indices)
                         # Write back
                         for i in range(len(self.node_index)):
-                            self.nodes[self.node_index[i]
-                                       ].latent_pos = positions[i]
+                            self.nodes[self.node_index[i]].latent_pos = positions[i]
 
                 # Phase 21: Contrastive Hebbian update on token embeddings
                 if sot_tokens and len(sot_tokens) > 1:
                     vocab_ids = self._projection_mgr.sot_vocab_ids()
-                    n_neg = min(
-                        self.cfg.sot_negatives_per_query,
-                        len(vocab_ids) - len(sot_tokens))
+                    n_neg = min(self.cfg.sot_negatives_per_query, len(vocab_ids) - len(sot_tokens))
                     self._projection_mgr.sot_contrastive_hebbian_token_update(
-                        sot_tokens, vocab_ids,
+                        sot_tokens,
+                        vocab_ids,
                         negatives_per_query=self.cfg.sot_negatives_per_query,
-                        hard_negatives=self.cfg.sot_hard_negatives)
+                        hard_negatives=self.cfg.sot_hard_negatives,
+                    )
 
                 # Phase 21: Periodic merge
-                if self._projection_mgr.has_sot and self._step_counter % self.cfg.sot_merge_freq == 0 and self._step_counter > 0:
+                if (
+                    self._projection_mgr.has_sot
+                    and self._step_counter % self.cfg.sot_merge_freq == 0
+                    and self._step_counter > 0
+                ):
                     candidates = self._projection_mgr.sot_propose_merges(5)
                     for pair in candidates:
                         score = self._projection_mgr.sot_cooccurrence_score(pair)
@@ -772,13 +1189,15 @@ class RTMDKField:
                     logger.warning(
                         f"export_field blocked: refusing to overwrite "
                         f"{path} ({existing_size / 1024:.0f}KB) with empty "
-                        f"memory (0 nodes). This prevents accidental data loss.")
+                        f"memory (0 nodes). This prevents accidental data loss."
+                    )
                     return  # Silently skip export to protect existing data
             except OSError:
                 pass  # If we can't check, proceed with export
 
         logger.info(f"export_field: exporting {n_nodes} nodes to {path}")
         from rtmdk.memory.serialization import FieldSerializer
+
         FieldSerializer.field_to_file(self, path, fmt)
         self._dirty = False
         self.wal.truncate()
@@ -804,23 +1223,25 @@ class RTMDKField:
         self._projection_mgr.load_state(state)
 
     @classmethod
-    def import_field(cls, path: str, embedder: Callable,
-                     wal_path: Optional[str] = None):
+    def import_field(cls, path: str, embedder: Callable, wal_path: Optional[str] = None):
         path = _sanitize_path(path)
         from rtmdk.memory.serialization import FieldSerializer
-        return FieldSerializer.field_from_file(
-            path, embedder, wal_path=wal_path)
+
+        return FieldSerializer.field_from_file(path, embedder, wal_path=wal_path)
 
     def export_to_dict(self) -> Dict:
         """Export field state to a dict (for UMP and other protocols)."""
         from rtmdk.memory.serialization import FieldSerializer
+
         return FieldSerializer.field_to_dict(self)
 
     @classmethod
     def import_from_dict(cls, data: Dict, embedder: Callable):
         """Import field state from a dict (for UMP and other protocols)."""
         from rtmdk.memory.serialization import FieldSerializer
+
         return FieldSerializer.field_from_dict(data, embedder)
+
 
 # ============================================================================
 # RTMDKMemory v7

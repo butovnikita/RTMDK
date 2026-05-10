@@ -4,6 +4,7 @@ Provides single-node and batch resonance scoring without cache or index
 management.  All numpy/torch math lives here; RTMDKField delegates resonance
 calls to this engine.
 """
+
 from __future__ import annotations
 
 import math
@@ -45,8 +46,7 @@ class ResonanceEngine:
     # ------------------------------------------------------------------
     @property
     def _effective_bandwidth(self) -> float:
-        if self.meta_kernel is not None and getattr(
-                self.meta_kernel, "_best_bw", None) is not None:
+        if self.meta_kernel is not None and getattr(self.meta_kernel, "_best_bw", None) is not None:
             return self.meta_kernel._best_bw
         return self.cfg.bandwidth
 
@@ -68,8 +68,7 @@ class ResonanceEngine:
     ) -> float:
         """Compute resonance for one query vs one node."""
         if self.cfg.hyperbolic:
-            dist = poincare_dist(
-                query_latent, node.latent_pos, self.cfg.ball_radius)
+            dist = poincare_dist(query_latent, node.latent_pos, self.cfg.ball_radius)
         else:
             dist = np.linalg.norm(query_latent - node.latent_pos)
 
@@ -79,11 +78,10 @@ class ResonanceEngine:
         pc = self._effective_pc
 
         if self.learnable_kernel is not None:
-            resp = self.learnable_kernel.resonance_response(
-                dist, phase_diff, node.amplitude, node.salience)
+            resp = self.learnable_kernel.resonance_response(dist, phase_diff, node.amplitude, node.salience)
         else:
             if self.cfg.resonance_kernel in ("gaussian", "gaussian_phase"):
-                spatial = math.exp(-dist ** 2 / (2 * bw ** 2))
+                spatial = math.exp(-(dist**2) / (2 * bw**2))
             elif self.cfg.resonance_kernel == "cosine":
                 nq = np.linalg.norm(query_latent)
                 nn = np.linalg.norm(node.latent_pos)
@@ -94,22 +92,17 @@ class ResonanceEngine:
             else:
                 spatial = math.exp(-dist / bw)
             phase_align = 0.5 + 0.5 * math.cos(phase_diff)
-            resp = spatial * ((1 - pc) + pc * phase_align) * \
-                node.amplitude * node.salience
+            resp = spatial * ((1 - pc) + pc * phase_align) * node.amplitude * node.salience
 
         gate = node.soft_gate if self.cfg.soft_gates else 1.0
         if self.causal_engine and getattr(node, "causal_parents", None):
-            causal_boost = sum(node.causal_strength.get(p, 0)
-                               for p in node.causal_parents)
-            resp *= (1.0 + 0.1 * causal_boost)
+            causal_boost = sum(node.causal_strength.get(p, 0) for p in node.causal_parents)
+            resp *= 1.0 + 0.1 * causal_boost
 
         if self.cfg.cross_modal:
             resp = cross_modal_resonance(
-                query_modality,
-                node.modality,
-                resp,
-                self.cfg.modal_phase_offsets,
-                self.cfg.cross_modal_kernel_weight)
+                query_modality, node.modality, resp, self.cfg.modal_phase_offsets, self.cfg.cross_modal_kernel_weight
+            )
             base_val = spatial * node.amplitude * node.salience
             node.cross_modal_score = resp / base_val if base_val > 1e-8 else 0.0
 
@@ -144,9 +137,55 @@ class ResonanceEngine:
             pc = self._effective_pc
 
         if np.ndim(bw) == 0:
-            spatial = np.exp(-dists ** 2 / (2 * bw ** 2))
+            spatial = np.exp(-(dists**2) / (2 * bw**2))
         else:
-            spatial = np.exp(-dists ** 2 / (2 * bw[np.newaxis, :] ** 2))
+            spatial = np.exp(-(dists**2) / (2 * bw[np.newaxis, :] ** 2))
+
+        phase_diff = query_phases[:, np.newaxis] - node_phases[np.newaxis, :]
+        phase_align = 0.5 + 0.5 * np.cos(phase_diff)
+        response = spatial * ((1 - pc) + pc * phase_align)
+        return response * node_amplitudes[np.newaxis, :] * node_saliences[np.newaxis, :]
+
+    def batch_response_numpy_int8(
+        self,
+        query_latents: NDArray,
+        query_phases: NDArray,
+        node_positions: NDArray,
+        node_norms_sq: NDArray,
+        node_scales: NDArray,
+        node_phases: NDArray,
+        node_amplitudes: NDArray,
+        node_saliences: NDArray,
+        bw: Optional[float] = None,
+        pc: Optional[float] = None,
+    ) -> NDArray:
+        """Fast batch resonance for int8 cached positions.
+
+        Avoids cdist cast to float64 by using BLAS matmul (float32 @ int8.T)
+        and precomputed squared norms.  node_scales restores per-vector scale.
+        """
+        if node_positions.shape[0] == 0:
+            return np.empty((len(query_latents), 0), dtype=np.float32)
+
+        # ||q - p_deq||^2 = ||q||^2 + ||p_deq||^2 - 2*q·p_deq
+        # p_deq = int8_p * scale_per_vector
+        # q·p_deq = (q @ int8_p.T) * scale_per_vector
+        q_norm_sq = np.einsum("ij,ij->i", query_latents, query_latents)
+        dot = (query_latents @ node_positions.T) * node_scales[np.newaxis, :]
+        dists_sq = q_norm_sq[:, np.newaxis] + node_norms_sq[np.newaxis, :] - 2.0 * dot
+        dists_sq = np.maximum(dists_sq, 0.0)  # numerical safety
+        dists = np.sqrt(dists_sq)
+
+        if bw is None:
+            bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self._effective_bandwidth
+        bw = np.maximum(bw, 1e-8)
+        if pc is None:
+            pc = self._effective_pc
+
+        if np.ndim(bw) == 0:
+            spatial = np.exp(-(dists**2) / (2 * bw**2))
+        else:
+            spatial = np.exp(-(dists**2) / (2 * bw[np.newaxis, :] ** 2))
 
         phase_diff = query_phases[:, np.newaxis] - node_phases[np.newaxis, :]
         phase_align = 0.5 + 0.5 * np.cos(phase_diff)
@@ -173,10 +212,14 @@ class ResonanceEngine:
         bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self.cfg.bandwidth
         pc = self._effective_pc
         return self.gpu_backend.batch_resonance(
-            query_latents, query_phases,
-            node_positions, node_phases,
-            node_amplitudes, node_saliences,
-            bw, pc,
+            query_latents,
+            query_phases,
+            node_positions,
+            node_phases,
+            node_amplitudes,
+            node_saliences,
+            bw,
+            pc,
         )
 
     # ------------------------------------------------------------------
@@ -215,6 +258,7 @@ class ResonanceEngine:
             def _asf32(a):
                 a = np.asarray(a)
                 return a if a.dtype == np.float32 else a.astype(np.float32)
+
             return _chunk_resonance_numba(
                 _asf32(positions),
                 _asf32(phases),
@@ -234,9 +278,9 @@ class ResonanceEngine:
         # Pure-numpy fallback (supports per-node bw vectors)
         dists = np.linalg.norm(positions - query_latent, axis=1)
         if np.ndim(local_bw) == 0:
-            spatial = np.exp(-dists ** 2 / (2 * local_bw ** 2))
+            spatial = np.exp(-(dists**2) / (2 * local_bw**2))
         else:
-            spatial = np.exp(-dists ** 2 / (2 * local_bw ** 2))
+            spatial = np.exp(-(dists**2) / (2 * local_bw**2))
         phase_align = 0.5 + 0.5 * np.cos(phases - query_phase)
         resp = spatial * ((1 - pc) + pc * phase_align)
         resp *= amplitudes * saliences * modal_weights
