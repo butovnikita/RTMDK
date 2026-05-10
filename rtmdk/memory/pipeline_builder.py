@@ -23,6 +23,11 @@ class PipelineBuilder:
     """Encapsulates pipeline stage assembly for RTMDKMemory."""
 
     def __init__(self, memory: "RTMDKMemory") -> None:
+        """Create a pipeline builder bound to an RTMDKMemory instance.
+
+        Args:
+            memory: The RTMDKMemory facade that owns the field and config.
+        """
         self._mem = memory
 
     def build(self) -> "PipelineExecutorType":

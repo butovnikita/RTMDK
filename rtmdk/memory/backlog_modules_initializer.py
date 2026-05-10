@@ -22,6 +22,11 @@ class BacklogModulesInitializer:
         self._mem = memory
 
     def initialize(self) -> None:
+        """Initialize production-grade backlog modules.
+
+        Wires replication, engram cache, distributed lock, observability,
+        RAG quality, explainability, safety, and security subsystems.
+        """
         self._init_replication()
         self._init_engram_cache()
         self._init_distributed_lock()

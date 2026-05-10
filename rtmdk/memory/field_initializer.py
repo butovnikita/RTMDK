@@ -82,6 +82,12 @@ class FieldInitializer:
     # Public entry point
     # ------------------------------------------------------------------
     def initialize(self) -> None:
+        """Wire all subsystems into the RTMDKField instance.
+
+        Creates engines, indexes, managers, security, schedulers,
+        and every other subsystem declared in the configuration.
+        This is the single constructor-injection point for the field.
+        """
         f = self.field
         cfg = self.cfg
 

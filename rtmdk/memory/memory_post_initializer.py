@@ -20,6 +20,11 @@ class MemoryPostInitializer:
         self._mem = memory
 
     def initialize(self) -> None:
+        """Complete RTMDKMemory initialization after pydantic validation.
+
+        Creates the field if missing, replays WAL, wires async workers,
+        engrams, causal traversal, reranker, and all backlog modules.
+        """
         mem = self._mem
         if mem.field is None:
             from rtmdk.memory.field import RTMDKField
