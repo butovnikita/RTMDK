@@ -82,6 +82,8 @@ class WAL:
         line = json.dumps(record, ensure_ascii=False) + "\n"
 
         with self._lock:
+            if self._file is None:
+                return
             if self.fsync_interval_ms <= 0:
                 # Legacy synchronous path
                 try:
