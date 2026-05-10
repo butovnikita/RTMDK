@@ -15,17 +15,14 @@ from scipy import stats
 import numpy as np
 import sys
 import os
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 np.random.seed(42)
 
 
-def generate_clustered_embeddings(
-        n_clusters=10,
-        pts_per_cluster=50,
-        dim=128,
-        outlier_ratio=0.1):
+def generate_clustered_embeddings(n_clusters=10, pts_per_cluster=50, dim=128, outlier_ratio=0.1):
     """Generate embeddings where each cluster has a known center."""
     embeddings = []
     labels = []
@@ -36,9 +33,7 @@ def generate_clustered_embeddings(
         center /= np.linalg.norm(center)
         centers.append(center)
         # Cluster points: Gaussian around center, then normalize
-        pts = rng.standard_normal(
-            (pts_per_cluster, dim)).astype(
-            np.float32) * 0.05
+        pts = rng.standard_normal((pts_per_cluster, dim)).astype(np.float32) * 0.05
         pts += center
         pts = pts / np.linalg.norm(pts, axis=1, keepdims=True)
         embeddings.append(pts)
@@ -93,12 +88,7 @@ def evaluate(field, centers, labels, top_k=5):
 
 def bw_stats(field):
     if field._cached_bw is None:
-        return {
-            "mean": None,
-            "median": None,
-            "min": None,
-            "max": None,
-            "std": None}
+        return {"mean": None, "median": None, "min": None, "max": None, "std": None}
     bw = field._cached_bw
     return {
         "mean": float(np.mean(bw)),
@@ -121,11 +111,9 @@ def run_experiment(name, cfg, X, labels, centers):
     stats = evaluate(field, centers, labels, top_k=5)
     bw = bw_stats(field)
     print(f"  R@1: {stats['R@1']:.3f}  R@5: {stats['R@5']:.3f}")
-    if bw['mean'] is not None:
-        print(
-            f"  BW  mean={bw['mean']:.4f} med={bw['median']:.4f} std={bw['std']:.4f}")
-        print(
-            f"  BW  min={bw['min']:.4f} max={bw['max']:.4f} p10={bw['p10']:.4f} p90={bw['p90']:.4f}")
+    if bw["mean"] is not None:
+        print(f"  BW  mean={bw['mean']:.4f} med={bw['median']:.4f} std={bw['std']:.4f}")
+        print(f"  BW  min={bw['min']:.4f} max={bw['max']:.4f} p10={bw['p10']:.4f} p90={bw['p90']:.4f}")
     else:
         print("  BW  (not computed — adaptive disabled or n too small)")
     return field, stats, bw
@@ -133,11 +121,8 @@ def run_experiment(name, cfg, X, labels, centers):
 
 def main():
     print("Generating synthetic dataset...")
-    X, labels, centers = generate_clustered_embeddings(
-        n_clusters=10, pts_per_cluster=50, dim=128, outlier_ratio=0.1
-    )
-    print(
-        f"  Total nodes: {len(X)}  Clusters: 10  Outliers: {sum(labels==-1)}")
+    X, labels, centers = generate_clustered_embeddings(n_clusters=10, pts_per_cluster=50, dim=128, outlier_ratio=0.1)
+    print(f"  Total nodes: {len(X)}  Clusters: 10  Outliers: {sum(labels==-1)}")
 
     # Baseline: global bandwidth
     cfg_base = RTMDKConfig(
@@ -149,53 +134,43 @@ def main():
         min_response=0.001,
         use_hnsw=False,
     )
-    f_base, s_base, bw_base = run_experiment(
-        "Baseline (global bw=1.0)", cfg_base, X, labels, centers)
+    f_base, s_base, bw_base = run_experiment("Baseline (global bw=1.0)", cfg_base, X, labels, centers)
 
     # Current adaptive: k=5, default clip
     cfg_adapt = RTMDKConfig(
         latent_dim=128,
         bandwidth=1.0,
         adaptive_bandwidth=True,
-        adaptive_bandwidth_k=5,
-        adaptive_bandwidth_min_n=5,
         resonance_kernel="cosine",
         phase_coupling=0.0,
         min_response=0.001,
         use_hnsw=False,
     )
-    f_adapt, s_adapt, bw_adapt = run_experiment(
-        "Adaptive (k=5, current clip)", cfg_adapt, X, labels, centers)
+    f_adapt, s_adapt, bw_adapt = run_experiment("Adaptive (k=5, current clip)", cfg_adapt, X, labels, centers)
 
     # Test: larger k
     cfg_adapt_k10 = RTMDKConfig(
         latent_dim=128,
         bandwidth=1.0,
         adaptive_bandwidth=True,
-        adaptive_bandwidth_k=10,
-        adaptive_bandwidth_min_n=5,
         resonance_kernel="cosine",
         phase_coupling=0.0,
         min_response=0.001,
         use_hnsw=False,
     )
-    f_adapt_k10, s_adapt_k10, bw_adapt_k10 = run_experiment(
-        "Adaptive (k=10)", cfg_adapt_k10, X, labels, centers)
+    f_adapt_k10, s_adapt_k10, bw_adapt_k10 = run_experiment("Adaptive (k=10)", cfg_adapt_k10, X, labels, centers)
 
     # Test: larger k=20
     cfg_adapt_k20 = RTMDKConfig(
         latent_dim=128,
         bandwidth=1.0,
         adaptive_bandwidth=True,
-        adaptive_bandwidth_k=20,
-        adaptive_bandwidth_min_n=5,
         resonance_kernel="cosine",
         phase_coupling=0.0,
         min_response=0.001,
         use_hnsw=False,
     )
-    f_adapt_k20, s_adapt_k20, bw_adapt_k20 = run_experiment(
-        "Adaptive (k=20)", cfg_adapt_k20, X, labels, centers)
+    f_adapt_k20, s_adapt_k20, bw_adapt_k20 = run_experiment("Adaptive (k=20)", cfg_adapt_k20, X, labels, centers)
 
     # Summary table
     print("\n" + "=" * 60)

@@ -10,6 +10,7 @@ import sys
 import os
 import json
 import time
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
@@ -25,6 +26,7 @@ def load_dataset(path="datasets/qa_1000_en.json"):
 
 def get_sbert():
     from sentence_transformers import SentenceTransformer
+
     print("Loading SBERT model (all-MiniLM-L6-v2)...")
     model = SentenceTransformer("all-MiniLM-L6-v2")
     print(f"  Embedding dim: {model.get_sentence_embedding_dimension()}")
@@ -54,18 +56,14 @@ def evaluate(field, records, model, top_k=5):
     correct_k = 0
     total = 0
     for rec in records:
-        q_emb = model.encode(
-            rec["query"],
-            convert_to_numpy=True).astype(
-            np.float32)
+        q_emb = model.encode(rec["query"], convert_to_numpy=True).astype(np.float32)
         results = field.query(q_emb, top_k=top_k)
         if not results:
             continue
         top_text = results[0][2].content.get("text", "")
         if top_text == rec["context"]:
             correct_1 += 1
-        found = any(r[2].content.get("text") == rec["context"]
-                    for r in results)
+        found = any(r[2].content.get("text") == rec["context"] for r in results)
         if found:
             correct_k += 1
         total += 1
@@ -80,8 +78,7 @@ def run(name, cfg, records, model, skip_proj=True):
     field = build_field(records, cfg, model, skip_proj=skip_proj)
     build_t = time.time() - t0
     stats = evaluate(field, records, model, top_k=5)
-    print(
-        f"  Build: {build_t:.1f}s  R@1: {stats['R@1']:.3f}  R@5: {stats['R@5']:.3f}")
+    print(f"  Build: {build_t:.1f}s  R@1: {stats['R@1']:.3f}  R@5: {stats['R@5']:.3f}")
     return field, stats
 
 
@@ -97,49 +94,66 @@ def main():
 
     # Test 1: No projection, global bw
     cfg1 = RTMDKConfig(
-        latent_dim=384, bandwidth=1.0, adaptive_bandwidth=False,
-        resonance_kernel="cosine", phase_coupling=0.0,
-        min_response=0.001, use_hnsw=False,
+        latent_dim=384,
+        bandwidth=1.0,
+        adaptive_bandwidth=False,
+        resonance_kernel="cosine",
+        phase_coupling=0.0,
+        min_response=0.001,
+        use_hnsw=False,
     )
     f1, s1 = run("No proj, global bw", cfg1, subset, model, skip_proj=True)
 
     # Test 2: No projection, adaptive k=5
     cfg2 = RTMDKConfig(
-        latent_dim=384, bandwidth=1.0, adaptive_bandwidth=True,
-        adaptive_bandwidth_k=5, adaptive_bandwidth_min_n=50,
-        resonance_kernel="cosine", phase_coupling=0.0,
-        min_response=0.001, use_hnsw=False,
+        latent_dim=384,
+        bandwidth=1.0,
+        adaptive_bandwidth=True,
+        resonance_kernel="cosine",
+        phase_coupling=0.0,
+        min_response=0.001,
+        use_hnsw=False,
     )
     f2, s2 = run("No proj, adaptive k=5", cfg2, subset, model, skip_proj=True)
 
     # Test 3: Projection 384->128, global bw
     cfg3 = RTMDKConfig(
-        latent_dim=128, bandwidth=1.0, adaptive_bandwidth=False,
-        resonance_kernel="cosine", phase_coupling=0.0,
-        min_response=0.001, use_hnsw=False, learn_projection=False,
+        latent_dim=128,
+        bandwidth=1.0,
+        adaptive_bandwidth=False,
+        resonance_kernel="cosine",
+        phase_coupling=0.0,
+        min_response=0.001,
+        use_hnsw=False,
+        learn_projection=False,
     )
-    f3, s3 = run("Proj 384->128, global bw", cfg3,
-                 subset, model, skip_proj=False)
+    f3, s3 = run("Proj 384->128, global bw", cfg3, subset, model, skip_proj=False)
 
     # Test 4: Projection 384->128, adaptive k=5
     cfg4 = RTMDKConfig(
-        latent_dim=128, bandwidth=1.0, adaptive_bandwidth=True,
-        adaptive_bandwidth_k=5, adaptive_bandwidth_min_n=50,
-        resonance_kernel="cosine", phase_coupling=0.0,
-        min_response=0.001, use_hnsw=False, learn_projection=False,
+        latent_dim=128,
+        bandwidth=1.0,
+        adaptive_bandwidth=True,
+        resonance_kernel="cosine",
+        phase_coupling=0.0,
+        min_response=0.001,
+        use_hnsw=False,
+        learn_projection=False,
     )
-    f4, s4 = run("Proj 384->128, adaptive k=5", cfg4,
-                 subset, model, skip_proj=False)
+    f4, s4 = run("Proj 384->128, adaptive k=5", cfg4, subset, model, skip_proj=False)
 
     # Test 5: Projection 384->128, adaptive k=20 (more stable density est)
     cfg5 = RTMDKConfig(
-        latent_dim=128, bandwidth=1.0, adaptive_bandwidth=True,
-        adaptive_bandwidth_k=20, adaptive_bandwidth_min_n=50,
-        resonance_kernel="cosine", phase_coupling=0.0,
-        min_response=0.001, use_hnsw=False, learn_projection=False,
+        latent_dim=128,
+        bandwidth=1.0,
+        adaptive_bandwidth=True,
+        resonance_kernel="cosine",
+        phase_coupling=0.0,
+        min_response=0.001,
+        use_hnsw=False,
+        learn_projection=False,
     )
-    f5, s5 = run("Proj 384->128, adaptive k=20",
-                 cfg5, subset, model, skip_proj=False)
+    f5, s5 = run("Proj 384->128, adaptive k=20", cfg5, subset, model, skip_proj=False)
 
     print("\n" + "=" * 60)
     print("SUMMARY")

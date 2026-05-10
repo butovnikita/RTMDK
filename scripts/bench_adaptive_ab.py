@@ -11,6 +11,7 @@ import sys
 import os
 import json
 import time
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
@@ -61,8 +62,7 @@ def evaluate(field, records, top_k=5):
         if top_text == rec["context"]:
             correct_1 += 1
         # Check if correct context is in top-k
-        found = any(r[2].content.get("text") == rec["context"]
-                    for r in results)
+        found = any(r[2].content.get("text") == rec["context"] for r in results)
         if found:
             correct_k += 1
         total += 1
@@ -111,8 +111,6 @@ def main():
         latent_dim=768,
         bandwidth=1.0,
         adaptive_bandwidth=True,
-        adaptive_bandwidth_k=5,
-        adaptive_bandwidth_min_n=50,
         resonance_kernel="cosine",
         phase_coupling=0.0,
         min_response=0.001,
@@ -124,8 +122,6 @@ def main():
         latent_dim=768,
         bandwidth=1.0,
         adaptive_bandwidth=True,
-        adaptive_bandwidth_k=20,
-        adaptive_bandwidth_min_n=50,
         resonance_kernel="cosine",
         phase_coupling=0.0,
         min_response=0.001,
@@ -137,12 +133,10 @@ def main():
     print("SUMMARY")
     print("=" * 60)
     print(f"  Global BW        R@1={s1['R@1']:.3f}  R@5={s1['R@5']:.3f}")
-    print(
-        f"  Adaptive k=5     R@1={s2['R@1']:.3f}  R@5={s2['R@5']:.3f}  ΔR@1={s2['R@1']-s1['R@1']:+.3f}")
-    print(
-        f"  Adaptive k=20    R@1={s3['R@1']:.3f}  R@5={s3['R@5']:.3f}  ΔR@1={s3['R@1']-s1['R@1']:+.3f}")
+    print(f"  Adaptive k=5     R@1={s2['R@1']:.3f}  R@5={s2['R@5']:.3f}  ΔR@1={s2['R@1']-s1['R@1']:+.3f}")
+    print(f"  Adaptive k=20    R@1={s3['R@1']:.3f}  R@5={s3['R@5']:.3f}  ΔR@1={s3['R@1']-s1['R@1']:+.3f}")
 
-    if s2['R@1'] < s1['R@1'] * 0.9:
+    if s2["R@1"] < s1["R@1"] * 0.9:
         print("\n  ⚠️  Adaptive bandwidth causes significant degradation!")
     else:
         print("\n  ✓  Adaptive bandwidth does NOT degrade ranking on this benchmark.")
