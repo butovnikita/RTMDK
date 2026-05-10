@@ -118,6 +118,9 @@ def run_smoke_test(n_nodes: int = 200, n_queries: int = 50) -> SmokeResult:
     ingest_rate = n_nodes / ingest_time
     print(f"      Done in {ingest_time:.2f}s ({ingest_rate:.0f} nodes/sec)")
 
+    # Warmup: trigger lazy cache build before timing
+    _ = mem.field.query(embedder(docs[0][0]), top_k=3)
+
     # Phase 2: Queries (immediately after ingest)
     print(f"[2/4] Running {n_queries} queries (hot)...")
     query_latencies = []
