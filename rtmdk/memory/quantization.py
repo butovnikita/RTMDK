@@ -54,7 +54,8 @@ class QuantizationHelper:
         if self.mode == "fp16":
             return vec.astype(np.float16)
         if self.mode == "int8":
-            return _quantize_int8(vec)
+            q, _scale, _zp = _quantize_int8(vec)
+            return q
         return vec.astype(np.float32)
 
     def dequantize(self, qvec: NDArray, scale: float = 1.0, zero_point: float = 0.0) -> NDArray:
@@ -75,6 +76,7 @@ class QuantizationHelper:
 # ------------------------------------------------------------------
 # int8 helpers
 # ------------------------------------------------------------------
+
 
 def _quantize_int8(vec: NDArray) -> NDArray:
     """Symmetric per-vector int8 quantization.
