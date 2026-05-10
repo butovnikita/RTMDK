@@ -35,9 +35,7 @@ class AsyncIndexBuilder:
     def submit(self, node_id: str, latent: NDArray) -> None:
         with self._lock:
             self._pending.append((node_id, latent))
-            should_flush = len(self._pending) >= self.batch_size or len(
-                self._pending
-            ) >= self.max_pending
+            should_flush = len(self._pending) >= self.batch_size or len(self._pending) >= self.max_pending
         if should_flush:
             self.flush()
 
@@ -45,18 +43,14 @@ class AsyncIndexBuilder:
         with self._lock:
             for nid, latent in zip(node_ids, latents):
                 self._pending.append((nid, latent))
-            should_flush = len(self._pending) >= self.batch_size or len(
-                self._pending
-            ) >= self.max_pending
+            should_flush = len(self._pending) >= self.batch_size or len(self._pending) >= self.max_pending
         if should_flush:
             self.flush()
 
     def remove(self, node_id: str) -> None:
         """Remove from pending buffer and from the underlying index."""
         with self._lock:
-            self._pending = [
-                (nid, lat) for nid, lat in self._pending if nid != node_id
-            ]
+            self._pending = [(nid, lat) for nid, lat in self._pending if nid != node_id]
         if hasattr(self.hnsw_index, "remove"):
             self.hnsw_index.remove(node_id)
 
@@ -77,11 +71,13 @@ class AsyncIndexBuilder:
 
     def close(self) -> None:
         self._stop_event.set()
-        self.flush()
         if self._thread.is_alive():
             self._thread.join(timeout=2.0)
+        self.flush()
 
     def _run(self) -> None:
         while not self._stop_event.is_set():
-            self._stop_event.wait(timeout=self.interval_ms / 1000.0)
+            stopped = self._stop_event.wait(timeout=self.interval_ms / 1000.0)
+            if stopped:
+                break
             self.flush()
