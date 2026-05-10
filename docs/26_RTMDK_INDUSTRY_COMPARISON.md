@@ -10,7 +10,7 @@ RTMDK v8.3 positions itself not as a traditional vector database, but as a **res
 - **BM25 fallback**: 4.5ms @ 10K docs (inverted index)
 - **Numba JIT**: 30-73× speedup on chunk resonance via `prange`
 - **BEIR validation**: SciFact recall@10=0.787 (identical to cosine), NFCorpus MRR=0.508 (slight win over cosine 0.505)
-- **Code health**: Extracted `ResonanceEngine`, `IndexManager`, `NodeCacheManager` — 921 tests passing
+- **Code health**: Extracted `ResonanceEngine`, `IndexManager`, `NodeCacheManager` — 1112 tests passing
 
 ---
 
