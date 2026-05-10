@@ -24,6 +24,7 @@ from rtmdk.memory.config import (
 )
 from rtmdk.memory.context_manager import ContextManager
 from rtmdk.memory.memory_post_initializer import MemoryPostInitializer
+from rtmdk.memory.backlog_modules_initializer import BacklogModulesInitializer
 from rtmdk.nodes import ContradictionRecord, MemoryNode
 import asyncio
 import functools
@@ -43,10 +44,7 @@ from rtmdk.memory.utils import (
     SecurityViolationError, _sanitize_path, _safe_json_load,
 )
 from rtmdk.utils.formatting import build_system_prompt
-from rtmdk.memory.engram_cache import EngramEmbeddingCache
-from rtmdk.memory.distributed_lock import DistributedLock
-from rtmdk.memory.observability import MemoryMetrics, AlertRule
-from rtmdk.memory.rag_quality import SentenceReranker, QueryDecomposer, FeedbackLoop
+from rtmdk.memory.observability import MemoryMetrics
 from rtmdk.pipeline import (
     PipelineExecutor,
     PlannedPipelineExecutor,
@@ -184,102 +182,8 @@ class RTMDKMemory(BaseModel):
 
     def model_post_init(self, __context):
         MemoryPostInitializer(self).initialize()
-        self._init_backlog_modules()
+        BacklogModulesInitializer(self).initialize()
         object.__setattr__(self, "_context_mgr", ContextManager(self))
-
-    def _init_backlog_modules(self) -> None:
-        peers = self.config.replication_peers
-        if peers:
-            try:
-                from rtmdk.production.replication import ReplicationManager
-                rm = ReplicationManager(
-                    peers=peers,
-                    node_id=self.config.replication_node_id,
-                    wal_path=self.config.replication_wal_path,
-                )
-                object.__setattr__(self, "replication_manager", rm)
-                logger.info("ReplicationManager enabled with peers: %s", peers)
-            except Exception:
-                logger.warning("ReplicationManager init failed, disabling", exc_info=True)
-                object.__setattr__(self, "replication_manager", None)
-        else:
-            object.__setattr__(self, "replication_manager", None)
-
-        # Engram embedding cache (avoids TieredNodeStore disk scans)
-        sot_cfg = getattr(self.config, "sot", None)
-        if sot_cfg and getattr(sot_cfg, "engram_cache_enabled", True):
-            self.engram_cache = EngramEmbeddingCache(
-                max_hot=getattr(sot_cfg, "engram_cache_max_hot", 10_000),
-                max_warm=getattr(sot_cfg, "engram_cache_max_warm", 90_000))
-        else:
-            self.engram_cache = None
-
-        # Distributed lock
-        lock_path = getattr(sot_cfg, "distributed_lock_path", None) if sot_cfg else None
-        lock_backend = getattr(sot_cfg, "distributed_lock_backend", "file")
-        redis_url = getattr(sot_cfg, "distributed_lock_redis_url", None)
-        if lock_path:
-            self._distributed_lock = DistributedLock(
-                lock_path, backend=lock_backend, redis_url=redis_url)
-        else:
-            self._distributed_lock = None
-
-        # Observability
-        if sot_cfg and getattr(sot_cfg, "observability_enabled", False):
-            self.metrics = MemoryMetrics()
-            self.metrics.add_alert_rule(AlertRule("high_latency", "query_p99", threshold=100.0))
-            self.metrics.add_alert_rule(AlertRule("low_cache", "cache_hit_ratio", threshold=0.3, comparison="lt"))
-            # Alert handlers
-            webhook_url = getattr(sot_cfg, "alert_webhook_url", None)
-            slack_url = getattr(sot_cfg, "alert_slack_url", None)
-            pagerduty_key = getattr(sot_cfg, "alert_pagerduty_key", None)
-            if webhook_url:
-                from rtmdk.memory.observability import WebhookAlertHandler
-                self.metrics.add_alert_handler(WebhookAlertHandler(webhook_url))
-            if slack_url:
-                from rtmdk.memory.observability import SlackAlertHandler
-                self.metrics.add_alert_handler(SlackAlertHandler(slack_url))
-            if pagerduty_key:
-                from rtmdk.memory.observability import PagerDutyAlertHandler
-                self.metrics.add_alert_handler(PagerDutyAlertHandler(pagerduty_key))
-        else:
-            self.metrics = None
-
-        # RAG Quality
-        self._sentence_reranker = None
-        self._query_decomposer = None
-        self._feedback_loop = None
-        if sot_cfg and getattr(sot_cfg, "sentence_reranker_enabled", False):
-            self._sentence_reranker = SentenceReranker(self.embedder)
-        if sot_cfg and getattr(sot_cfg, "query_decomposition_enabled", False):
-            # Optional LLM client for advanced decomposition
-            llm_client = getattr(self, "_llm_client", None)
-            self._query_decomposer = QueryDecomposer(llm_client=llm_client)
-        if sot_cfg and getattr(sot_cfg, "feedback_loop_enabled", False):
-            fb_path = getattr(sot_cfg, "feedback_loop_persist_path", None)
-            self._feedback_loop = FeedbackLoop(self.embedder, persist_path=fb_path)
-            self._feedback_loop.load()
-
-        # Explainability & Query Enhancement
-        self._result_explainer = None
-        self._query_rewriter = None
-        self._intent_classifier = None
-        if sot_cfg and getattr(sot_cfg, "result_explainability_enabled", False):
-            from rtmdk.memory.explainability import ResultExplainer
-            self._result_explainer = ResultExplainer()
-        if sot_cfg and getattr(sot_cfg, "query_rewrite_enabled", False):
-            from rtmdk.memory.explainability import QueryRewriter
-            llm_client = getattr(self, "_llm_client", None)
-            self._query_rewriter = QueryRewriter(embedder=self.embedder, llm_client=llm_client)
-        if sot_cfg and getattr(sot_cfg, "query_intent_classification_enabled", False):
-            from rtmdk.memory.explainability import QueryIntentClassifier
-            llm_client = getattr(self, "_llm_client", None)
-            self._intent_classifier = QueryIntentClassifier(llm_client=llm_client)
-
-        # Safety & Rollback
-        from rtmdk.memory.safety import RollbackManager, PoisonedMemoryDetector
-        self._rollback_manager = RollbackManager()
-        self._poison_detector = PoisonedMemoryDetector()
 
     @property
     def memory_variables(self) -> List[str]:
