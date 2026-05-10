@@ -2,6 +2,7 @@
 
 Extracted from RTMDKField to reduce monolithic field.py size.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -17,7 +18,6 @@ from typing import TYPE_CHECKING, Dict, List, Optional
 import numpy as np
 
 from rtmdk.engines.causal_extraction import extract_causal_edges_from_content
-from rtmdk.memory.quantization import QuantizationHelper
 from rtmdk.nodes import MemoryNode
 
 if TYPE_CHECKING:
@@ -26,44 +26,284 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_STOP_WORDS_EN = frozenset({
-    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
-    "have", "has", "had", "do", "does", "did", "will", "would", "could",
-    "should", "may", "might", "must", "shall", "can", "need", "dare",
-    "ought", "used", "to", "of", "in", "for", "on", "with", "at", "by",
-    "from", "as", "into", "through", "during", "before", "after",
-    "above", "below", "between", "under", "again", "further", "then",
-    "once", "here", "there", "when", "where", "why", "how", "all",
-    "each", "few", "more", "most", "other", "some", "such", "no",
-    "nor", "not", "only", "own", "same", "so", "than", "too", "very",
-    "just", "and", "but", "if", "or", "because", "until", "while",
-    "this", "that", "these", "those", "i", "me", "my", "myself", "we",
-    "our", "you", "your", "he", "him", "his", "she", "her", "it",
-    "its", "they", "them", "their", "what", "which", "who", "whom",
-    "am", "it", "s", "t", "don", "didn", "wasn", "weren", "haven",
-    "hasn", "hadn", "won", "wouldn", "couldn", "shouldn", "isn",
-    "aren", "ain", "ve", "ll", "re", "d", "m", "o", "y",
-})
+_STOP_WORDS_EN = frozenset(
+    {
+        "a",
+        "an",
+        "the",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "will",
+        "would",
+        "could",
+        "should",
+        "may",
+        "might",
+        "must",
+        "shall",
+        "can",
+        "need",
+        "dare",
+        "ought",
+        "used",
+        "to",
+        "of",
+        "in",
+        "for",
+        "on",
+        "with",
+        "at",
+        "by",
+        "from",
+        "as",
+        "into",
+        "through",
+        "during",
+        "before",
+        "after",
+        "above",
+        "below",
+        "between",
+        "under",
+        "again",
+        "further",
+        "then",
+        "once",
+        "here",
+        "there",
+        "when",
+        "where",
+        "why",
+        "how",
+        "all",
+        "each",
+        "few",
+        "more",
+        "most",
+        "other",
+        "some",
+        "such",
+        "no",
+        "nor",
+        "not",
+        "only",
+        "own",
+        "same",
+        "so",
+        "than",
+        "too",
+        "very",
+        "just",
+        "and",
+        "but",
+        "if",
+        "or",
+        "because",
+        "until",
+        "while",
+        "this",
+        "that",
+        "these",
+        "those",
+        "i",
+        "me",
+        "my",
+        "myself",
+        "we",
+        "our",
+        "you",
+        "your",
+        "he",
+        "him",
+        "his",
+        "she",
+        "her",
+        "it",
+        "its",
+        "they",
+        "them",
+        "their",
+        "what",
+        "which",
+        "who",
+        "whom",
+        "am",
+        "it",
+        "s",
+        "t",
+        "don",
+        "didn",
+        "wasn",
+        "weren",
+        "haven",
+        "hasn",
+        "hadn",
+        "won",
+        "wouldn",
+        "couldn",
+        "shouldn",
+        "isn",
+        "aren",
+        "ain",
+        "ve",
+        "ll",
+        "re",
+        "d",
+        "m",
+        "o",
+        "y",
+    }
+)
 
-_STOP_WORDS_RU = frozenset({
-    "и", "в", "во", "не", "что", "он", "на", "я", "с", "со", "как",
-    "а", "то", "все", "она", "так", "его", "но", "да", "ты", "к",
-    "у", "же", "вы", "за", "бы", "по", "только", "ее", "мне",
-    "было", "вот", "от", "меня", "еще", "нет", "о", "из", "ему",
-    "теперь", "когда", "даже", "ну", "вдруг", "ли", "если", "уже",
-    "или", "ни", "быть", "был", "него", "до", "вас", "нибудь",
-    "опять", "уж", "вам", "ведь", "там", "потом", "себя", "ничего",
-    "ей", "может", "они", "тут", "где", "есть", "надо", "ней",
-    "для", "мы", "тебя", "их", "чем", "была", "сам", "чтоб",
-    "без", "будто", "человек", "чего", "раз", "тоже", "себе",
-    "под", "жизнь", "будет", "ж", "тогда", "кто", "этот", "говорил",
-    "того", "потому", "этого", "какой", "совсем", "ним", "здесь",
-    "этом", "один", "почти", "мой", "тем", "чтобы", "нее", "кажется",
-    "сейчас", "были", "куда", "зачем", "снова", "твой", "разве",
-    "три", "эту", "моя", "свою", "этой", "перед", "иногда", "лучше",
-    "чуть", "том", "нельзя", "такой", "им", "более", "всегда",
-    "конечно", "всю", "между",
-})
+_STOP_WORDS_RU = frozenset(
+    {
+        "и",
+        "в",
+        "во",
+        "не",
+        "что",
+        "он",
+        "на",
+        "я",
+        "с",
+        "со",
+        "как",
+        "а",
+        "то",
+        "все",
+        "она",
+        "так",
+        "его",
+        "но",
+        "да",
+        "ты",
+        "к",
+        "у",
+        "же",
+        "вы",
+        "за",
+        "бы",
+        "по",
+        "только",
+        "ее",
+        "мне",
+        "было",
+        "вот",
+        "от",
+        "меня",
+        "еще",
+        "нет",
+        "о",
+        "из",
+        "ему",
+        "теперь",
+        "когда",
+        "даже",
+        "ну",
+        "вдруг",
+        "ли",
+        "если",
+        "уже",
+        "или",
+        "ни",
+        "быть",
+        "был",
+        "него",
+        "до",
+        "вас",
+        "нибудь",
+        "опять",
+        "уж",
+        "вам",
+        "ведь",
+        "там",
+        "потом",
+        "себя",
+        "ничего",
+        "ей",
+        "может",
+        "они",
+        "тут",
+        "где",
+        "есть",
+        "надо",
+        "ней",
+        "для",
+        "мы",
+        "тебя",
+        "их",
+        "чем",
+        "была",
+        "сам",
+        "чтоб",
+        "без",
+        "будто",
+        "человек",
+        "чего",
+        "раз",
+        "тоже",
+        "себе",
+        "под",
+        "жизнь",
+        "будет",
+        "ж",
+        "тогда",
+        "кто",
+        "этот",
+        "говорил",
+        "того",
+        "потому",
+        "этого",
+        "какой",
+        "совсем",
+        "ним",
+        "здесь",
+        "этом",
+        "один",
+        "почти",
+        "мой",
+        "тем",
+        "чтобы",
+        "нее",
+        "кажется",
+        "сейчас",
+        "были",
+        "куда",
+        "зачем",
+        "снова",
+        "твой",
+        "разве",
+        "три",
+        "эту",
+        "моя",
+        "свою",
+        "этой",
+        "перед",
+        "иногда",
+        "лучше",
+        "чуть",
+        "том",
+        "нельзя",
+        "такой",
+        "им",
+        "более",
+        "всегда",
+        "конечно",
+        "всю",
+        "между",
+    }
+)
 
 _STOP_WORDS = _STOP_WORDS_EN | _STOP_WORDS_RU
 
@@ -168,11 +408,13 @@ class NodeManager:
                 f._add_node_timestamps.popleft()
             if len(f._add_node_timestamps) >= _rate_limit:
                 from rtmdk.memory.utils import SecurityViolationError
+
                 raise SecurityViolationError(f"Rate limit exceeded: max {_rate_limit} nodes/second")
             f._add_node_timestamps.append(now)
 
         try:
             from rtmdk.production.sanitization import validate_embedding
+
             embedding = validate_embedding(embedding)
         except Exception as exc:
             raise ValueError(f"Invalid embedding: {exc}")
@@ -188,12 +430,15 @@ class NodeManager:
                         f.stats["security_violations"] += 1
                         logger.warning(f"Security violation in add_node: {validation['violations']}")
                         from rtmdk.memory.utils import SecurityViolationError
+
                         raise SecurityViolationError(f"Security violation: {validation['violations']}")
 
         nid = node_id or f"n_{len(f.nodes)}_{int(time.time() * 1000)}"
         if skip_projection:
             if len(embedding) != f.cfg.latent_dim:
-                raise ValueError(f"skip_projection=True but embedding dim {len(embedding)} != latent_dim {f.cfg.latent_dim}")
+                raise ValueError(
+                    f"skip_projection=True but embedding dim {len(embedding)} != " f"latent_dim {f.cfg.latent_dim}"
+                )
             latent = embedding
         elif len(embedding) == f.cfg.latent_dim:
             latent = embedding.astype(np.float32)
@@ -255,7 +500,8 @@ class NodeManager:
         if f._cached_positions is not None:
             try:
                 f._cached_positions = np.vstack([f._cached_positions, latent.reshape(1, -1)])
-                f._cached_phases = np.append(f._cached_phases, phase if phase is not None else self.get_phase(session_id, embedding, modality, content))
+                _ph = phase if phase is not None else self.get_phase(session_id, embedding, modality, content)
+                f._cached_phases = np.append(f._cached_phases, _ph)
                 f._cached_amplitudes = np.append(f._cached_amplitudes, amplitude)
                 f._cached_saliences = np.append(f._cached_saliences, salience)
                 f._cached_modal_weights = np.append(f._cached_modal_weights, 1.0)
@@ -314,7 +560,9 @@ class NodeManager:
 
         if skip_projection:
             if embeddings.shape[1] != f.cfg.latent_dim:
-                raise ValueError(f"skip_projection=True but embedding dim {embeddings.shape[1]} != latent_dim {f.cfg.latent_dim}")
+                raise ValueError(
+                    f"skip_projection=True but embedding dim {embeddings.shape[1]} != " f"latent_dim {f.cfg.latent_dim}"
+                )
             latents = embeddings.astype(np.float32)
         elif embeddings.shape[1] == f.cfg.latent_dim:
             latents = embeddings.astype(np.float32)
@@ -333,9 +581,15 @@ class NodeManager:
             base = (time.time() * 0.01) % (2 * np.pi)
             if modalities:
                 if f.cfg.cross_modal:
-                    phases = np.array([(base + f.cfg.modal_phase_offsets.get(m, 0.0)) % (2 * np.pi) for m in modalities], dtype=np.float32)
+                    phases = np.array(
+                        [(base + f.cfg.modal_phase_offsets.get(m, 0.0)) % (2 * np.pi) for m in modalities],
+                        dtype=np.float32,
+                    )
                 elif f.cfg.multimodal:
-                    phases = np.array([(base + f.cfg.modality_phase_shifts.get(m, 0.0)) % (2 * np.pi) for m in modalities], dtype=np.float32)
+                    phases = np.array(
+                        [(base + f.cfg.modality_phase_shifts.get(m, 0.0)) % (2 * np.pi) for m in modalities],
+                        dtype=np.float32,
+                    )
                 else:
                     phases = np.full(n, base, dtype=np.float32)
             else:
@@ -399,13 +653,16 @@ class NodeManager:
         if f.query_cache is not None:
             f.query_cache.clear()
 
-        f.wal.append("add_nodes_batch", {
-            "count": n,
-            "node_ids": batch_nids,
-            "contents": contents,
-            "embeddings": [vec.tolist() for vec in latents],
-            "modalities": modalities if modalities else ["text"] * n,
-        })
+        f.wal.append(
+            "add_nodes_batch",
+            {
+                "count": n,
+                "node_ids": batch_nids,
+                "contents": contents,
+                "embeddings": [vec.tolist() for vec in latents],
+                "modalities": modalities if modalities else ["text"] * n,
+            },
+        )
         f._dirty = True
         return batch_nids
 

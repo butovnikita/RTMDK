@@ -51,16 +51,12 @@ class TestMemoryNode:
         )
         d = node.to_dict()
         restored = MemoryNode.from_dict(d)
-        assert np.allclose(
-            restored.pre_consolidation_pos,
-            node.pre_consolidation_pos)
+        assert np.allclose(restored.pre_consolidation_pos, node.pre_consolidation_pos)
         assert np.allclose(restored.gradient_cache, node.gradient_cache)
         assert np.allclose(restored.velocity, node.velocity)
         assert np.allclose(restored.acceleration, node.acceleration)
         assert np.allclose(restored.modal_embedding, node.modal_embedding)
-        assert np.allclose(
-            restored.do_interventions["test"],
-            node.do_interventions["test"])
+        assert np.allclose(restored.do_interventions["test"], node.do_interventions["test"])
 
     def test_default_values(self):
         node = MemoryNode(

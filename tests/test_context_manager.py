@@ -1,7 +1,6 @@
 """Unit tests for ContextManager."""
 
 import numpy as np
-import pytest
 
 from rtmdk.memory.core import RTMDKMemory
 from rtmdk.memory.config import RTMDKConfig
@@ -10,9 +9,10 @@ from rtmdk.memory.context_manager import ContextManager
 
 def _make_embedder(dim: int = 64):
     def embed(text: str) -> np.ndarray:
-        h = hash(text) % (2 ** 32)
+        h = hash(text) % (2**32)
         rng = np.random.default_rng(h)
         return rng.standard_normal(dim, dtype=np.float32)
+
     return embed
 
 

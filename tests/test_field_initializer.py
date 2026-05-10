@@ -1,8 +1,5 @@
 """Unit tests for FieldInitializer."""
 
-import numpy as np
-import pytest
-
 from rtmdk.memory.field import RTMDKField
 from rtmdk.memory.config import RTMDKConfig
 
@@ -58,6 +55,7 @@ class TestFieldInitializer:
     def test_field_with_wal_path(self):
         import tempfile
         import os
+
         with tempfile.TemporaryDirectory() as tmpdir:
             wal_path = os.path.join(tmpdir, "test.wal")
             cfg = RTMDKConfig(latent_dim=64, embedding_dim=64)

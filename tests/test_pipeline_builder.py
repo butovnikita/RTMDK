@@ -1,7 +1,6 @@
 """Unit tests for PipelineBuilder."""
 
 import numpy as np
-import pytest
 
 from rtmdk.memory.core import RTMDKMemory
 from rtmdk.memory.config import RTMDKConfig
@@ -11,9 +10,10 @@ from rtmdk.pipeline import PipelineExecutor, PlannedPipelineExecutor
 
 def _make_embedder(dim: int = 64):
     def embed(text: str) -> np.ndarray:
-        h = hash(text) % (2 ** 32)
+        h = hash(text) % (2**32)
         rng = np.random.default_rng(h)
         return rng.standard_normal(dim, dtype=np.float32)
+
     return embed
 
 
@@ -41,7 +41,8 @@ class TestPipelineBuilder:
 
     def test_build_with_planner_returns_planned_executor(self):
         cfg = RTMDKConfig(
-            latent_dim=64, embedding_dim=64,
+            latent_dim=64,
+            embedding_dim=64,
             pipeline_breaker_enabled=False,
             pipeline_planner_enabled=True,
         )

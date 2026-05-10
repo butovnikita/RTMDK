@@ -1,14 +1,14 @@
 """ContextManager — save_context & retrieve-and-format logic extracted from core.py."""
+
 from __future__ import annotations
 
 import asyncio
 import time
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Dict, List
 
-import numpy as np
 from numpy.typing import NDArray
 
-from rtmdk.memory.config import ContextFormat, RTMDKConfig
+from rtmdk.memory.config import ContextFormat
 from rtmdk.memory.utils import SecurityViolationError, detect_modality
 from rtmdk.utils.modality import detect_tier
 from rtmdk.utils.attention import format_cognitive_context
@@ -29,11 +29,7 @@ class ContextManager:
     # ------------------------------------------------------------------
     # Retrieval pipeline
     # ------------------------------------------------------------------
-    def retrieve_and_format(
-            self,
-            query: str,
-            embedding: NDArray,
-            session_id: str) -> str:
+    def retrieve_and_format(self, query: str, embedding: NDArray, session_id: str) -> str:
         """Core retrieval pipeline shared by load_memory_variables and with_embedding."""
         mem = self._memory
         field = mem.field
@@ -63,19 +59,15 @@ class ContextManager:
                         if emb is not None:
                             node_embs[nid] = emb
 
-                engram_results = mem.engram_manager.retrieve_engrams(
-                    sub_emb, node_embs, top_k=field.cfg.top_k)
+                engram_results = mem.engram_manager.retrieve_engrams(sub_emb, node_embs, top_k=field.cfg.top_k)
 
                 if engram_results:
-                    results = mem.engram_manager.expand_engrams(
-                        engram_results, field, top_k=field.cfg.top_k)
+                    results = mem.engram_manager.expand_engrams(engram_results, field, top_k=field.cfg.top_k)
                     field.stats["engram_retrievals"] += 1
                 else:
-                    results = field.query(
-                        sub_emb, phase, top_k=field.cfg.top_k, session_id=session_id)
+                    results = field.query(sub_emb, phase, top_k=field.cfg.top_k, session_id=session_id)
             else:
-                results = field.query(
-                    sub_emb, phase, top_k=field.cfg.top_k, session_id=session_id)
+                results = field.query(sub_emb, phase, top_k=field.cfg.top_k, session_id=session_id)
             all_results.extend(results)
 
         # Deduplicate and re-rank combined results
@@ -89,13 +81,11 @@ class ContextManager:
         # Session-scoped retrieval: filter results by session_id, with global fallback
         if session_id and session_id != "default" and results:
             session_results = [
-                (nid, score, node) for nid, score, node in results
-                if node.content.get("session") == session_id
+                (nid, score, node) for nid, score, node in results if node.content.get("session") == session_id
             ]
             if len(session_results) < field.cfg.top_k:
                 global_results = [
-                    (nid, score, node) for nid, score, node in results
-                    if node.content.get("session") != session_id
+                    (nid, score, node) for nid, score, node in results if node.content.get("session") != session_id
                 ]
                 needed = field.cfg.top_k - len(session_results)
                 session_results.extend(global_results[:needed])
@@ -105,9 +95,8 @@ class ContextManager:
                     score *= 1.5  # 50% boost for session match
                 boosted.append((nid, score, node))
             boosted.sort(key=lambda x: x[1], reverse=True)
-            results = boosted[:field.cfg.top_k]
-            field.stats["session_scoped_retrievals"] = field.stats.get(
-                "session_scoped_retrievals", 0) + 1
+            results = boosted[: field.cfg.top_k]
+            field.stats["session_scoped_retrievals"] = field.stats.get("session_scoped_retrievals", 0) + 1
 
         # Phase 1: Hybrid retrieval — blend RTMDK resonance with BM25 text scores
         if field.cfg.hybrid_alpha < 1.0 and field.bm25_index is not None and results:
@@ -133,9 +122,8 @@ class ContextManager:
                             blended.append((nid, blended_score, node))
 
                 blended.sort(key=lambda x: x[1], reverse=True)
-                results = blended[:field.cfg.top_k]
-                field.stats["hybrid_retrievals"] = field.stats.get(
-                    "hybrid_retrievals", 0) + 1
+                results = blended[: field.cfg.top_k]
+                field.stats["hybrid_retrievals"] = field.stats.get("hybrid_retrievals", 0) + 1
 
         # Phase 15 Track 2: Proactive Clarification
         if cfg.proactive_clarification and results:
@@ -169,15 +157,13 @@ class ContextManager:
                 concepts = field.symbolic_overlay._extract_concepts(text)
                 facts.extend(concepts)
             if facts:
-                symbolic_ctx = field.symbolic_overlay.get_symbolic_context(
-                    facts, max_depth=2)
+                symbolic_ctx = field.symbolic_overlay.get_symbolic_context(facts, max_depth=2)
                 if symbolic_ctx:
                     context += "\n\n" + symbolic_ctx
-                    field.stats["n_symbolic_inferences"] = field.stats.get(
-                        "n_symbolic_inferences", 0) + 1
+                    field.stats["n_symbolic_inferences"] = field.stats.get("n_symbolic_inferences", 0) + 1
                     n_conflicts = sum(
-                        1 for r in field.symbolic_overlay.rules.values()
-                        if getattr(r, "is_contextual_exception", False))
+                        1 for r in field.symbolic_overlay.rules.values() if getattr(r, "is_contextual_exception", False)
+                    )
                     field.stats["n_symbolic_conflicts"] = n_conflicts
 
         return context
@@ -185,8 +171,7 @@ class ContextManager:
     # ------------------------------------------------------------------
     # Save pipeline
     # ------------------------------------------------------------------
-    def save_context(
-            self, inputs: Dict[str, str], outputs: Dict[str, str]) -> None:
+    def save_context(self, inputs: Dict[str, str], outputs: Dict[str, str]) -> None:
         """Save a conversation turn to memory with structured node format."""
         mem = self._memory
         field = mem.field
@@ -209,17 +194,18 @@ class ContextManager:
         emotion = "neutral"
         if input_text:
             lower_input = input_text.lower()
-            if any(w in lower_input for w in [
-                    "happy", "love", "great", "wonderful", "amazing",
-                    "рад", "люб", "отличн", "прекрасн"]):
+            if any(
+                w in lower_input
+                for w in ["happy", "love", "great", "wonderful", "amazing", "рад", "люб", "отличн", "прекрасн"]
+            ):
                 emotion = "positive"
-            elif any(w in lower_input for w in [
-                    "sad", "hate", "bad", "terrible", "angry",
-                    "грустн", "ненавиж", "плох", "зл"]):
+            elif any(
+                w in lower_input for w in ["sad", "hate", "bad", "terrible", "angry", "грустн", "ненавиж", "плох", "зл"]
+            ):
                 emotion = "negative"
-            elif any(w in lower_input for w in [
-                    "?", "what", "why", "how", "when",
-                    "где", "что", "как", "когда", "почему"]):
+            elif any(
+                w in lower_input for w in ["?", "what", "why", "how", "when", "где", "что", "как", "когда", "почему"]
+            ):
                 emotion = "questioning"
 
         # Auto-detect tags from text
@@ -236,10 +222,7 @@ class ContextManager:
             "emotion": emotion,
             "tags": tags,
             "tier": "episodic",
-            "context": {
-                k: v for k, v in inputs.items()
-                if k not in ["input", "query", "session_id", "embedding"]
-            },
+            "context": {k: v for k, v in inputs.items() if k not in ["input", "query", "session_id", "embedding"]},
             "version": "2.0",
         }
 
@@ -252,9 +235,7 @@ class ContextManager:
         content["tier"] = tier
 
         try:
-            nid = field.add_node(
-                embedding, content, phase,
-                session_id=session_id, modality=modality)
+            nid = field.add_node(embedding, content, phase, session_id=session_id, modality=modality)
         except SecurityViolationError:
             return
 
@@ -266,8 +247,8 @@ class ContextManager:
         if mem.engram_manager is not None:
             try:
                 retrieved = mem.retrieve_nodes(
-                    text_for_embedding, embedding,
-                    top_k=cfg.engram_max_nodes * 2, session_id=session_id)
+                    text_for_embedding, embedding, top_k=cfg.engram_max_nodes * 2, session_id=session_id
+                )
                 related_nodes = []
                 for rnid, rscore, _ in retrieved:
                     if rscore >= cfg.min_response:
@@ -279,13 +260,12 @@ class ContextManager:
             if len(related_nodes) >= cfg.engram_min_nodes:
                 node_embs = {}
                 for rnid, _ in related_nodes:
-                    emb = mem._get_node_embedding(
-                        rnid, field.nodes.get(rnid))
+                    emb = mem._get_node_embedding(rnid, field.nodes.get(rnid))
                     if emb is not None:
                         node_embs[rnid] = emb
 
                 mem.engram_manager.create_engram_from_nodes(
-                    activated_nodes=related_nodes[:cfg.engram_max_nodes],
+                    activated_nodes=related_nodes[: cfg.engram_max_nodes],
                     node_embeddings=node_embs,
                     semantic_core=text_for_embedding[:100],
                     context_tags=set(tags + [tier, session_id]),
@@ -322,40 +302,29 @@ class ContextManager:
         tags = []
         lower = text.lower()
 
-        if any(w in lower for w in [
-                "hello", "hi ", "hey", "привет", "здравствуй", "hi,", "hey,"]):
+        if any(w in lower for w in ["hello", "hi ", "hey", "привет", "здравствуй", "hi,", "hey,"]):
             tags.append("greeting")
-        if any(w in lower for w in [
-                "my name is", "i'm ", "i am ", "меня зовут", "мое имя"]):
+        if any(w in lower for w in ["my name is", "i'm ", "i am ", "меня зовут", "мое имя"]):
             tags.append("name")
 
-        if any(w in lower for w in [
-                "code", "program", "python", "java", "javascript",
-                "функци", "код", "програм"]):
+        if any(w in lower for w in ["code", "program", "python", "java", "javascript", "функци", "код", "програм"]):
             tags.append("coding")
-        if any(w in lower for w in [
-                "coffee", "tea", "food", "drink", "кофе", "чай", "еда"]):
+        if any(w in lower for w in ["coffee", "tea", "food", "drink", "кофе", "чай", "еда"]):
             tags.append("food_drink")
-        if any(w in lower for w in [
-                "love", "like", "prefer", "enjoy", "люб", "нрав", "предпочита"]):
+        if any(w in lower for w in ["love", "like", "prefer", "enjoy", "люб", "нрав", "предпочита"]):
             tags.append("preference")
-        if any(w in lower for w in [
-                "work", "job", "career", "работ", "карьер", "професс"]):
+        if any(w in lower for w in ["work", "job", "career", "работ", "карьер", "професс"]):
             tags.append("work")
-        if any(w in lower for w in [
-                "live", "city", "country", "home", "жив", "город", "стран", "дом"]):
+        if any(w in lower for w in ["live", "city", "country", "home", "жив", "город", "стран", "дом"]):
             tags.append("location")
-        if any(w in lower for w in [
-                "family", "friend", "dog", "cat", "pet",
-                "семь", "друг", "собак", "кот", "питом"]):
+        if any(w in lower for w in ["family", "friend", "dog", "cat", "pet", "семь", "друг", "собак", "кот", "питом"]):
             tags.append("relationships")
 
         return tags[:5]
 
     def _generate_clarification(self, results: List, query: str) -> str:
         """Generate a clarification prompt from weak-resonance nodes."""
-        lines = [
-            f"[CLARIFICATION] Не нашёл точных воспоминаний по запросу: \"{query[:80]}\""]
+        lines = [f'[CLARIFICATION] Не нашёл точных воспоминаний по запросу: "{query[:80]}"']
         lines.append("Полусовпадения (низкий резонанс):")
         for nid, score, node in results[:3]:
             text = node.content.get("text", "")[:60]
