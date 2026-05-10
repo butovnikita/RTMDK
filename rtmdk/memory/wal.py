@@ -6,6 +6,7 @@ On startup WAL is replayed before loading the main snapshot.
 After a successful export_field the WAL is truncated.
 """
 
+import atexit
 import json
 import os
 import time
@@ -37,9 +38,11 @@ class WAL:
         self._flush_thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
 
-        if self.enabled and self.fsync_interval_ms > 0:
-            self._flush_thread = threading.Thread(target=self._fsync_loop, daemon=True)
-            self._flush_thread.start()
+        if self.enabled:
+            atexit.register(self.close)
+            if self.fsync_interval_ms > 0:
+                self._flush_thread = threading.Thread(target=self._fsync_loop, daemon=True)
+                self._flush_thread.start()
 
     def _ensure_open(self):
         with self._lock:

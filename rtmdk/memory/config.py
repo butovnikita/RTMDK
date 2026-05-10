@@ -599,9 +599,9 @@ class InferenceConfig:
     meta_controller: bool = False
     meta_optimization_freq: int = 500
     meta_n_trials: int = 20
-    meta_optimize_params: List[str] = field(default_factory=lambda: [
-        "decay_rate", "tension_threshold", "phase_coupling", "bandwidth"
-    ])
+    meta_optimize_params: List[str] = field(
+        default_factory=lambda: ["decay_rate", "tension_threshold", "phase_coupling", "bandwidth"]
+    )
     goal_tracking: bool = False
     max_goals: int = 20
     goal_decay: float = 0.995
@@ -629,15 +629,13 @@ class MemorySystemConfig:
     engram_decay_rate: float = 0.998
     engram_pattern_completion: bool = True
     engram_overlap_threshold: float = 0.7
-    memory_tiers: Set[str] = field(
-        default_factory=lambda: {
-            "episodic", "semantic", "procedural"})
-    tier_decay: Dict[str, float] = field(default_factory=lambda: {
-        "episodic": 0.992, "semantic": 0.999, "procedural": 1.0
-    })
-    tier_tension_thresh: Dict[str, float] = field(default_factory=lambda: {
-        "episodic": 0.10, "semantic": 0.22, "procedural": 0.35
-    })
+    memory_tiers: Set[str] = field(default_factory=lambda: {"episodic", "semantic", "procedural"})
+    tier_decay: Dict[str, float] = field(
+        default_factory=lambda: {"episodic": 0.992, "semantic": 0.999, "procedural": 1.0}
+    )
+    tier_tension_thresh: Dict[str, float] = field(
+        default_factory=lambda: {"episodic": 0.10, "semantic": 0.22, "procedural": 0.35}
+    )
     hyperbolic: bool = False
     ball_radius: float = 0.85
     curvature: float = -1.0
@@ -651,7 +649,7 @@ class MemorySystemConfig:
     query_queue_size: int = 50
     save_queue_size: int = 100
     evolve_queue_size: int = 20
-    wal_fsync_interval_ms: int = 0
+    wal_fsync_interval_ms: int = 100
     wal_batch_size: int = 100
     async_hnsw_build: bool = False
     async_hnsw_interval_ms: int = 5000
@@ -719,12 +717,20 @@ class ProductionConfig:
     max_node_text_length: int = 10000
     tension_spike_threshold: float = 0.5
     causal_graph_integrity_check: bool = True
-    prompt_injection_patterns: List[str] = field(default_factory=lambda: [
-        "ignore previous", "system prompt", "you are now", "disregard",
-        "ignore all", "new instruction", "override"
-    ])
-    system_prompt: Optional[
-        str] = "You are a helpful assistant with long-term memory powered by RTMDK (Resonance-Topological Memory)."
+    prompt_injection_patterns: List[str] = field(
+        default_factory=lambda: [
+            "ignore previous",
+            "system prompt",
+            "you are now",
+            "disregard",
+            "ignore all",
+            "new instruction",
+            "override",
+        ]
+    )
+    system_prompt: Optional[str] = (
+        "You are a helpful assistant with long-term memory powered by RTMDK (Resonance-Topological Memory)."
+    )
     # v8.2.1 production distributed features
     vector_storage_dsn: Optional[str] = None
     replication_peers: List[str] = field(default_factory=list)
@@ -737,14 +743,16 @@ class ProductionConfig:
     pipeline_breaker_latency_violation_threshold: int = 3
     pipeline_breaker_recovery_timeout_ms: float = 30_000.0
     pipeline_breaker_half_open_max_calls: int = 3
-    pipeline_breaker_thresholds: Dict[str, float] = field(default_factory=lambda: {
-        "embed": 5000.0,
-        "route": 100.0,
-        "retrieve": 500.0,
-        "rerank": 1000.0,
-        "calibrate": 200.0,
-        "explain": 100.0,
-    })
+    pipeline_breaker_thresholds: Dict[str, float] = field(
+        default_factory=lambda: {
+            "embed": 5000.0,
+            "route": 100.0,
+            "retrieve": 500.0,
+            "rerank": 1000.0,
+            "calibrate": 200.0,
+            "explain": 100.0,
+        }
+    )
     # Pipeline alerting thresholds
     pipeline_alert_degraded_stages_threshold: int = 2  # Alert if >= N stages degraded
     pipeline_alert_latency_threshold_ms: float = 5000.0  # Alert if total latency > N ms
@@ -756,13 +764,15 @@ class ProductionConfig:
 @dataclass
 class RoutingConfig:
     cross_modal: bool = False
-    modal_phase_offsets: Dict[str, float] = field(default_factory=lambda: {
-        "text": 0.0,
-        "code": math.pi / 4,
-        "audio": math.pi / 2,
-        "vision": 3 * math.pi / 4,
-        "metrics": math.pi,
-    })
+    modal_phase_offsets: Dict[str, float] = field(
+        default_factory=lambda: {
+            "text": 0.0,
+            "code": math.pi / 4,
+            "audio": math.pi / 2,
+            "vision": 3 * math.pi / 4,
+            "metrics": math.pi,
+        }
+    )
     cross_modal_kernel_weight: float = 0.35
     federated: bool = False
     federated_sync_lr: float = 0.01
@@ -905,8 +915,7 @@ class RTMDKConfig:
         raise AttributeError(f"RTMDKConfig has no attribute {name!r}")
 
     _NESTED_ATTRS = frozenset(
-        {"core", "retrieval", "learning", "dynamics", "inference",
-         "memory", "production", "routing", "sot"}
+        {"core", "retrieval", "learning", "dynamics", "inference", "memory", "production", "routing", "sot"}
     )
 
     def __setattr__(self, name: str, value: Any) -> None:
@@ -1001,7 +1010,7 @@ class RTMDKConfig:
             ("RTMDK_LEARN_PROJECTION", "learn_projection", lambda x: x.lower() == "true"),
             ("RTMDK_PROJECTION_LR", "projection_lr", float),
             ("RTMDK_PROJECTION_UPDATE_FREQ", "projection_update_freq", int),
-    ("RTMDK_PROJECTION_MODE", "projection_mode", str),
+            ("RTMDK_PROJECTION_MODE", "projection_mode", str),
             ("RTMDK_ATTENTION_BIAS", "attention_bias", lambda x: x.lower() == "true"),
             ("RTMDK_ENABLE_ASYNC", "enable_async", lambda x: x.lower() == "true"),
             ("RTMDK_SOFT_GATES", "soft_gates", lambda x: x.lower() == "true"),
@@ -1059,15 +1068,15 @@ class RTMDKConfig:
                         parsed = None
                     self._set_flat_field(attr, parsed)
                 except (ValueError, TypeError) as e:
-                    logging.getLogger("rtmdk").warning(
-                        f"Invalid env var {env_key}={val}: {e}"
-                    )
+                    logging.getLogger("rtmdk").warning(f"Invalid env var {env_key}={val}: {e}")
 
         logger.setLevel(getattr(logging, self.core.log_level.upper()))
         if not self.retrieval.modality_phase_shifts:
             self.retrieval.modality_phase_shifts = {
-                "text": 0.0, "audio": np.pi / 3,
-                "image": np.pi / 2, "video": np.pi,
+                "text": 0.0,
+                "audio": np.pi / 3,
+                "image": np.pi / 2,
+                "video": np.pi,
             }
         if self.core.pca_n_components is None:
             self.core.pca_n_components = self.core.latent_dim
@@ -1078,8 +1087,7 @@ class RTMDKConfig:
         # Check HNSW inconsistencies
         if not self.retrieval.use_hnsw and self.core.hnsw_min_nodes > 0:
             warnings.append(
-                f"hnsw_min_nodes={self.core.hnsw_min_nodes} but use_hnsw=False. "
-                "HNSW routing will be disabled."
+                f"hnsw_min_nodes={self.core.hnsw_min_nodes} but use_hnsw=False. " "HNSW routing will be disabled."
             )
         # Check distributed lock backend
         if self.sot.distributed_lock_backend == "redis" and not self.sot.distributed_lock_redis_url:
@@ -1094,13 +1102,15 @@ class RTMDKConfig:
                 "Feedback will be lost on restart."
             )
         # Check alert handlers without observability
-        if (self.sot.alert_webhook_url or self.sot.alert_slack_url or self.sot.alert_pagerduty_key) and not self.sot.observability_enabled:
-            warnings.append(
-                "Alert handlers configured but observability_enabled=False. "
-                "Alerts will not fire."
-            )
+        if (
+            self.sot.alert_webhook_url or self.sot.alert_slack_url or self.sot.alert_pagerduty_key
+        ) and not self.sot.observability_enabled:
+            warnings.append("Alert handlers configured but observability_enabled=False. " "Alerts will not fire.")
         # Check matryoshka mode without truncation dim
-        if getattr(self, "matryoshka_mode", False) and getattr(self, "matryoshka_hnsw_dim", self.core.latent_dim) >= self.core.embedding_dim:
+        if (
+            getattr(self, "matryoshka_mode", False)
+            and getattr(self, "matryoshka_hnsw_dim", self.core.latent_dim) >= self.core.embedding_dim
+        ):
             warnings.append(
                 f"matryoshka_hnsw_dim ({getattr(self, 'matryoshka_hnsw_dim', self.core.latent_dim)}) >= embedding_dim ({self.core.embedding_dim}). "
                 "No actual truncation will occur."
