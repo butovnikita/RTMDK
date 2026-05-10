@@ -1,7 +1,7 @@
 # RTMDK — Resonance-Topological Memory v8.3
 
 > Долгосрочная память для LLM на основе резонансной топологии и диалектической консолидации
-> Version 8.3 (Pipeline Architecture + HNSW + Observability + Production Hardening) — 191,000+ строк кода, 1000+ файлов, 44 API endpoints, 1112 тестов
+> Version 8.3 (Pipeline Architecture + HNSW + Observability + Production Hardening) — 74,000+ строк кода, 440+ файлов, 44 API endpoints, 1112 тестов
 
 ### Production Stats
 | Metric | Value |
@@ -225,7 +225,7 @@ RTMDK_PRESET=research RTMDK_DECAY_RATE=0.9995 python rtmdk_server.py
 ## 🏗️ Архитектура
 
 ```
-RTMDK v8.3 (191,000+ строк, 1000+ файлов, 44 API)
+RTMDK v8.3 (74,000+ строк, 440+ файлов, 44 API)
 ├── Core (decoupled v8.3-alpha): RTMDKField + RTMDKMemory facades delegate to 21 subsystems
 │   ├── Initializers: FieldInitializer, ContextManager, MemoryPostInitializer, BacklogModulesInitializer, PipelineBuilder
 │   ├── Managers: NodeManager, QueryManager, TopologyManager, AsyncPipelineManager, CrystallizationManager, MergeManager, RoutingManager, IndexManager, ProjectionManager, ConsolidationManager, CognitiveManager, OperationalManager, Scheduler, EngramManager
