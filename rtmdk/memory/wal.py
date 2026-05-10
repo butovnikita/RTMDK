@@ -5,6 +5,7 @@ Guarantees durability for add_node, consolidate, and delete operations.
 On startup WAL is replayed before loading the main snapshot.
 After a successful export_field the WAL is truncated.
 """
+
 import json
 import os
 import time
@@ -37,18 +38,17 @@ class WAL:
         self._stop_event = threading.Event()
 
         if self.enabled and self.fsync_interval_ms > 0:
-            self._flush_thread = threading.Thread(
-                target=self._fsync_loop, daemon=True
-            )
+            self._flush_thread = threading.Thread(target=self._fsync_loop, daemon=True)
             self._flush_thread.start()
 
     def _ensure_open(self):
-        if not self.enabled or self._file is not None:
-            return
-        try:
-            self._file = open(self.path, "a", encoding="utf-8")
-        except OSError:
-            self.enabled = False
+        with self._lock:
+            if not self.enabled or self._file is not None:
+                return
+            try:
+                self._file = open(self.path, "a", encoding="utf-8")
+            except OSError:
+                self.enabled = False
 
     def _fsync_loop(self):
         while not self._stop_event.is_set():
@@ -78,33 +78,26 @@ class WAL:
         record = {"op": operation, "ts": time.time(), "payload": payload}
         line = json.dumps(record, ensure_ascii=False) + "\n"
 
-        if self.fsync_interval_ms <= 0:
-            # Legacy synchronous path
-            try:
-                self._file.write(line)
-                self._file.flush()
-                os.fsync(self._file.fileno())
-            except OSError:
-                pass
-            return
-
         with self._lock:
+            if self.fsync_interval_ms <= 0:
+                # Legacy synchronous path
+                try:
+                    self._file.write(line)
+                    self._file.flush()
+                    os.fsync(self._file.fileno())
+                except OSError:
+                    pass
+                return
             self._buffer.append(line)
             should_flush = len(self._buffer) >= self.batch_size
 
         if should_flush:
             self._flush()
 
-    def append_add_node(self,
-                        node_id: str,
-                        content: Dict[str,
-                                      Any],
-                        modality: str = "text",
-                        embedding: Optional[List[float]] = None):
-        payload: Dict[str, Any] = {
-            "node_id": node_id,
-            "content": content,
-            "modality": modality}
+    def append_add_node(
+        self, node_id: str, content: Dict[str, Any], modality: str = "text", embedding: Optional[List[float]] = None
+    ):
+        payload: Dict[str, Any] = {"node_id": node_id, "content": content, "modality": modality}
         if embedding is not None:
             payload["embedding"] = embedding
         self.append("add_node", payload)
@@ -152,16 +145,16 @@ class WAL:
         # Restart background thread if needed
         self._stop_event.clear()
         if self.fsync_interval_ms > 0:
-            self._flush_thread = threading.Thread(
-                target=self._fsync_loop, daemon=True
-            )
+            self._flush_thread = threading.Thread(target=self._fsync_loop, daemon=True)
             self._flush_thread.start()
 
     def close(self):
+        self._flush()
         self._stop()
-        if self._file is not None:
-            self._file.close()
-            self._file = None
+        with self._lock:
+            if self._file is not None:
+                self._file.close()
+                self._file = None
 
     def _stop(self):
         if self._flush_thread is not None and self._flush_thread.is_alive():
