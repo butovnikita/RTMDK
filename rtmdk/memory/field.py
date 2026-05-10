@@ -801,10 +801,6 @@ class RTMDKField:
         """Rebuild cached arrays — delegates to NodeCacheManager."""
         self._cache_mgr.build(self)
 
-    def _ensure_cache(self) -> None:
-        """Lazy cache rebuild if dirty."""
-        self._cache_mgr.ensure_built(self)
-
     @staticmethod
     def _extract_text(content: Dict) -> str:
         """Extract primary text from node content, handling v1/v2 formats."""
@@ -890,14 +886,6 @@ class RTMDKField:
         elif self.cfg.multimodal and modality in self.cfg.modality_phase_shifts:
             phase += self.cfg.modality_phase_shifts[modality]
         return phase % (2 * np.pi)
-
-    @property
-    def _effective_bandwidth(self) -> float:
-        return self._query_mgr._effective_bandwidth
-
-    @property
-    def _effective_pc(self) -> float:
-        return self._query_mgr._effective_pc
 
     def _ensure_adaptive_pc(self, query_latent: NDArray) -> None:
         self._query_mgr._ensure_adaptive_pc(query_latent)
