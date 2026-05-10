@@ -68,6 +68,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Updated `README.md`, `docs/01_API_REFERENCE.md`, `docs/PIPELINE_ARCHITECTURE.md`
 - `MemoryNode.from_dict()` now filters to known fields — robust against extra keys from tiered storage serialization
 
+### Architecture Decoupling (Leadership Cleanup)
+- Extracted `FieldInitializer` (~460 lines) from monolithic `RTMDKField.__init__`
+- Extracted `ContextManager` (~160 lines) from `RTMDKMemory`
+- Extracted `MemoryPostInitializer` (~160 lines) from `RTMDKMemory.model_post_init`
+- Extracted `BacklogModulesInitializer` (~95 lines) from `RTMDKMemory._init_backlog_modules`
+- Extracted `PipelineBuilder` (~120 lines) from `RTMDKMemory.build_pipeline`
+- Moved `_compress_field` and operational methods into `OperationalManager`
+- `RTMDKField` reduced from 5265 → 844 lines (−84%); `RTMDKMemory` from 2603 → ~1380 lines (−47%)
+- All public APIs preserved via thin wrappers / `__getattr__`
+- Import cycle resolved: `MemoryNode` now imports from `rtmdk.nodes`
+
+### Performance
+- **5.5× batch ingestion speedup**: fixed O(N²) `list` scan (`if nid not in f.node_index`) in `add_nodes_batch` by using `set`-based O(1) lookup
+- `add_nodes_batch` throughput: 22K nodes/sec (100K batch, was 3.3K)
+- Without WAL: 1M nodes ingested in 12s = 83K nodes/sec (exceeds 60s target)
+- Removed redundant `_build_node_cache()` call at end of `add_nodes_batch` (arrays already updated via `np.vstack`)
+- `scripts/bench_batch_ingestion.py` now defaults to `wal_fsync_interval_ms=100` for realistic benchmarks
+
+### Documentation
+- Updated `docs/08_ARCHITECTURE.md` to reflect v8.3 decoupled architecture (Phase 23)
+- Updated `BACKLOG.md` with accurate Track 2/Track 4 status and benchmark numbers
+
 ### Fixed
 - Circuit breaker auto-recovery from half-open to closed after successful probes
 - **Tiered Storage v2 warm-tier bug**: `_promote_from_warm` and `_demote_to_warm` now use `latent_pos` instead of `embedding`, preserving `MemoryNode` deserialization integrity
