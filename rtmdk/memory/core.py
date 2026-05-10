@@ -23,20 +23,15 @@ from rtmdk.memory.config import (
     ContextFormat, RTMDKConfig,
 )
 from rtmdk.memory.context_manager import ContextManager
-from rtmdk.nodes import (
-    MemoryNode, ContradictionRecord, CounterfactualResult, AgentPlan,
-    ToolCall, Hypothesis, EvalResult,
-)
+from rtmdk.nodes import ContradictionRecord, MemoryNode
 import asyncio
 import functools
 import json
-import re
 import time
 import threading
 import os
 import copy
 from typing import List, Dict, Optional, Tuple, Callable, Any
-from enum import Enum
 import numpy as np
 from numpy.typing import NDArray
 from pydantic import BaseModel, Field, ConfigDict, model_validator
@@ -44,12 +39,9 @@ import logging
 
 # Extracted engine classes (kept in sync with rtmdk/support/ modules)
 from rtmdk.memory.utils import (
-    SecurityViolationError, detect_modality, apply_attention_bias, _enum_value,
-    _sanitize_path, _safe_json_load,
+    SecurityViolationError, _sanitize_path, _safe_json_load,
 )
-from rtmdk.utils.modality import detect_tier
-from rtmdk.utils.attention import format_cognitive_context
-from rtmdk.utils.formatting import format_context, build_system_prompt
+from rtmdk.utils.formatting import build_system_prompt
 from rtmdk.memory.engram_cache import EngramEmbeddingCache
 from rtmdk.memory.distributed_lock import DistributedLock
 from rtmdk.memory.observability import MemoryMetrics, AlertRule
@@ -70,10 +62,8 @@ logger = logging.getLogger(__name__)
 # Phase 5: dataclass nodes extracted to rtmdk.nodes
 
 try:
-    from rtmdk.support.triton_backend import GPUBackend, TritonBackend, TRITON_AVAILABLE
+    from rtmdk.support.triton_backend import TRITON_AVAILABLE
 except ImportError:
-    GPUBackend = None  # type: ignore
-    TritonBackend = None  # type: ignore
     TRITON_AVAILABLE = False
 
 try:
@@ -88,7 +78,6 @@ try:
     ROLE_SHARD_AVAILABLE = True
 except ImportError:
     ROLE_SHARD_AVAILABLE = False
-    DEFAULT_ROLE = "default"  # Fallback
 
 # Torch availability check
 try:
