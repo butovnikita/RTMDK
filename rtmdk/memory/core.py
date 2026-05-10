@@ -20,7 +20,8 @@ KuramotoSync, FederatedRTMDK, FederatedNode, detect_modality, cross_modal_resona
 from __future__ import annotations
 from rtmdk.memory.field import RTMDKField
 from rtmdk.memory.config import (
-    ContextFormat, RTMDKConfig,
+    ContextFormat,
+    RTMDKConfig,
 )
 from rtmdk.memory.context_manager import ContextManager
 from rtmdk.memory.memory_post_initializer import MemoryPostInitializer
@@ -39,7 +40,9 @@ import logging
 
 # Extracted engine classes (kept in sync with rtmdk/support/ modules)
 from rtmdk.memory.utils import (
-    SecurityViolationError, _sanitize_path, _safe_json_load,
+    SecurityViolationError,
+    _sanitize_path,
+    _safe_json_load,
 )
 from rtmdk.utils.formatting import build_system_prompt
 from rtmdk.memory.observability import MemoryMetrics
@@ -56,6 +59,7 @@ except ImportError:
 
 try:
     from rtmdk.support.ump import UniversalMemoryProtocol
+
     UMP_AVAILABLE = True
 except ImportError:
     UMP_AVAILABLE = False
@@ -63,6 +67,7 @@ except ImportError:
 # Torch availability check
 try:
     import torch
+
     TORCH_AVAILABLE = True
 except ImportError:
     torch = None
@@ -108,12 +113,15 @@ META_KERNEL_ADAPT_FREQ = 5
 # CORE: RTmdKField v7
 # ============================================================================
 
+
 def _locked(method):
     """Decorator that wraps method in self._write_lock RLock."""
+
     @functools.wraps(method)
     def wrapper(self, *args, **kwargs):
         with self._write_lock:
             return method(self, *args, **kwargs)
+
     return wrapper
 
 
@@ -156,9 +164,10 @@ class RTMDKMemory(BaseModel):
                 if len(self._sot_v2_corpus) > self._sot_v2_corpus_maxlen:
                     self._sot_v2_corpus.pop(0)
                 # Online update: tokenize and buffer (thread-safe)
-                if hasattr(self._sot_v2, '_vocab') and self._sot_v2._vocab:
-                    tokens = [self._sot_v2._vocab[w] for w in self._sot_v2._word_tokenize(text)
-                              if w in self._sot_v2._vocab]
+                if hasattr(self._sot_v2, "_vocab") and self._sot_v2._vocab:
+                    tokens = [
+                        self._sot_v2._vocab[w] for w in self._sot_v2._word_tokenize(text) if w in self._sot_v2._vocab
+                    ]
                     if tokens:
                         with self._sot_v2_online_lock:
                             self._sot_v2_online_buffer.append(tokens)
@@ -195,19 +204,19 @@ class RTMDKMemory(BaseModel):
         self._on_node_added(node_id, embedding, content, kwargs)
         return node_id
 
-    def _on_node_added(
-        self, node_id: str, embedding: NDArray, content: Dict, add_kwargs: Dict
-    ) -> None:
+    def _on_node_added(self, node_id: str, embedding: NDArray, content: Dict, add_kwargs: Dict) -> None:
         rm = getattr(self, "replication_manager", None)
         if rm is not None and rm.enabled:
             try:
-                rm.replicate({
-                    "op": "add_node",
-                    "node_id": node_id,
-                    "embedding": embedding.tolist(),
-                    "content": content,
-                    "kwargs": {k: v for k, v in add_kwargs.items() if k not in {"embedding", "content"}},
-                })
+                rm.replicate(
+                    {
+                        "op": "add_node",
+                        "node_id": node_id,
+                        "embedding": embedding.tolist(),
+                        "content": content,
+                        "kwargs": {k: v for k, v in add_kwargs.items() if k not in {"embedding", "content"}},
+                    }
+                )
             except Exception:
                 logger.warning("Replication failed for %s", node_id, exc_info=True)
 
@@ -244,7 +253,8 @@ class RTMDKMemory(BaseModel):
             session_ids,
             modalities,
             skip_projection,
-            modal_embeddings=modal_embs)
+            modal_embeddings=modal_embs,
+        )
         # v8.2.1 hooks
         rm = getattr(self, "replication_manager", None)
         for i, nid in enumerate(result):
@@ -252,12 +262,14 @@ class RTMDKMemory(BaseModel):
             content = contents[i]
             if rm is not None and rm.enabled:
                 try:
-                    rm.replicate({
-                        "op": "add_node",
-                        "node_id": nid,
-                        "embedding": emb.tolist(),
-                        "content": content,
-                    })
+                    rm.replicate(
+                        {
+                            "op": "add_node",
+                            "node_id": nid,
+                            "embedding": emb.tolist(),
+                            "content": content,
+                        }
+                    )
                 except Exception:
                     logger.warning("Replication failed for %s", nid, exc_info=True)
         # P2: Accumulate corpus for SOT v2.0
@@ -295,6 +307,7 @@ class RTMDKMemory(BaseModel):
             if teacher_name:
                 try:
                     from sentence_transformers import SentenceTransformer
+
                     teacher = SentenceTransformer(teacher_name)
                     batch_size = getattr(sot_cfg, "sot_v2_align_batch_size", 64)
                     center = getattr(sot_cfg, "sot_v2_align_center", True)
@@ -303,7 +316,7 @@ class RTMDKMemory(BaseModel):
                     sif_embs = self._sot_v2.embed_batch(corpus)
                     teacher_embs = []
                     for i in range(0, len(corpus), batch_size):
-                        batch = corpus[i:i + batch_size]
+                        batch = corpus[i : i + batch_size]
                         embs = teacher.encode(batch)
                         if not isinstance(embs, np.ndarray):
                             embs = np.asarray(embs)
@@ -326,8 +339,8 @@ class RTMDKMemory(BaseModel):
             # Reset conformal calibrator (distribution changed)
             if self.field.conformal_calibrator is not None:
                 from rtmdk.memory.conformal import ConformalCalibrator
-                self.field.conformal_calibrator = ConformalCalibrator(
-                    alpha=self.config.conformal_alpha)
+
+                self.field.conformal_calibrator = ConformalCalibrator(alpha=self.config.conformal_alpha)
                 logger.info("train_sot_v2: conformal calibrator reset")
             logger.info("train_sot_v2: SOT v2.0 embedder active")
             return True
@@ -372,15 +385,16 @@ class RTMDKMemory(BaseModel):
                             if not text:
                                 text = content.get("input_text", "")
                             if not text:
-                                logger.warning(
-                                    f"WAL replay add_node: no text for {node_id}")
+                                logger.warning(f"WAL replay add_node: no text for {node_id}")
                                 continue
                             embedding = self.embedder(text)
-                        phase = self._get_phase(
-                            payload.get("session_id"), embedding)
+                        phase = self._get_phase(payload.get("session_id"), embedding)
                         self.field.add_node(
-                            embedding, content, phase=phase,
-                            node_id=node_id, modality=modality,
+                            embedding,
+                            content,
+                            phase=phase,
+                            node_id=node_id,
+                            modality=modality,
                         )
                         replayed += 1
                     elif op == "add_nodes_batch":
@@ -389,8 +403,7 @@ class RTMDKMemory(BaseModel):
                         node_ids = payload.get("node_ids")
                         embeddings_list = payload.get("embeddings")
                         if embeddings_list is not None:
-                            embeddings = np.array(
-                                embeddings_list, dtype=np.float32)
+                            embeddings = np.array(embeddings_list, dtype=np.float32)
                         else:
                             # Fallback: re-embed each content
                             texts = []
@@ -399,12 +412,13 @@ class RTMDKMemory(BaseModel):
                                 if not t:
                                     t = c.get("input_text", "")
                                 texts.append(t)
-                            embeddings = np.array(
-                                [self.embedder(t) for t in texts], dtype=np.float32)
+                            embeddings = np.array([self.embedder(t) for t in texts], dtype=np.float32)
                         if len(embeddings) == len(contents):
                             self.field.add_nodes_batch(
-                                embeddings, contents,
-                                node_ids=node_ids, modalities=modalities,
+                                embeddings,
+                                contents,
+                                node_ids=node_ids,
+                                modalities=modalities,
                             )
                             replayed += len(contents)
                     elif op == "delete":
@@ -417,18 +431,14 @@ class RTMDKMemory(BaseModel):
                         # re-running consolidate would be non-deterministic.
                         pass
                 except Exception:
-                    logger.warning(
-                        f"WAL replay failed for {op}: {payload}",
-                        exc_info=True)
+                    logger.warning(f"WAL replay failed for {op}: {payload}", exc_info=True)
         finally:
             self.field.wal.enabled = was_enabled
         logger.info(f"WAL replay complete: {replayed} items recovered")
 
     def _get_phase(
-            self,
-            session_id: Optional[str] = None,
-            embedding: Optional[NDArray] = None,
-            content: Optional[Dict] = None) -> float:
+        self, session_id: Optional[str] = None, embedding: Optional[NDArray] = None, content: Optional[Dict] = None
+    ) -> float:
         if session_id and session_id in self.session_phases:
             return self.session_phases[session_id]
         # Use semantic phase from field when content is available
@@ -439,11 +449,7 @@ class RTMDKMemory(BaseModel):
             self.session_phases[session_id] = phase
         return phase
 
-    def _retrieve_and_format(
-            self,
-            query: str,
-            embedding: NDArray,
-            session_id: str) -> str:
+    def _retrieve_and_format(self, query: str, embedding: NDArray, session_id: str) -> str:
         """Core retrieval pipeline — delegated to ContextManager."""
         return self._context_mgr.retrieve_and_format(query, embedding, session_id)
 
@@ -453,13 +459,9 @@ class RTMDKMemory(BaseModel):
         if not query:
             return {"rtmdk_context": ""}
         embedding = self.embedder(query)
-        return {
-            "rtmdk_context": self._retrieve_and_format(
-                query, embedding, session_id)}
+        return {"rtmdk_context": self._retrieve_and_format(query, embedding, session_id)}
 
-    def load_memory_variables_with_embedding(
-        self, inputs: Dict[str, str], embedding: NDArray
-    ) -> Dict[str, str]:
+    def load_memory_variables_with_embedding(self, inputs: Dict[str, str], embedding: NDArray) -> Dict[str, str]:
         """Query memory with pre-computed embedding (no HTTP call).
 
         This is the optimized version that accepts an embedding from
@@ -477,23 +479,20 @@ class RTMDKMemory(BaseModel):
         session_id = inputs.get("session_id", "default")
         if not query:
             return {"rtmdk_context": ""}
-        return {
-            "rtmdk_context": self._retrieve_and_format(
-                query, embedding, session_id)}
+        return {"rtmdk_context": self._retrieve_and_format(query, embedding, session_id)}
 
     def _retrieve_nodes_impl(
-            self,
-            query: str,
-            embedding: NDArray,
-            top_k: Optional[int] = None,
-            session_id: Optional[str] = None,
-            sparse_vec: Optional[Dict[int, float]] = None) -> List[Tuple[str, float, Any]]:
+        self,
+        query: str,
+        embedding: NDArray,
+        top_k: Optional[int] = None,
+        session_id: Optional[str] = None,
+        sparse_vec: Optional[Dict[int, float]] = None,
+    ) -> List[Tuple[str, float, Any]]:
         """Internal retrieval without metrics/locks/reranking."""
         # P1: Query expansion for short queries (< 3 content words)
         original_query = query
-        if (query and
-                getattr(self.config, "query_expand_short", False) and
-                hasattr(self.embedder, "expand_query_terms")):
+        if query and getattr(self.config, "query_expand_short", False) and hasattr(self.embedder, "expand_query_terms"):
             content_words = [w for w in query.lower().split() if len(w) > 2]
             if len(content_words) < 3:
                 expanded = self.embedder.expand_query_terms(query, n_terms=3)
@@ -509,13 +508,13 @@ class RTMDKMemory(BaseModel):
         # P1: Adaptive Cascade Router
         if self.cascade_router is not None:
             from rtmdk.production.cascade_router import QueryType
+
             route = self.cascade_router.classify(query)
             if route == QueryType.FACTUAL:
                 return self.field.query(embedding, phase, top_k=tk, session_id=session_id, query_text=query)
 
         # Primary: resonance retrieval
-        results = self.field.query(
-            embedding, phase, top_k=tk, session_id=session_id, query_text=query)
+        results = self.field.query(embedding, phase, top_k=tk, session_id=session_id, query_text=query)
 
         # P1: Sparse index fallback (BGE-M3 learned sparse)
         if len(results) < tk and self.sparse_index is not None and sparse_vec:
@@ -543,11 +542,9 @@ class RTMDKMemory(BaseModel):
                     if emb is not None:
                         node_embs[nid] = emb
 
-            engram_results = self.engram_manager.retrieve_engrams(
-                embedding, node_embs, top_k=tk)
+            engram_results = self.engram_manager.retrieve_engrams(embedding, node_embs, top_k=tk)
             if engram_results:
-                engram_nodes = self.engram_manager.expand_engrams(
-                    engram_results, self.field, top_k=tk)
+                engram_nodes = self.engram_manager.expand_engrams(engram_results, self.field, top_k=tk)
                 seen = {nid for nid, _, _ in results}
                 for nid, score, node in engram_nodes:
                     if nid not in seen:
@@ -555,19 +552,16 @@ class RTMDKMemory(BaseModel):
                         seen.add(nid)
                 results.sort(key=lambda x: x[1], reverse=True)
                 results = results[:tk]
-                self.field.stats["engram_retrievals"] = self.field.stats.get(
-                    "engram_retrievals", 0) + 1
+                self.field.stats["engram_retrievals"] = self.field.stats.get("engram_retrievals", 0) + 1
 
         # Session-scoped retrieval
         if session_id and session_id != "default" and results:
             session_results = [
-                (nid, score, node) for nid, score, node in results
-                if node.content.get("session") == session_id
+                (nid, score, node) for nid, score, node in results if node.content.get("session") == session_id
             ]
             if len(session_results) < tk:
                 global_results = [
-                    (nid, score, node) for nid, score, node in results
-                    if node.content.get("session") != session_id
+                    (nid, score, node) for nid, score, node in results if node.content.get("session") != session_id
                 ]
                 needed = tk - len(session_results)
                 session_results.extend(global_results[:needed])
@@ -578,8 +572,7 @@ class RTMDKMemory(BaseModel):
                 boosted.append((nid, score, node))
             boosted.sort(key=lambda x: x[1], reverse=True)
             results = boosted[:tk]
-            self.field.stats["session_scoped_retrievals"] = self.field.stats.get(
-                "session_scoped_retrievals", 0) + 1
+            self.field.stats["session_scoped_retrievals"] = self.field.stats.get("session_scoped_retrievals", 0) + 1
 
         # Hybrid BM25 blend
         if self.field.cfg.hybrid_alpha < 1.0 and self.field.bm25_index is not None and results:
@@ -601,13 +594,11 @@ class RTMDKMemory(BaseModel):
                             blended.append((nid, alpha * 0.0 + (1 - alpha) * bm25_score, node))
                 blended.sort(key=lambda x: x[1], reverse=True)
                 results = blended[:tk]
-                self.field.stats["hybrid_retrievals"] = self.field.stats.get(
-                    "hybrid_retrievals", 0) + 1
+                self.field.stats["hybrid_retrievals"] = self.field.stats.get("hybrid_retrievals", 0) + 1
 
         # Causal Traversal
         if self.causal_traversal_engine is not None and results:
-            results = self.causal_traversal_engine.retrieve_with_causal(
-                results, self.field, top_k=tk)
+            results = self.causal_traversal_engine.retrieve_with_causal(results, self.field, top_k=tk)
 
         # Cross-Encoder Reranker
         if self.reranker is not None and results and query:
@@ -616,12 +607,13 @@ class RTMDKMemory(BaseModel):
         return results
 
     def retrieve_nodes(
-            self,
-            query: str,
-            embedding: NDArray,
-            top_k: Optional[int] = None,
-            session_id: Optional[str] = None,
-            sparse_vec: Optional[Dict[int, float]] = None) -> List[Tuple[str, float, Any]]:
+        self,
+        query: str,
+        embedding: NDArray,
+        top_k: Optional[int] = None,
+        session_id: Optional[str] = None,
+        sparse_vec: Optional[Dict[int, float]] = None,
+    ) -> List[Tuple[str, float, Any]]:
         """Retrieve memory nodes with full pipeline: cascade → resonance → sparse → engrams → causal → reranker.
 
         Includes observability (latency tracking), distributed locking,
@@ -632,9 +624,7 @@ class RTMDKMemory(BaseModel):
         """
         # Pipeline path (v8.3+): use explicit pipeline when enabled and no sparse vec
         if getattr(self.config, "pipeline_enabled", False) and sparse_vec is None:
-            result = self.retrieve_nodes_pipeline(
-                query, embedding=embedding, top_k=top_k, session_id=session_id
-            )
+            result = self.retrieve_nodes_pipeline(query, embedding=embedding, top_k=top_k, session_id=session_id)
             return result["results"]
 
         # Legacy path — preserved for backward compatibility
@@ -673,8 +663,7 @@ class RTMDKMemory(BaseModel):
             if rewritten != query:
                 logger.debug("Query rewritten: '%s' -> '%s'", query, rewritten)
                 rew_emb = self.embedder(rewritten)
-                results = self._retrieve_nodes_impl(
-                    rewritten, rew_emb, top_k, session_id, sparse_vec)
+                results = self._retrieve_nodes_impl(rewritten, rew_emb, top_k, session_id, sparse_vec)
 
         # Intent-aware retrieval tuning
         if self._intent_classifier is not None:
@@ -705,12 +694,13 @@ class RTMDKMemory(BaseModel):
         return results
 
     def retrieve_nodes_with_explanations(
-            self,
-            query: str,
-            embedding: NDArray,
-            top_k: Optional[int] = None,
-            session_id: Optional[str] = None,
-            sparse_vec: Optional[Dict[int, float]] = None) -> Dict:
+        self,
+        query: str,
+        embedding: NDArray,
+        top_k: Optional[int] = None,
+        session_id: Optional[str] = None,
+        sparse_vec: Optional[Dict[int, float]] = None,
+    ) -> Dict:
         """Retrieve nodes with human-readable explanations.
 
         Returns:
@@ -724,18 +714,17 @@ class RTMDKMemory(BaseModel):
         explanations = []
         if self._result_explainer is not None:
             for nid, score, node in results:
-                explanations.append(
-                    self._result_explainer.explain(query, nid, score, node, session_id or "default")
-                )
+                explanations.append(self._result_explainer.explain(query, nid, score, node, session_id or "default"))
 
         return {"results": results, "explanations": explanations, "intent": intent}
 
     def retrieve_nodes_batch(
-            self,
-            queries: List[str],
-            embeddings: NDArray,
-            top_k: Optional[int] = None,
-            session_ids: Optional[List[str]] = None) -> List[List[Tuple[str, float, Any]]]:
+        self,
+        queries: List[str],
+        embeddings: NDArray,
+        top_k: Optional[int] = None,
+        session_ids: Optional[List[str]] = None,
+    ) -> List[List[Tuple[str, float, Any]]]:
         """Batch retrieval — vectorized resonance across multiple queries.
 
         ~50-100x faster than sequential retrieve_nodes() for large batches.
@@ -829,6 +818,7 @@ class RTMDKMemory(BaseModel):
         cost_analyzer = None
         if cost_tracking:
             from rtmdk.pipeline.cost import PipelineCostAnalyzer
+
             cost_analyzer = PipelineCostAnalyzer()
             cost_analyzer.start(query)
 
@@ -874,6 +864,7 @@ class RTMDKMemory(BaseModel):
         Executes the pipeline in a thread pool to avoid blocking the event loop.
         """
         import asyncio
+
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             None,
@@ -898,11 +889,13 @@ class RTMDKMemory(BaseModel):
             healthy, reason = stage.health_check()
             if not healthy:
                 all_healthy = False
-            stage_health.append({
-                "stage": stage.name,
-                "healthy": healthy,
-                "reason": reason,
-            })
+            stage_health.append(
+                {
+                    "stage": stage.name,
+                    "healthy": healthy,
+                    "reason": reason,
+                }
+            )
         return {"healthy": all_healthy, "stages": stage_health}
 
     def add_feedback(self, query: str, node_id: str, relevant: bool) -> bool:
@@ -960,12 +953,10 @@ class RTMDKMemory(BaseModel):
                 - coverage_guarantee: True if calibrator has enough samples
         """
         tk = top_k or self.field.cfg.top_k
-        alpha = alpha or getattr(
-            self.config, "conformal_alpha", 0.1)
+        alpha = alpha or getattr(self.config, "conformal_alpha", 0.1)
 
         # Standard retrieval
-        results = self.retrieve_nodes(
-            query, embedding, top_k=tk, session_id=session_id)
+        results = self.retrieve_nodes(query, embedding, top_k=tk, session_id=session_id)
 
         # Conformal prediction
         cal = getattr(self.field, "conformal_calibrator", None)
@@ -1027,6 +1018,7 @@ class RTMDKMemory(BaseModel):
             return False
 
         import random
+
         sample_size = min(n_samples, len(nids))
         sample_nids = random.sample(nids, sample_size)
 
@@ -1059,50 +1051,40 @@ class RTMDKMemory(BaseModel):
             except Exception:
                 continue
 
-        logger.info(
-            "calibrate_conformal_sot: calibrated with %d samples (total=%d)",
-            sample_size, cal.n_calibrated)
+        logger.info("calibrate_conformal_sot: calibrated with %d samples (total=%d)", sample_size, cal.n_calibrated)
         return cal.n_calibrated >= getattr(self.config, "conformal_min_calib", 50)
 
     def _get_node_embedding(self, nid: str, node) -> Optional[np.ndarray]:
         """Retrieve stored embedding for a node, or approximate from latent position."""
         # Check if node has modal_embedding (cross-modal)
-        if hasattr(
-                node,
-                'modal_embedding') and node.modal_embedding is not None:
+        if hasattr(node, "modal_embedding") and node.modal_embedding is not None:
             return node.modal_embedding
         # Fallback: approximate embedding by inverse-projection from latent_pos
         # This is lossy but better than nothing for engram similarity
-        if hasattr(node, 'latent_pos') and node.latent_pos is not None:
+        if hasattr(node, "latent_pos") and node.latent_pos is not None:
             # Pad latent_pos (64d) to embedding_dim (768d) with zeros
             # Engram similarity uses cosine — zeros won't dominate
             emb_dim = self.field.cfg.embedding_dim
             latent = node.latent_pos
             if len(latent) < emb_dim:
                 approx = np.zeros(emb_dim, dtype=np.float32)
-                approx[:len(latent)] = latent
+                approx[: len(latent)] = latent
                 return approx
             return latent[:emb_dim] if len(latent) > emb_dim else latent
         return None
 
     def batch_query(
-            self,
-            embeddings: List[np.ndarray],
-            top_k: Optional[int] = None,
-            session_id: Optional[str] = None) -> List[List[Tuple[str, float, Any]]]:
+        self, embeddings: List[np.ndarray], top_k: Optional[int] = None, session_id: Optional[str] = None
+    ) -> List[List[Tuple[str, float, Any]]]:
         """Batch query memory for multiple embeddings."""
         if self.field is None:
             raise RuntimeError("Field not initialized")
-        phases = [
-            self._get_phase(
-                session_id,
-                emb) for emb in embeddings] if session_id else [
-            self._get_phase() for _ in embeddings]
-        return self.field.batch_query(
-            embeddings,
-            phases=phases,
-            top_k=top_k,
-            session_id=session_id)
+        phases = (
+            [self._get_phase(session_id, emb) for emb in embeddings]
+            if session_id
+            else [self._get_phase() for _ in embeddings]
+        )
+        return self.field.batch_query(embeddings, phases=phases, top_k=top_k, session_id=session_id)
 
     def _detect_tags(self, text: str) -> List[str]:
         """Auto-detect memory tags — delegated to ContextManager."""
@@ -1113,13 +1095,9 @@ class RTMDKMemory(BaseModel):
         return self._context_mgr._generate_clarification(results, query)
 
     def get_system_prompt(self, context: str) -> str:
-        return build_system_prompt(
-            context,
-            self.config.context_format,
-            self.config.use_structured_prompt)
+        return build_system_prompt(context, self.config.context_format, self.config.use_structured_prompt)
 
-    def save_context(
-            self, inputs: Dict[str, str], outputs: Dict[str, str]) -> None:
+    def save_context(self, inputs: Dict[str, str], outputs: Dict[str, str]) -> None:
         """Save a conversation turn — delegated to ContextManager."""
         return self._context_mgr.save_context(inputs, outputs)
 
@@ -1130,6 +1108,7 @@ class RTMDKMemory(BaseModel):
     def save_state(self, dir_path: str) -> None:
         """Persist backlog module state to disk."""
         import os
+
         os.makedirs(dir_path, exist_ok=True)
         if self.engram_cache is not None:
             self.engram_cache.save(os.path.join(dir_path, "engram_cache.npz"))
@@ -1141,6 +1120,7 @@ class RTMDKMemory(BaseModel):
     def load_state(self, dir_path: str) -> None:
         """Restore backlog module state from disk."""
         import os
+
         cache_path = os.path.join(dir_path, "engram_cache.npz")
         if self.engram_cache is not None and os.path.exists(cache_path):
             self.engram_cache.load(cache_path)
@@ -1173,6 +1153,7 @@ class RTMDKMemory(BaseModel):
             {"status": "healthy"|"degraded"|"unhealthy", "checks": {...}}
         """
         import psutil
+
         checks = {}
         status = "healthy"
 
@@ -1260,7 +1241,8 @@ class RTMDKMemory(BaseModel):
             "healing_origin": node.healing_origin,
             "local_density": node.local_density,
             "goal_tags": node.goal_tags,
-            "cross_modal_score": node.cross_modal_score}
+            "cross_modal_score": node.cross_modal_score,
+        }
         if node.pre_consolidation_pos is not None:
             info["pre_consolidation_pos"] = node.pre_consolidation_pos.tolist()
         if node.velocity is not None:
@@ -1270,8 +1252,10 @@ class RTMDKMemory(BaseModel):
         return info
 
     def get_rollback_history(self) -> List[Dict]:
-        return [{"timestamp": s["timestamp"], "updated": s["updated"], "n_nodes": len(
-            s["pre_state"])} for s in self.field._rollback_history]
+        return [
+            {"timestamp": s["timestamp"], "updated": s["updated"], "n_nodes": len(s["pre_state"])}
+            for s in self.field._rollback_history
+        ]
 
     def do_intervention(self, node_id: str, text: str):
         emb = self.embedder(text)
@@ -1280,7 +1264,7 @@ class RTMDKMemory(BaseModel):
     def __getattr__(self, name: str):
         """Proxy simple delegations to RTMDKField to reduce boilerplate."""
         # Respect pydantic private/extra attributes first
-        pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+        pydantic_extra = object.__getattribute__(self, "__pydantic_extra__")
         if pydantic_extra is not None and name in pydantic_extra:
             return pydantic_extra[name]
         # get_dashboard is a legacy alias for get_field_health
@@ -1288,9 +1272,13 @@ class RTMDKMemory(BaseModel):
             return self.field.get_field_health
         _proxy_methods = {
             "get_field_health",
-            "counterfactual_query", "get_causal_summary",
-            "export_field", "import_field",
-            "rollback", "clear_interventions", "fit_projection",
+            "counterfactual_query",
+            "get_causal_summary",
+            "export_field",
+            "import_field",
+            "rollback",
+            "clear_interventions",
+            "fit_projection",
         }
         if name in _proxy_methods:
             return getattr(self.field, name)
@@ -1301,26 +1289,17 @@ class RTMDKMemory(BaseModel):
             return list(self.field.causal_engine.contradictions.values())
         return []
 
-    def resolve_contradiction(
-            self,
-            contradiction_id: str,
-            resolution: str) -> bool:
+    def resolve_contradiction(self, contradiction_id: str, resolution: str) -> bool:
         if self.field.causal_engine and contradiction_id in self.field.causal_engine.contradictions:
             self.field.causal_engine.contradictions[contradiction_id].resolved = True
             self.field.causal_engine.contradictions[contradiction_id].resolution = resolution
             return True
         return False
 
-    def validate_consolidation(
-            self, node_a: str, node_b: str) -> Dict[str, Any]:
+    def validate_consolidation(self, node_a: str, node_b: str) -> Dict[str, Any]:
         if self.field.causal_engine:
-            return self.field.causal_engine.validate_consolidation(
-                node_a, node_b)
-        return {
-            "safe": True,
-            "reasons": [],
-            "causal_conflicts": [],
-            "recommendation": "proceed"}
+            return self.field.causal_engine.validate_consolidation(node_a, node_b)
+        return {"safe": True, "reasons": [], "causal_conflicts": [], "recommendation": "proceed"}
 
     def get_ragas_trend(self) -> Dict[str, float]:
         if self.field.ragas_evaluator:
@@ -1336,17 +1315,13 @@ class RTMDKMemory(BaseModel):
         return {**self.field.stats, "config": self.config.asdict()}
 
     # Phase 11 Track 4: Counterfactual imagination
-    def imagine_counterfactual(self,
-                               base_query: str,
-                               intervention: Dict[str,
-                                                  float]) -> List[Dict]:
+    def imagine_counterfactual(self, base_query: str, intervention: Dict[str, float]) -> List[Dict]:
         """Generate hypothetical scenarios."""
         embedding = self.embedder(base_query)
         return self.field.imagine_counterfactual(embedding, intervention)
 
     @classmethod
-    def import_field(cls, path: str, embedder: Callable,
-                     wal_path: Optional[str] = None) -> "RTMDKMemory":
+    def import_field(cls, path: str, embedder: Callable, wal_path: Optional[str] = None) -> "RTMDKMemory":
         return RTMDKField.import_field(path, embedder, wal_path=wal_path)
 
     # Phase 16 Track 3: Universal Memory Protocol
@@ -1354,10 +1329,8 @@ class RTMDKMemory(BaseModel):
         """Export to Universal Memory Protocol format."""
         path = _sanitize_path(path)
         if not UMP_AVAILABLE:
-            raise ImportError(
-                "Universal Memory Protocol not available. Install rtmdk.support.ump")
-        ump = UniversalMemoryProtocol.export(
-            self.field, self, source=source, comment=comment)
+            raise ImportError("Universal Memory Protocol not available. Install rtmdk.support.ump")
+        ump = UniversalMemoryProtocol.export(self.field, self, source=source, comment=comment)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(ump, f, ensure_ascii=False, indent=2)
 
@@ -1366,11 +1339,9 @@ class RTMDKMemory(BaseModel):
         """Import from Universal Memory Protocol format."""
         path = _sanitize_path(path)
         if not UMP_AVAILABLE:
-            raise ImportError(
-                "Universal Memory Protocol not available. Install rtmdk.support.ump")
+            raise ImportError("Universal Memory Protocol not available. Install rtmdk.support.ump")
         ump = _safe_json_load(path)
-        return UniversalMemoryProtocol.import_ump(
-            ump, embedder, memory_class=cls)
+        return UniversalMemoryProtocol.import_ump(ump, embedder, memory_class=cls)
 
     def validate_ump(self, path: str) -> Dict:
         """Validate a UMP file."""
@@ -1379,3 +1350,21 @@ class RTMDKMemory(BaseModel):
             return {"valid": False, "issues": ["UMP not available"]}
         ump = _safe_json_load(path)
         return UniversalMemoryProtocol.validate(ump)
+
+    # ------------------------------------------------------------------
+    # Resource cleanup
+    # ------------------------------------------------------------------
+    def close(self) -> None:
+        """Release all background resources (WAL, threads, file handles).
+
+        Safe to call multiple times.  After close the instance should not
+        be used for mutations.
+        """
+        if self.field is not None:
+            self.field.close()
+
+    def __enter__(self) -> "RTMDKMemory":
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.close()
