@@ -9,9 +9,12 @@ from rtmdk.server.proto import rtmdk_pb2  # noqa: E402
 from rtmdk.server.proto import rtmdk_pb2_grpc  # noqa: E402
 from rtmdk.server.grpc_service import create_server  # noqa: E402
 
+app_mod = pytest.importorskip("rtmdk.server.app")
+
 
 @pytest.fixture(scope="module")
 def grpc_server():
+    app_mod.ENABLE_API_AUTH = False
     server = create_server(port=0)  # ephemeral port
     port = server.add_insecure_port("localhost:0")
     server.start()
@@ -36,7 +39,7 @@ class TestGRPCHelath:
     def test_health(self, grpc_stub):
         resp = grpc_stub.Health(rtmdk_pb2.HealthRequest())
         assert resp.status == "ok"
-        assert resp.version == "8.2.0"
+        assert resp.version == "8.3.0"
 
     def test_query_memory_unavailable(self, grpc_stub):
         with pytest.raises(grpc.RpcError) as exc_info:
