@@ -1,0 +1,41 @@
+name: Performance Regression
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-prod.txt -r requirements-dev.txt
+
+      - name: Run WAL throughput benchmark
+        run: python scripts/bench_wal_throughput.py
+        env:
+          RTMDK_ADD_RATE_LIMIT: '100000'
+
+      - name: Run meta-adaptive benchmark
+        run: python scripts/bench_meta_adaptive.py --help
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: |
+            /tmp/benchmark_*.json
+          retention-days: 7
