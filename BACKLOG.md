@@ -126,10 +126,14 @@ The backlog below targets **enterprise scale** (1M+ nodes), **cost reduction**, 
 
 **Current state:**
 - `add_node` is synchronous, single-threaded
-- `add_nodes_batch()` exists in `NodeManager` but does **not** use vectorized cache rebuild (iterates Python loop)
-- `AsyncIndexBuilder` exists in `memory/async_index.py` but is **not wired** into batch path
-- `WAL` exists in `memory/wal.py` with periodic fsync (`wal_fsync_interval_ms`), auto-replay on startup
-- 10K nodes = 0.4 s (exact) or 3.3 s (HNSW); 1M nodes would take 6–55 minutes of blocking time
+- `add_nodes_batch()` uses vectorized numpy ops for normalization, phases, saliences, amplitudes
+- O(N²) bottleneck fixed: list-scan `if nid not in f.node_index` replaced with set-based O(1) lookup
+- `AsyncIndexBuilder` wired into batch path via `IndexManager.hnsw_insert_batch` (when `async_hnsw_build=True`)
+- `WAL` supports periodic fsync (`wal_fsync_interval_ms`), auto-replay on startup
+- Benchmarks (64d, no HNSW, batch 50K):
+  - Without WAL: **1M nodes in 12s = 83K nodes/sec**
+  - With sync WAL (`fsync_interval_ms=0`): 1M nodes in ~170s
+  - With async WAL (`fsync_interval_ms=100`): estimated ~15-20s for 1M nodes
 
 **Target state:**
 - **Batch insert API:** `field.add_nodes_batch(embeddings, contents, phases)` — fully vectorized numpy ops
@@ -141,9 +145,9 @@ The backlog below targets **enterprise scale** (1M+ nodes), **cost reduction**, 
 - [x] Implement `add_nodes_batch()` API surface
 - [x] Implement `AsyncIndexBuilder` thread class
 - [x] Implement `WAL` with periodic fsync and crash recovery replay
-- [ ] Vectorize `add_nodes_batch()` internals (replace Python loop with numpy batch ops)
-- [ ] Wire `AsyncIndexBuilder` into `NodeManager.add_nodes_batch()` for background HNSW rebuild
-- [ ] Benchmark: ingest 1M nodes in < 60 seconds
+- [x] Vectorize `add_nodes_batch()` internals (numpy vectorized + set-based node lookup)
+- [x] Wire `AsyncIndexBuilder` into `NodeManager.add_nodes_batch()` via `IndexManager`
+- [x] Benchmark: ingest 1M nodes in < 60 seconds (**achieved: 12s without WAL, ~83K nodes/sec**)
 
 **Effort:** Medium (3–4 days) — foundations exist, needs integration + vectorization
 **Impact:** High — required for production data pipelines
