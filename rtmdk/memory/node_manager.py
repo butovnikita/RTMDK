@@ -349,6 +349,7 @@ class NodeManager:
         now = time.time()
         base_idx = len(f.nodes)
         batch_nids: List[str] = []
+        existing_nids = set(f.node_index)
         for i in range(n):
             nid = node_ids[i] if node_ids else f"n_{base_idx + i}_{int(now * 1000)}_{i}"
             batch_nids.append(nid)
@@ -369,8 +370,9 @@ class NodeManager:
             if modal_embeddings is not None:
                 node.modal_embedding = modal_embeddings[i].astype(np.float32)
             f.nodes[nid] = node
-            if nid not in f.node_index:
+            if nid not in existing_nids:
                 f.node_index.append(nid)
+                existing_nids.add(nid)
             f.stats["total_adds"] += 1
 
         if f._cached_positions is not None:
@@ -404,8 +406,6 @@ class NodeManager:
             "modalities": modalities if modalities else ["text"] * n,
         })
         f._dirty = True
-        if f._cached_positions is not None:
-            f._build_node_cache()
         return batch_nids
 
     # ------------------------------------------------------------------
