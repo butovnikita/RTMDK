@@ -1,4 +1,5 @@
 """NodeCacheManager — pre-materialized numpy arrays for vectorized resonance."""
+
 from __future__ import annotations
 
 from typing import Dict, List, Optional, Any
@@ -15,12 +16,13 @@ class NodeCacheManager:
     """
 
     def __init__(self):
-        self._cached_positions: Optional[NDArray] = None   # (N, D)
-        self._cached_phases: Optional[NDArray] = None      # (N,)
+        self._cached_positions: Optional[NDArray] = None  # (N, D)
+        self._cached_scales: Optional[NDArray] = None  # (N,) — int8 only
+        self._cached_phases: Optional[NDArray] = None  # (N,)
         self._cached_amplitudes: Optional[NDArray] = None  # (N,)
-        self._cached_saliences: Optional[NDArray] = None   # (N,)
+        self._cached_saliences: Optional[NDArray] = None  # (N,)
         self._cached_modal_weights: Optional[NDArray] = None  # (N,)
-        self._cached_gates: Optional[NDArray] = None       # (N,)
+        self._cached_gates: Optional[NDArray] = None  # (N,)
         self._cached_causal_boost: Optional[NDArray] = None  # (N,)
         self._cache_dirty: bool = False
         self._node_id_to_cached_idx: Dict[str, int] = {}
@@ -57,6 +59,11 @@ class NodeCacheManager:
         return self._cached_causal_boost
 
     @property
+    def scales(self) -> Optional[NDArray]:
+        """Per-node latent_scale for int8 fast path."""
+        return self._cached_scales
+
+    @property
     def dirty(self) -> bool:
         return self._cache_dirty
 
@@ -72,6 +79,7 @@ class NodeCacheManager:
 
     def clear(self) -> None:
         self._cached_positions = None
+        self._cached_scales = None
         self._cached_phases = None
         self._cached_amplitudes = None
         self._cached_saliences = None
@@ -94,14 +102,13 @@ class NodeCacheManager:
         if field._tiered_store is not None:
             valid_entries = list(field._tiered_store.cacheable_nodes())
         else:
-            valid_entries = [
-                (nid, field.nodes[nid])
-                for nid in field.node_index if nid in field.nodes
-            ]
+            valid_entries = [(nid, field.nodes[nid]) for nid in field.node_index if nid in field.nodes]
         n = len(valid_entries)
+        is_int8 = field._quant.mode == "int8"
+        cache_dtype = np.int8 if is_int8 else field._quant.dtype
         if n == 0:
-            cache_dtype = np.float32 if field._quant.mode == "int8" else field._quant.dtype
             self._cached_positions = np.empty((0, field.cfg.latent_dim), dtype=cache_dtype)
+            self._cached_scales = np.empty(0, dtype=np.float32) if is_int8 else None
             self._cached_phases = np.empty(0, dtype=np.float32)
             self._cached_amplitudes = np.empty(0, dtype=np.float32)
             self._cached_saliences = np.empty(0, dtype=np.float32)
@@ -112,8 +119,8 @@ class NodeCacheManager:
             field.node_index = []
             return
 
-        cache_dtype = np.float32 if field._quant.mode == "int8" else field._quant.dtype
         positions = np.zeros((n, field.cfg.latent_dim), dtype=cache_dtype)
+        scales = np.ones(n, dtype=np.float32) if is_int8 else None
         phases = np.zeros(n, dtype=np.float32)
         amplitudes = np.zeros(n, dtype=np.float32)
         saliences = np.zeros(n, dtype=np.float32)
@@ -122,11 +129,15 @@ class NodeCacheManager:
         causal_boost = np.zeros(n, dtype=np.float32)
 
         for i, (nid, node) in enumerate(valid_entries):
-            positions[i] = field._quant.dequantize(
-                node.latent_pos,
-                getattr(node, "latent_scale", 1.0),
-                getattr(node, "latent_zero_point", 0.0),
-            )
+            if is_int8:
+                positions[i] = node.latent_pos
+                scales[i] = getattr(node, "latent_scale", 1.0)
+            else:
+                positions[i] = field._quant.dequantize(
+                    node.latent_pos,
+                    getattr(node, "latent_scale", 1.0),
+                    getattr(node, "latent_zero_point", 0.0),
+                )
             phases[i] = node.phase
             amplitudes[i] = node.amplitude
             saliences[i] = node.salience
@@ -138,6 +149,7 @@ class NodeCacheManager:
                 causal_boost[i] = 1.0 + 0.1 * cb
 
         self._cached_positions = positions
+        self._cached_scales = scales
         self._cached_phases = phases
         self._cached_amplitudes = amplitudes
         self._cached_saliences = saliences
