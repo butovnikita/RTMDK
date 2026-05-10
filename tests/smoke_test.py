@@ -3,8 +3,8 @@ smoke_test.py — Quick validation of RTMDK v8 critical paths.
 """
 from rtmdk.memory.core import (
     RTMDKConfig, RTMDKMemory, ContextFormat,
-    apply_attention_bias, format_cognitive_context,
 )
+from rtmdk.utils.attention import apply_attention_bias, format_cognitive_context
 import asyncio
 import numpy as np
 import sys

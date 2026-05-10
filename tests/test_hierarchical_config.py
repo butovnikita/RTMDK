@@ -129,6 +129,29 @@ class TestHierarchicalConfig:
         with pytest.raises(AttributeError):
             RTMDKConfig(nonexistent_field=1)
 
+    def test_pipeline_breaker_validation(self):
+        from rtmdk.memory.config import ProductionConfig
+        prod = ProductionConfig(
+            pipeline_breaker_failure_threshold=0,
+            pipeline_breaker_latency_violation_threshold=0,
+            pipeline_breaker_recovery_timeout_ms=500,
+            pipeline_breaker_half_open_max_calls=0,
+            pipeline_breaker_thresholds={"embed": -1.0},
+        )
+        cfg = RTMDKConfig(production=prod)
+        warnings = cfg.validate()
+        assert any("failure_threshold" in w for w in warnings)
+        assert any("latency_violation_threshold" in w for w in warnings)
+        assert any("recovery_timeout_ms" in w for w in warnings)
+        assert any("half_open_max_calls" in w for w in warnings)
+        assert any("embed" in w for w in warnings)
+
+    def test_pipeline_breaker_valid_no_warnings(self):
+        cfg = RTMDKConfig()
+        warnings = cfg.validate()
+        pipeline_warnings = [w for w in warnings if "pipeline_breaker" in w]
+        assert len(pipeline_warnings) == 0
+
     def test_serialization_roundtrip(self):
         """FieldSerializer must produce a flat config dict."""
         cfg = RTMDKConfig(latent_dim=128, bandwidth=2.0)

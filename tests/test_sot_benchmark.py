@@ -64,8 +64,8 @@ def test_sot_vs_sbert_baseline():
 
     for rec in data:
         text = rec["query"] + " " + rec["answer"]
-        tokens = field_sot.sot_tokenizer.encode(text)
-        emb = field_sot.sot_tokenizer.embed(tokens)
+        tokens = field_sot._projection_mgr.sot_tokenizer.encode(text)
+        emb = field_sot._projection_mgr.sot_tokenizer.embed(tokens)
         field_sot.add_node(
             emb.astype(np.float32),
             content={"text": rec["answer"]},

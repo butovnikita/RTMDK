@@ -1,0 +1,16 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'rtmdk-server'
+    static_configs:
+      - targets: ['rtmdk:8080']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  - job_name: 'rtmdk-pipeline'
+    static_configs:
+      - targets: ['rtmdk:8080']
+    metrics_path: '/v1/memory/pipeline/prometheus'
+    scrape_interval: 15s

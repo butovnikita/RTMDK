@@ -22,41 +22,36 @@ from rtmdk.memory.field import RTMDKField
 from rtmdk.memory.config import (
     ContextFormat, RTMDKConfig,
 )
-from rtmdk.nodes import (
-    MemoryNode, ContradictionRecord, CounterfactualResult, AgentPlan,
-    ToolCall, Hypothesis, EvalResult,
-)
+from rtmdk.memory.context_manager import ContextManager
+from rtmdk.memory.memory_post_initializer import MemoryPostInitializer
+from rtmdk.memory.backlog_modules_initializer import BacklogModulesInitializer
+from rtmdk.nodes import ContradictionRecord, MemoryNode
 import asyncio
 import functools
 import json
-import re
 import time
-import threading
 import os
-import copy
 from typing import List, Dict, Optional, Tuple, Callable, Any
-from enum import Enum
 import numpy as np
 from numpy.typing import NDArray
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 import logging
 
 # Extracted engine classes (kept in sync with rtmdk/support/ modules)
-from rtmdk.memory.utils import SecurityViolationError, detect_modality, apply_attention_bias, _enum_value
-from rtmdk.memory.engram_cache import EngramEmbeddingCache
-from rtmdk.memory.distributed_lock import DistributedLock
-from rtmdk.memory.observability import MemoryMetrics, AlertRule
-from rtmdk.memory.rag_quality import SentenceReranker, QueryDecomposer, FeedbackLoop
+from rtmdk.memory.utils import (
+    SecurityViolationError, _sanitize_path, _safe_json_load,
+)
+from rtmdk.utils.formatting import build_system_prompt
+from rtmdk.memory.observability import MemoryMetrics
+from rtmdk.memory.pipeline_builder import PipelineBuilder
 
 logger = logging.getLogger(__name__)
 
 # Phase 5: dataclass nodes extracted to rtmdk.nodes
 
 try:
-    from rtmdk.support.triton_backend import GPUBackend, TritonBackend, TRITON_AVAILABLE
+    from rtmdk.support.triton_backend import TRITON_AVAILABLE
 except ImportError:
-    GPUBackend = None  # type: ignore
-    TritonBackend = None  # type: ignore
     TRITON_AVAILABLE = False
 
 try:
@@ -64,14 +59,6 @@ try:
     UMP_AVAILABLE = True
 except ImportError:
     UMP_AVAILABLE = False
-
-# Phase 17: RoleShardRouter
-try:
-    from rtmdk.support.role_shard_router import DEFAULT_ROLE
-    ROLE_SHARD_AVAILABLE = True
-except ImportError:
-    ROLE_SHARD_AVAILABLE = False
-    DEFAULT_ROLE = "default"  # Fallback
 
 # Torch availability check
 try:
@@ -115,423 +102,6 @@ TENSION_CHECK_FREQ = 100
 HEALING_CHECK_FREQ = 50
 SYMBOLIC_OVERLAY_FREQ = 50
 META_KERNEL_ADAPT_FREQ = 5
-MAX_NODES_PRUNE_CHECK_FREQ = 10
-
-
-# ============================================================================
-# SECURITY UTILITIES
-# ============================================================================
-
-def _sanitize_path(path: str) -> str:
-    """Sanitize file path to prevent directory traversal attacks.
-
-    Rejects paths containing '..' (path traversal).
-    Returns normalized path.
-    """
-    import os
-    # Reject parent directory references BEFORE normalization
-    # (normpath collapses 'a/../b' to 'b', which would hide the attack)
-    if ".." in path.replace("\\", "/").split("/"):
-        raise SecurityViolationError(f"Path traversal detected: {path}")
-    # Normalize to catch unicode tricks and mixed separators
-    normalized = os.path.normpath(path)
-    return normalized
-
-
-def _safe_json_load(path: str) -> Dict:
-    """Load JSON with size limit to prevent memory exhaustion."""
-    file_size = os.path.getsize(path)
-    if file_size > MAX_FILE_SIZE_BYTES:
-        raise ValueError(
-            f"File too large: {file_size / (1024*1024):.1f}MB (max {MAX_FILE_SIZE_BYTES / (1024*1024):.0f}MB)")
-    with open(path, "r", encoding="utf-8") as f:
-        raw = f.read()
-    if len(raw.encode("utf-8")) > MAX_FILE_SIZE_BYTES:
-        raise ValueError(
-            "File exceeds maximum allowed size after encoding check")
-    return json.loads(raw)
-
-
-# ============================================================================
-# CONFIGURATION v7 — extracted to rtmdk/memory/config.py (P0 refactor)
-# ============================================================================
-# Extracted engine classes (P0 refactor � imported from canonical modules)
-
-
-# ============================================================================
-# PHASE 11 TRACK 1: MEMORY STRATIFICATION
-# ============================================================================
-
-def _enum_value(val, default):
-    """Safely extract enum value for serialization."""
-    return val.value if isinstance(
-        val, Enum) else (
-        val if val is not None else default)
-
-
-def detect_tier(text: str, context: Optional[Dict] = None) -> str:
-    """Auto-detect memory tier from content."""
-    context = context or {}
-    text_lower = text.lower()
-    # Procedural: how-to, tool usage
-    if context.get("tool_used"):
-        return "procedural"
-    if any(
-        p in text_lower for p in [
-            "how to",
-            "how do",
-            "how can",
-            "steps to",
-            "tutorial",
-            "guide"]):
-        return "procedural"
-    # Episodic: dates, temporal markers
-    if re.search(r"\d{4}-\d{2}-\d{2}|\d{2}/\d{2}/\d{4}", text):
-        return "episodic"
-    if any(
-        p in text_lower for p in [
-            "yesterday",
-            "last week",
-            "last month",
-            "ago",
-            "вчера",
-            "на прошлой",
-            "неделю назад"]):
-        return "episodic"
-    return "semantic"
-
-
-# ============================================================================
-# PHASE 11 TRACK 4: COUNTERFACTUAL IMAGINATION
-# ============================================================================
-
-# ============================================================================
-# PHASE 13 TRACK 1: TELEOLOGICAL LAYER (Goal/Intent Tracking)
-# ============================================================================
-# ============================================================================
-# PHASE 13 TRACK 2: COGNITIVE ATTENTION BIAS
-# ============================================================================
-
-def apply_attention_bias(results: List[Tuple[str, float, MemoryNode]],
-                         temperature: float = 1.0) -> List[Tuple[str, float, MemoryNode]]:
-    """
-    Transform raw resonance scores into attention-biased scores.
-    Incorporates causal_strength, tension, salience as structural signals.
-    """
-    if not results:
-        return results
-
-    # Extract raw scores
-    raw_scores = np.array([r for _, r, _ in results])
-    if len(raw_scores) < 2:
-        return results
-
-    # Compute attention weights
-    weights = []
-    for nid, resp, node in results:
-        # Base resonance
-        score = resp
-        # Causal boost
-        causal_boost = sum(
-            node.causal_strength.values()) if hasattr(
-            node, 'causal_strength') else 0
-        score *= (1.0 + 0.2 * min(1.0, causal_boost))
-        # Tension penalty (high tension = less reliable)
-        score *= max(0.5, 1.0 - node.tension)
-        # Goal relevance boost (Phase 13 Track 1)
-        goal_rel = getattr(node, 'goal_relevance', 0.0)
-        score *= (1.0 + 0.3 * goal_rel)
-        weights.append(score)
-
-    weights = np.array(weights)
-    # Softmax with temperature
-    if temperature > 0:
-        exp_weights = np.exp(weights / temperature)
-        normalized = exp_weights / (exp_weights.sum() + 1e-8)
-    else:
-        normalized = weights / (weights.sum() + 1e-8)
-
-    # Re-rank by attention-biased scores
-    biased_results = []
-    for i, (nid, resp, node) in enumerate(results):
-        biased_results.append((nid, float(normalized[i]), node))
-
-    biased_results.sort(key=lambda x: x[1], reverse=True)
-    return biased_results
-
-
-def format_cognitive_context(results: List[Tuple[str, float, MemoryNode]],
-                             bias_applied: bool = False) -> str:
-    """Format memory results with structural attention signals for LLM.
-
-    Handles both structured nodes (v2: input_text, output_text, emotion, tags)
-    and legacy nodes (v1: text).
-    """
-    if not results:
-        return "### COGNITIVE_CONTEXT\nNo relevant structures."
-
-    lines = ["### COGNITIVE_CONTEXT"]
-    for nid, score, node in results:
-        content = node.content
-
-        # Check for structured node (v2)
-        if content.get("version") == "2.0":
-            input_text = content.get("input_text", "")
-            output_text = content.get("output_text", "")
-            emotion = content.get("emotion", "neutral")
-            tags = content.get("tags", [])
-            session = content.get("session", "")
-
-            # Format structured context
-            text_parts = []
-            if input_text:
-                text_parts.append(f"User: {input_text[:80]}")
-            if output_text:
-                text_parts.append(f"AI: {output_text[:80]}")
-            text = " | ".join(text_parts) if text_parts else content.get(
-                "text", "unknown")[:80]
-
-            tier = content.get("tier", getattr(node, 'tier', 'semantic'))
-            tokens = f"[SCORE:{score:.3f}]"
-            tokens += f"[TIER:{tier[0].upper()}]"
-            if emotion != "neutral":
-                tokens += f"[EMO:{emotion[:4]}]"
-            if tags:
-                tokens += f"[TAGS:{','.join(tags[:3])}]"
-            if session:
-                tokens += f"[SESS:{session[:10]}]"
-        else:
-            # Legacy node (v1)
-            text = content.get("text", "unknown")[:80]
-            tier = content.get("tier", getattr(node, 'tier', 'semantic'))
-            tokens = f"[SCORE:{score:.3f}]"
-            tokens += f"[TIER:{tier[0].upper()}]"
-
-        causal = len(
-            node.causal_strength) if hasattr(
-            node, 'causal_strength') else 0
-        tension = node.tension
-        lineage = len(node.lineage) if node.lineage else 0
-
-        if causal > 0:
-            tokens += f"[CAUSAL:{causal}]"
-        if tension > 0.3:
-            tokens += f"[TENSION:{tension:.2f}]"
-        if lineage > 0:
-            tokens += f"[LINEAGE:{lineage}]"
-
-        lines.append(f"{tokens} {text}")
-
-    return "\n".join(lines)
-
-
-# ============================================================================
-# PHASE 13 TRACK 3: CLOSED-LOOP RL FROM LLM FEEDBACK
-# ============================================================================
-
-# ============================================================================
-# PHASE 13 TRACK 4: EVENT-DRIVEN + LOW-RANK COMPRESSION
-# ============================================================================
-
-# ============================================================================
-# PHASE 14 TRACK 1: INTROSPECTIVE META-MEMORY
-# ============================================================================
-
-# ============================================================================
-# PHASE 14 TRACK 2: FORMAL SECURITY
-# ============================================================================
-
-# ============================================================================
-# PHASE 14 TRACK 5: SWARM MEMORY
-# ============================================================================
-
-# ============================================================================
-# SUPPORTING COMPONENTS
-# ============================================================================
-
-
-# ============================================================================
-# CONTEXT FORMATTING
-# ============================================================================
-SYSTEM_PROMPT_TEMPLATES = {
-    ContextFormat.PLAIN: (
-        "You are a helpful assistant with long-term memory.\n"
-        "Below are relevant memories from previous conversations. "
-        "Use them to provide accurate, context-aware answers. "
-        "Higher resonance (R) means more relevant memory.\n\n"
-        "Relevant memories:\n{context}"
-    ),
-    ContextFormat.JSON: (
-        "You are a helpful assistant with long-term memory.\n"
-        "Below are relevant memories in JSON format. Each entry has:\n"
-        "- resonance: how well it matches the current query (higher = more relevant)\n"
-        "- salience: overall importance in the memory field\n"
-        "- text: the actual memory content\n"
-        "- lineage: history of how this memory was formed through consolidation\n"
-        "Use these memories to provide accurate, context-aware answers.\n\n"
-        "Relevant memories:\n{context}"
-    ),
-    ContextFormat.YAML: (
-        "You are a helpful assistant with long-term memory.\n"
-        "Below are relevant memories in YAML format with resonance and salience scores. "
-        "Higher scores indicate more relevant/important memories. Use them for context-aware answers.\n\n"
-        "Relevant memories:\n{context}"
-    ),
-    ContextFormat.ATTENTION: (
-        "You are a helpful assistant with long-term memory.\n"
-        "Below are relevant memories with attention-weighted tokens. "
-        "Each memory starts with tokens like [ATTN:x.xxxx][SAL:x.xxxx][TIER:X].\n"
-        "- ATTN: attention weight — how relevant this memory is to the current query (higher = more relevant)\n"
-        "- SAL: salience — overall importance in the memory field\n"
-        "- TIER: memory tier (E=episodic, S=semantic, P=procedural)\n"
-        "- CAUSAL: number of causal connections (if present)\n"
-        "- GOAL: goal relevance score (if present)\n"
-        "Use the ATTN weights to focus your attention on the most relevant memories.\n\n"
-        "Relevant memories:\n{context}"
-    ),
-}
-
-
-def format_context(
-        results: List[Tuple[str, float, MemoryNode]], fmt: ContextFormat) -> str:
-    if fmt == ContextFormat.JSON:
-        items = []
-        for nid, resp, node in results:
-            content = node.content
-
-            # Check for structured node (v2)
-            if content.get("version") == "2.0":
-                item = {
-                    "resonance": round(resp, 4),
-                    "salience": round(node.salience, 4),
-                    "input_text": content.get("input_text", ""),
-                    "output_text": content.get("output_text", ""),
-                    "role": content.get("role", ""),
-                    "session": content.get("session", ""),
-                    "emotion": content.get("emotion", ""),
-                    "tags": content.get("tags", []),
-                    "tier": content.get("tier", ""),
-                    "timestamp": content.get("timestamp", 0),
-                    "lineage": node.lineage,
-                    "modality": node.modality,
-                }
-            else:
-                # Legacy node (v1)
-                item = {
-                    "resonance": round(resp, 4),
-                    "salience": round(node.salience, 4),
-                    "text": content.get("text", ""),
-                    "lineage": node.lineage,
-                    "modality": node.modality,
-                    "self_sup_score": round(node.self_sup_score, 4),
-                    "cross_modal_score": round(node.cross_modal_score, 4),
-                }
-                meta = {k: v for k, v in content.items() if k != "text"}
-                if meta:
-                    item["metadata"] = meta
-            items.append(item)
-        return json.dumps(
-            items,
-            ensure_ascii=False,
-            indent=2) if items else "[]"
-
-    elif fmt == ContextFormat.YAML:
-        lines = []
-        for nid, resp, node in results:
-            content = node.content
-            if content.get("version") == "2.0":
-                lines.extend([
-                    f"- resonance: {resp:.4f}",
-                    f"  salience: {node.salience:.4f}",
-                    "  input: \"{content.get('input_text', '')}\"",
-                    "  output: \"{content.get('output_text', '')}\"",
-                    f"  role: {content.get('role', '')}",
-                    f"  emotion: {content.get('emotion', '')}",
-                    f"  tier: {content.get('tier', '')}",
-                ])
-            else:
-                lines.extend([
-                    f"- resonance: {resp:.4f}",
-                    f"  salience: {node.salience:.4f}",
-                    "  text: \"{content.get('text', '')}\"",
-                    f"  lineage: {node.lineage}",
-                    f"  modality: {node.modality}",
-                    f"  cross_modal_score: {node.cross_modal_score:.4f}",
-                ])
-        return "\n".join(lines) if lines else "No relevant memory."
-
-    elif fmt == ContextFormat.ATTENTION:
-        lines = ["### ATTENTION_CONTEXT"]
-        for nid, resp, node in results:
-            content = node.content
-            causal = len(
-                node.causal_strength) if hasattr(
-                node, 'causal_strength') else 0
-            goal_rel = getattr(node, 'goal_relevance', 0.0)
-            tokens = (
-                f"[ATTN:{resp:.3f}][SAL:{node.salience:.3f}]"
-                f"[TIER:{content.get('tier', getattr(node, 'tier', 'semantic'))[0].upper()}]")
-            # Phase 20: Domain & State tokens
-            domain = getattr(node, 'domain', 'general')
-            if domain and domain != 'general':
-                tokens += f"[DOM:{domain.upper()[:3]}]"
-            state = getattr(node, 'state', '')
-            if state and state != 'stable':
-                tokens += f"[STATE:{state[0].upper()}]"
-            if causal > 0:
-                tokens += f"[CAUSAL:{causal}]"
-            if goal_rel > 0.3:
-                tokens += f"[GOAL:{goal_rel:.2f}]"
-
-            # Extract text from structured or legacy node
-            if content.get("version") == "2.0":
-                input_t = content.get("input_text", "")[:60]
-                output_t = content.get("output_text", "")[:60]
-                if input_t and output_t:
-                    text = f"U:{input_t} | AI:{output_t}"
-                elif input_t:
-                    text = f"U:{input_t}"
-                elif output_t:
-                    text = f"AI:{output_t}"
-                else:
-                    text = content.get("text", "unknown")[:100]
-                # Add emotion/tag if present
-                emotion = content.get("emotion", "")
-                tags = content.get("tags", [])
-                if emotion != "neutral":
-                    text += f" [{emotion}]"
-                if tags:
-                    text += f" #{','.join(tags[:2])}"
-            else:
-                text = node.content.get("text", "unknown")[:100]
-
-            lines.append(f"{tokens} {text}")
-        return "\n".join(lines) if len(lines) > 1 else "No relevant memory."
-    else:
-        parts = []
-        for _, r, n in results:
-            content = n.content
-            if content.get("version") == "2.0":
-                input_t = content.get("input_text", "")[:50]
-                output_t = content.get("output_text", "")[:50]
-                text = f"U:{input_t} | AI:{output_t}" if input_t and output_t else (
-                    input_t or output_t or "unknown")
-            else:
-                text = n.content.get('text', '')
-            parts.append(
-                f"[R:{r:.2f}|S:{n.salience:.2f}|CM:{n.cross_modal_score:.2f}] {text}")
-        return "\n".join(parts) if parts else "No relevant memory."
-
-
-def build_system_prompt(
-        context: str,
-        fmt: ContextFormat,
-        use_structured: bool) -> str:
-    if not use_structured or not context or context in (
-            "No relevant memory.", "[]"):
-        return "You are a helpful assistant with long-term memory."
-    return SYSTEM_PROMPT_TEMPLATES.get(
-        fmt, SYSTEM_PROMPT_TEMPLATES[ContextFormat.PLAIN]).format(context=context)
 
 
 # ============================================================================
@@ -545,32 +115,6 @@ def _locked(method):
         with self._write_lock:
             return method(self, *args, **kwargs)
     return wrapper
-
-
-def _copy_node(node):
-    """Shallow copy of a MemoryNode with copied mutable fields."""
-    n = copy.copy(node)
-    n.latent_pos = node.latent_pos.copy()
-    n.lineage = list(node.lineage)
-    n.content = dict(node.content)
-    n.causal_strength = dict(node.causal_strength)
-    n.causal_parents = list(node.causal_parents)
-    n.conflict_with = list(node.conflict_with)
-    if node.pre_consolidation_pos is not None:
-        n.pre_consolidation_pos = node.pre_consolidation_pos.copy()
-    if node.gradient_cache is not None:
-        n.gradient_cache = node.gradient_cache.copy()
-    if node.velocity is not None:
-        n.velocity = node.velocity.copy()
-    if node.acceleration is not None:
-        n.acceleration = node.acceleration.copy()
-    if node.modal_embedding is not None:
-        n.modal_embedding = node.modal_embedding.copy()
-    if node.covariance is not None:
-        n.covariance = node.covariance.copy()
-    n.do_interventions = {k: (v.copy() if isinstance(v, np.ndarray) else v)
-                          for k, v in node.do_interventions.items()}
-    return n
 
 
 class RTMDKMemory(BaseModel):
@@ -593,256 +137,9 @@ class RTMDKMemory(BaseModel):
         return data
 
     def model_post_init(self, __context):
-        if self.field is None:
-            object.__setattr__(
-                self, "field", RTMDKField(
-                    self.config, wal_path=self.wal_path))
-        # Track 5: Replay WAL mutations for durability
-        self._replay_wal()
-        # Fix 4: Auto-start async workers if async_pipeline is enabled
-        if self.config.async_pipeline and not self.field._workers_started:
-            try:
-                loop = asyncio.get_running_loop()
-                loop.create_task(self.field._start_workers())
-            except RuntimeError:
-                pass
-        # Phase 18: Initialize Engram Manager
-        if self.config.enable_engrams:
-            try:
-                from rtmdk.engrams import EngramManager
-                object.__setattr__(self, "engram_manager", EngramManager(
-                    min_nodes=self.config.engram_min_nodes,
-                    max_nodes=self.config.engram_max_nodes,
-                    creation_threshold=self.config.engram_creation_threshold,
-                    decay_rate=self.config.engram_decay_rate,
-                    pattern_completion=self.config.engram_pattern_completion,
-                    overlap_threshold=self.config.engram_overlap_threshold,
-                ))
-            except Exception:
-                logger.warning(
-                    "Engram manager initialization failed, disabling",
-                    exc_info=True)
-                object.__setattr__(self, "engram_manager", None)
-        else:
-            object.__setattr__(self, "engram_manager", None)
-
-        # Phase 18b: Causal Traversal Engine
-        self.causal_traversal_engine = None
-        if self.config.causal_traversal:
-            try:
-                from rtmdk.engines.causal_traversal import CausalTraversalEngine
-                self.causal_traversal_engine = CausalTraversalEngine(
-                    max_hops=self.config.causal_max_hops,
-                    decay_per_hop=0.5,
-                )
-            except Exception:
-                logger.warning(
-                    "CausalTraversalEngine initialization failed, disabling",
-                    exc_info=True)
-
-        # Phase 18c: Cross-Encoder Reranker
-        self.reranker = None
-        if getattr(self.config, "reranker_enabled", False):
-            try:
-                from rtmdk.production.reranker import CrossEncoderReranker
-                self.reranker = CrossEncoderReranker(
-                    model_name=getattr(self.config, "reranker_model", "BAAI/bge-reranker-v2-m3"),
-                )
-            except Exception:
-                logger.warning(
-                    "CrossEncoderReranker initialization failed, disabling",
-                    exc_info=True)
-
-        # P1: Contextual Retrieval
-        self.header_generator = None
-        if getattr(self.config, "contextual_retrieval", False):
-            try:
-                from rtmdk.production.contextual_retrieval import ContextualHeaderGenerator, ContextualEmbedderWrapper
-                sot = getattr(self.field, "sot_tokenizer", None) if hasattr(self, "field") else None
-                self.header_generator = ContextualHeaderGenerator(
-                    backend=getattr(self.config, "contextual_backend", "heuristic"),
-                    sot_tokenizer=sot,
-                )
-                self.embedder = ContextualEmbedderWrapper(self.embedder, self.header_generator)
-                logger.info("Contextual retrieval enabled (%s)", self.header_generator.backend)
-            except Exception:
-                logger.warning("Contextual retrieval init failed, disabling", exc_info=True)
-
-        # P1: BGE-M3 Hybrid
-        self.bgem3_embedder = None
-        self.sparse_index = None
-        if getattr(self.config, "bgem3_enabled", False):
-            try:
-                from rtmdk.production.bgem3_embedder import BGEM3Embedder
-                from rtmdk.production.sparse_index import SparseIndex
-                self.bgem3_embedder = BGEM3Embedder(
-                    model_name=getattr(self.config, "bgem3_model_name", "BAAI/bge-m3"),
-                )
-                self.sparse_index = SparseIndex()
-                logger.info("BGE-M3 hybrid retrieval enabled")
-            except Exception:
-                logger.warning("BGE-M3 init failed, disabling", exc_info=True)
-
-        # P2: SOT v2.0 Self-Supervised Embedder
-        self._sot_v2 = None
-        self._sot_v2_corpus: List[str] = []
-        self._sot_v2_corpus_maxlen: int = getattr(
-            self.config, "sot_max_corpus", 10000)
-        self._sot_v2_online_buffer: List[List[int]] = []  # Tokenized docs for online update
-        self._sot_v2_online_threshold: int = getattr(
-            self.config, "sot_online_update_threshold", 10)
-        self._sot_v2_online_lock = threading.Lock()
-        sot_cfg = getattr(self.config, "sot", None)
-        if sot_cfg and getattr(sot_cfg, "sot_v2_enabled", False):
-            try:
-                from rtmdk.memory.sot_v2.integration import SOTv2Embedder
-                self._sot_v2 = SOTv2Embedder(
-                    latent_dim=getattr(self.config, "latent_dim", 384),
-                    a=getattr(sot_cfg, "sot_v2_a", 0.01),
-                    window_size=getattr(sot_cfg, "sot_v2_window", 5),
-                    remove_pc=getattr(sot_cfg, "sot_v2_remove_pc", True),
-                )
-                logger.info("SOT v2.0 embedder initialised (lazy training)")
-                # Load pre-fitted aligner if path provided
-                aligner_path = getattr(sot_cfg, "sot_v2_aligner_path", None)
-                if aligner_path:
-                    try:
-                        self._sot_v2.load_aligner(aligner_path)
-                    except Exception:
-                        logger.warning("SOT v2.0 aligner load failed from %s", aligner_path, exc_info=True)
-            except Exception:
-                logger.warning("SOT v2.0 init failed, disabling", exc_info=True)
-
-        # P1: Adaptive Cascade Router
-        self.cascade_router = None
-        if getattr(self.config, "cascade_enabled", False):
-            try:
-                from rtmdk.production.cascade_router import AdaptiveCascadeRouter
-                self.cascade_router = AdaptiveCascadeRouter(
-                    causal_threshold=getattr(self.config, "cascade_causal_threshold", 0.3),
-                    factual_threshold=getattr(self.config, "cascade_factual_threshold", 0.3),
-                )
-                logger.info("Adaptive cascade router enabled")
-            except Exception:
-                logger.warning("Cascade router init failed, disabling", exc_info=True)
-
-        # Circuit breaker for embedder (fallback to zero vector on repeated failures)
-        if getattr(self.config, "embedder_circuit_breaker_enabled", True):
-            from rtmdk.support.circuit_breaker import CircuitBreaker
-            original_embedder = self.embedder
-            dim = getattr(self.config, "embedding_dim", 384)
-            cb = CircuitBreaker(
-                "embedder",
-                failure_threshold=getattr(self.config, "embedder_cb_threshold", 3),
-                recovery_timeout=getattr(self.config, "embedder_cb_recovery", 30.0),
-                default=np.zeros(dim, dtype=np.float32),
-            )
-            def _safe_embed(text):
-                return cb.call(original_embedder, text)
-            self.embedder = _safe_embed
-            self._embedder_cb = cb
-            logger.info("Embedder circuit breaker enabled")
-
-        # Config validation warnings
-        for warning in self.config.validate():
-            logger.warning("Config validation: %s", warning)
-
-        # v8.2.1 production distributed features
-        self._init_backlog_modules()
-
-    def _init_backlog_modules(self) -> None:
-        peers = self.config.replication_peers
-        if peers:
-            try:
-                from rtmdk.production.replication import ReplicationManager
-                rm = ReplicationManager(
-                    peers=peers,
-                    node_id=self.config.replication_node_id,
-                    wal_path=self.config.replication_wal_path,
-                )
-                object.__setattr__(self, "replication_manager", rm)
-                logger.info("ReplicationManager enabled with peers: %s", peers)
-            except Exception:
-                logger.warning("ReplicationManager init failed, disabling", exc_info=True)
-                object.__setattr__(self, "replication_manager", None)
-        else:
-            object.__setattr__(self, "replication_manager", None)
-
-        # Engram embedding cache (avoids TieredNodeStore disk scans)
-        sot_cfg = getattr(self.config, "sot", None)
-        if sot_cfg and getattr(sot_cfg, "engram_cache_enabled", True):
-            self.engram_cache = EngramEmbeddingCache(
-                max_hot=getattr(sot_cfg, "engram_cache_max_hot", 10_000),
-                max_warm=getattr(sot_cfg, "engram_cache_max_warm", 90_000))
-        else:
-            self.engram_cache = None
-
-        # Distributed lock
-        lock_path = getattr(sot_cfg, "distributed_lock_path", None) if sot_cfg else None
-        lock_backend = getattr(sot_cfg, "distributed_lock_backend", "file")
-        redis_url = getattr(sot_cfg, "distributed_lock_redis_url", None)
-        if lock_path:
-            self._distributed_lock = DistributedLock(
-                lock_path, backend=lock_backend, redis_url=redis_url)
-        else:
-            self._distributed_lock = None
-
-        # Observability
-        if sot_cfg and getattr(sot_cfg, "observability_enabled", False):
-            self.metrics = MemoryMetrics()
-            self.metrics.add_alert_rule(AlertRule("high_latency", "query_p99", threshold=100.0))
-            self.metrics.add_alert_rule(AlertRule("low_cache", "cache_hit_ratio", threshold=0.3, comparison="lt"))
-            # Alert handlers
-            webhook_url = getattr(sot_cfg, "alert_webhook_url", None)
-            slack_url = getattr(sot_cfg, "alert_slack_url", None)
-            pagerduty_key = getattr(sot_cfg, "alert_pagerduty_key", None)
-            if webhook_url:
-                from rtmdk.memory.observability import WebhookAlertHandler
-                self.metrics.add_alert_handler(WebhookAlertHandler(webhook_url))
-            if slack_url:
-                from rtmdk.memory.observability import SlackAlertHandler
-                self.metrics.add_alert_handler(SlackAlertHandler(slack_url))
-            if pagerduty_key:
-                from rtmdk.memory.observability import PagerDutyAlertHandler
-                self.metrics.add_alert_handler(PagerDutyAlertHandler(pagerduty_key))
-        else:
-            self.metrics = None
-
-        # RAG Quality
-        self._sentence_reranker = None
-        self._query_decomposer = None
-        self._feedback_loop = None
-        if sot_cfg and getattr(sot_cfg, "sentence_reranker_enabled", False):
-            self._sentence_reranker = SentenceReranker(self.embedder)
-        if sot_cfg and getattr(sot_cfg, "query_decomposition_enabled", False):
-            # Optional LLM client for advanced decomposition
-            llm_client = getattr(self, "_llm_client", None)
-            self._query_decomposer = QueryDecomposer(llm_client=llm_client)
-        if sot_cfg and getattr(sot_cfg, "feedback_loop_enabled", False):
-            fb_path = getattr(sot_cfg, "feedback_loop_persist_path", None)
-            self._feedback_loop = FeedbackLoop(self.embedder, persist_path=fb_path)
-            self._feedback_loop.load()
-
-        # Explainability & Query Enhancement
-        self._result_explainer = None
-        self._query_rewriter = None
-        self._intent_classifier = None
-        if sot_cfg and getattr(sot_cfg, "result_explainability_enabled", False):
-            from rtmdk.memory.explainability import ResultExplainer
-            self._result_explainer = ResultExplainer()
-        if sot_cfg and getattr(sot_cfg, "query_rewrite_enabled", False):
-            from rtmdk.memory.explainability import QueryRewriter
-            llm_client = getattr(self, "_llm_client", None)
-            self._query_rewriter = QueryRewriter(embedder=self.embedder, llm_client=llm_client)
-        if sot_cfg and getattr(sot_cfg, "query_intent_classification_enabled", False):
-            from rtmdk.memory.explainability import QueryIntentClassifier
-            llm_client = getattr(self, "_llm_client", None)
-            self._intent_classifier = QueryIntentClassifier(llm_client=llm_client)
-
-        # Safety & Rollback
-        from rtmdk.memory.safety import RollbackManager, PoisonedMemoryDetector
-        self._rollback_manager = RollbackManager()
-        self._poison_detector = PoisonedMemoryDetector()
+        MemoryPostInitializer(self).initialize()
+        BacklogModulesInitializer(self).initialize()
+        object.__setattr__(self, "_context_mgr", ContextManager(self))
 
     @property
     def memory_variables(self) -> List[str]:
@@ -1147,161 +444,8 @@ class RTMDKMemory(BaseModel):
             query: str,
             embedding: NDArray,
             session_id: str) -> str:
-        """Core retrieval pipeline shared by load_memory_variables and with_embedding."""
-        # Query decomposition for multi-hop retrieval
-        if self._query_decomposer is not None:
-            sub_queries = self._query_decomposer.decompose(query)
-        else:
-            sub_queries = [query]
-
-        all_results = []
-        for sub_q in sub_queries:
-            sub_emb = self.embedder(sub_q)
-            phase = self._get_phase(session_id, sub_emb)
-
-            # Phase 18: Engram-based retrieval (if enabled)
-            if self.engram_manager is not None and self.engram_manager.index.size > 0:
-                if self.engram_cache is not None and len(self.engram_cache) > 0:
-                    node_embs = self.engram_cache.get_all()
-                else:
-                    node_embs = {}
-                    for nid, node in self.field.nodes.items():
-                        emb = self._get_node_embedding(nid, node)
-                        if emb is not None:
-                            node_embs[nid] = emb
-
-                engram_results = self.engram_manager.retrieve_engrams(
-                    sub_emb, node_embs, top_k=self.field.cfg.top_k
-                )
-
-                if engram_results:
-                    results = self.engram_manager.expand_engrams(
-                        engram_results, self.field, top_k=self.field.cfg.top_k
-                    )
-                    self.field.stats["engram_retrievals"] += 1
-                else:
-                    results = self.field.query(
-                        sub_emb,
-                        phase,
-                        top_k=self.field.cfg.top_k,
-                        session_id=session_id)
-            else:
-                results = self.field.query(
-                    sub_emb,
-                    phase,
-                    top_k=self.field.cfg.top_k,
-                    session_id=session_id)
-            all_results.extend(results)
-
-        # Deduplicate and re-rank combined results
-        seen = set()
-        results = []
-        for nid, score, node in sorted(all_results, key=lambda x: x[1], reverse=True):
-            if nid not in seen:
-                results.append((nid, score, node))
-                seen.add(nid)
-
-        # Session-scoped retrieval: filter results by session_id, with global
-        # fallback
-        if session_id and session_id != "default" and results:
-            session_results = [
-                (nid, score, node) for nid, score, node in results
-                if node.content.get("session") == session_id
-            ]
-            if len(session_results) < self.field.cfg.top_k:
-                global_results = [
-                    (nid, score, node) for nid, score, node in results
-                    if node.content.get("session") != session_id
-                ]
-                needed = self.field.cfg.top_k - len(session_results)
-                session_results.extend(global_results[:needed])
-            boosted = []
-            for nid, score, node in session_results:
-                if node.content.get("session") == session_id:
-                    score *= 1.5  # 50% boost for session match
-                boosted.append((nid, score, node))
-            boosted.sort(key=lambda x: x[1], reverse=True)
-            results = boosted[:self.field.cfg.top_k]
-            self.field.stats["session_scoped_retrievals"] = self.field.stats.get(
-                "session_scoped_retrievals", 0) + 1
-
-        # Phase 1: Hybrid retrieval — blend RTMDK resonance with BM25 text
-        # scores
-        if self.field.cfg.hybrid_alpha < 1.0 and self.field.bm25_index is not None and results:
-            bm25_results = self.field.bm25_index.search(
-                query, self.field.cfg.top_k * 2)
-            if bm25_results:
-                bm25_scores = {nid: score for nid, score in bm25_results}
-                max_bm25 = max(bm25_scores.values()) if bm25_scores else 1.0
-                if max_bm25 > 0:
-                    bm25_scores = {
-                        nid: s / max_bm25 for nid,
-                        s in bm25_scores.items()}
-
-                alpha = self.field.cfg.hybrid_alpha
-                blended = []
-                for nid, score, node in results:
-                    bm25_score = bm25_scores.get(nid, 0.0)
-                    blended_score = alpha * score + (1 - alpha) * bm25_score
-                    blended.append((nid, blended_score, node))
-
-                for nid, bm25_score in bm25_scores.items():
-                    if nid not in [
-                            n[0] for n in blended] and bm25_score > self.field.cfg.min_response:
-                        node = self.field.nodes.get(nid)
-                        if node:
-                            blended_score = alpha * 0.0 + \
-                                (1 - alpha) * bm25_score
-                            blended.append((nid, blended_score, node))
-
-                blended.sort(key=lambda x: x[1], reverse=True)
-                results = blended[:self.field.cfg.top_k]
-                self.field.stats["hybrid_retrievals"] = self.field.stats.get(
-                    "hybrid_retrievals", 0) + 1
-
-        # Phase 15 Track 2: Proactive Clarification
-        if self.config.proactive_clarification and results:
-            max_score = results[0][1] if results else 0.0
-            threshold = self.field.cfg.min_response * \
-                self.config.clarification_threshold_ratio
-            if 0 < max_score < threshold:
-                clarification = self._generate_clarification(results, query)
-                self.field.stats["clarifications_generated"] += 1
-                return clarification
-
-        # Context formatting
-        if self.config.attention_tokens and results:
-            context = format_context(results, ContextFormat.ATTENTION)
-        elif self.config.attention_bias and results:
-            context = format_cognitive_context(results, bias_applied=True)
-            self.field.stats["attention_bias_applied"] += 1
-        elif self.config.cognitive_compression and results:
-            context = self.field._cognitive_compress(results)
-            raw_context = format_context(results, self.config.context_format)
-            tokens_saved = max(0, len(raw_context) - len(context))
-            self.field.stats["context_tokens_saved"] += tokens_saved
-            self.field.stats["cognitive_compressions"] += 1
-        else:
-            context = format_context(results, self.config.context_format)
-
-        # Phase 16 Track 1: SymbolicOverlay
-        if self.config.symbolic_overlay and self.field.symbolic_overlay and results:
-            facts = []
-            for nid, score, node in results[:3]:
-                text = node.content.get("text", "")
-                concepts = self.field.symbolic_overlay._extract_concepts(text)
-                facts.extend(concepts)
-            if facts:
-                symbolic_ctx = self.field.symbolic_overlay.get_symbolic_context(
-                    facts, max_depth=2)
-                if symbolic_ctx:
-                    context += "\n\n" + symbolic_ctx
-                    self.field.stats["n_symbolic_inferences"] += 1
-                    n_conflicts = sum(
-                        1 for r in self.field.symbolic_overlay.rules.values() if r.is_contextual_exception)
-                    self.field.stats["n_symbolic_conflicts"] = n_conflicts
-
-        return context
+        """Core retrieval pipeline — delegated to ContextManager."""
+        return self._context_mgr.retrieve_and_format(query, embedding, session_id)
 
     def load_memory_variables(self, inputs: Dict[str, str]) -> Dict[str, str]:
         query = inputs.get("input", inputs.get("query", ""))
@@ -1486,6 +630,14 @@ class RTMDKMemory(BaseModel):
         Returns:
             List of (node_id, score, node) tuples.
         """
+        # Pipeline path (v8.3+): use explicit pipeline when enabled and no sparse vec
+        if getattr(self.config, "pipeline_enabled", False) and sparse_vec is None:
+            result = self.retrieve_nodes_pipeline(
+                query, embedding=embedding, top_k=top_k, session_id=session_id
+            )
+            return result["results"]
+
+        # Legacy path — preserved for backward compatibility
         # Distributed lock for multi-process safety
         if self._distributed_lock is not None:
             if not self._distributed_lock.acquire(blocking=True):
@@ -1509,7 +661,7 @@ class RTMDKMemory(BaseModel):
                 results = cached
             else:
                 results = self._retrieve_nodes_impl(query, embedding, top_k, session_id, sparse_vec)
-                self.field.query_cache.set_raw(cache_key, results)
+                self.field.query_cache.put_raw(cache_key, results)
         else:
             results = self._retrieve_nodes_impl(query, embedding, top_k, session_id, sparse_vec)
 
@@ -1644,6 +796,114 @@ class RTMDKMemory(BaseModel):
 
         self.field.stats["batch_queries"] = self.field.stats.get("batch_queries", 0) + n_queries
         return results
+
+    # ------------------------------------------------------------------
+    # Pipeline API (v8.3+)
+    # ------------------------------------------------------------------
+    def build_pipeline(self):
+        """Build an explicit stage-based pipeline — delegated to PipelineBuilder."""
+        return PipelineBuilder(self).build()
+
+    def retrieve_nodes_pipeline(
+        self,
+        query: str,
+        embedding: Optional[NDArray] = None,
+        top_k: Optional[int] = None,
+        session_id: Optional[str] = None,
+        metrics_store: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        """Retrieve nodes using the explicit pipeline API.
+
+        Args:
+            metrics_store: Optional PipelineMetricsStore to persist query metrics.
+
+        Returns:
+            Dict with keys:
+                - results: List[Tuple[str, float, Any]]
+                - route: str (factual/standard/deep)
+                - explanations: List[Dict]
+                - metrics: per-stage latency breakdown
+        """
+        pipeline = self.build_pipeline()
+        cost_tracking = getattr(self.config, "pipeline_cost_tracking_enabled", False)
+        cost_analyzer = None
+        if cost_tracking:
+            from rtmdk.pipeline.cost import PipelineCostAnalyzer
+            cost_analyzer = PipelineCostAnalyzer()
+            cost_analyzer.start(query)
+
+        ctx = pipeline.run(
+            query_text=query,
+            top_k=top_k or self.field.cfg.top_k,
+            session_id=session_id,
+            embedding=embedding,
+        )
+
+        if cost_analyzer is not None:
+            for metric in ctx.metrics:
+                cost_analyzer.record_stage(
+                    metric.name,
+                    latency_ms=metric.latency_ms,
+                )
+            cost_breakdown = cost_analyzer.finalize()
+        else:
+            cost_breakdown = None
+
+        result = {
+            "results": ctx.results,
+            "route": ctx.route,
+            "explanations": ctx.explanations,
+            "metrics": ctx.to_dict(),
+        }
+        if cost_breakdown is not None:
+            result["cost"] = cost_breakdown.to_dict()
+        if metrics_store is not None:
+            metrics_store.write(result["metrics"])
+        return result
+
+    async def retrieve_nodes_pipeline_async(
+        self,
+        query: str,
+        embedding: Optional[NDArray] = None,
+        top_k: Optional[int] = None,
+        session_id: Optional[str] = None,
+        metrics_store: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        """Async version of retrieve_nodes_pipeline().
+
+        Executes the pipeline in a thread pool to avoid blocking the event loop.
+        """
+        import asyncio
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None,
+            self.retrieve_nodes_pipeline,
+            query,
+            embedding,
+            top_k,
+            session_id,
+            metrics_store,
+        )
+
+    def health_check_pipeline(self) -> Dict[str, Any]:
+        """Run health checks on every pipeline stage.
+
+        Returns:
+            {"healthy": bool, "stages": [{"stage": str, "healthy": bool, "reason": str}]}
+        """
+        pipeline = self.build_pipeline()
+        stage_health = []
+        all_healthy = True
+        for stage in pipeline.stages:
+            healthy, reason = stage.health_check()
+            if not healthy:
+                all_healthy = False
+            stage_health.append({
+                "stage": stage.name,
+                "healthy": healthy,
+                "reason": reason,
+            })
+        return {"healthy": all_healthy, "stages": stage_health}
 
     def add_feedback(self, query: str, node_id: str, relevant: bool) -> bool:
         """Provide explicit feedback to refine embeddings.
@@ -1844,115 +1104,13 @@ class RTMDKMemory(BaseModel):
             top_k=top_k,
             session_id=session_id)
 
-    def fit_projection(self, corpus_embeddings: np.ndarray) -> None:
-        """Fit projection learner on corpus embeddings."""
-        if self.field is not None:
-            self.field.fit_projection(corpus_embeddings)
-
     def _detect_tags(self, text: str) -> List[str]:
-        """Auto-detect memory tags from text content."""
-        tags = []
-        lower = text.lower()
-
-        # Greeting/name tags
-        if any(
-            w in lower for w in [
-                "hello",
-                "hi ",
-                "hey",
-                "привет",
-                "здравствуй",
-                "hi,",
-                "hey,"]):
-            tags.append("greeting")
-        if any(
-            w in lower for w in [
-                "my name is",
-                "i'm ",
-                "i am ",
-                "меня зовут",
-                "мое имя"]):
-            tags.append("name")
-
-        # Topic tags
-        if any(
-            w in lower for w in [
-                "code",
-                "program",
-                "python",
-                "java",
-                "javascript",
-                "функци",
-                "код",
-                "програм"]):
-            tags.append("coding")
-        if any(
-            w in lower for w in [
-                "coffee",
-                "tea",
-                "food",
-                "drink",
-                "кофе",
-                "чай",
-                "еда"]):
-            tags.append("food_drink")
-        if any(
-            w in lower for w in [
-                "love",
-                "like",
-                "prefer",
-                "enjoy",
-                "люб",
-                "нрав",
-                "предпочита"]):
-            tags.append("preference")
-        if any(
-            w in lower for w in [
-                "work",
-                "job",
-                "career",
-                "работ",
-                "карьер",
-                "професс"]):
-            tags.append("work")
-        if any(
-            w in lower for w in [
-                "live",
-                "city",
-                "country",
-                "home",
-                "жив",
-                "город",
-                "стран",
-                "дом"]):
-            tags.append("location")
-        if any(
-            w in lower for w in [
-                "family",
-                "friend",
-                "dog",
-                "cat",
-                "pet",
-                "семь",
-                "друг",
-                "собак",
-                "кот",
-                "питом"]):
-            tags.append("relationships")
-
-        return tags[:5]  # Limit to 5 tags
+        """Auto-detect memory tags — delegated to ContextManager."""
+        return self._context_mgr._detect_tags(text)
 
     def _generate_clarification(self, results: List, query: str) -> str:
-        """Generate a clarification prompt from weak-resonance nodes."""
-        lines = [
-            f"[CLARIFICATION] Не нашёл точных воспоминаний по запросу: \"{query[:80]}\""]
-        lines.append("Полусовпадения (низкий резонанс):")
-        for nid, score, node in results[:3]:
-            text = node.content.get("text", "")[:60]
-            lines.append(f"  [R:{score:.2f}] {text}")
-        lines.append(
-            "Уточните запрос или предоставьте дополнительный контекст.")
-        return "\n".join(lines)
+        """Generate a clarification prompt — delegated to ContextManager."""
+        return self._context_mgr._generate_clarification(results, query)
 
     def get_system_prompt(self, context: str) -> str:
         return build_system_prompt(
@@ -1962,163 +1120,12 @@ class RTMDKMemory(BaseModel):
 
     def save_context(
             self, inputs: Dict[str, str], outputs: Dict[str, str]) -> None:
-        """Save a conversation turn to memory with structured node format.
-
-        Args:
-            inputs: {"input": "user text", "session_id": "...", ...}
-            outputs: {"output": "assistant text", ...}
-
-        Node structure:
-            input_text: User's message
-            output_text: Assistant's response (empty if only input)
-            role: "user" or "assistant"
-            session: Session/character ID
-            timestamp: Unix timestamp
-            emotion: Detected emotion (neutral by default)
-            tags: Auto-detected memory tags
-            tier: episodic/semantic/procedural
-            context: Additional metadata
-        """
-        input_text = inputs.get("input", "")
-        output_text = outputs.get("output", "")
-
-        # If output is empty, still save the input
-        if not output_text.strip():
-            if not input_text.strip():
-                return
-            text_for_embedding = input_text
-        else:
-            text_for_embedding = output_text if len(
-                output_text) > len(input_text) else input_text
-
-        session_id = inputs.get("session_id", "default")
-        timestamp = time.time()
-
-        # Detect emotion from text
-        emotion = "neutral"
-        if input_text:
-            lower_input = input_text.lower()
-            if any(
-                w in lower_input for w in [
-                    "happy",
-                    "love",
-                    "great",
-                    "wonderful",
-                    "amazing",
-                    "рад",
-                    "люб",
-                    "отличн",
-                    "прекрасн"]):
-                emotion = "positive"
-            elif any(w in lower_input for w in [
-                    "sad", "hate", "bad", "terrible", "angry",
-                    "грустн", "ненавиж", "плох", "зл"]):
-                emotion = "negative"
-            elif any(w in lower_input for w in [
-                    "?", "what", "why", "how", "when",
-                    "где", "что", "как", "когда", "почему"]):
-                emotion = "questioning"
-
-        # Auto-detect tags from text
-        all_text = f"{input_text} {output_text}"
-        tags = self._detect_tags(all_text)
-
-        # Build structured node content
-        content = {
-            "input_text": input_text,
-            "output_text": output_text,
-            "role": "assistant" if output_text.strip() else "user",
-            "session": session_id,
-            "timestamp": timestamp,
-            "emotion": emotion,
-            "tags": tags,
-            "tier": "episodic",  # Will be refined by tier detection
-            "context": {
-                k: v for k, v in inputs.items()
-                if k not in ["input", "query", "session_id", "embedding"]
-            },
-            "version": "2.0",  # Structured node version
-        }
-
-        embedding = self.embedder(text_for_embedding)
-        phase = self._get_phase(session_id, embedding)
-        modality = detect_modality(
-            text_for_embedding) if self.config.cross_modal else "text"
-
-        # Detect memory tier
-        tier = detect_tier(text_for_embedding, inputs)
-        content["tier"] = tier
-
-        try:
-            nid = self.field.add_node(
-                embedding,
-                content,
-                phase,
-                session_id=session_id,
-                modality=modality)
-        except SecurityViolationError:
-            return
-
-        # Set tier on the newly added node
-        if nid in self.field.nodes:
-            self.field.nodes[nid].tier = tier
-
-        # Phase 18: Create/update engrams from co-activated nodes
-        # Use retrieval instead of O(N) scan for scalability
-        if self.engram_manager is not None:
-            # Fast path: retrieve top-k similar nodes via HNSW/resonance
-            try:
-                retrieved = self.retrieve_nodes(
-                    text_for_embedding, embedding,
-                    top_k=self.config.engram_max_nodes * 2,
-                    session_id=session_id)
-                related_nodes = []
-                for rnid, rscore, _ in retrieved:
-                    if rscore >= self.config.min_response:
-                        related_nodes.append((rnid, float(rscore)))
-            except Exception:
-                related_nodes = []
-            related_nodes.append((nid, 1.0))
-
-            if len(related_nodes) >= self.config.engram_min_nodes:
-                node_embs = {}
-                for rnid, _ in related_nodes:
-                    emb = self._get_node_embedding(
-                        rnid, self.field.nodes.get(rnid))
-                    if emb is not None:
-                        node_embs[rnid] = emb
-
-                self.engram_manager.create_engram_from_nodes(
-                    activated_nodes=related_nodes[:self.config.engram_max_nodes],
-                    node_embeddings=node_embs,
-                    semantic_core=text_for_embedding[:100],
-                    context_tags=set(tags + [tier, session_id]),
-                    tier=tier,
-                )
-
-        if self.config.enable_async:
-            # Fix 4: Lazy async worker startup
-            if self.config.async_pipeline and not self.field._workers_started:
-                try:
-                    loop = asyncio.get_running_loop()
-                    loop.create_task(self.field._start_workers())
-                    self.field._workers_started = True
-                    # Enqueue for async processing
-                    loop.create_task(self.field.evolve_q.put({"inputs": None}))
-                except RuntimeError:
-                    self.field.step()
-            else:
-                try:
-                    asyncio.get_running_loop()
-                    asyncio.create_task(self._evolve_field_async())
-                except RuntimeError:
-                    self.field.step()
-        else:
-            self.field.step()
+        """Save a conversation turn — delegated to ContextManager."""
+        return self._context_mgr.save_context(inputs, outputs)
 
     async def _evolve_field_async(self):
-        await asyncio.sleep(0.01)
-        self.field.step()
+        """Async field evolution — delegated to ContextManager."""
+        return await self._context_mgr._evolve_field_async()
 
     def save_state(self, dir_path: str) -> None:
         """Persist backlog module state to disk."""
@@ -2223,15 +1230,6 @@ class RTMDKMemory(BaseModel):
         self._rollback_manager.take_snapshot(self.field)
         logger.info("Memory snapshot taken")
 
-    def rollback(self, timestamp: Optional[float] = None) -> bool:
-        """Rollback memory to a previous snapshot."""
-        success = self._rollback_manager.rollback(self.field, timestamp)
-        if success:
-            logger.info("Memory rolled back to snapshot")
-        else:
-            logger.warning("Rollback failed: no suitable snapshot")
-        return success
-
     def detect_poisoned_memories(self) -> List[Dict]:
         """Scan for potentially poisoned or anomalous memory nodes."""
         return self._poison_detector.scan(self.field)
@@ -2271,9 +1269,6 @@ class RTMDKMemory(BaseModel):
             info["modal_embedding"] = node.modal_embedding.tolist()
         return info
 
-    def rollback(self, n_steps: int = 1) -> bool:
-        return self.field.rollback_consolidation(n_steps)
-
     def get_rollback_history(self) -> List[Dict]:
         return [{"timestamp": s["timestamp"], "updated": s["updated"], "n_nodes": len(
             s["pre_state"])} for s in self.field._rollback_history]
@@ -2281,9 +1276,6 @@ class RTMDKMemory(BaseModel):
     def do_intervention(self, node_id: str, text: str):
         emb = self.embedder(text)
         self.field.do_intervention(node_id, emb)
-
-    def clear_interventions(self):
-        self.field.clear_interventions()
 
     def __getattr__(self, name: str):
         """Proxy simple delegations to RTMDKField to reduce boilerplate."""
@@ -2295,13 +1287,10 @@ class RTMDKMemory(BaseModel):
         if name == "get_dashboard":
             return self.field.get_field_health
         _proxy_methods = {
-            "get_field_health", "trigger_healing",
+            "get_field_health",
             "counterfactual_query", "get_causal_summary",
-            "evolve_continuous", "get_response_smoothness",
-            "create_plan", "verify_hypothesis", "execute_tool",
-            "register_tool", "evaluate_response", "compare_shadow",
-            "get_cross_modal_stats", "get_meta_controller_state",
-            "get_federated_status", "export_field", "import_field",
+            "export_field", "import_field",
+            "rollback", "clear_interventions", "fit_projection",
         }
         if name in _proxy_methods:
             return getattr(self.field, name)

@@ -125,7 +125,7 @@ class TestSOTWordMode:
             sot_enabled=True,
             sot_tokenization_mode="word")
         field = RTMDKField(cfg)
-        tok = field.sot_tokenizer
+        tok = field._projection_mgr.sot_tokenizer
         tokens = tok.encode("coffee is great")
         emb = tok.embed(tokens)
         field.add_node(emb, {'text': 'coffee is great'}, node_id='n1')
@@ -428,10 +428,10 @@ class TestSOTV2Integration:
             sot_skipgram_window=3,
         )
         field = RTMDKField(cfg)
-        assert field.sot_tokenizer is not None
-        assert field.sot_tokenizer.subword_seed is True
-        assert field.sot_tokenizer.attention_pooling is True
-        assert field.sot_tokenizer.skipgram_window == 3
+        assert field._projection_mgr.sot_tokenizer is not None
+        assert field._projection_mgr.sot_tokenizer.subword_seed is True
+        assert field._projection_mgr.sot_tokenizer.attention_pooling is True
+        assert field._projection_mgr.sot_tokenizer.skipgram_window == 3
 
     def test_warm_start_from_file(self):
         # Create temp corpus file
@@ -450,7 +450,7 @@ class TestSOTV2Integration:
             )
             field = RTMDKField(cfg)
             assert len(
-                field.sot_tokenizer.token_idf) > 0, "Warm-start should compute IDF"
+                field._projection_mgr.sot_tokenizer.token_idf) > 0, "Warm-start should compute IDF"
         finally:
             os.unlink(path)
 
@@ -521,9 +521,9 @@ class TestSOTV2Integration:
             )
             field = RTMDKField(cfg)
             # token_embeddings should have been updated for tokens 0,1,2
-            assert 0 in field.sot_tokenizer.token_embeddings
-            assert 1 in field.sot_tokenizer.token_embeddings
-            assert 2 in field.sot_tokenizer.token_embeddings
+            assert 0 in field._projection_mgr.sot_tokenizer.token_embeddings
+            assert 1 in field._projection_mgr.sot_tokenizer.token_embeddings
+            assert 2 in field._projection_mgr.sot_tokenizer.token_embeddings
         finally:
             os.unlink(path)
 
@@ -606,8 +606,8 @@ class TestSOTV2Integration:
 
         # v2 should have more nodes (subword seeds)
         assert len(
-            field_v2.sot_tokenizer.token_embeddings) > len(
-            field_v1.sot_tokenizer.token_embeddings)
+            field_v2._projection_mgr.sot_tokenizer.token_embeddings) > len(
+            field_v1._projection_mgr.sot_tokenizer.token_embeddings)
 
 
 # ------------------------------------------------------------------

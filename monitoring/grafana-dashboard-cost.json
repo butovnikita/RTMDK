@@ -1,0 +1,78 @@
+{
+  "dashboard": {
+    "title": "RTMDK Pipeline Cost Analysis",
+    "tags": ["rtmdk", "pipeline", "cost"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Cost Per Query (avg)",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "avg(rtmdk_pipeline_cost_total)"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 8, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "Cost by Stage",
+        "type": "piechart",
+        "targets": [
+          {
+            "expr": "sum by (stage) (rtmdk_pipeline_cost_stage)"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 8, "x": 8, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "Cost vs Latency Scatter",
+        "type": "xychart",
+        "targets": [
+          {
+            "expr": "rtmdk_pipeline_cost_total"
+          },
+          {
+            "expr": "rtmdk_pipeline_latency_total"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 8, "x": 16, "y": 0}
+      },
+      {
+        "id": 4,
+        "title": "Queries by Cost Bucket",
+        "type": "histogram",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(rtmdk_pipeline_cost_bucket[5m])) by (le))"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+      },
+      {
+        "id": 5,
+        "title": "Top 10 Most Expensive Queries",
+        "type": "table",
+        "targets": [
+          {
+            "expr": "topk(10, rtmdk_pipeline_cost_total)"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+      },
+      {
+        "id": 6,
+        "title": "Stage Cost Breakdown (time series)",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "avg by (stage) (rtmdk_pipeline_cost_stage)"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16}
+      }
+    ]
+  }
+}

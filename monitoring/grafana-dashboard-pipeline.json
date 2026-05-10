@@ -1,0 +1,107 @@
+{
+  "dashboard": {
+    "title": "RTMDK Pipeline v8.3",
+    "tags": ["rtmdk", "pipeline"],
+    "timezone": "utc",
+    "schemaVersion": 36,
+    "panels": [
+      {
+        "id": 1,
+        "title": "Pipeline Queries / sec",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rate(rtmdk_pipeline_queries_total[1m])",
+            "legendFormat": "QPS"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 6, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "Stage Latency p95",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rtmdk_pipeline_stage_latency_ms{quantile=\"0.95\"}",
+            "legendFormat": "{{stage}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 9, "x": 6, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "Circuit Breaker States",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rtmdk_pipeline_breaker_state",
+            "legendFormat": "{{stage}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 9, "x": 15, "y": 0}
+      },
+      {
+        "id": 4,
+        "title": "Stage Errors / sec",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(rtmdk_pipeline_stage_errors_total[1m])",
+            "legendFormat": "{{stage}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+      },
+      {
+        "id": 5,
+        "title": "Pipeline Health",
+        "type": "table",
+        "targets": [
+          {
+            "expr": "rtmdk_pipeline_stage_enabled",
+            "format": "table",
+            "instant": true
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+      },
+      {
+        "id": 6,
+        "title": "Total Stages",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rtmdk_pipeline_stages_total",
+            "legendFormat": "stages"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 4, "x": 0, "y": 16}
+      },
+      {
+        "id": 7,
+        "title": "Open Breakers",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(rtmdk_pipeline_breaker_state == 2)",
+            "legendFormat": "open"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 4, "x": 4, "y": 16}
+      },
+      {
+        "id": 8,
+        "title": "Latency Heatmap",
+        "type": "heatmap",
+        "targets": [
+          {
+            "expr": "rate(rtmdk_pipeline_stage_latency_ms_bucket[1m])",
+            "legendFormat": "{{stage}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 16, "x": 8, "y": 16}
+      }
+    ]
+  }
+}

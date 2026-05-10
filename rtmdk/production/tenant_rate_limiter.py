@@ -25,6 +25,7 @@ class TenantRateLimiter:
         default_per_minute: int = None,
         default_per_hour: int = None,
         default_per_day: int = None,
+        pipeline_per_minute: int = None,
     ):
         self._api_key_manager = api_key_manager
         # Global defaults from env
@@ -36,8 +37,13 @@ class TenantRateLimiter:
             "per_day": default_per_day
             or int(os.getenv("RTMDK_RATE_LIMIT_PER_DAY", "10000")),
         }
+        self._pipeline_per_minute = pipeline_per_minute or int(
+            os.getenv("RTMDK_PIPELINE_RATE_LIMIT_PER_MINUTE", "30")
+        )
         # tenant_id -> RateLimiter instance
         self._limiters: Dict[str, RateLimiter] = {}
+        # tenant_id -> RateLimiter instance for pipeline endpoints
+        self._pipeline_limiters: Dict[str, RateLimiter] = {}
 
     def _get_limiter(self, tenant_id: str) -> RateLimiter:
         """Get or create a RateLimiter for tenant with optional override."""
@@ -58,8 +64,32 @@ class TenantRateLimiter:
             )
         return self._limiters[tenant_id]
 
+    def _get_pipeline_limiter(self, tenant_id: str) -> RateLimiter:
+        """Get or create a stricter RateLimiter for pipeline endpoints."""
+        if tenant_id not in self._pipeline_limiters:
+            limits = dict(self._defaults)
+            limits["per_minute"] = self._pipeline_per_minute
+            if self._api_key_manager is not None:
+                keys = self._api_key_manager.list_keys(tenant_id=tenant_id)
+                for key_rec in keys:
+                    override = key_rec.get("rate_limit_override")
+                    if override and "pipeline_per_minute" in override:
+                        limits["per_minute"] = override["pipeline_per_minute"]
+                        break
+            self._pipeline_limiters[tenant_id] = RateLimiter(
+                max_per_minute=limits["per_minute"],
+                max_per_hour=limits["per_hour"],
+                max_per_day=limits["per_day"],
+            )
+        return self._pipeline_limiters[tenant_id]
+
     def allow_request(self, tenant_id: str) -> bool:
         limiter = self._get_limiter(tenant_id)
+        return limiter.allow_request(tenant_id)
+
+    def allow_pipeline_request(self, tenant_id: str) -> bool:
+        """Stricter rate limit for pipeline endpoints."""
+        limiter = self._get_pipeline_limiter(tenant_id)
         return limiter.allow_request(tenant_id)
 
     def get_remaining(self, tenant_id: str) -> Dict[str, int]:
@@ -69,3 +99,4 @@ class TenantRateLimiter:
     def reset_tenant(self, tenant_id: str):
         """Clear rate-limit state for a tenant (e.g. on plan upgrade)."""
         self._limiters.pop(tenant_id, None)
+        self._pipeline_limiters.pop(tenant_id, None)

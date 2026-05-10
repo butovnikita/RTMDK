@@ -42,7 +42,7 @@ class RTMDKServicer(rtmdk_pb2_grpc.RTMDKServicer):
             node_count = len(memory.field.nodes)
         return rtmdk_pb2.HealthResponse(
             status="ok",
-            version="8.2.0",
+            version="8.3.0",
             memory_nodes=node_count,
         )
 

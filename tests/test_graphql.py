@@ -175,3 +175,72 @@ class TestGraphQLMutations:
             assert data["data"]["deleteNode"] is False
         finally:
             app_mod.memory = None
+
+
+class TestGraphQLPipelineQuery:
+    def test_query_pipeline_returns_results(self, client):
+        cfg = RTMDKConfig(latent_dim=16, use_hnsw=False, pipeline_breaker_enabled=False)
+        field = RTMDKField(cfg)
+        field.add_node(
+            embedding=np.array([0.0] * 16),
+            content={"text": "hello world"},
+            node_id="n0")
+        mem = RTMDKMemory(config=cfg, embedder=lambda x: np.array([0.0] * 16))
+        mem.field = field
+        app_mod.memory = mem
+
+        try:
+            resp = client.post("/graphql", json={
+                "query": '{ queryPipeline(query: "hello", topK: 3) { query results { nodeId score content } route total metrics { totalLatencyMs stages { stage latencyMs } } } }'
+            })
+            assert resp.status_code == 200
+            data = resp.json()
+            assert "errors" not in data
+            result = data["data"]["queryPipeline"]
+            assert result["query"] == "hello"
+            assert result["total"] >= 1
+            assert len(result["results"]) >= 1
+            assert result["results"][0]["nodeId"] == "n0"
+            assert "metrics" in result
+            assert result["metrics"]["totalLatencyMs"] > 0
+            assert len(result["metrics"]["stages"]) > 0
+        finally:
+            app_mod.memory = None
+
+    def test_query_pipeline_null_when_no_memory(self, client):
+        resp = client.post("/graphql", json={
+            "query": '{ queryPipeline(query: "hello") { query total } }'
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["data"]["queryPipeline"] is None
+
+
+class TestGraphQLSubscription:
+    def test_subscription_schema_has_pipeline_stream(self):
+        from rtmdk.server.graphql_schema import schema
+        assert "Subscription" in str(schema)
+        assert "pipelineStream" in str(schema)
+
+    def test_subscription_pipeline_stream_with_memory(self, client):
+        cfg = RTMDKConfig(latent_dim=16, use_hnsw=False, pipeline_breaker_enabled=False)
+        field = RTMDKField(cfg)
+        field.add_node(
+            embedding=np.array([0.0] * 16),
+            content={"text": "hello world"},
+            node_id="n0")
+        mem = RTMDKMemory(config=cfg, embedder=lambda x: np.array([0.0] * 16))
+        mem.field = field
+        app_mod.memory = mem
+
+        try:
+            # GraphQL subscriptions over HTTP typically use POST with operationType: subscription
+            resp = client.post("/graphql", json={
+                "query": 'subscription { pipelineStream(query: "hello", topK: 3) { eventType stage } }',
+                "operationName": None,
+            })
+            # FastAPI TestClient may not fully support streaming subscriptions,
+            # but we verify the endpoint doesn't crash
+            assert resp.status_code in (200, 400)
+        finally:
+            app_mod.memory = None

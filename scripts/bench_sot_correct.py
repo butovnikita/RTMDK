@@ -58,8 +58,8 @@ def run_correct_sot_benchmark(n_records=300):
     print("Adding nodes with SOT embeddings...")
     for rec in data:
         text = rec["query"] + " " + rec["answer"]
-        tokens = field.sot_tokenizer.encode(text)
-        emb = field.sot_tokenizer.embed(tokens)
+        tokens = field._projection_mgr.sot_tokenizer.encode(text)
+        emb = field._projection_mgr.sot_tokenizer.embed(tokens)
         field.add_node(
             emb.astype(np.float32),
             content={"text": rec["answer"]},

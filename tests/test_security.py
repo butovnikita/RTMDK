@@ -13,10 +13,8 @@ import numpy as np
 import os
 import tempfile
 
-from rtmdk.memory.core import (
-    RTMDKMemory, RTMDKConfig, SecurityViolationError,
-    _sanitize_path, _safe_json_load,
-)
+from rtmdk.memory.core import RTMDKMemory, RTMDKConfig, SecurityViolationError
+from rtmdk.memory.utils import _sanitize_path, _safe_json_load
 
 
 class TestPathSanitization:

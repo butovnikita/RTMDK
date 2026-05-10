@@ -17,7 +17,9 @@ if len(
             "recommend",
             "presets",
             "bootstrap",
-        "bootstrap-fasttext"}:
+            "bootstrap-fasttext",
+            "pipeline-diagnose",
+        }:
     from rtmdk.cli import main as cli_main
     cli_main()
 else:

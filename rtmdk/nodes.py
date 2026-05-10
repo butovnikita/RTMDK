@@ -89,27 +89,31 @@ class MemoryNode:
 
     @classmethod
     def from_dict(cls, data: Dict) -> "MemoryNode":
-        data["latent_pos"] = np.array(data["latent_pos"], dtype=np.float32)
-        if data.get("pre_consolidation_pos"):
-            data["pre_consolidation_pos"] = np.array(
-                data["pre_consolidation_pos"], dtype=np.float32)
-        if data.get("gradient_cache"):
-            data["gradient_cache"] = np.array(
-                data["gradient_cache"], dtype=np.float32)
-        if data.get("velocity"):
-            data["velocity"] = np.array(data["velocity"], dtype=np.float32)
-        if data.get("acceleration"):
-            data["acceleration"] = np.array(
-                data["acceleration"], dtype=np.float32)
-        if data.get("modal_embedding"):
-            data["modal_embedding"] = np.array(
-                data["modal_embedding"], dtype=np.float32)
-        if data.get("covariance"):
-            data["covariance"] = np.array(data["covariance"], dtype=np.float32)
-        for k, v in data.get("do_interventions", {}).items():
+        # Filter to only known fields — robust against extra keys from tiered
+        # storage serialization (e.g. 'embedding' added by warm-tier promotion)
+        known_fields = {f.name for f in cls.__dataclass_fields__.values()}
+        filtered = {k: v for k, v in data.items() if k in known_fields}
+        filtered["latent_pos"] = np.array(filtered["latent_pos"], dtype=np.float32)
+        if filtered.get("pre_consolidation_pos"):
+            filtered["pre_consolidation_pos"] = np.array(
+                filtered["pre_consolidation_pos"], dtype=np.float32)
+        if filtered.get("gradient_cache"):
+            filtered["gradient_cache"] = np.array(
+                filtered["gradient_cache"], dtype=np.float32)
+        if filtered.get("velocity"):
+            filtered["velocity"] = np.array(filtered["velocity"], dtype=np.float32)
+        if filtered.get("acceleration"):
+            filtered["acceleration"] = np.array(
+                filtered["acceleration"], dtype=np.float32)
+        if filtered.get("modal_embedding"):
+            filtered["modal_embedding"] = np.array(
+                filtered["modal_embedding"], dtype=np.float32)
+        if filtered.get("covariance"):
+            filtered["covariance"] = np.array(filtered["covariance"], dtype=np.float32)
+        for k, v in filtered.get("do_interventions", {}).items():
             if isinstance(v, list):
-                data["do_interventions"][k] = np.array(v, dtype=np.float32)
-        return cls(**data)
+                filtered["do_interventions"][k] = np.array(v, dtype=np.float32)
+        return cls(**filtered)
 
 
 @dataclass

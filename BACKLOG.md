@@ -1,14 +1,17 @@
 # RTMDK Development Backlog
 
 > Last updated: 2026-05-07
-> Current version: 8.2.1
-> Test status: 668 passed, 2 skipped
+> Current version: 8.3.0-dev
+> Test status: 956 passed, 1 skipped
+> Branch: `refactor/leadership-cleanup`
 
 ---
 
 ## Executive Summary
 
-RTMDK v8.2 is production-ready for single-node deployment (10K–100K nodes, sub-10ms latency).
+RTMDK v8.3 is in active development. The **Leadership Cleanup** refactor (v8.3-alpha) has decoupled the monolithic `RTMDKField` (5265 → 844 lines, −84%) and `RTMDKMemory` (2603 → ~1380 lines, −47%) into 21 focused subsystems.
+
+v8.2 remains production-ready for single-node deployment (10K–100K nodes, sub-10ms latency).
 The backlog below targets **enterprise scale** (1M+ nodes), **cost reduction**, and **deployment ergonomics**.
 
 ---
@@ -24,6 +27,18 @@ The backlog below targets **enterprise scale** (1M+ nodes), **cost reduction**, 
 - [x] **React Admin Panel** — Vite + React dashboard (`admin/`)
 - [x] **Vector-Native Storage Stub** — SQLite-VSS / pgvector migration path
 - [x] **Multi-Master Replication Stub** — Raft/Paxos distributed consensus
+
+## Completed in v8.3-alpha (Leadership Cleanup)
+
+- [x] **FieldInitializer** — Extracted 460-line `RTMDKField.__init__` into `memory/field_initializer.py`
+- [x] **ContextManager** — Extracted save/load context pipeline from `core.py` → `memory/context_manager.py`
+- [x] **MemoryPostInitializer** — Extracted `model_post_init` backlog wiring → `memory/memory_post_initializer.py`
+- [x] **BacklogModulesInitializer** — Extracted `_init_backlog_modules` → `memory/backlog_modules_initializer.py`
+- [x] **PipelineBuilder** — Extracted `build_pipeline` → `memory/pipeline_builder.py`
+- [x] **OperationalManager** — Moved `_compress_field`, `_self_heal`, calibrate, rollback into `memory/operational_manager.py`
+- [x] **Dead code removal** — 23 lines of orphan imports, `_copy_node`, duplicate method definitions
+- [x] **Import cycle fix** — `MemoryNode` import routed through `rtmdk.nodes` instead of `core.py`
+- [x] **Backward compatibility** — All public APIs preserved via thin wrappers / `__getattr__`
 
 ---
 
@@ -53,13 +68,14 @@ The backlog below targets **enterprise scale** (1M+ nodes), **cost reduction**, 
 
 ---
 
-## Track 2: Tiered Storage (Hot / Warm / Cold) — Shipped
+## Track 2: Tiered Storage (Hot / Warm / Cold) — Partially Shipped
 
 **Goal:** Support unlimited node count without proportional RAM growth.
 
-**Current state (shipped):**
+**Current state:**
 - All nodes live in RAM (`self.nodes` dict + numpy caches)
 - 10K nodes = 30 MB; 1M nodes = ~3 GB — impractical on consumer hardware
+- `TieredStorageManager` exists in `storage/tiered.py` (memmap + LFU stubs) but is **not wired** into `RTMDKField` hot path
 
 **Target state:**
 - **Hot** (top 1% by query frequency) → RAM
@@ -68,6 +84,7 @@ The backlog below targets **enterprise scale** (1M+ nodes), **cost reduction**, 
 - Query path checks hot first, then warm, then cold (lazy load)
 
 **Acceptance criteria:**
+- [ ] Wire `TieredStorageManager` into `RTMDKField` query/add paths (replace `self.nodes` dict)
 - [ ] Implement `TieredNodeStore` with hot/warm/cold tiers
 - [ ] Benchmark: 1M nodes on 16 GB RAM with p99 query < 20 ms (deferred to v8.3 stress test)
 - [x] Auto-promotion/demotion based on access frequency (LFU cache)
@@ -103,29 +120,36 @@ The backlog below targets **enterprise scale** (1M+ nodes), **cost reduction**, 
 
 ---
 
-## Track 4: Async Batch Ingestion Pipeline
+## Track 4: Async Batch Ingestion Pipeline — Partially Shipped
 
 **Goal:** Production-grade throughput for data import.
 
 **Current state:**
 - `add_node` is synchronous, single-threaded
-- 10K nodes = 0.4 s (exact) or 3.3 s (HNSW)
-- 1M nodes would take 6–55 minutes of blocking time
+- `add_nodes_batch()` uses vectorized numpy ops for normalization, phases, saliences, amplitudes
+- O(N²) bottleneck fixed: list-scan `if nid not in f.node_index` replaced with set-based O(1) lookup
+- `AsyncIndexBuilder` wired into batch path via `IndexManager.hnsw_insert_batch` (when `async_hnsw_build=True`)
+- `WAL` supports periodic fsync (`wal_fsync_interval_ms`), auto-replay on startup
+- Benchmarks (64d, no HNSW, batch 50K):
+  - Without WAL: **1M nodes in 12s = 83K nodes/sec**
+  - With sync WAL (`fsync_interval_ms=0`): 1M nodes in ~170s
+  - With async WAL (`fsync_interval_ms=100`): estimated ~15-20s for 1M nodes
 
 **Target state:**
-- **Batch insert API:** `field.add_nodes_batch(embeddings, contents, phases)` — vectorized
-- **Background HNSW rebuild:** index updates queued, merged every N seconds
-- **WAL (Write-Ahead Log):** every mutation appended to disk before memory commit
-  - Crash recovery: replay WAL on startup
+- **Batch insert API:** `field.add_nodes_batch(embeddings, contents, phases)` — fully vectorized numpy ops
+- **Background HNSW rebuild:** index updates queued, merged every N seconds via `AsyncIndexBuilder`
+- **WAL durability:** fsync every 100 ms (already supported, needs benchmarking)
 - **Target throughput:** 50K+ nodes/sec for batch, 1K+ nodes/sec for streaming
 
 **Acceptance criteria:**
-- [ ] Implement `add_nodes_batch()` with vectorized cache rebuild
-- [ ] Implement `AsyncIndexBuilder` thread for HNSW background merge
-- [ ] Implement `WALAppender` with fsync every 100 ms
-- [ ] Benchmark: ingest 1M nodes in < 60 seconds
+- [x] Implement `add_nodes_batch()` API surface
+- [x] Implement `AsyncIndexBuilder` thread class
+- [x] Implement `WAL` with periodic fsync and crash recovery replay
+- [x] Vectorize `add_nodes_batch()` internals (numpy vectorized + set-based node lookup)
+- [x] Wire `AsyncIndexBuilder` into `NodeManager.add_nodes_batch()` via `IndexManager`
+- [x] Benchmark: ingest 1M nodes in < 60 seconds (**achieved: 12s without WAL, ~83K nodes/sec**)
 
-**Effort:** Medium-High (1 week)
+**Effort:** Medium (3–4 days) — foundations exist, needs integration + vectorization
 **Impact:** High — required for production data pipelines
 
 ---
@@ -164,9 +188,10 @@ RTMDK wins on **total cost of ownership**, **latency**, **memory**, and **zero e
 
 | Track | Effort | Impact | Recommended Order |
 |-------|--------|--------|-------------------|
+| 0. Leadership Cleanup (v8.3-alpha) | Medium | Very High | **Done** ✅ |
 | 1. Quantization | Low | Very High | **1st** |
-| 3. Query Cache + Dynamic top_k | Low | Medium-High | **2nd** |
-| 4. Async Batch Ingestion | Medium-High | High | **3rd** |
+| 3. Query Cache + Dynamic top_k | Low | Medium-High | **2nd** (Shipped) |
+| 4. Async Batch Ingestion | Medium | High | **3rd** |
 | 2. Tiered Storage | High | Very High | **4th** |
 
 ---
@@ -174,6 +199,7 @@ RTMDK wins on **total cost of ownership**, **latency**, **memory**, and **zero e
 ## How to Pick the Next Track
 
 - **Shipping to mobile / edge devices** → Track 1 (Quantization)
-- **High-volume chatbot, reducing OpenAI bills** → Track 3 (Query Cache)
+- **High-volume chatbot, reducing OpenAI bills** → Track 3 (Query Cache — already shipped)
 - **Enterprise pilot with 1M+ document corpus** → Track 4 (Async Pipeline) then Track 2 (Tiered Storage)
-- **Indie hacker, single-server deployment** → Track 3, then Track 1
+- **Indie hacker, single-server deployment** → Track 1 (Quantization) or Track 4 (Batch ingestion for faster setup)
+- **Improving code maintainability / onboarding devs** → Update `docs/08_ARCHITECTURE.md` to reflect v8.3 decoupled architecture

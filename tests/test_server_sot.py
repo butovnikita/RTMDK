@@ -61,10 +61,10 @@ class TestSOTVocab:
         cfg = RTMDKConfig(latent_dim=16, use_hnsw=False, sot_enabled=True)
         field = RTMDKField(cfg)
         # Seed a word-level mapping if available
-        if field.sot_tokenizer:
-            field.sot_tokenizer.word_to_id["hello"] = 256
-            field.sot_tokenizer.id_to_word[256] = "hello"
-            field.sot_tokenizer.token_embeddings[256] = np.zeros(16, dtype=np.float32)
+        if field._projection_mgr.sot_tokenizer:
+            field._projection_mgr.sot_tokenizer.word_to_id["hello"] = 256
+            field._projection_mgr.sot_tokenizer.id_to_word[256] = "hello"
+            field._projection_mgr.sot_tokenizer.token_embeddings[256] = np.zeros(16, dtype=np.float32)
         mem = RTMDKMemory(config=cfg, embedder=lambda x: np.array([0.0] * 16))
         mem.field = field
         app_mod.memory = mem

@@ -112,3 +112,38 @@ def _enum_value(val, default):
     if isinstance(val, Enum):
         return val
     return val.value if hasattr(val, "value") else val
+
+
+MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024  # 100MB
+
+
+def _sanitize_path(path: str) -> str:
+    """Sanitize file path to prevent directory traversal attacks.
+
+    Rejects paths containing '..' (path traversal).
+    Returns normalized path.
+    """
+    import os
+    # Reject parent directory references BEFORE normalization
+    # (normpath collapses 'a/../b' to 'b', which would hide the attack)
+    if ".." in path.replace("\\", "/").split("/"):
+        raise SecurityViolationError(f"Path traversal detected: {path}")
+    # Normalize to catch unicode tricks and mixed separators
+    normalized = os.path.normpath(path)
+    return normalized
+
+
+def _safe_json_load(path: str) -> Dict:
+    """Load JSON with size limit to prevent memory exhaustion."""
+    import json
+    import os
+    file_size = os.path.getsize(path)
+    if file_size > MAX_FILE_SIZE_BYTES:
+        raise ValueError(
+            f"File too large: {file_size / (1024*1024):.1f}MB (max {MAX_FILE_SIZE_BYTES / (1024*1024):.0f}MB)")
+    with open(path, "r", encoding="utf-8") as f:
+        raw = f.read()
+    if len(raw.encode("utf-8")) > MAX_FILE_SIZE_BYTES:
+        raise ValueError(
+            "File exceeds maximum allowed size after encoding check")
+    return json.loads(raw)

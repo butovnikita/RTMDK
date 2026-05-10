@@ -68,5 +68,29 @@
 5. **P2**: Add unit tests for `support/` and `engines/`
 6. **P3**: Hierarchical `RTMDKConfig`
 
-## Next Steps
-Begin P0 refactoring: extract config + deduplicate inline classes.
+## Session 2026-05-07: Latency Regression Fix + Tiered Storage v2 Hardening
+
+### Critical Fix: 2500ms → 10ms Query Latency
+- **Root cause**: `RetrieveStage` in pipeline did not pass `query_text` to `field.query()`.
+- **Effect**: BM25 fallback built a 5000-word query from 100 document concatenations, causing `rank_bm25` to spend 2.5s scoring.
+- **Fix**: `rtmdk/pipeline/stages.py` line 71 — added `query_text=ctx.query_text`.
+- **Result**: stress test p50@5K nodes dropped from **2500ms → 10ms** (250× speedup).
+
+### Tiered Storage v2 Fixes
+- `_promote_from_warm` / `_demote_to_warm` — fixed `latent_pos` vs `embedding` confusion
+- `_evict_warm_to_cold` — fixed warm slot reuse (return freed `idx` instead of decrementing `_warm_next_idx`)
+- `MemoryNode.from_dict()` — filters to known dataclass fields (robust against extra keys)
+- `TieredNodeStoreAdapter` — bridges `MemoryNode` ↔ dict interface
+- **New**: `peek()` / `peek_batch()` — promotion-free bulk reads for fallback (97ms with tiered_v2 vs 4-9s before)
+- **New**: `_batch_resonance_nodes()` — vectorized resonance over pre-materialized node list
+- **New**: `tiered_fallback_enabled` config flag (`MemorySystemConfig`)
+
+### Stress Test Hardening
+- Fixed `scripts/stress_test_100k.py` `use_hnsw=True` → `False` (config mismatch caused HNSW warning)
+- All 909 tests pass (1 skipped)
+
+### Next Steps
+- P0 refactoring: extract config + deduplicate inline classes
+- Optimize `_query_vectorized` Python loop for sub-1ms target (vectorized path exists in `_batch_resonance_numpy`)
+- HNSW re-enable investigation (real HNSW via faiss or hnswlib)
+- 100K node validation after latency fix

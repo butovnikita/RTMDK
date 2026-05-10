@@ -142,11 +142,14 @@ http_client = httpx.AsyncClient()
 _active_requests = 0
 _shutdown_event = asyncio.Event()
 
+# Pipeline metrics store (optional)
+pipeline_metrics_store = None
+
 
 async def _sot_bootstrap_from_memory():
     """Bootstrap SOT tokenizer from existing memory nodes in background."""
     await asyncio.sleep(2)  # Let server finish startup
-    if memory is None or memory.field is None or memory.field.sot_tokenizer is None:
+    if memory is None or memory.field is None or memory.field._projection_mgr.sot_tokenizer is None:
         return
     try:
         texts = []
@@ -155,7 +158,7 @@ async def _sot_bootstrap_from_memory():
             if text:
                 texts.append(text)
         if len(texts) >= 10:
-            memory.field.sot_tokenizer.warm_start_from_corpus(texts)
+            memory.field._projection_mgr.sot_tokenizer.warm_start_from_corpus(texts)
             logger.info(f"SOT bootstrapped from {len(texts)} memory nodes")
     except Exception:
         logger.debug("SOT background bootstrap failed", exc_info=True)
@@ -182,6 +185,14 @@ _memory_ref = None  # set in startup_event
 
 def _handle_sigterm(signum, frame):
     logger.info("Received SIGTERM, initiating graceful shutdown...")
+    _shutdown_event.set()
+    # Pipeline-specific cleanup
+    global pipeline_metrics_store
+    if pipeline_metrics_store is not None:
+        try:
+            logger.info("Flushing pipeline metrics store...")
+        except Exception:
+            pass
     if _memory_ref is not None:
         try:
             save_path = _get_save_path(MEMORY_FILE)
@@ -189,11 +200,18 @@ def _handle_sigterm(signum, frame):
             logger.info(f"Memory saved to {save_path} on SIGTERM")
         except Exception:
             logger.exception("Failed to save memory on SIGTERM")
-    # Allow default handler to terminate the process
-    sys.exit(0)
+    # Do NOT call sys.exit(0) — let FastAPI lifespan drain requests
+
+
+def _handle_sigint(signum, frame):
+    logger.info("Received SIGINT, initiating graceful shutdown...")
+    _shutdown_event.set()
+    # Same cleanup as SIGTERM
+    _handle_sigterm(signum, frame)
 
 
 signal.signal(signal.SIGTERM, _handle_sigterm)
+signal.signal(signal.SIGINT, _handle_sigint)
 
 
 @atexit.register
@@ -274,7 +292,7 @@ async def lifespan(app: FastAPI):
             setup_json_logging()
         except Exception:
             pass
-    logger.info("Starting RTMDK Production API v8.2.0")
+    logger.info("Starting RTMDK Production API v8.3.0")
     logger.info(f"Memory file: {MEMORY_FILE}")
     logger.info(f"LM Studio URL: {LM_STUDIO_URL}")
 
@@ -284,6 +302,16 @@ async def lifespan(app: FastAPI):
     memory = init_memory()
     global _memory_ref
     _memory_ref = memory
+
+    # Validate pipeline configuration on startup
+    if memory and hasattr(memory, "config"):
+        warnings = memory.config.validate()
+        pipeline_warnings = [w for w in warnings if "pipeline" in w.lower()]
+        if pipeline_warnings:
+            for w in pipeline_warnings:
+                logger.warning(f"Pipeline config issue: {w}")
+        else:
+            logger.info("Pipeline configuration validated successfully")
 
     # Initialize production performance modules
     query_cache = QueryCache(max_size=10000, ttl_seconds=3600)
@@ -337,12 +365,12 @@ async def lifespan(app: FastAPI):
     _sot_checkpoint_path = os.path.join(
         os.path.expanduser("~"), ".rtmdk", "sot_checkpoint.json"
     )
-    if memory and memory.field and memory.field.sot_tokenizer:
+    if memory and memory.field and memory.field._projection_mgr.sot_tokenizer:
         if os.path.exists(_sot_checkpoint_path):
             try:
                 with open(_sot_checkpoint_path, "r", encoding="utf-8") as fh:
                     sot_state = json.load(fh)
-                memory.field.sot_tokenizer.load_state(sot_state)
+                memory.field._projection_mgr.sot_tokenizer.load_state(sot_state)
                 logger.info(f"SOT checkpoint loaded ({len(sot_state.get('token_embeddings', {}))} tokens)")
             except Exception:
                 logger.warning("Failed to load SOT checkpoint", exc_info=True)
@@ -388,9 +416,9 @@ async def lifespan(app: FastAPI):
             field._workers.clear()
 
         # SOT checkpoint saving
-        if field and field.sot_tokenizer:
+        if field and field._projection_mgr.sot_tokenizer:
             try:
-                sot_state = field.sot_tokenizer.get_state()
+                sot_state = field._projection_mgr.sot_tokenizer.get_state()
                 _sot_checkpoint_path = os.path.join(
                     os.path.expanduser("~"), ".rtmdk", "sot_checkpoint.json")
                 os.makedirs(os.path.dirname(_sot_checkpoint_path), exist_ok=True)
@@ -414,7 +442,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="RTMDK Production API",
     description="OpenAI-compatible API with Resonance-Topological Memory (No SillyTavern)",
-    version="8.2.0",
+    version="8.3.0",
     lifespan=lifespan,
 )
 
@@ -591,11 +619,18 @@ async def rate_limit_middleware(request: Request, call_next):
         # If auth disabled, rate-limit by IP
         tenant_id = request.client.host if request.client else "anonymous"
 
-    if tenant_rate_limiter is not None and not tenant_rate_limiter.allow_request(tenant_id):
-        remaining = tenant_rate_limiter.get_remaining(tenant_id)
-        return JSONResponse(
-            status_code=429,
-            content={"error": "Rate limit exceeded", "remaining": remaining})
+    if tenant_rate_limiter is not None:
+        is_pipeline = request.url.path.startswith("/v1/memory/pipeline/")
+        allowed = (
+            tenant_rate_limiter.allow_pipeline_request(tenant_id)
+            if is_pipeline
+            else tenant_rate_limiter.allow_request(tenant_id)
+        )
+        if not allowed:
+            remaining = tenant_rate_limiter.get_remaining(tenant_id)
+            return JSONResponse(
+                status_code=429,
+                content={"error": "Rate limit exceeded", "remaining": remaining})
 
     return await call_next(request)
 
@@ -709,6 +744,27 @@ async def _fetch_embedding(text: str, model: str) -> np.ndarray:
     return np.array(data["data"][0]["embedding"], dtype=np.float32)
 
 
+def _sanitize_query(query: str, max_length: int = 4096) -> str:
+    """Sanitize user query input for pipeline endpoints.
+
+    - Strip control characters
+    - Normalize whitespace
+    - Enforce max length
+    - Reject null bytes
+    """
+    if not query:
+        raise HTTPException(status_code=400, detail="Query cannot be empty")
+    if "\x00" in query:
+        raise HTTPException(status_code=400, detail="Query contains invalid characters")
+    # Strip control chars except newline/tab
+    query = "".join(ch for ch in query if ch == "\n" or ch == "\t" or ord(ch) >= 32)
+    # Normalize whitespace
+    query = " ".join(query.split())
+    if len(query) > max_length:
+        raise HTTPException(status_code=400, detail=f"Query exceeds max length ({max_length})")
+    return query
+
+
 async def _get_embedding_cached(text: str, model: str = None) -> np.ndarray:
     """Get embedding with disk+memory caching."""
     if embedding_cache is None:
@@ -746,9 +802,9 @@ async def get_embedding(text: str, model: str = None) -> np.ndarray:
         return cached
 
     # Phase 21: SOT primary embedder — works out-of-the-box without LM Studio
-    if memory and memory.field and memory.field.sot_tokenizer:
+    if memory and memory.field and memory.field._projection_mgr.sot_tokenizer:
         try:
-            sot = memory.field.sot_tokenizer
+            sot = memory.field._projection_mgr.sot_tokenizer
             tokens = sot.encode(text)
             emb = sot.embed(tokens)
             embedder_cache.set(text, emb)
@@ -1136,6 +1192,24 @@ class MemoryQueryRequest(BaseModel):
     }
 
 
+class MemoryQueryPipelineRequest(BaseModel):
+    """Query the memory field using the explicit pipeline API."""
+
+    query: str = Field(..., min_length=1, description="Search query")
+    top_k: int = Field(5, ge=1, le=50, description="Number of results")
+    session_id: Optional[str] = Field(None, description="Session ID for session boosting")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "query": "What is the capital of France?",
+                "top_k": 5,
+                "session_id": "sess_123",
+            }
+        }
+    }
+
+
 class BatchQueryRequest(BaseModel):
     """Batch query the memory field."""
 
@@ -1300,6 +1374,269 @@ async def memory_query(req: MemoryQueryRequest):
         _metric_query_dur.observe(time.time() - t0)
         logger.warning("Memory query failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/v1/memory/query_pipeline")
+async def memory_query_pipeline(req: MemoryQueryPipelineRequest):
+    """Query memory using the explicit pipeline API with per-stage metrics."""
+    query = _sanitize_query(req.query)
+
+    if not memory:
+        raise HTTPException(status_code=503, detail="Memory not initialized")
+
+    t0 = time.time()
+    try:
+        result = await memory.retrieve_nodes_pipeline_async(
+            query,
+            top_k=req.top_k,
+            session_id=req.session_id,
+        )
+        # Format results
+        formatted = []
+        for nid, score, node in result["results"]:
+            formatted.append({
+                "id": nid,
+                "content": (
+                    node.content.get("content", node.content)
+                    if isinstance(node.content, dict)
+                    else str(node.content)
+                ),
+                "score": round(float(score), 4),
+            })
+
+        resp = {
+            "query": req.query,
+            "results": formatted,
+            "route": result.get("route"),
+            "explanations": result.get("explanations", []),
+            "metrics": result.get("metrics", {}),
+            "total": len(formatted),
+        }
+        if result.get("cost"):
+            resp["cost"] = result["cost"]
+        if pipeline_metrics_store is not None:
+            pipeline_metrics_store.write(result.get("metrics", {}))
+        _metric_query_dur.observe(time.time() - t0)
+        return resp
+    except Exception as exc:
+        _metric_query_dur.observe(time.time() - t0)
+        logger.warning("Pipeline query failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/v1/memory/pipeline/stream")
+async def memory_pipeline_stream(
+    query: str = Query(..., min_length=1, description="Search query"),
+    top_k: int = Query(5, ge=1, le=50, description="Number of results"),
+    session_id: Optional[str] = Query(None, description="Session ID"),
+):
+    query = _sanitize_query(query)
+    """Stream pipeline stage events via Server-Sent Events.
+
+    Each event carries the completion status of a single stage,
+    enabling live progress bars in dashboards and debug UIs.
+
+    Example (JavaScript):
+        const es = new EventSource(
+            '/v1/memory/pipeline/stream?query=hello&top_k=5'
+        );
+        es.addEventListener('message', e => console.log(JSON.parse(e.data)));
+    """
+    if not memory or not memory.field:
+        async def _error():
+            yield f"data: {json.dumps({'event': 'error', 'message': 'Memory not initialized'})}\n\n"
+        return StreamingResponse(_error(), media_type="text/event-stream")
+
+    from rtmdk.pipeline.streaming import StreamingPipelineExecutor
+
+    pipeline = memory.build_pipeline()
+    streamer = StreamingPipelineExecutor(pipeline.stages)
+
+    async def _generator():
+        async for chunk in streamer.run_async(query, top_k=top_k, session_id=session_id):
+            yield chunk
+
+    return StreamingResponse(
+        _generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.get("/v1/memory/pipeline/dag")
+async def memory_pipeline_dag():
+    """Return pipeline stage dependency graph for visualization.
+
+    Returns DAG structure showing stage order, dependencies,
+    and breaker configuration.
+    """
+    if not memory or not memory.field:
+        raise HTTPException(status_code=503, detail="Memory not initialized")
+
+    pipeline = memory.build_pipeline()
+    nodes = []
+    edges = []
+
+    for i, stage in enumerate(pipeline.stages):
+        nodes.append({
+            "id": stage.name,
+            "label": stage.name,
+            "enabled": stage.enabled,
+            "has_breaker": stage.circuit_breaker is not None,
+            "breaker_state": stage.circuit_breaker.state.value if stage.circuit_breaker else None,
+            "has_fallback": hasattr(stage, "fallback") and stage.fallback is not None,
+        })
+        if i > 0:
+            edges.append({
+                "from": pipeline.stages[i - 1].name,
+                "to": stage.name,
+            })
+
+    return {
+        "nodes": nodes,
+        "edges": edges,
+        "total_stages": len(nodes),
+        "enabled_stages": sum(1 for n in nodes if n["enabled"]),
+        "stages_with_breakers": sum(1 for n in nodes if n["has_breaker"]),
+    }
+
+
+@app.get("/v1/memory/pipeline/plan")
+async def memory_pipeline_plan(query: str = "", route: Optional[str] = None, top_k: int = 5):
+    """Preview the execution plan for a query without running it.
+
+    Useful for debugging and UI optimization previews.
+    """
+    if not memory or not memory.field:
+        raise HTTPException(status_code=503, detail="Memory not initialized")
+    query = _sanitize_query(query)
+    pipeline = memory.build_pipeline()
+    if hasattr(pipeline, "get_plan"):
+        plan = pipeline.get_plan(query, route=route, top_k=top_k)
+    else:
+        from rtmdk.pipeline.planner import QueryPlanner
+        planner = QueryPlanner()
+        plan = planner.plan(query, route=route, top_k=top_k).to_dict()
+    return {"query": query, "plan": plan}
+
+
+@app.get("/v1/memory/pipeline/health")
+async def memory_pipeline_health():
+    """Return per-stage health status for the pipeline.
+
+    Useful for load balancers and monitoring dashboards to determine
+    whether the retrieval pipeline is healthy or degraded.
+    """
+    if not memory or not memory.field:
+        raise HTTPException(status_code=503, detail="Memory not initialized")
+
+    pipeline = memory.build_pipeline()
+    stages_health = []
+    degraded_count = 0
+    open_breakers = 0
+
+    for stage in pipeline.stages:
+        breaker_state = None
+        if stage.circuit_breaker is not None:
+            breaker_state = stage.circuit_breaker.state.value
+            if breaker_state == "open":
+                open_breakers += 1
+
+        health = {
+            "name": stage.name,
+            "enabled": stage.enabled,
+            "breaker_state": breaker_state,
+            "has_fallback": hasattr(stage, "fallback") and stage.fallback is not None,
+        }
+        stages_health.append(health)
+
+    overall = "healthy"
+    if open_breakers > 0:
+        overall = "degraded"
+    if open_breakers >= len(stages_health) // 2:
+        overall = "unhealthy"
+
+    return {
+        "overall": overall,
+        "stages": stages_health,
+        "open_breakers": open_breakers,
+        "total_stages": len(stages_health),
+    }
+
+
+@app.get("/v1/memory/pipeline/prometheus")
+async def memory_pipeline_prometheus():
+    """Return pipeline metrics in Prometheus exposition format.
+
+    Compatible with Prometheus scraping and Grafana dashboards.
+    """
+    if not memory or not memory.field:
+        raise HTTPException(status_code=503, detail="Memory not initialized")
+
+    pipeline = memory.build_pipeline()
+    lines = [
+        "# HELP rtmdk_pipeline_stages_total Number of configured pipeline stages",
+        "# TYPE rtmdk_pipeline_stages_total gauge",
+        f"rtmdk_pipeline_stages_total {len(pipeline.stages)}",
+        "",
+        "# HELP rtmdk_pipeline_stage_enabled Whether a stage is enabled",
+        "# TYPE rtmdk_pipeline_stage_enabled gauge",
+    ]
+    for stage in pipeline.stages:
+        enabled = 1 if stage.enabled else 0
+        lines.append(f'rtmdk_pipeline_stage_enabled{{stage="{stage.name}"}} {enabled}')
+
+    lines.extend([
+        "",
+        "# HELP rtmdk_pipeline_breaker_state Circuit breaker state (0=closed, 1=half_open, 2=open)",
+        "# TYPE rtmdk_pipeline_breaker_state gauge",
+    ])
+    state_map = {"closed": 0, "half_open": 1, "open": 2}
+    for stage in pipeline.stages:
+        if stage.circuit_breaker is not None:
+            state_val = state_map.get(stage.circuit_breaker.state.value, -1)
+            lines.append(f'rtmdk_pipeline_breaker_state{{stage="{stage.name}"}} {state_val}')
+
+    # Include metrics store stats if available
+    if pipeline_metrics_store is not None:
+        summary = pipeline_metrics_store.summary()
+        lines.extend([
+            "",
+            "# HELP rtmdk_pipeline_queries_total Total pipeline queries",
+            "# TYPE rtmdk_pipeline_queries_total counter",
+            f"rtmdk_pipeline_queries_total {summary.get('queries', 0)}",
+        ])
+        for stage_name, stage_data in summary.get("stages", {}).items():
+            lat = stage_data.get("latency_ms", {})
+            if lat:
+                lines.append(f'rtmdk_pipeline_stage_latency_ms{{stage="{stage_name}",quantile="0.5"}} {lat.get("median", 0)}')
+                lines.append(f'rtmdk_pipeline_stage_latency_ms{{stage="{stage_name}",quantile="0.95"}} {lat.get("p95", 0)}')
+            err_count = stage_data.get("errors", 0)
+            lines.append(f'rtmdk_pipeline_stage_errors_total{{stage="{stage_name}"}} {err_count}')
+
+    return Response(content="\n".join(lines) + "\n", media_type="text/plain")
+
+
+@app.get("/v1/memory/pipeline/metrics")
+async def memory_pipeline_metrics_summary(
+    since: Optional[float] = Query(None, description="Unix timestamp — only metrics after this time"),
+    stage: Optional[str] = Query(None, description="Filter to a single stage name"),
+):
+    """Return aggregated pipeline metrics summary.
+
+    Query parameters:
+        since — Unix timestamp for time-range filtering
+        stage — filter metrics to a single stage (e.g. embed, retrieve)
+    """
+    if pipeline_metrics_store is None:
+        return {"enabled": False, "message": "Pipeline metrics store not configured"}
+    summary = pipeline_metrics_store.summary(since=since, stage_filter=stage)
+    summary["enabled"] = True
+    return summary
 
 
 @app.post("/v1/memory/batch_query")
@@ -1589,7 +1926,7 @@ async def health():
     """Health check with production metrics."""
     base = {
         "status": "ok",
-        "version": "8.2.0",
+        "version": "8.3.0",
         "lm_studio": lm_studio_available,
         "memory_nodes": len(memory.field.nodes) if memory else 0,
     }
@@ -1682,7 +2019,7 @@ async def health_deep():
 
     return {
         "status": overall,
-        "version": "8.2.0",
+        "version": "8.3.0",
         "checks": checks,
     }
 
@@ -1762,6 +2099,19 @@ async def analytics_events(limit: int = Query(50, ge=1, le=500),
         )
     except Exception as exc:
         logger.warning("Analytics events failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/v1/analytics/pipeline")
+async def analytics_pipeline():
+    """Pipeline-specific metrics for dashboard display."""
+    if analytics_dashboard is None:
+        raise HTTPException(status_code=503,
+                            detail="Analytics dashboard not available")
+    try:
+        return analytics_dashboard.get_pipeline_metrics()
+    except Exception as exc:
+        logger.warning("Pipeline analytics failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -1895,6 +2245,57 @@ async def memory_websocket(websocket: WebSocket):
                         await websocket.send_json({"type": "query_results", "results": out})
                     else:
                         await websocket.send_json({"type": "error", "message": "Memory not ready"})
+                elif action == "query_pipeline":
+                    query = msg.get("query", "")
+                    top_k = msg.get("top_k", 5)
+                    session_id = msg.get("session_id")
+                    use_stream = msg.get("stream", False)
+                    if memory and memory.field:
+                        try:
+                            if use_stream:
+                                from rtmdk.pipeline.streaming import StreamingPipelineExecutor
+                                pipeline = memory.build_pipeline()
+                                streamer = StreamingPipelineExecutor(pipeline.stages)
+                                async for chunk in streamer.run_async(query, top_k=top_k, session_id=session_id):
+                                    # chunk is already SSE-formatted "data: {...}\n\n"
+                                    # strip prefix for WebSocket JSON
+                                    raw = chunk.strip()
+                                    if raw.startswith("data: "):
+                                        raw = raw[6:]
+                                    event_data = json.loads(raw)
+                                    await websocket.send_json({
+                                        "type": "pipeline_event",
+                                        "event": event_data,
+                                    })
+                            else:
+                                result = await memory.retrieve_nodes_pipeline_async(
+                                    query, top_k=top_k, session_id=session_id
+                                )
+                                formatted = []
+                                for nid, score, node in result["results"]:
+                                    content = ""
+                                    if hasattr(node, "content"):
+                                        if isinstance(node.content, dict):
+                                            content = node.content.get("text", str(node.content))
+                                        else:
+                                            content = str(node.content)
+                                    formatted.append({
+                                        "node_id": nid,
+                                        "score": round(float(score), 4),
+                                        "content": content,
+                                    })
+                                await websocket.send_json({
+                                    "type": "pipeline_results",
+                                    "query": query,
+                                    "results": formatted,
+                                    "route": result.get("route"),
+                                    "metrics": result.get("metrics"),
+                                    "total": len(formatted),
+                                })
+                        except Exception as exc:
+                            await websocket.send_json({"type": "error", "message": str(exc)})
+                    else:
+                        await websocket.send_json({"type": "error", "message": "Memory not ready"})
                 elif action == "ping":
                     await websocket.send_json({"type": "pong"})
                 else:
@@ -1920,7 +2321,7 @@ async def sot_status():
     """Get SOT (Self-Organizing Tokenizer) status."""
     if memory is None or memory.field is None:
         raise HTTPException(status_code=503, detail="Memory not initialized")
-    sot = memory.field.sot_tokenizer
+    sot = memory.field._projection_mgr.sot_tokenizer
     if sot is None:
         return {"enabled": False}
     return {
@@ -1941,7 +2342,7 @@ async def sot_vocab(
     """Inspect SOT vocabulary."""
     if memory is None or memory.field is None:
         raise HTTPException(status_code=503, detail="Memory not initialized")
-    sot = memory.field.sot_tokenizer
+    sot = memory.field._projection_mgr.sot_tokenizer
     if sot is None:
         raise HTTPException(status_code=503, detail="SOT not enabled")
     items = []
@@ -1958,7 +2359,7 @@ async def sot_bootstrap(req: SOTBootstrapRequest):
     """Bootstrap SOT from a corpus of texts."""
     if memory is None or memory.field is None:
         raise HTTPException(status_code=503, detail="Memory not initialized")
-    sot = memory.field.sot_tokenizer
+    sot = memory.field._projection_mgr.sot_tokenizer
     if sot is None:
         raise HTTPException(status_code=503, detail="SOT not enabled")
     texts = req.texts
@@ -2255,7 +2656,7 @@ app.include_router(create_dashboard_router(lambda: memory, _ux_config))
 
 def main():
     print("=" * 60)
-    print("  RTMDK Production API v8.2.0")
+    print("  RTMDK Production API v8.3.0")
     print("  (No SillyTavern modules)")
     print("=" * 60)
     print()

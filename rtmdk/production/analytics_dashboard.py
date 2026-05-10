@@ -52,7 +52,7 @@ class AnalyticsDashboard:
                 ),
             },
             "health": self._health.check_health() if self._health else None,
-            "version": "8.2.0",
+            "version": "8.3.0",
         }
 
     def get_memory_analytics(self) -> Dict[str, Any]:
@@ -84,6 +84,46 @@ class AnalyticsDashboard:
     def get_report(self, since: Optional[float] = None) -> Dict[str, Any]:
         """Full analytics report (last 24h by default)."""
         return self._engine.get_report(since=since)
+
+    def get_pipeline_metrics(self) -> Dict[str, Any]:
+        """Pipeline-specific metrics for dashboard display.
+
+        Returns:
+            Dict with stage latencies, breaker states, error rates,
+            and overall pipeline health.
+        """
+        if self.memory is None or not hasattr(self.memory, "build_pipeline"):
+            return {"enabled": False}
+
+        pipeline = self.memory.build_pipeline()
+        stages_info = []
+        open_breakers = 0
+
+        for stage in pipeline.stages:
+            breaker_state = None
+            if stage.circuit_breaker is not None:
+                breaker_state = stage.circuit_breaker.state.value
+                if breaker_state == "open":
+                    open_breakers += 1
+            stages_info.append({
+                "name": stage.name,
+                "enabled": stage.enabled,
+                "breaker_state": breaker_state,
+            })
+
+        overall = "healthy"
+        if open_breakers > 0:
+            overall = "degraded"
+        if open_breakers >= len(stages_info) // 2:
+            overall = "unhealthy"
+
+        return {
+            "enabled": True,
+            "overall": overall,
+            "stages": stages_info,
+            "total_stages": len(stages_info),
+            "open_breakers": open_breakers,
+        }
 
     def track_event(
         self,

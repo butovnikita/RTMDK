@@ -110,6 +110,19 @@ class FieldSerializer:
         ("sot_tokenizer", "sot_tokenizer", "sot_enabled"),
     ]
 
+    # Additional subsystems that use get_state()/load_state() but have no
+    # dedicated config flag (checked by truthiness).
+    EXTRA_STATE_MODULES = [
+        ("learned_consolidator", "learned_consolidator"),
+        ("event_scheduler", "event_scheduler"),
+        ("low_rank_compressor", "low_rank_compressor"),
+        ("goal_tracker", "goal_tracker"),
+        ("rl_feedback_loop", "rl_feedback_loop"),
+        ("predictor", "predictor"),
+        ("scenario_planner", "scenario_planner"),
+        ("engram_manager", "engram_manager"),
+    ]
+
     @staticmethod
     def field_to_dict(field: RTMDKField) -> Dict[str, Any]:
         """Export field state to a dict."""
@@ -119,6 +132,7 @@ class FieldSerializer:
 
         # Build data dict
         data = {
+            "_schema_version": "1.0",
             "config": cd,
             "nodes": list(
                 field.nodes.all_node_dicts()) if hasattr(
@@ -128,14 +142,20 @@ class FieldSerializer:
             "stats": field.stats,
         }
 
-        # Add projection state
-        if field.projection_learner:
-            data["projection_state"] = field.projection_learner.get_state()
-        else:
-            data["projection"] = field._raw_projection.tolist()
+        # Add projection + SOT state
+        data.update(field._projection_mgr.get_state())
 
         # Add submodule states
         for attr, key, config_flag in FieldSerializer.STATE_MODULES:
+            obj = getattr(field, attr, None)
+            if obj is not None and hasattr(obj, 'get_state'):
+                try:
+                    data[key] = obj.get_state()
+                except Exception as e:
+                    logger.warning(f"Failed to serialize {attr}: {e}")
+
+        # Add extra subsystem states (no config flag guard)
+        for attr, key in FieldSerializer.EXTRA_STATE_MODULES:
             obj = getattr(field, attr, None)
             if obj is not None and hasattr(obj, 'get_state'):
                 try:
@@ -278,6 +298,36 @@ class FieldSerializer:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
+        return FieldSerializer._apply_data(
+            data, embedder, config=config, wal_path=wal_path,
+            file_size=file_size)
+
+    @staticmethod
+    def field_from_dict(data: Dict[str, Any], embedder: Callable,
+                        config: Optional[RTMDKConfig] = None,
+                        wal_path: Optional[str] = None):
+        """Import field state from an in-memory dict.
+
+        Args:
+            data: Dict with field state (same schema as field_to_dict output)
+            embedder: Embedding function
+            config: Optional config override
+            wal_path: Optional WAL path
+
+        Returns:
+            RTMDKMemory instance with loaded field
+        """
+        return FieldSerializer._apply_data(
+            data, embedder, config=config, wal_path=wal_path)
+
+    @staticmethod
+    def _apply_data(data: Dict[str, Any], embedder: Callable,
+                    config: Optional[RTMDKConfig] = None,
+                    wal_path: Optional[str] = None,
+                    file_size: Optional[int] = None):
+        """Shared import logic used by field_from_file and field_from_dict."""
+        from rtmdk.memory.core import RTMDKMemory
+
         # v8.2.1: Snapshot integrity verification
         stored_checksum = data.pop("_checksum", None)
         if stored_checksum is not None:
@@ -297,8 +347,9 @@ class FieldSerializer:
             raise ValueError("Invalid memory file: missing 'nodes' key")
 
         n_file_nodes = len(data["nodes"])
+        size_msg = f", {file_size/1024:.0f}KB" if file_size else ""
         logger.info(
-            f"import_field: file contains {n_file_nodes} nodes, {file_size/1024:.0f}KB")
+            f"import_field: loading {n_file_nodes} nodes{size_msg}")
 
         # Deserialize config
         cd = data["config"]
@@ -325,13 +376,8 @@ class FieldSerializer:
             embedder=embedder,
             wal_path=wal_path)
 
-        # Load projection
-        if config.learn_projection and "projection_state" in data:
-            memory.field.projection_learner.load_state(
-                data["projection_state"])
-        elif "projection" in data:
-            memory.field._raw_projection = np.array(
-                data["projection"], dtype=np.float32)
+        # Load projection + SOT state
+        memory.field._projection_mgr.load_state(data)
 
         # Load submodule states
         if config.differentiable and "learnable_kernel" in data:
@@ -364,9 +410,15 @@ class FieldSerializer:
             memory.field.security.load_state(data["security"])
         if getattr(config, "learned_consolidation", False) and "learned_consolidator" in data and memory.field.learned_consolidator is not None:
             memory.field.learned_consolidator.load_state(data["learned_consolidator"])
-        if config.sot_enabled and "sot_tokenizer" in data:
-            if memory.field.sot_tokenizer is not None:
-                memory.field.sot_tokenizer.load_state(data["sot_tokenizer"])
+
+        # Load extra subsystem states (checked by attribute truthiness)
+        for attr, key in FieldSerializer.EXTRA_STATE_MODULES:
+            if key in data and getattr(memory.field, attr, None) is not None:
+                obj = getattr(memory.field, attr)
+                if hasattr(obj, 'load_state'):
+                    obj.load_state(data[key])
+                elif hasattr(obj, 'import_state'):
+                    obj.import_state(data[key])
 
         # Load nodes
         logger.info(f"import_field: loading {len(data['nodes'])} nodes")
@@ -389,6 +441,7 @@ class FieldSerializer:
 
         # Reset historical accumulation counters
         reset_keys = [
+            "projection_updates", "self_sup_checks", "total_queries",
             "consolidations", "consolidation_validations", "blocked_consolidations",
             "healing_events", "healing_history", "field_stability",
             "tension_cache_hits", "tension_cache_misses", "tension_cache_hit_rate",
@@ -413,6 +466,8 @@ class FieldSerializer:
             "security_violations", "tension_spikes_blocked",
             "current_version", "n_versions",
             "clarifications_generated",
+            "plans_created", "hypotheses_verified", "tool_calls", "tool_misuse_rate",
+            "ragas_overall", "tier_coherence",
             "n_symbolic_rules", "n_symbolic_inferences", "n_symbolic_conflicts",
             "lyapunov_V", "lyapunov_dV_dt", "safety_regulation_factor", "safety_mode",
             "n_shards", "shard_distribution", "cross_shard_exchanges",

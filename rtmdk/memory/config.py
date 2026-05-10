@@ -174,6 +174,15 @@ _FIELD_GROUPS: Dict[str, str] = {
     "replication_peers": "ProductionConfig",
     "replication_node_id": "ProductionConfig",
     "replication_wal_path": "ProductionConfig",
+    "pipeline_enabled": "ProductionConfig",
+    "pipeline_breaker_enabled": "ProductionConfig",
+    "pipeline_breaker_failure_threshold": "ProductionConfig",
+    "pipeline_breaker_latency_violation_threshold": "ProductionConfig",
+    "pipeline_breaker_recovery_timeout_ms": "ProductionConfig",
+    "pipeline_breaker_half_open_max_calls": "ProductionConfig",
+    "pipeline_breaker_thresholds": "ProductionConfig",
+    "pipeline_planner_enabled": "ProductionConfig",
+    "pipeline_cost_tracking_enabled": "ProductionConfig",
     "event_driven": "InferenceConfig",
     "evolve_queue_size": "MemorySystemConfig",
     "false_merge_threshold": "RetrievalConfig",
@@ -330,9 +339,11 @@ _FIELD_GROUPS: Dict[str, str] = {
     "symbolic_overlay": "MemorySystemConfig",
     "system_prompt": "ProductionConfig",
     "tiered_storage_enabled": "MemorySystemConfig",
+    "tiered_storage_v2_enabled": "MemorySystemConfig",
     "tiered_storage_path": "MemorySystemConfig",
     "tiered_hot_pct": "MemorySystemConfig",
     "tiered_warm_pct": "MemorySystemConfig",
+    "tiered_fallback_enabled": "MemorySystemConfig",
     "tda_check_freq": "RetrievalConfig",
     "tda_monitoring": "RetrievalConfig",
     "tension_spike_threshold": "ProductionConfig",
@@ -368,6 +379,59 @@ _FIELD_GROUPS: Dict[str, str] = {
     "query_rewrite_threshold": "SOTConfig",
     "result_explainability_enabled": "SOTConfig",
     "query_intent_classification_enabled": "SOTConfig",
+}
+
+# Flags present in config but with no implementation anywhere in the codebase.
+# They are kept for backward compatibility but will be removed in v9.0.
+ORPHANED_FLAGS: set = {
+    "adjoint_enabled",
+    "causal_masking",
+    "cpen_child_ode",
+    "cpen_parent_ode",
+    "crystallization_freq",
+    "crystallization_similarity",
+    "curvature",
+    "dreaming_freq",
+    "drift_detection",
+    "drift_threshold",
+    "drift_window",
+    "entropy_high_threshold",
+    "entropy_low_threshold",
+    "entropy_management",
+    "eval_frequency",
+    "vector_storage_dsn",
+    "false_merge_threshold",
+    "goal_directed_routing",
+    "hebbian_learning_rate",
+    "learnable_bandwidth",
+    "learnable_decay",
+    "learnable_phase_coupling",
+    "lyapunov_alpha",
+    "lyapunov_beta",
+    "lyapunov_gamma",
+    "metrics_retention",
+    "ode_atol",
+    "ode_chunk_size",
+    "ode_n_steps",
+    "ode_rtol",
+    "ode_solver",
+    "ode_time_horizon",
+    "pc_latent_dim",
+    "prover_backend",
+    "response_smoothness_target",
+    "sde_noise_level",
+    "self_sup_threshold",
+    "sot_diagonal_ssm",
+    "sot_ssm_sync",
+    "ssm_state_dim",
+    "swarm_consensus_threshold",
+    "swarm_max_agents",
+    "swarm_vote_weight",
+    "symbolic_confidence_threshold",
+    "symbolic_max_tension",
+    "symbolic_min_self_sup",
+    "tier_tension_thresh",
+    "trust_min_reputation",
 }
 
 
@@ -626,9 +690,11 @@ class MemorySystemConfig:
     cpen_child_ode: bool = False
     hebbian_learning_rate: float = 0.01
     tiered_storage_enabled: bool = False
+    tiered_storage_v2_enabled: bool = False
     tiered_storage_path: Optional[str] = None
     tiered_hot_pct: float = 0.01
     tiered_warm_pct: float = 0.09
+    tiered_fallback_enabled: bool = True  # Enable warm/cold tier fallback in query()
 
 
 @dataclass
@@ -664,6 +730,27 @@ class ProductionConfig:
     replication_peers: List[str] = field(default_factory=list)
     replication_node_id: str = "node_1"
     replication_wal_path: Optional[str] = None
+    # Pipeline settings (v8.3+)
+    pipeline_enabled: bool = False
+    pipeline_breaker_enabled: bool = True
+    pipeline_breaker_failure_threshold: int = 5
+    pipeline_breaker_latency_violation_threshold: int = 3
+    pipeline_breaker_recovery_timeout_ms: float = 30_000.0
+    pipeline_breaker_half_open_max_calls: int = 3
+    pipeline_breaker_thresholds: Dict[str, float] = field(default_factory=lambda: {
+        "embed": 5000.0,
+        "route": 100.0,
+        "retrieve": 500.0,
+        "rerank": 1000.0,
+        "calibrate": 200.0,
+        "explain": 100.0,
+    })
+    # Pipeline alerting thresholds
+    pipeline_alert_degraded_stages_threshold: int = 2  # Alert if >= N stages degraded
+    pipeline_alert_latency_threshold_ms: float = 5000.0  # Alert if total latency > N ms
+    pipeline_alert_error_rate_threshold: float = 0.1  # Alert if error rate > 10%
+    pipeline_planner_enabled: bool = False  # Enable query planner stage skipping
+    pipeline_cost_tracking_enabled: bool = False  # Enable per-query cost tracking
 
 
 @dataclass
@@ -1030,4 +1117,32 @@ class RTMDKConfig:
                 "query_rewrite_enabled=True but no embedder provided to RTMDKMemory. "
                 "Heuristic rewrite will be skipped; LLM fallback required."
             )
+        # Pipeline breaker validation
+        prod = self.production
+        if prod.pipeline_breaker_failure_threshold < 1:
+            warnings.append(
+                f"pipeline_breaker_failure_threshold={prod.pipeline_breaker_failure_threshold} but must be >= 1. "
+                "Circuit breaker will not trip."
+            )
+        if prod.pipeline_breaker_latency_violation_threshold < 1:
+            warnings.append(
+                f"pipeline_breaker_latency_violation_threshold={prod.pipeline_breaker_latency_violation_threshold} but must be >= 1. "
+                "Latency-based breaker will not trip."
+            )
+        if prod.pipeline_breaker_recovery_timeout_ms < 1000:
+            warnings.append(
+                f"pipeline_breaker_recovery_timeout_ms={prod.pipeline_breaker_recovery_timeout_ms} is very low. "
+                "Breaker may flap between open and half-open."
+            )
+        if prod.pipeline_breaker_half_open_max_calls < 1:
+            warnings.append(
+                f"pipeline_breaker_half_open_max_calls={prod.pipeline_breaker_half_open_max_calls} but must be >= 1. "
+                "Half-open probing disabled."
+            )
+        for stage_name, threshold in prod.pipeline_breaker_thresholds.items():
+            if threshold <= 0:
+                warnings.append(
+                    f"pipeline_breaker_thresholds['{stage_name}']={threshold} must be > 0. "
+                    "Stage breaker will trip on any latency."
+                )
         return warnings
