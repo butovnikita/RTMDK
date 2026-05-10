@@ -145,7 +145,7 @@ ws.onmessage = (e) => console.log(JSON.parse(e.data));
 
 | Что нужно | Документ |
 |-----------|----------|
-| **Главный индекс** | [docs/MASTER_INDEX.md](docs/MASTER_INDEX.md) |
+| **Индекс документации** | [docs/README.md](docs/README.md) |
 | **API справка** | [docs/01_API_REFERENCE.md](docs/01_API_REFERENCE.md) |
 | **Запуск на своём ПК** | [docs/03_LOCAL_SETUP.md](docs/03_LOCAL_SETUP.md) |
 | **Docker + Silly Tavern** | [docs/04_DOCKER_SETUP.md](docs/04_DOCKER_SETUP.md) |
@@ -157,8 +157,6 @@ ws.onmessage = (e) => console.log(JSON.parse(e.data));
 | **Быстрый старт + SillyTavern** | [docs/QUICKSTART.md](docs/QUICKSTART.md) |
 | **SillyTavern Connection** | [SILLYTAVERN_CONNECTION_GUIDE.md](SILLYTAVERN_CONNECTION_GUIDE.md) |
 | **Калибровка параметров** | [Values.md](Values.md) |
-| **Проверка кода (аудит)** | [docs/CODE_REVIEW.md](docs/CODE_REVIEW.md) |
-| **Полный аудит модулей** | [docs/FULL_AUDIT.md](docs/FULL_AUDIT.md) |
 | **Commercial roadmap** | [docs/ROADMAP.md](docs/ROADMAP.md) |
 | **Deployment варианты** | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
 

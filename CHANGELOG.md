@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [8.3.1] — 2026-05-11
 
+### Documentation Audit
+- **Deleted 11 obsolete/duplicate documents** (~1.9MB):
+  - Root: `PROGRESS.md`, `REFACTORING_PLAN.md`, `MIGRATION_GUIDE.md`, `RELEASE_CHECKLIST_v8.3.0.md`, `DIALOGUE_SUMMARY_SOT.md`
+  - Root: `kimi-export-*.md` (×2, 1.4MB of AI dialogue logs)
+  - docs: `FULL_AUDIT.md`, `CODE_REVIEW.md` (v8.1 audits)
+  - docs: `EVALUATION_REPORT_W[1-3].md` (weekly reports, 738 tests era)
+  - docs: `07_DIALOGUE_EXPORT.md` (v8.1 dialogue)
+  - docs: `22_PIPELINE_ARCHITECTURE_DIAGRAM.md` (merged into `PIPELINE_ARCHITECTURE.md`)
+- **Created `docs/README.md`** — Documentation Index for developers: quick-start paths, audience guides, deleted-file registry with git recovery instructions
+- **Updated `README.md`** docs table: removed dead links to deleted audits, added link to `docs/README.md`
+
+### Fixed (PyPI Package Audit)
+
 ### Fixed (PyPI Package Audit)
 - **PyPI wheel bloat**: removed `rtmdk_github/` clone (48% of wheel size, 1.5MB) and `tests/` from wheel via `MANIFEST.in`
 - **Wheel size reduced**: 3.1MB → 1.6MB (-48%)
