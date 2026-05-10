@@ -5,12 +5,16 @@ from rtmdk.memory.field import RTMDKField
 import os
 import sys
 import time
+
 import numpy as np
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-os.environ["RTMDK_ADD_RATE_LIMIT"] = "0"
+@pytest.fixture(autouse=True)
+def disable_rate_limit(monkeypatch):
+    monkeypatch.setenv("RTMDK_ADD_RATE_LIMIT", "0")
 
 
 class TestQueryCache:
@@ -21,23 +25,24 @@ class TestQueryCache:
 
     def test_cache_hit_reduces_latency(self):
         cfg = RTMDKConfig(
-            latent_dim=16, top_k=3, min_response=0.001,
-            decay_rate=0.999, use_hnsw=False, learn_projection=False,
-            bm25_fallback=False, enable_async=False,
-            resonance_kernel="cosine", phase_coupling=0.0,
-            query_cache_size=100, query_cache_ttl=3600,
+            latent_dim=16,
+            top_k=3,
+            min_response=0.001,
+            decay_rate=0.999,
+            use_hnsw=False,
+            learn_projection=False,
+            bm25_fallback=False,
+            enable_async=False,
+            resonance_kernel="cosine",
+            phase_coupling=0.0,
+            query_cache_size=100,
+            query_cache_ttl=3600,
         )
         field = RTMDKField(cfg)
         for i in range(50):
             emb = np.random.randn(16).astype(np.float32)
             emb /= np.linalg.norm(emb)
-            field.add_node(
-                emb,
-                content={
-                    "id": i},
-                phase=0.0,
-                node_id=f"n{i}",
-                skip_projection=True)
+            field.add_node(emb, content={"id": i}, phase=0.0, node_id=f"n{i}", skip_projection=True)
 
         q = np.random.randn(16).astype(np.float32)
         q /= np.linalg.norm(q)
@@ -54,23 +59,23 @@ class TestQueryCache:
 
     def test_cache_invalidation_on_add(self):
         cfg = RTMDKConfig(
-            latent_dim=16, top_k=3, min_response=0.001,
-            decay_rate=0.999, use_hnsw=False, learn_projection=False,
-            bm25_fallback=False, enable_async=False,
-            resonance_kernel="cosine", phase_coupling=0.0,
+            latent_dim=16,
+            top_k=3,
+            min_response=0.001,
+            decay_rate=0.999,
+            use_hnsw=False,
+            learn_projection=False,
+            bm25_fallback=False,
+            enable_async=False,
+            resonance_kernel="cosine",
+            phase_coupling=0.0,
             query_cache_size=100,
         )
         field = RTMDKField(cfg)
         for i in range(20):
             emb = np.random.randn(16).astype(np.float32)
             emb /= np.linalg.norm(emb)
-            field.add_node(
-                emb,
-                content={
-                    "id": i},
-                phase=0.0,
-                node_id=f"n{i}",
-                skip_projection=True)
+            field.add_node(emb, content={"id": i}, phase=0.0, node_id=f"n{i}", skip_projection=True)
 
         q = np.random.randn(16).astype(np.float32)
         q /= np.linalg.norm(q)
@@ -79,34 +84,34 @@ class TestQueryCache:
 
         # Add new node — cache should be cleared
         field.add_node(
-            np.random.randn(16).astype(
-                np.float32),
-            content={
-                "id": "new"},
+            np.random.randn(16).astype(np.float32),
+            content={"id": "new"},
             phase=0.0,
             node_id="n_new",
-            skip_projection=True)
+            skip_projection=True,
+        )
         assert field.query_cache.size == 0
 
     def test_cache_ttl_expiration(self):
         cfg = RTMDKConfig(
-            latent_dim=16, top_k=3, min_response=0.001,
-            decay_rate=0.999, use_hnsw=False, learn_projection=False,
-            bm25_fallback=False, enable_async=False,
-            resonance_kernel="cosine", phase_coupling=0.0,
-            query_cache_size=100, query_cache_ttl=0,  # immediate expiration
+            latent_dim=16,
+            top_k=3,
+            min_response=0.001,
+            decay_rate=0.999,
+            use_hnsw=False,
+            learn_projection=False,
+            bm25_fallback=False,
+            enable_async=False,
+            resonance_kernel="cosine",
+            phase_coupling=0.0,
+            query_cache_size=100,
+            query_cache_ttl=0,  # immediate expiration
         )
         field = RTMDKField(cfg)
         for i in range(10):
             emb = np.random.randn(16).astype(np.float32)
             emb /= np.linalg.norm(emb)
-            field.add_node(
-                emb,
-                content={
-                    "id": i},
-                phase=0.0,
-                node_id=f"n{i}",
-                skip_projection=True)
+            field.add_node(emb, content={"id": i}, phase=0.0, node_id=f"n{i}", skip_projection=True)
 
         q = np.random.randn(16).astype(np.float32)
         q /= np.linalg.norm(q)
@@ -120,23 +125,23 @@ class TestQueryCache:
 class TestAdaptiveTopK:
     def test_high_confidence_returns_one(self):
         cfg = RTMDKConfig(
-            latent_dim=16, top_k=5, min_response=0.001,
-            decay_rate=0.999, use_hnsw=False, learn_projection=False,
-            bm25_fallback=False, enable_async=False,
-            resonance_kernel="cosine", phase_coupling=0.0,
+            latent_dim=16,
+            top_k=5,
+            min_response=0.001,
+            decay_rate=0.999,
+            use_hnsw=False,
+            learn_projection=False,
+            bm25_fallback=False,
+            enable_async=False,
+            resonance_kernel="cosine",
+            phase_coupling=0.0,
             adaptive_top_k=True,
         )
         field = RTMDKField(cfg)
         # Add a node that is very close to query
         target = np.random.randn(16).astype(np.float32)
         target /= np.linalg.norm(target)
-        field.add_node(
-            target,
-            content={
-                "id": 0},
-            phase=0.0,
-            node_id="n0",
-            skip_projection=True)
+        field.add_node(target, content={"id": 0}, phase=0.0, node_id="n0", skip_projection=True)
         field.nodes["n0"].amplitude = 1.0
         field.nodes["n0"].salience = 1.0
 
@@ -147,13 +152,7 @@ class TestAdaptiveTopK:
             # Make them orthogonal to target
             emb = emb - np.dot(emb, target) * target
             emb /= np.linalg.norm(emb) + 1e-8
-            field.add_node(
-                emb,
-                content={
-                    "id": i},
-                phase=0.0,
-                node_id=f"n{i}",
-                skip_projection=True)
+            field.add_node(emb, content={"id": i}, phase=0.0, node_id=f"n{i}", skip_projection=True)
             field.nodes[f"n{i}"].amplitude = 1.0
             field.nodes[f"n{i}"].salience = 1.0
 
@@ -163,10 +162,16 @@ class TestAdaptiveTopK:
     def test_medium_confidence_returns_three(self):
         np.random.seed(42)
         cfg = RTMDKConfig(
-            latent_dim=16, top_k=5, min_response=0.001,
-            decay_rate=0.999, use_hnsw=False, learn_projection=False,
-            bm25_fallback=False, enable_async=False,
-            resonance_kernel="cosine", phase_coupling=0.0,
+            latent_dim=16,
+            top_k=5,
+            min_response=0.001,
+            decay_rate=0.999,
+            use_hnsw=False,
+            learn_projection=False,
+            bm25_fallback=False,
+            enable_async=False,
+            resonance_kernel="cosine",
+            phase_coupling=0.0,
             adaptive_top_k=True,
         )
         field = RTMDKField(cfg)
@@ -174,12 +179,9 @@ class TestAdaptiveTopK:
         base = np.random.randn(16).astype(np.float32)
         base /= np.linalg.norm(base)
         field.add_node(
-            base.copy(),
-            content={
-                "id": 0},
-            phase=0.0,
-            node_id="n0",
-            skip_projection=True)
+            base.copy(), content={"id": 0}, phase=0.0,
+            node_id="n0", skip_projection=True,
+        )
         field.nodes["n0"].amplitude = 1.0
         field.nodes["n0"].salience = 1.0
 
@@ -187,13 +189,7 @@ class TestAdaptiveTopK:
         for i in range(1, 5):
             emb = base * 0.7 + np.random.randn(16).astype(np.float32) * 0.7
             emb /= np.linalg.norm(emb)
-            field.add_node(
-                emb,
-                content={
-                    "id": i},
-                phase=0.0,
-                node_id=f"n{i}",
-                skip_projection=True)
+            field.add_node(emb, content={"id": i}, phase=0.0, node_id=f"n{i}", skip_projection=True)
             field.nodes[f"n{i}"].amplitude = 1.0
             field.nodes[f"n{i}"].salience = 1.0
 
@@ -203,23 +199,23 @@ class TestAdaptiveTopK:
 
     def test_adaptive_top_k_disabled(self):
         cfg = RTMDKConfig(
-            latent_dim=16, top_k=5, min_response=0.001,
-            decay_rate=0.999, use_hnsw=False, learn_projection=False,
-            bm25_fallback=False, enable_async=False,
-            resonance_kernel="cosine", phase_coupling=0.0,
+            latent_dim=16,
+            top_k=5,
+            min_response=0.001,
+            decay_rate=0.999,
+            use_hnsw=False,
+            learn_projection=False,
+            bm25_fallback=False,
+            enable_async=False,
+            resonance_kernel="cosine",
+            phase_coupling=0.0,
             adaptive_top_k=False,
         )
         field = RTMDKField(cfg)
         for i in range(10):
             emb = np.random.randn(16).astype(np.float32)
             emb /= np.linalg.norm(emb)
-            field.add_node(
-                emb,
-                content={
-                    "id": i},
-                phase=0.0,
-                node_id=f"n{i}",
-                skip_projection=True)
+            field.add_node(emb, content={"id": i}, phase=0.0, node_id=f"n{i}", skip_projection=True)
             field.nodes[f"n{i}"].amplitude = 1.0
             field.nodes[f"n{i}"].salience = 1.0
 

@@ -401,7 +401,10 @@ class NodeManager:
         modal_embedding: Optional[NDArray] = None,
     ) -> str:
         f = self.field
-        _rate_limit = int(os.environ.get("RTMDK_ADD_RATE_LIMIT", "100"))
+        _rate_limit = getattr(f.cfg, "rate_limit_nodes_per_sec", 100)
+        _env_override = os.environ.get("RTMDK_ADD_RATE_LIMIT")
+        if _env_override is not None:
+            _rate_limit = int(_env_override)
         if _rate_limit > 0:
             now = time.time()
             while f._add_node_timestamps and f._add_node_timestamps[0] < now - 1.0:

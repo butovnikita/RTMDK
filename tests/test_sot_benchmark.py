@@ -23,7 +23,11 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-os.environ["RTMDK_ADD_RATE_LIMIT"] = "0"
+
+@pytest.fixture(autouse=True)
+def disable_rate_limit(monkeypatch):
+    monkeypatch.setenv("RTMDK_ADD_RATE_LIMIT", "0")
+
 
 # Skip if sentence-transformers not installed
 sbert = pytest.importorskip("sentence_transformers")
@@ -35,6 +39,7 @@ def test_sot_vs_sbert_baseline():
         data = json.load(f)["records"][:200]
 
     from sentence_transformers import SentenceTransformer
+
     teacher = SentenceTransformer("all-MiniLM-L6-v2")
 
     # ---- SOT field (uses default word-level tokenization) ----
@@ -59,8 +64,10 @@ def test_sot_vs_sbert_baseline():
     field_sot = RTMDKField(cfg_sot)
 
     texts = [r["query"] + " " + r["answer"] for r in data]
-    field_sot.sot_bootstrap(texts, teacher_model="all-MiniLM-L6-v2",
-                            fit_projection_only=False, n_epochs=50)
+    field_sot.sot_bootstrap(
+        texts, teacher_model="all-MiniLM-L6-v2",
+        fit_projection_only=False, n_epochs=50,
+    )
 
     for rec in data:
         text = rec["query"] + " " + rec["answer"]
@@ -115,10 +122,7 @@ def test_sot_vs_sbert_baseline():
 
     base_hits = 0
     for rec in data:
-        q_emb = teacher.encode(
-            rec["query"],
-            convert_to_numpy=True).astype(
-            np.float32)
+        q_emb = teacher.encode(rec["query"], convert_to_numpy=True).astype(np.float32)
         result = field_base.query(q_emb, top_k=1)
         if result and rec["answer"] in result[0][2].content.get("text", ""):
             base_hits += 1
@@ -129,8 +133,7 @@ def test_sot_vs_sbert_baseline():
     # With word-level tokenization, SOT should achieve >80% of SBERT baseline
     assert base_r1 >= 0.95, f"SBERT baseline too low: {base_r1:.1%}"
     assert sot_r1 >= 0.80, f"SOT R@1 too low: {sot_r1:.1%} (expected >=80%)"
-    assert sot_r1 >= base_r1 * \
-        0.80, f"SOT degradation too large: {sot_r1:.1%} vs {base_r1:.1%}"
+    assert sot_r1 >= base_r1 * 0.80, f"SOT degradation too large: {sot_r1:.1%} vs {base_r1:.1%}"
 
 
 if __name__ == "__main__":

@@ -61,6 +61,7 @@ _GROUP_ATTRS: Dict[str, str] = {
 _FIELD_GROUPS: Dict[str, str] = {
     "adaptive_threshold": "CoreConfig",
     "adaptive_window": "CoreConfig",
+    "rate_limit_nodes_per_sec": "CoreConfig",
     "adaptive_bandwidth": "CoreConfig",
     "adaptive_phase_coupling": "CoreConfig",
     "adjoint_enabled": "DynamicsConfig",
@@ -473,6 +474,7 @@ class CoreConfig:
     use_structured_prompt: bool = True
     adaptive_threshold: bool = False
     adaptive_window: int = 30
+    rate_limit_nodes_per_sec: int = 100
     learn_projection: bool = True  # OPTIMIZED: IncPCA instead of random matrix
     projection_lr: float = 0.001
     projection_update_freq: int = 300  # OPTIMIZED: >= latent_dim for IncPCA first fit

@@ -16,9 +16,12 @@ from rtmdk.memory.field import RTMDKField
 
 
 def _build_field(n_nodes: int, latent_dim: int = 32):
-    import os
-    os.environ["RTMDK_ADD_RATE_LIMIT"] = "0"
-    cfg = RTMDKConfig(latent_dim=latent_dim, max_nodes=n_nodes + 10, top_k=10)
+    cfg = RTMDKConfig(
+        latent_dim=latent_dim,
+        max_nodes=n_nodes + 10,
+        top_k=10,
+        rate_limit_nodes_per_sec=0,
+    )
     field = RTMDKField(cfg)
     rng = np.random.default_rng(42)
     for i in range(n_nodes):
@@ -55,7 +58,10 @@ class TestQueryLatency:
         p99 = latencies[int(len(latencies) * 0.99) - 1]
         threshold = self.BASELINE_P99_MS.get(n_nodes, 100.0)
 
-        assert p99 < threshold, f"p99 query latency {p99:.2f}ms exceeds threshold {threshold}ms for {n_nodes} nodes"
+        assert p99 < threshold, (
+            f"p99 query latency {p99:.2f}ms exceeds threshold "
+            f"{threshold}ms for {n_nodes} nodes"
+        )
 
 
 class TestBatchIngestLatency:
@@ -75,6 +81,9 @@ class TestBatchIngestLatency:
         elapsed_ms = (time.perf_counter() - t0) * 1000
 
         ms_per_node = elapsed_ms / 100
-        assert ms_per_node < self.BASELINE_MS_PER_NODE, (
-            f"Batch ingest {ms_per_node:.2f}ms/node exceeds threshold {self.BASELINE_MS_PER_NODE}ms/node"
+        assert (
+            ms_per_node < self.BASELINE_MS_PER_NODE
+        ), (
+            f"Batch ingest {ms_per_node:.2f}ms/node exceeds threshold "
+            f"{self.BASELINE_MS_PER_NODE}ms/node"
         )
