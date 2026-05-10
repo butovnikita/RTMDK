@@ -2030,6 +2030,11 @@ async def metrics():
     if not _PROMETHEUS_AVAILABLE:
         raise HTTPException(status_code=501,
                             detail="prometheus-client not installed")
+    # Ensure production metrics are registered in the global Prometheus registry
+    try:
+        from rtmdk.production.metrics import REQUESTS_TOTAL, QUERY_LATENCY
+    except Exception:
+        pass
     if memory:
         node_count = len(memory.field.nodes)
         _metric_nodes.set(node_count)
