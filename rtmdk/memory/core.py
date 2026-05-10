@@ -31,7 +31,6 @@ import functools
 import json
 import time
 import os
-import copy
 from typing import List, Dict, Optional, Tuple, Callable, Any
 import numpy as np
 from numpy.typing import NDArray
@@ -116,32 +115,6 @@ def _locked(method):
         with self._write_lock:
             return method(self, *args, **kwargs)
     return wrapper
-
-
-def _copy_node(node):
-    """Shallow copy of a MemoryNode with copied mutable fields."""
-    n = copy.copy(node)
-    n.latent_pos = node.latent_pos.copy()
-    n.lineage = list(node.lineage)
-    n.content = dict(node.content)
-    n.causal_strength = dict(node.causal_strength)
-    n.causal_parents = list(node.causal_parents)
-    n.conflict_with = list(node.conflict_with)
-    if node.pre_consolidation_pos is not None:
-        n.pre_consolidation_pos = node.pre_consolidation_pos.copy()
-    if node.gradient_cache is not None:
-        n.gradient_cache = node.gradient_cache.copy()
-    if node.velocity is not None:
-        n.velocity = node.velocity.copy()
-    if node.acceleration is not None:
-        n.acceleration = node.acceleration.copy()
-    if node.modal_embedding is not None:
-        n.modal_embedding = node.modal_embedding.copy()
-    if node.covariance is not None:
-        n.covariance = node.covariance.copy()
-    n.do_interventions = {k: (v.copy() if isinstance(v, np.ndarray) else v)
-                          for k, v in node.do_interventions.items()}
-    return n
 
 
 class RTMDKMemory(BaseModel):
