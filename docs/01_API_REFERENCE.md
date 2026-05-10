@@ -116,7 +116,8 @@ RTMDK (Resonance-Topological Memory) — система памяти для LLM,
 from rtmdk import RTMDKMemory, RTMDKConfig, MemoryNode
 
 # Ядро напрямую
-from rtmdk.memory.core import RTMDKMemory, RTMDKConfig, MemoryNode
+from rtmdk.memory.core import RTMDKMemory, RTMDKConfig
+from rtmdk.nodes import MemoryNode
 ```
 
 ---

@@ -23,7 +23,7 @@ from .production import ShadowModeEvaluator, RAGASPlusEvaluator, AutoRollbackMan
 # Phase 15
 from .version_control import VersionControl, NodeDelta, Version, DiffResult
 from .entropy_controller import EntropyController
-from .triton_backend import GPUBackend, TritonBackend, TRITON_AVAILABLE
+from .triton_backend import GPUBackend, TRITON_AVAILABLE
 # Phase 16
 from .symbolic_overlay import SymbolicOverlay, SymbolicRule, SymbolicInference
 from .safety_certifier import SafetyCertifier, LyapunovFunction
@@ -62,7 +62,7 @@ __all__ = [
     # Phase 15
     "VersionControl", "NodeDelta", "Version", "DiffResult",
     "EntropyController",
-    "GPUBackend", "TritonBackend", "TRITON_AVAILABLE",
+    "GPUBackend", "TRITON_AVAILABLE",
     # Phase 16
     "SymbolicOverlay", "SymbolicRule", "SymbolicInference",
     "SafetyCertifier", "LyapunovFunction",

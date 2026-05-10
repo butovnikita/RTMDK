@@ -1,4 +1,4 @@
-# RTMDK Research Config (v8.0) — maximum accuracy
+# RTMDK Research Config (v8.3) — maximum accuracy
 # RAM: ~200MB, Latency: ~50ms, Nodes: unlimited
 embedding_dim: 768
 latent_dim: 512

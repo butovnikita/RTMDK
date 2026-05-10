@@ -8,7 +8,7 @@ Usage:
 """
 
 from rtmdk.nodes import MemoryNode
-__version__ = "8.1.0"
+__version__ = "8.3.0"
 
 from rtmdk.memory.config import RTMDKConfig, ConsolidationMode, Backend, ContextFormat, FieldHealth, EvalMode
 from rtmdk.memory.core import RTMDKMemory, RTMDKField

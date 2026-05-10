@@ -1,4 +1,4 @@
-# RTMDK Production Config (v8.0) — multi-user server
+# RTMDK Production Config (v8.3) — multi-user server
 # RAM: ~50MB, Latency: ~6ms, Nodes: up to 100K
 embedding_dim: 768
 latent_dim: 256

@@ -1,4 +1,4 @@
-# RTMDK Local Config (v8.0) — personal assistant
+# RTMDK Local Config (v8.3) — personal assistant
 # RAM: ~16MB, Latency: ~5ms, Nodes: up to 10K
 embedding_dim: 768
 latent_dim: 256

@@ -43,7 +43,7 @@ def __getattr__(name):
         "CircuitBreaker": "circuit_breaker",
         "OnboardingWizard": "onboarding",
         "ConversationReplay": "replay",
-        "MemoryDif": "memory_dif",
+        "MemoryDiff": "memory_diff",
         "LLMEvaluator": "llm_eval",
     }
     if name in _lazy_map:

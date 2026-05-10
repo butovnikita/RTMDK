@@ -4,6 +4,28 @@ All notable changes to RTMDK are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [8.3.1] — 2026-05-11
+
+### Fixed (PyPI Package Audit)
+- **PyPI wheel bloat**: removed `rtmdk_github/` clone (48% of wheel size, 1.5MB) and `tests/` from wheel via `MANIFEST.in`
+- **Wheel size reduced**: 3.1MB → 1.6MB (-48%)
+- **`__version__` mismatch**: `rtmdk/__init__.py` now reports `8.3.1` (was `8.1.0`)
+- **`rtmdk/storage/` missing `__init__.py`**: added proper package init with `TieredNodeStore`, `TieredNodeStoreAdapter`
+- **`rtmdk/server/proto/` missing `__init__.py`**: added package init
+- **`rtmdk/production/__init__.py` typo**: `"MemoryDif": "memory_dif"` → `"MemoryDiff": "memory_diff"`
+- **`rtmdk/support/__init__.py` phantom export**: removed non-existent `TritonBackend` import and `__all__` entry
+- **`docs/01_API_REFERENCE.md` wrong import path**: `MemoryNode` from `rtmdk.nodes` instead of `rtmdk.memory.core`
+- **`docs/09_LANGCHAIN_INTEGRATION.md` inconsistent import**: `rtmdk.production.langchain_adapter` instead of root-level
+- **`configs/*.yaml` stale version headers**: v8.0 → v8.3
+- **`rtmdk/memory/core.py` stale docstring**: Version 8.1+ → Version 8.3.0
+
+### Hygiene
+- Removed committed `__pycache__` directories from repo
+- Removed empty `-p/` and `test/` directories
+- Added `tests/__init__.py`
+- Added `tests/results/`, `coverage.json`, `pypi_audit/` to `.gitignore`
+- Added `MANIFEST.in` for clean sdist/wheel builds
+
 ## [Unreleased] — Pipeline v8.3
 
 ### Added

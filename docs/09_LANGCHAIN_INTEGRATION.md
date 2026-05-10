@@ -119,7 +119,7 @@ history.clear()
 The top-level `rtmdk/langchain_adapter.py` provides `RTMDKMemory` (D3-era adapter) and `as_langchain()` helper. It is kept for backwards compatibility.
 
 ```python
-from rtmdk.langchain_adapter import as_langchain
+from rtmdk.production.langchain_adapter import as_langchain
 
 lc_memory = as_langchain(core_memory=memory, session_id="chat_1")
 ```

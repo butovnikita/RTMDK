@@ -1,6 +1,6 @@
 """
 rtmdk/memory/core.py
-Resonance-Topological Memory - Version 8.1+
+Resonance-Topological Memory - Version 8.3.0
 
 Phase 11 Features:
 Track 1: Multi-level memory stratification (Episodic / Semantic / Procedural)
