@@ -239,7 +239,8 @@ class NodeManager:
             node.role = role
 
         f.nodes[nid] = node
-        if nid not in f.node_index:
+        existing_nids = set(f.node_index)
+        if nid not in existing_nids:
             f.node_index.append(nid)
         f.stats["total_adds"] += 1
 
