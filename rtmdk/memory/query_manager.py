@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import time
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Any, List, Optional, Set, Tuple
 
 import numpy as np
 from scipy.spatial.distance import pdist
@@ -69,7 +69,6 @@ class QueryManager:
             norms = np.linalg.norm(positions, axis=1, keepdims=True)
             norms = np.maximum(norms, 1e-8)
             doc_embs = positions / norms
-            q_emb = query_latent / max(np.linalg.norm(query_latent), 1e-8)
             sample_size = min(50, len(nids))
             rng = np.random.default_rng(42)
             idx = rng.choice(len(nids), size=sample_size, replace=False)
@@ -293,8 +292,6 @@ class QueryManager:
         bias_temperature = getattr(cfg, "bias_temperature", 1.0)
         bw = cfg.bandwidth
         pc = float(f._resonance_engine._effective_pc)
-        use_causal = f.causal_engine is not None
-
         self._ensure_adaptive_pc(query_latent)
 
         n_nodes = len(f.node_index)

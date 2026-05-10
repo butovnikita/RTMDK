@@ -8,7 +8,7 @@ calls to this engine.
 from __future__ import annotations
 
 import math
-from typing import Any, List, Optional
+from typing import Any, Optional
 
 import numpy as np
 from numpy.typing import NDArray
