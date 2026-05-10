@@ -1,7 +1,7 @@
 # RTMDK — Resonance-Topological Memory v8.3
 
 > Долгосрочная память для LLM на основе резонансной топологии и диалектической консолидации
-> Version 8.3 (Pipeline Architecture + HNSW + Observability + Production Hardening) — 35,000+ строк кода, 100+ файлов, 120+ API endpoints, 956 тестов
+> Version 8.3 (Pipeline Architecture + HNSW + Observability + Production Hardening) — 41,000+ строк кода, 200+ файлов, 120+ API endpoints, 1112 тестов
 
 ### Production Stats
 | Metric | Value |
@@ -10,7 +10,7 @@
 | Latency p50 @ 1K nodes | 0.26 ms |
 | Latency p50 @ 100K nodes | **16 ms** |
 | Latency p99 @ 100K nodes | **20 ms** |
-| Tests | 956 passed, 1 skipped |
+| Tests | 1112 passed, 2 skipped |
 | Pipeline stages | 6 (explicit, observable) |
 | Circuit breakers | Per-stage |
 | Streaming protocols | SSE, WebSocket, GraphQL |

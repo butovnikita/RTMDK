@@ -95,6 +95,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Tiered Storage v2 warm-tier bug**: `_promote_from_warm` and `_demote_to_warm` now use `latent_pos` instead of `embedding`, preserving `MemoryNode` deserialization integrity
 - **Tiered Storage v2 warm-tier slot reuse**: `_evict_warm_to_cold` now correctly returns freed slot index instead of decrementing `_warm_next_idx`, preventing `IndexError: index N is out of bounds`
 - **Tiered Storage v2 cold-tier serialization**: `_write_cold` and `_read_cold` now preserve full node dict and `latent_pos` vector
+- **Query race condition**: defensive bounds check in `query_manager.py` when `node_index` shrinks due to concurrent `delete_nodes`
+- **WAL race condition**: check `_file is not None` inside lock in `append()` to prevent `AttributeError` during concurrent `close()`
+
+### Testing & CI (Post-Release Hardening)
+- **+157 tests** added (1112 total, 2 skipped)
+- REST input validation tests (`test_server_validation.py`)
+- Prometheus `/metrics` endpoint tests (`test_server_prometheus_metrics.py`)
+- GraphQL WebSocket subscription runtime tests (`test_graphql_websocket.py`)
+- Webhook HTTP endpoint tests (`test_server_webhooks.py`)
+- Replication endpoint tests (`test_server_replication.py`)
+- Deep health check tests (`test_server_health_deep.py`)
+- Pipeline prometheus endpoint tests (`test_server_pipeline_prometheus.py`)
+- Admin config hot-reload tests (`test_server_admin_config.py`)
+- `/v1/models` and `/v1/embeddings` endpoint tests (`test_server_models_embeddings.py`)
+- Concurrency stress tests (`test_concurrency_stress.py`) — found 2 race conditions
+- WAL fault injection tests (`test_wal_fault_injection.py`) — found 1 race condition
+- Lifecycle / resource leak detection tests (`test_lifecycle_leaks.py`)
+- Config validation edge case tests (`test_config_validation.py`)
+- Rate limiter config-driven (`rate_limit_nodes_per_sec` in `RTMDKConfig`)
+- CI: flaky test retry (`pytest-rerunfailures`), duration reporting, suite speedup 30%
 
 ## [8.2.1] — 2026-04-XX
 
