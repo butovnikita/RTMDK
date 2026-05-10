@@ -425,8 +425,13 @@ class QueryManager:
         results = []
         for i in range(len(top_indices)):
             idx = top_indices[i]
+            # Defensive: node_index may shrink due to concurrent delete_nodes
+            if idx >= len(f.node_index):
+                continue
             nid = f.node_index[idx]
-            node = f.nodes[nid]
+            node = f.nodes.get(nid)
+            if node is None:
+                continue
             node.last_resonated = time.time()
             results.append((nid, float(top_scores[i]), node))
 
