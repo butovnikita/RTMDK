@@ -1,7 +1,7 @@
 # RTMDK — Resonance-Topological Memory v8.3
 
 > Долгосрочная память для LLM на основе резонансной топологии и диалектической консолидации
-> Version 8.3 (Pipeline Architecture + HNSW + Observability + Production Hardening) — 35,000+ строк кода, 100+ файлов, 120+ API endpoints, 909 тестов
+> Version 8.3 (Pipeline Architecture + HNSW + Observability + Production Hardening) — 35,000+ строк кода, 100+ файлов, 120+ API endpoints, 956 тестов
 
 ### Production Stats
 | Metric | Value |
@@ -10,7 +10,7 @@
 | Latency p50 @ 1K nodes | 0.26 ms |
 | Latency p50 @ 100K nodes | **16 ms** |
 | Latency p99 @ 100K nodes | **20 ms** |
-| Tests | 909 passed, 1 skipped |
+| Tests | 956 passed, 1 skipped |
 | Pipeline stages | 6 (explicit, observable) |
 | Circuit breakers | Per-stage |
 | Streaming protocols | SSE, WebSocket, GraphQL |
@@ -220,12 +220,16 @@ RTMDK_PRESET=research RTMDK_DECAY_RATE=0.9995 python rtmdk_server.py
 | **RAM (1K узлов)** | **14 MB** | В 3-12× экономнее |
 | **RAM (10K fp16)** | **9.8 MB** | В 5-20× экономнее |
 | **Stress test** | ✅ 100K nodes, 50 queries | Все пороги пройдены |
+| **Batch ingestion** | ✅ 1M nodes in 12s (83K/sec) | WAL async, no HNSW |
 
 ## 🏗️ Архитектура
 
 ```
-RTMDK v8.3 (35,000+ строк, 111+ файлов, 120+ API)
-├── Core: Резонанс, консолидация, HNSW, BM25, Domain Memory (Phase 1-20)
+RTMDK v8.3 (35,000+ строк, 120+ файлов, 120+ API)
+├── Core (decoupled v8.3-alpha): RTMDKField + RTMDKMemory facades delegate to 21 subsystems
+│   ├── Initializers: FieldInitializer, ContextManager, MemoryPostInitializer, BacklogModulesInitializer, PipelineBuilder
+│   ├── Managers: NodeManager, QueryManager, TopologyManager, AsyncPipelineManager, CrystallizationManager, MergeManager, RoutingManager, IndexManager, ProjectionManager, ConsolidationManager, CognitiveManager, OperationalManager, Scheduler, EngramManager
+│   └── Engines: ResonanceEngine, CausalInferenceEngine, MetaAdaptiveKernel, TopologyHealer
 ├── Production: Version Control, Attention Tokens (Phase 15)
 ├── Safety: Symbolic Overlay, UMP, Safety Certifier (Phase 16)
 ├── Scale: Role Sharding, Swarm Memory (Phase 17)
