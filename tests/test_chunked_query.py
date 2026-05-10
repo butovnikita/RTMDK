@@ -13,6 +13,7 @@ def _make_field(n_nodes: int, batch_size: int):
         use_hnsw=False,
         gpu_batch_size=batch_size,
         bm25_fallback=False,
+        rate_limit_nodes_per_sec=0,
     )
     field = RTMDKField(config)
     rng = np.random.default_rng(42)
@@ -23,20 +24,19 @@ def _make_field(n_nodes: int, batch_size: int):
             "tier": "semantic",
             "session": "default"}
         field.add_node(emb, content, phase=rng.random(), session_id="default")
-        time.sleep(0.011)  # stay under 100 nodes/sec rate limit
     return field
 
 
 @pytest.mark.slow
 def test_chunked_query_matches_non_chunked():
     """Query with chunking should return same top-k as without chunking."""
-    n_nodes = 1000
+    n_nodes = 200
     query_latent = np.random.default_rng(
         7).standard_normal(64).astype(np.float32)
     query_phase = 0.5
 
-    field_small_batch = _make_field(n_nodes, batch_size=200)
-    field_large_batch = _make_field(n_nodes, batch_size=2000)
+    field_small_batch = _make_field(n_nodes, batch_size=50)
+    field_large_batch = _make_field(n_nodes, batch_size=500)
 
     results_small = field_small_batch.query(
         query_latent, top_k=10, phase=query_phase)
