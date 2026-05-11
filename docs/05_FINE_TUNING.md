@@ -82,18 +82,18 @@ RTMDK_PRESET=research \
 
 ```bash
 # Изменить пресет (сохраняется в .env, требует перезапуска)
-curl -X POST http://localhost:8080/api/config \
+curl -X POST http://localhost:8080/v1/admin/config \
   -H "Content-Type: application/json" \
   -d '{"RTMDK_PRESET": "production"}'
 # Ответ: {"status":"ok", "needs_restart": true, "restart_required_keys": ["RTMDK_PRESET"]}
 
 # Изменить гиперпараметры
-curl -X POST http://localhost:8080/api/config \
+curl -X POST http://localhost:8080/v1/admin/config \
   -H "Content-Type: application/json" \
   -d '{"RTMDK_LATENT_DIM": "128", "RTMDK_TOP_K": "10"}'
 
 # Изменить серверные настройки (применяются сразу)
-curl -X POST http://localhost:8080/api/config \
+curl -X POST http://localhost:8080/v1/admin/config \
   -H "Content-Type: application/json" \
   -d '{"RTMDK_EMBED_MODEL": "text-embedding-3-small"}'
 ```

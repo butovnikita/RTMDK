@@ -103,9 +103,9 @@ print(response.choices[0].message.content)
 ### Сохранить память
 
 ```bash
-curl -X POST http://localhost:8080/v1/memory/save \
+curl -X POST http://localhost:8080/v1/memory/nodes \
   -H "Content-Type: application/json" \
-  -d '{"input":"Меня зовут Никита","output":"Запомнил: Никита"}'
+  -d '{"content":"Меня зовут Никита","salience":0.8}'
 ```
 
 ### Запросить память
@@ -119,9 +119,10 @@ curl -X POST http://localhost:8080/v1/memory/query \
 ### Статистика и здоровье
 
 ```bash
-curl http://localhost:8080/v1/memory/stats
-curl http://localhost:8080/v1/memory/health
-curl http://localhost:8080/dashboard  # Веб-UI
+curl http://localhost:8080/health
+curl http://localhost:8080/health/deep
+curl http://localhost:8080/metrics      # Prometheus metrics
+curl http://localhost:8080/dashboard    # Веб-UI (если доступен)
 ```
 
 ---

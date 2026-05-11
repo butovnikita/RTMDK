@@ -21,7 +21,7 @@
 │           │             ┌──────┴──────┐               │              │
 │           │             │ Env Vars    │               │              │
 │           │             │ 59 overrides│               │              │
-│           │             │ /api/config │               │              │
+│           │             │ /v1/admin/config │               │              │
 │           │             └──────┬──────┘               │              │
 │  ┌────────┴────────────────────┴──────────────────────┴───────────┐  │
 │  │                     RTMDKMemory (Facade)                        │  │
@@ -308,7 +308,7 @@ rtmdk/memory/config.py   ← ЕДИНСТВЕННЫЙ RTMDKConfig dataclass (~15
 RTMDK_PRESET=production RTMDK_LATENT_DIM=128 python rtmdk_server.py
 
 # Через API
-curl -X POST http://localhost:8080/api/config \
+curl -X POST http://localhost:8080/v1/admin/config \
   -d '{"RTMDK_PRESET": "production", "RTMDK_LATENT_DIM": "128"}'
 # Ответ: {"status":"ok", "needs_restart": true, ...}
 ```

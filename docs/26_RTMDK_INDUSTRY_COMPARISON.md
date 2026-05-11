@@ -1,5 +1,7 @@
 # RTMDK vs Industry: Comparative Analysis 2026
 
+> ⚠️ **DISCLAIMER:** This document presents RTMDK in comparison to industry alternatives. Performance figures (latency, throughput, BEIR scores) were measured on specific hardware configurations and may vary across environments. Competitor latency/throughput claims are approximate vendor estimates; head-to-head A/B tests were not performed. For reproducible RTMDK numbers, run `scripts/bench_beir_rtmdk.py` and `scripts/stress_test_pipeline.py` on your target hardware.
+
 ## Executive Summary
 
 RTMDK v8.3 positions itself not as a traditional vector database, but as a **resonance-topological memory system** — a fundamentally different approach to information retrieval that models memory as a dynamic physical field rather than a static embedding store. This architectural difference creates unique trade-offs: RTMDK sacrifices raw throughput for semantic depth, context awareness, and biological plausibility.

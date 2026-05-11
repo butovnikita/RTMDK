@@ -63,17 +63,39 @@ python start_production.py --no-auth  # Без авторизации
 | Endpoint | Метод | Описание |
 |----------|-------|----------|
 | `/health` | GET | Проверка здоровья |
-| `/dashboard` | GET | Web UI Dashboard |
-| `/api/config` | GET/POST | Runtime конфигурация |
-| `/api/models` | GET | Выбор моделей |
+| `/health/deep` | GET | Детальный health check |
+| `/metrics` | GET | Prometheus metrics |
+| `/v1/models` | GET | Список моделей |
+| `/v1/admin/config` | POST | Runtime конфигурация |
 
-### Память (UX)
+### Память
 | Endpoint | Метод | Описание |
 |----------|-------|----------|
-| `/api/backup/*` | POST/GET | Бэкапы |
-| `/api/cache/*` | GET/POST | Кэш эмбеддингов |
-| `/api/session/*` | POST/GET | Сессии |
-| `/api/tags/*` | GET/POST/DELETE | Теги |
+| `/v1/memory/nodes` | POST/GET | CRUD нод |
+| `/v1/memory/nodes/{node_id}` | GET/PUT/DELETE | CRUD ноды |
+| `/v1/memory/batch_ingest` | POST | Batch ingest |
+| `/v1/memory/export` | GET | Экспорт |
+| `/v1/memory/import` | POST | Импорт |
+| `/v1/memory/query` | POST | Query |
+| `/v1/memory/query_pipeline` | POST | Pipeline query |
+
+### Admin
+| Endpoint | Метод | Описание |
+|----------|-------|----------|
+| `/v1/admin/api-keys` | POST/GET | API keys |
+| `/v1/admin/audit-log` | GET | Audit log |
+| `/v1/admin/retention` | GET | Retention stats |
+| `/v1/admin/tenants` | GET | Tenants |
+| `/v1/admin/cache` | GET | Cache status |
+| `/v1/admin/encryption` | GET | Encryption status |
+| `/v1/admin/telemetry` | GET | Telemetry status |
+
+### SOT & Replication
+| Endpoint | Метод | Описание |
+|----------|-------|----------|
+| `/v1/sot/*` | GET/POST | SOT management |
+| `/v1/replication/*` | POST/GET | Replication |
+| `/v1/webhooks` | POST/GET/DELETE | Webhooks |
 
 ## Безопасность Production
 

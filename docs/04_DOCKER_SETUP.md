@@ -168,9 +168,9 @@ curl http://localhost:8080/health
 ### Сохранить память
 
 ```bash
-curl -X POST http://localhost:8080/v1/memory/save \
+curl -X POST http://localhost:8080/v1/memory/nodes \
   -H "Content-Type: application/json" \
-  -d '{"input":"Меня зовут Никита","output":"Запомнил"}'
+  -d '{"content":"Меня зовут Никита","salience":0.8}'
 ```
 
 ### Запросить память
@@ -185,12 +185,12 @@ curl -X POST http://localhost:8080/v1/memory/query \
 
 ```bash
 # Сменить пресет (требует перезапуска)
-curl -X POST http://localhost:8080/api/config \
+curl -X POST http://localhost:8080/v1/admin/config \
   -H "Content-Type: application/json" \
   -d '{"RTMDK_PRESET": "production"}'
 
 # Сменить модель эмбеддера (применяется сразу)
-curl -X POST http://localhost:8080/api/config \
+curl -X POST http://localhost:8080/v1/admin/config \
   -H "Content-Type: application/json" \
   -d '{"RTMDK_EMBED_MODEL": "text-embedding-3-small"}'
 ```

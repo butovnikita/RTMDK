@@ -32,10 +32,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/rtmdk/rtmdk"
-Documentation = "https://github.com/rtmdk/rtmdk/tree/master/docs"
-Repository = "https://github.com/rtmdk/rtmdk.git"
-Issues = "https://github.com/rtmdk/rtmdk/issues"
+Homepage = "https://github.com/butovnikita/RTMDK"
+Documentation = "https://github.com/butovnikita/RTMDK/tree/master/docs"
+Repository = "https://github.com/butovnikita/RTMDK.git"
+Issues = "https://github.com/butovnikita/RTMDK/issues"
 
 [project.optional-dependencies]
 sot = [

@@ -2,6 +2,8 @@
 
 > Version: 8.3 | Last updated: 2026-05-09
 > Data sources: MTEB leaderboard (Apr 2026), BEIR benchmark, ann-benchmarks.com, vendor benchmarks (Qdrant, Pinecone, Milvus, pgvectorscale), RTMDK internal benchmarks.
+>
+> ⚠️ **DISCLAIMER:** Benchmark figures marked **(measured, single-node)** were produced on specific hardware configurations and may vary across environments. Latency and throughput figures for vector DB competitors are approximate vendor claims; direct A/B tests were not performed. For authoritative RTMDK numbers, run `scripts/bench_rtmdk_vs_baselines.py` and `scripts/stress_test_pipeline.py` on your target hardware.
 
 ## Executive Summary
 

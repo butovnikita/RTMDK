@@ -1,72 +1,65 @@
 # RTMDK — Полная документация
 
-> Версия 8.3 | Pipeline Architecture | HNSW + Observability | 266 модулей | 44 API endpoints | 1112 тестов | Production Hardening
+> Версия 8.3 | Pipeline Architecture | HNSW + Observability | 266 модулей | 49 API endpoints | 1112 тестов | Production Hardening
+
+> ⚠️ **DISCLAIMER (2026-05-11):** This document was **partially corrected** to match the actual codebase. The endpoint table below now lists **all 49 implemented endpoints** and **no ghost endpoints**. Verified against `rtmdk/server/app.py`.
+>
+> Remaining caveat: parameter-level details (request/response schemas) in the per-endpoint sections below may still contain copy-paste errors. For authoritative schema definitions, inspect the FastAPI route handlers in `rtmdk/server/app.py`.
 
 ---
 
-## Все API Endpoints (36+)
+## Все API Endpoints (49)
 
 | Метод | Путь | Описание |
 |-------|------|----------|
 | GET | `/health` | Базовый health check |
+| GET | `/health/deep` | Детальный health check |
+| GET | `/metrics` | Prometheus metrics |
 | GET | `/v1/models` | Список моделей |
 | POST | `/v1/chat/completions` | Чат с памятью (OpenAI-compatible) |
 | POST | `/v1/embeddings` | Эмбеддинги |
-| POST | `/v1/feedback` | Feedback Loop |
-| POST | `/graphql` | GraphQL API (Strawberry) |
 | WS | `/ws/memory` | WebSocket streaming для real-time query |
-| POST | `/v1/session/save` | Сохранить сессию |
-| POST | `/v1/session/load` | Загрузить сессию |
-| GET | `/v1/session/list` | Список сессий |
-| POST | `/v1/backup/create` | Создать бэкап |
-| POST | `/v1/backup/restore` | Восстановить бэкап |
-| GET | `/v1/backup/list` | Список бэкапов |
-| POST | `/v1/import/json` | Импорт JSON |
-| POST | `/v1/import/url` | Импорт URL |
-| GET | `/v1/analytics` | Аналитика |
-| GET | `/v1/health` | Детальный health check |
-| GET | `/v1/metrics` | Prometheus metrics |
-| GET | `/v1/export?format=md` | Экспорт (md/txt/json) |
-| GET/POST/DELETE | `/v1/tags/{node_id}` | Теги |
-| GET | `/v1/rate-limit` | Rate limit status |
-| GET | `/v1/events` | SSE events |
-| GET | `/v1/cache/stats` | Cache stats |
-| POST | `/v1/cache/clear` | Clear cache |
-| POST | `/v1/memory/save` | Сохранить контекст |
 | POST | `/v1/memory/query` | Запросить память |
 | POST | `/v1/memory/query_pipeline` | Запросить память (pipeline API с метриками и cost) |
-| GET  | `/v1/memory/pipeline/stream` | SSE streaming pipeline stage events |
-| GET  | `/v1/memory/pipeline/health` | Pipeline per-stage health status |
-| GET  | `/v1/memory/pipeline/metrics` | Aggregated pipeline metrics |
-| GET  | `/v1/memory/pipeline/plan` | Preview execution plan без выполнения |
-| GET  | `/v1/memory/pipeline/dag` | Pipeline stage dependency graph |
-| GET  | `/v1/memory/pipeline/prometheus` | Prometheus exposition format |
-| GET  | `/v1/analytics/pipeline` | Pipeline analytics dashboard |
 | POST | `/v1/memory/batch_query` | Batch query памяти |
+| GET | `/v1/memory/pipeline/stream` | SSE streaming pipeline stage events |
+| GET | `/v1/memory/pipeline/health` | Pipeline per-stage health status |
+| GET | `/v1/memory/pipeline/metrics` | Aggregated pipeline metrics |
+| GET | `/v1/memory/pipeline/plan` | Preview execution plan без выполнения |
+| GET | `/v1/memory/pipeline/dag` | Pipeline stage dependency graph |
+| GET | `/v1/memory/pipeline/prometheus` | Prometheus exposition format |
 | POST | `/v1/memory/nodes` | Создать ноду |
-| GET | `/v1/memory/nodes/{id}` | Получить ноду |
-| PUT | `/v1/memory/nodes/{id}` | Обновить ноду |
-| DELETE | `/v1/memory/nodes/{id}` | Удалить ноду |
+| GET | `/v1/memory/nodes/{node_id}` | Получить ноду |
+| PUT | `/v1/memory/nodes/{node_id}` | Обновить ноду |
+| DELETE | `/v1/memory/nodes/{node_id}` | Удалить ноду |
 | GET | `/v1/memory/nodes` | Список нод (пагинация) |
 | POST | `/v1/memory/batch_ingest` | Batch ingest документов |
 | GET | `/v1/memory/export` | Экспорт памяти |
 | POST | `/v1/memory/import` | Импорт памяти |
-| POST | `/v1/memory/clear` | Очистить память |
-| GET | `/v1/memory/stats` | Статистика |
 | GET | `/v1/analytics/overview` | Dashboard overview |
 | GET | `/v1/analytics/memory` | Memory analytics |
 | GET | `/v1/analytics/events` | Event log |
+| GET | `/v1/analytics/pipeline` | Pipeline analytics dashboard |
 | GET | `/v1/analytics/report` | Full report |
 | POST | `/v1/analytics/track` | Track custom event |
+| GET | `/v1/admin/audit-log` | Журнал аудита (admin) |
+| GET | `/v1/admin/retention` | Статистика retention (admin) |
+| GET | `/v1/admin/cache` | Cache status (admin) |
+| GET | `/v1/admin/encryption` | Encryption status (admin) |
+| GET | `/v1/admin/telemetry` | Telemetry status (admin) |
+| POST | `/v1/admin/config` | Update config (admin) |
 | POST | `/v1/admin/api-keys` | Создать API ключ |
 | GET | `/v1/admin/api-keys` | Список API ключей |
 | POST | `/v1/admin/api-keys/revoke` | Отозвать ключ |
-| DELETE | `/v1/admin/api-keys/{hash}` | Удалить ключ |
+| DELETE | `/v1/admin/api-keys/{key_hash}` | Удалить ключ |
 | GET | `/v1/admin/tenants` | Список тенантов |
-| GET | `/v1/admin/audit-log` | Журнал аудита (admin) |
-| GET | `/v1/admin/retention` | Статистика retention (admin) |
+| GET | `/v1/sot/status` | SOT status |
+| GET | `/v1/sot/vocab` | SOT vocabulary |
+| POST | `/v1/sot/bootstrap` | SOT bootstrap |
+| POST | `/v1/replication/mutation` | Replication mutation |
+| GET | `/v1/replication/wal` | Replication WAL |
 | POST | `/v1/webhooks` | Подписаться на webhook |
-| DELETE | `/v1/webhooks/{id}` | Отписаться |
+| DELETE | `/v1/webhooks/{subscription_id}` | Отписаться |
 | GET | `/v1/webhooks` | Список подписок |
 
 ---
@@ -181,12 +174,7 @@ rtmdk/                              # Python-пакет (72+ публичных 
 |------|----------|
 | `rtmdk/memory/core.py` | Ядро системы: RTMDKField + RTMDKMemory (~7000 строк) |
 | `rtmdk_server.py` | OpenAI-compatible HTTP-сервер |
-| `lmstudio_rtmdk_chat.py` | CLI-чат через LM Studio |
-| `streamlit_app.py` | Интерактивный дашборд |
-| `eval_pipeline.py` | Benchmarks: ContinualQA, LongBench, MemoryBench |
-| `swarm_memory.py` | Мультиагентная роевая память |
 | `tests/smoke_test.py` | Быстрая проверка критических путей |
-| `embedder_factory.py` | Unified embedding интерфейс |
 
 ---
 
@@ -936,35 +924,38 @@ docker-compose up -d
 
 ### Endpoints
 
+Полный список из 49 endpoints см. в [сводной таблице выше](#все-api-endpoints-49). Ниже — краткий список ключевых маршрутов:
+
 | Метод | Путь | Описание |
 |-------|------|----------|
 | GET | `/health` | Статус сервера |
+| GET | `/health/deep` | Детальный health check |
+| GET | `/metrics` | Prometheus metrics |
 | GET | `/v1/models` | Список моделей |
 | POST | `/v1/chat/completions` | Чат с памятью (OpenAI-compatible) |
 | POST | `/v1/embeddings` | Эмбеддинги |
-| GET | `/v1/memory/stats` | Статистика памяти |
-| GET | `/v1/memory/health` | Здоровье поля |
-| POST | `/v1/memory/imagine` | Контрфактуальные сценарии |
-| POST | `/v1/memory/intervene` | Do-интервенция |
-| POST | `/v1/memory/save` | Сохранить контекст |
+| WS | `/ws/memory` | WebSocket streaming |
 | POST | `/v1/memory/query` | Запросить память |
-| POST | `/v1/memory/export` | Экспорт в JSON |
-| POST | `/v1/memory/import` | Импорт из JSON |
-| POST | `/v1/memory/clear` | Очистить память |
-| GET | `/v1/memory/causal` | Каузальная сводка |
-| GET | `/v1/memory/contradictions` | Противоречия |
-
-### GraphQL API
-
-Endpoint: `POST /graphql`
-
-| Операция | Пример |
-|----------|--------|
-| Query health | `{ health { status version memoryNodes } }` |
-| Query node | `{ node(id: "n0") { id content salience phase amplitude } }` |
-| Query nodes | `{ nodes(limit: 10, offset: 0) { id content salience } }` |
-| Create node | `mutation { createNode(content: "hello", salience: 0.8) { id content } }` |
-| Delete node | `mutation { deleteNode(id: "n0") }` |
+| POST | `/v1/memory/query_pipeline` | Pipeline query |
+| POST | `/v1/memory/batch_query` | Batch query |
+| GET | `/v1/memory/pipeline/*` | Pipeline monitoring (stream, health, metrics, plan, dag, prometheus) |
+| POST | `/v1/memory/nodes` | Создать ноду |
+| GET | `/v1/memory/nodes/{node_id}` | Получить ноду |
+| PUT | `/v1/memory/nodes/{node_id}` | Обновить ноду |
+| DELETE | `/v1/memory/nodes/{node_id}` | Удалить ноду |
+| GET | `/v1/memory/nodes` | Список нод |
+| POST | `/v1/memory/batch_ingest` | Batch ingest |
+| GET | `/v1/memory/export` | Экспорт памяти |
+| POST | `/v1/memory/import` | Импорт памяти |
+| GET | `/v1/analytics/*` | Analytics (overview, memory, events, pipeline, report) |
+| POST | `/v1/analytics/track` | Track custom event |
+| GET | `/v1/admin/*` | Admin (audit-log, retention, cache, encryption, telemetry, api-keys, tenants, config) |
+| GET | `/v1/sot/*` | SOT (status, vocab, bootstrap) |
+| POST | `/v1/replication/mutation` | Replication mutation |
+| GET | `/v1/replication/wal` | Replication WAL |
+| POST | `/v1/webhooks` | Подписаться на webhook |
+| DELETE | `/v1/webhooks/{subscription_id}` | Отписаться |
+| GET | `/v1/webhooks` | Список подписок |
 
 ### WebSocket Streaming
 
@@ -990,32 +981,33 @@ Endpoint: `WS /ws/memory`
 
 ---
 
-## 12. CLI-чат с LM Studio
+## 12. CLI
+
+RTMDK предоставляет CLI через `python -m rtmdk`:
 
 ```bash
-python lmstudio_rtmdk_chat.py
+python -m rtmdk status
+python -m rtmdk query "What do I know about coffee?"
+python -m rtmdk stats
+python -m rtmdk export --output backup.json
+python -m rtmdk recommend --nodes 50000 --ram 256
+python -m rtmdk presets
+python -m rtmdk pipeline-diagnose --preset local
 ```
 
 ### Команды
 
 | Команда | Описание |
 |---------|----------|
-| `/stats` | Полная статистика |
-| `/tiers` | Распределение по уровням |
-| `/health` | Здоровье поля |
-| `/causal` | Каузальная сводка |
-| `/contradict` | Противоречия |
-| `/whatif {"do": {...}, "query": [...]}` | Контрфактуал |
-| `/imagine {"query": "...", "intervention": {...}}` | Сценарии |
-| `/hyperbolic` | Геометрия Пуанкаре |
-| `/predictive` | Предсказательное кодирование |
-| `/privacy` | Дифференциальная приватность |
-| `/shards` | MoE-шардирование |
-| `/crystallize` | Кристаллизация |
-| `/compression` | Когнитивное сжатие |
-| `/format json\|yaml\|plain` | Формат контекста |
-| `/session <id>` | Переключить сессию |
-| `/export` / `/clear` / `/quit` | Управление |
+| `status` | Показать статус памяти |
+| `query <text>` | Тестовый запрос |
+| `stats` | Статистика поля |
+| `export [--output]` | Экспорт памяти в JSON |
+| `recommend` | Рекомендация пресета |
+| `presets` | Список доступных пресетов |
+| `bootstrap` | Генерация SBERT bootstrap |
+| `bootstrap-fasttext` | Генерация FastText bootstrap |
+| `pipeline-diagnose` | Диагностика pipeline + smoke test |
 
 ---
 
@@ -1025,16 +1017,17 @@ python lmstudio_rtmdk_chat.py
 # Smoke test (быстрая проверка)
 python tests/smoke_test.py
 
-# Eval pipeline
-python eval_pipeline.py --n_samples 50
+# Полный набор тестов
+python -m pytest tests/ -v              # 1112 тестов
 
-# Swarm simulation
-python swarm_memory.py --n_agents 5 --n_rounds 10
+# Pipeline stress test
+python scripts/stress_test_pipeline.py --nodes 10000 --queries 100
 
-# Pytest (если установлен)
-pip install pytest
-python -m pytest test_rtmdk_v8.py -v    # 34 теста v8
-python -m pytest test_rtmdk_v7.py -v    # 32 теста v7
+# BEIR benchmark
+python scripts/bench_beir_rtmdk.py --datasets scifact nfcorpus
+
+# RTMDK vs baselines
+python scripts/bench_rtmdk_vs_baselines.py --dataset comprehensive_500
 ```
 
 ### Smoke test проверяет
@@ -1118,12 +1111,14 @@ response = client.chat.completions.create(
 )
 ```
 
-### Streamlit Dashboard
+### Prometheus / Grafana
 
 ```bash
-pip install streamlit matplotlib pandas
-streamlit run streamlit_app.py
-# → http://localhost:8501
+# Метрики доступны по /metrics
+curl http://localhost:8080/metrics
+
+# Pipeline health
+curl http://localhost:8080/v1/memory/pipeline/health
 ```
 
 ---
