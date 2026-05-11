@@ -230,21 +230,37 @@ def cmd_bootstrap_fasttext(model_path: str, corpus_path: str, output: str):
 def cmd_list_presets():
     """List all available presets."""
     from rtmdk import list_presets
+    from rtmdk.config import RTMDKConfig
 
-    presets = list_presets()
+    preset_names = list_presets()
+    preset_map = {
+        "local": RTMDKConfig.local,
+        "production": RTMDKConfig.production,
+        "research": RTMDKConfig.research,
+        "enterprise": RTMDKConfig.enterprise,
+        "agent": RTMDKConfig.agent,
+        "legal": RTMDKConfig.legal,
+        "medical": RTMDKConfig.medical,
+        "streaming": RTMDKConfig.streaming,
+        "sillytavern": RTMDKConfig.sillytavern,
+    }
 
     print("RTMDK Available Presets")
     print("=" * 60)
     print(f"  {'Preset':<15} {'Dim':>5} {'K':>3} {'Decay':>6} {'Engrams':>7} {'Dream':>6} {'Causal':>6} {'SSM':>4}")
-    print(f"  {'─'*60}")
+    print(f"  {'-'*60}")
 
-    for name, p in presets.items():
+    for name in preset_names:
+        fn = preset_map.get(name)
+        if not fn:
+            continue
+        cfg = fn()
         print(
-            f"  {name:<15} {p['latent_dim']:>5} {p['top_k']:>3} "
-            f"{p['decay_rate']:>6} {'[OK]' if p['engrams'] else '[FAIL]':>7} "
-            f"{'[OK]' if p['dreaming'] else '[FAIL]':>6} "
-            f"{'[OK]' if p['causal'] else '[FAIL]':>6} "
-            f"{'[OK]' if p['ssm'] else '[FAIL]':>4}")
+            f"  {name:<15} {cfg.latent_dim:>5} {cfg.top_k:>3} "
+            f"{cfg.decay_rate:>6} {'[OK]' if cfg.enable_engrams else '[FAIL]':>7} "
+            f"{'[OK]' if cfg.offline_dreaming else '[FAIL]':>6} "
+            f"{'[OK]' if cfg.causal_traversal else '[FAIL]':>6} "
+            f"{'[OK]' if cfg.ssm_dynamics else '[FAIL]':>4}")
 
 
 def main():

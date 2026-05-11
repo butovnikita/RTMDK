@@ -558,6 +558,8 @@ async def security_middleware(request: Request, call_next):
     """Enforce API key authentication, resolve tenant, and check payload limits."""
     skip_auth_paths = {
         "/health",
+        "/health/deep",
+        "/metrics",
         "/v1/models",
         "/docs",
         "/openapi.json",

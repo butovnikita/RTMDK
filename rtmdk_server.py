@@ -47,10 +47,10 @@ from pydantic import BaseModel, Field, field_validator
 import uvicorn
 
 # RTMDK imports
-from rtmdk.memory.core import (
-    RTMDKConfig, RTMDKMemory, ContextFormat,
-    detect_modality, detect_tier,
-)
+from rtmdk.memory.core import RTMDKConfig, RTMDKMemory
+from rtmdk.memory.config import ContextFormat
+from rtmdk.memory.utils import detect_modality
+from rtmdk.utils.modality import detect_tier
 
 # ============================================================================
 # CONFIGURATION
