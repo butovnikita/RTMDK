@@ -1,7 +1,7 @@
 # RTMDK — Полная Дорожная Карта Коммерческого Продукта
 # Complete Commercial Product Roadmap
 
-> **Версия:** 2.2 | **Дата:** Май 2026 | **Статус:** Phase 23 (Pipeline Architecture) завершён, v8.3.0 релизнут на PyPI
+> **Версия:** 2.2 | **Дата:** Май 2026 | **Статус:** Phase 23 (Pipeline Architecture) завершён, v8.3.1 релизнут на PyPI
 
 ---
 

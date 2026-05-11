@@ -1,7 +1,7 @@
-# RTMDK v8.3.0 — Полная документация
+# RTMDK v8.3.1 — Полная документация
 
-> Resonance-Topological Memory для LLM — версия 8.3.0 (Phase 23)
-> Репозиторий: 440+ файлов, 74,000+ строк кода, 44 API endpoints
+> Resonance-Topological Memory для LLM — версия 8.3.1 (Phase 23)
+> Репозиторий: 440+ файлов, 74,000+ строк кода, 49 API endpoints
 
 ---
 

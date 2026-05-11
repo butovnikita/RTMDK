@@ -23,7 +23,7 @@ curl http://localhost:5000/health        # SillyTavern Proxy
 
 **Ожидаемый ответ:**
 ```json
-{"status": "ok", "version": "8.3.0", "lm_studio": true, "memory_nodes": 0}
+{"status": "ok", "version": "8.3.1", "lm_studio": true, "memory_nodes": 0}
 ```
 
 ---
