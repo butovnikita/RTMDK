@@ -20,4 +20,4 @@ optuna>=3.4.0
 # Optional: Development tools
 pytest>=7.4.0
 mypy>=1.6.0
-ruff>=0.1.0
+ruff>=0.15.14

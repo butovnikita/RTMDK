@@ -30,4 +30,4 @@ langchain-core>=0.1
 
 # Linting / type checking (optional)
 mypy>=1.6.0
-ruff>=0.1.0
+ruff>=0.15.14
