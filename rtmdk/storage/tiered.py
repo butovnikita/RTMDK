@@ -114,7 +114,11 @@ class TieredNodeStore:
         import json as _json
         payload = {k: v for k, v in data.items() if k != "latent_pos"}
         if data.get("latent_pos") is not None:
-            payload["latent_pos"] = data["latent_pos"].tolist()
+            lp = data["latent_pos"]
+            if isinstance(lp, np.ndarray):
+                payload["latent_pos"] = lp.tolist()
+            else:
+                payload["latent_pos"] = lp
         # Convert numpy arrays to lists for JSON serialization
         for k, v in list(payload.items()):
             if isinstance(v, np.ndarray):
@@ -303,6 +307,59 @@ class TieredNodeStore:
                 found = True
             return found
 
+    def keys(self) -> List[str]:
+        """Return all node IDs across all tiers."""
+        with self._lock:
+            result = list(self._hot.keys())
+            result.extend(self._warm_meta.keys())
+            result.extend(self._cold_manifest.keys())
+            return result
+
+    def values(self) -> List[Dict[str, Any]]:
+        """Return all node data across all tiers."""
+        with self._lock:
+            result = [entry.data for entry in self._hot.values()]
+            for key in self._warm_meta:
+                idx = self._warm_index[key]
+                data = dict(self._warm_meta[key])
+                data["latent_pos"] = np.array(self._warm_mmap[idx])
+                result.append(data)
+            for key in list(self._cold_manifest.keys()):
+                data = self._read_cold(key)
+                if data is not None:
+                    result.append(data)
+            return result
+
+    def items(self) -> List[Tuple[str, Dict[str, Any]]]:
+        """Return all (key, data) pairs across all tiers."""
+        with self._lock:
+            result = [(k, entry.data) for k, entry in self._hot.items()]
+            for key in self._warm_meta:
+                idx = self._warm_index[key]
+                data = dict(self._warm_meta[key])
+                data["latent_pos"] = np.array(self._warm_mmap[idx])
+                result.append((key, data))
+            for key in list(self._cold_manifest.keys()):
+                data = self._read_cold(key)
+                if data is not None:
+                    result.append((key, data))
+            return result
+
+    def __iter__(self):
+        """Iterate over all keys."""
+        return iter(self.keys())
+
+    def __contains__(self, key: object) -> bool:
+        """Check if key exists in any tier."""
+        with self._lock:
+            if key in self._hot:
+                return True
+            if key in self._warm_meta:
+                return True
+            if key in self._cold_manifest:
+                return True
+            return False
+
     def stats(self) -> Dict[str, Any]:
         """Return tier statistics."""
         with self._lock:
@@ -319,8 +376,24 @@ class TieredNodeStore:
             }
 
     def close(self) -> None:
-        """Persist manifest and close memmap."""
+        """Persist manifest and close memmap.
+
+        Demotes all hot and warm nodes to cold so they survive restart.
+        """
         with self._lock:
+            # Flush hot tier to cold
+            for key, entry in list(self._hot.items()):
+                self._write_cold(key, entry.data)
+            self._hot.clear()
+            # Flush warm tier to cold
+            for key in list(self._warm_meta.keys()):
+                idx = self._warm_index[key]
+                data = dict(self._warm_meta[key])
+                data["latent_pos"] = np.array(self._warm_mmap[idx])
+                self._write_cold(key, data)
+            self._warm_meta.clear()
+            self._warm_index.clear()
+            self._warm_next_idx = 0
             self._save_manifest()
             if self._warm_mmap is not None:
                 del self._warm_mmap

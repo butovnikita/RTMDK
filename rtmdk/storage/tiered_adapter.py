@@ -71,15 +71,16 @@ class TieredNodeStoreAdapter(MutableMapping):
         return stats.get("hot_count", 0) + stats.get("warm_count", 0) + stats.get("cold_count", 0)
 
     def __iter__(self) -> Iterator[str]:
-        # Yield hot keys
-        stats = self._store.stats()
-        # We cannot iterate directly over tiers, so we maintain a separate index
-        # For now, return an empty iterator — RTMDKField uses node_index list separately
-        return iter([])
+        return iter(self._store.keys())
 
     def keys(self):
-        # RTMDKField maintains self.node_index separately
-        return []
+        return self._store.keys()
+
+    def values(self):
+        return [self._data_to_node(data) for data in self._store.values()]
+
+    def items(self):
+        return [(k, self._data_to_node(v)) for k, v in self._store.items()]
 
     def get(self, key: str, default: Any = None) -> Any:
         try:

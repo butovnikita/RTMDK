@@ -1,5 +1,10 @@
 # RTMDK — Resonance-Topological Memory v8.3
 
+![CI](https://github.com/butovnikita/RTMDK/actions/workflows/ci.yml/badge.svg)
+![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)
+![License](https://img.shields.io/badge/license-AGPL--3.0-green)
+![PyPI](https://img.shields.io/pypi/v/rtmdk)
+
 > Долгосрочная память для LLM на основе резонансной топологии и диалектической консолидации
 > Version 8.3 (Pipeline Architecture + HNSW + Observability + Production Hardening) — 74,000+ строк кода, 440+ файлов, 49 API endpoints, 1112 тестов
 
