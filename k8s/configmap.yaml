@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rtmdk-config
+  namespace: rtmdk
+data:
+  RTMDK_HOST: "0.0.0.0"
+  RTMDK_PORT: "8080"
+  RTMDK_WORKERS: "4"
+  RTMDK_LOG_LEVEL: "INFO"
+  RTMDK_CONFIG_PRESET: "production"

@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rtmdk-server
+  namespace: rtmdk
+  labels:
+    app: rtmdk-server
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: rtmdk-server
+  template:
+    metadata:
+      labels:
+        app: rtmdk-server
+    spec:
+      containers:
+        - name: rtmdk
+          image: rtmdk/rtmdk:latest
+          ports:
+            - containerPort: 8080
+              name: http
+          envFrom:
+            - configMapRef:
+                name: rtmdk-config
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "2000m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: wal-storage
+              mountPath: /app/data
+      volumes:
+        - name: wal-storage
+          persistentVolumeClaim:
+            claimName: rtmdk-wal-pvc
