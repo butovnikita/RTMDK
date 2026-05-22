@@ -13,7 +13,7 @@ hypothesis>=6.100
 
 # Streamlit dashboard
 streamlit>=1.28.0
-matplotlib>=3.7.0
+matplotlib>=3.10.9
 pandas>=2.0.0
 
 # Embedding (optional — for local inference without LM Studio)
