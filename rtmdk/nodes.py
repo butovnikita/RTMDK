@@ -51,6 +51,15 @@ class MemoryNode:
     goal_relevance: float = 0.0
     rl_reward: float = 0.0
 
+    def __post_init__(self):
+        # Redirect latent_pos to internal raw storage so property works
+        raw = self.latent_pos
+        object.__setattr__(self, '_latent_pos_raw', raw)
+        try:
+            del self.latent_pos
+        except AttributeError:
+            pass
+
     # Phase 20: Domain Memory & Concept Lifecycle
     domain: str = "general"
     subdomain: str = ""
@@ -66,6 +75,7 @@ class MemoryNode:
     superseded_by: Optional[str] = None
     covariance: Optional[NDArray[np.float32]
                          ] = None  # P2.2: Kalman uncertainty
+    latent_scale_array: Optional[NDArray[np.float32]] = None  # int8 per-dim scale
 
     def to_dict(self) -> Dict:
         d = asdict(self)
@@ -82,6 +92,8 @@ class MemoryNode:
             d["modal_embedding"] = self.modal_embedding.tolist()
         if self.covariance is not None:
             d["covariance"] = self.covariance.tolist()
+        if self.latent_scale_array is not None:
+            d["latent_scale_array"] = self.latent_scale_array.tolist()
         for k, v in self.do_interventions.items():
             if isinstance(v, np.ndarray):
                 d["do_interventions"][k] = v.tolist()
@@ -110,10 +122,38 @@ class MemoryNode:
                 filtered["modal_embedding"], dtype=np.float32)
         if filtered.get("covariance"):
             filtered["covariance"] = np.array(filtered["covariance"], dtype=np.float32)
+        if filtered.get("latent_scale_array"):
+            filtered["latent_scale_array"] = np.array(filtered["latent_scale_array"], dtype=np.float32)
         for k, v in filtered.get("do_interventions", {}).items():
             if isinstance(v, list):
                 filtered["do_interventions"][k] = np.array(v, dtype=np.float32)
         return cls(**filtered)
+
+
+# Add property for automatic int8 dequantization
+def _memory_node_latent_pos_getter(self):
+    raw = self._latent_pos_raw
+    # Handle list input (e.g. from JSON restore)
+    if isinstance(raw, list):
+        raw = np.array(raw, dtype=np.float32)
+        self._latent_pos_raw = raw
+    if hasattr(raw, 'dtype') and raw.dtype == np.int8:
+        # Dequantize int8 back to float32 on read
+        scale_arr = getattr(self, 'latent_scale_array', None)
+        if scale_arr is not None:
+            # Per-dimension scale
+            return raw.astype(np.float32) * scale_arr
+        scale = getattr(self, 'latent_scale', 1.0)
+        zp = getattr(self, 'latent_zero_point', 0.0)
+        return raw.astype(np.float32) * scale + zp
+    return raw.astype(np.float32)
+
+
+def _memory_node_latent_pos_setter(self, value):
+    self._latent_pos_raw = value
+
+
+MemoryNode.latent_pos = property(_memory_node_latent_pos_getter, _memory_node_latent_pos_setter)
 
 
 @dataclass

@@ -450,7 +450,12 @@ class NodeManager:
             if f._projection_mgr.projection_learner is not None:
                 f.stats["projection_updates"] += 1
 
-        latent, latent_scale, latent_zero_point = f._quant.quantize_with_meta(latent)
+        q_result = f._quant.quantize_with_meta(latent)
+        if len(q_result) == 4:
+            latent, latent_scale, latent_zero_point, latent_scale_array = q_result
+        else:
+            latent, latent_scale, latent_zero_point = q_result
+            latent_scale_array = None
 
         if phase is None:
             phase = self.get_phase(session_id, embedding, modality, content)
@@ -470,6 +475,7 @@ class NodeManager:
             modality=modality,
             latent_scale=latent_scale,
             latent_zero_point=latent_zero_point,
+            latent_scale_array=latent_scale_array.astype(np.float32) if latent_scale_array is not None else None,
             modal_embedding=modal_embedding.astype(np.float32) if modal_embedding is not None else None,
         )
 
@@ -579,6 +585,7 @@ class NodeManager:
         latents = np.array([r[0] for r in _q_results])
         _latent_scales = [r[1] for r in _q_results]
         _latent_zps = [r[2] for r in _q_results]
+        _latent_scale_arrays = [r[3] if len(r) > 3 else None for r in _q_results]
 
         if phases is None:
             base = (time.time() * 0.01) % (2 * np.pi)
@@ -622,6 +629,7 @@ class NodeManager:
                 modality=modalities[i] if modalities else "text",
                 latent_scale=_latent_scales[i],
                 latent_zero_point=_latent_zps[i],
+                latent_scale_array=_latent_scale_arrays[i].astype(np.float32) if _latent_scale_arrays[i] is not None else None,
             )
             if f.cfg.cross_modal:
                 node.modal_embedding = embeddings[i].copy()

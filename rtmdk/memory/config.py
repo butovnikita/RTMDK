@@ -489,7 +489,7 @@ class CoreConfig:
     hybrid_alpha: float = 1.0  # 1.0 = pure RTMDK, 0.0 = pure BM25, 0.7 = 70/30 blend
     query_expand_short: bool = False  # Auto-expand queries with < 3 content words
     adaptive_pc_disable_threshold: float = 0.93  # If embedding quality estimate > threshold, force pc=0
-    quantization: str = "none"  # "none" | "fp16" | "int8"
+    quantization: str = "none"  # "none" | "fp16" | "int8" | "int8_global" | "int8_per_dim"
 
 
 @dataclass
