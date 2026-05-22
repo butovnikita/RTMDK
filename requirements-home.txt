@@ -15,7 +15,7 @@ msgpack>=1.0.0
 sentence-transformers>=2.2.0
 
 # Optional: Meta-controller optimization
-optuna>=3.4.0
+optuna>=4.8.0
 
 # Optional: Development tools
 pytest>=7.4.0
