@@ -1,0 +1,36 @@
+name: Bug Report
+description: Report a bug in RTMDK
+title: "[BUG] "
+labels: ["bug"]
+body:
+  - type: textarea
+    attributes:
+      label: Description
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Reproduction
+      description: Steps to reproduce
+      placeholder: |
+        1. Run `python -m rtmdk`
+        2. Call endpoint `/v1/memory/query`
+        3. See error
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Environment
+      description: OS, Python version, RTMDK version
+      placeholder: |
+        - OS: Windows 11 / Ubuntu 22.04
+        - Python: 3.10.11
+        - RTMDK: 8.3.1
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Logs
+      description: Relevant log output
+      render: shell
