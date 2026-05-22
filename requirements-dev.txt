@@ -7,7 +7,7 @@
 pytest>=7.4.0
 pytest-asyncio>=0.21
 pytest-cov>=4.0
-pytest-rerunfailures>=13.0
+pytest-rerunfailures>=16.2
 psutil>=5.9
 hypothesis>=6.100
 
