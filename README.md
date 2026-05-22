@@ -5,8 +5,35 @@
 ![License](https://img.shields.io/badge/license-AGPL--3.0-green)
 ![PyPI](https://img.shields.io/pypi/v/rtmdk)
 
-> Долгосрочная память для LLM на основе резонансной топологии и диалектической консолидации
-> Version 8.3 (Pipeline Architecture + HNSW + Observability + Production Hardening) — 74,000+ строк кода, 440+ файлов, 49 API endpoints, 1112 тестов
+> Long-term memory for LLMs based on resonance-topological organization
+> Version 8.3 — 74,000+ LOC, 440+ files, 49 API endpoints, 1118 tests
+
+## Why RTMDK?
+
+| Feature | RTMDK | Vector DB (FAISS/Chroma) |
+|---------|-------|--------------------------|
+| Recall@1 | **99.3%** | ~80-90% |
+| Latency @ 100K | **16 ms** | 50-500 ms |
+| RAM @ 10K | **19-30 MB** | 500 MB+ |
+| Embedding cost | **$0** (SOT v2) | $0.10-1.00 / 1M tokens |
+| Offline capable | **Yes** | Partial |
+| Dependencies | **numpy only** | torch, transformers |
+
+## Quick Start
+
+```bash
+pip install rtmdk
+```
+
+```python
+from rtmdk import RTMDKMemory, RTMDKConfig
+import numpy as np
+
+cfg = RTMDKConfig.local()
+mem = RTMDKMemory(config=cfg, embedder=lambda t: np.random.randn(64).astype(np.float32))
+mem.add_node("The sky is blue")
+results = mem.retrieve_nodes("What color is the sky?", top_k=3)
+```
 
 ### Production Stats
 | Metric | Value |

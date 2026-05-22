@@ -1,0 +1,82 @@
+site_name: RTMDK Documentation
+site_description: Resonance-Topological Memory for LLMs
+site_url: https://butovnikita.github.io/RTMDK/
+repo_name: butovnikita/RTMDK
+repo_url: https://github.com/butovnikita/RTMDK
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+
+plugins:
+  - search
+  - minify:
+      minify_html: true
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - admonition
+  - pymdownx.details
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - attr_list
+  - md_in_html
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Quick Start: getting-started/quickstart.md
+    - Installation: getting-started/installation.md
+    - Configuration: getting-started/configuration.md
+  - Architecture:
+    - Overview: architecture/overview.md
+    - Pipeline: architecture/pipeline.md
+    - SOT v2: architecture/sot-v2.md
+  - API Reference:
+    - Python SDK: api/python.md
+    - REST API: api/rest.md
+    - GraphQL: api/graphql.md
+  - Integrations:
+    - LangChain: integrations/langchain.md
+    - LlamaIndex: integrations/llamaindex.md
+    - SillyTavern: integrations/sillytavern.md
+    - MCP: integrations/mcp.md
+  - Deployment:
+    - Docker: deployment/docker.md
+    - Kubernetes: deployment/kubernetes.md
+    - Monitoring: deployment/monitoring.md
+  - Examples:
+    - Basic Memory: examples/basic-memory.md
+    - Pipeline Retrieval: examples/pipeline-retrieval.md
+    - Batch Ingestion: examples/batch-ingestion.md
+  - FAQ: faq.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/butovnikita/RTMDK
