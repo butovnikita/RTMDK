@@ -74,6 +74,14 @@ ALLOWED_ORIGINS = os.getenv("RTMDK_ALLOWED_ORIGINS", "http://localhost:8080,http
 ENABLE_LM_STUDIO = os.getenv("RTMDK_ENABLE_LM_STUDIO", "true").lower() == "true"
 AUTO_SAVE_INTERVAL = int(os.getenv("RTMDK_AUTO_SAVE", "60"))  # seconds
 
+# Provider configuration
+RTMDK_AI_PROVIDER = os.getenv("RTMDK_AI_PROVIDER", "lm_studio")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+RTMDK_EMBED_DIM = int(os.getenv("RTMDK_EMBED_DIM", "768"))
+
 # ============================================================================
 # C2: STRUCTURED JSON LOGGING
 # ============================================================================
@@ -340,6 +348,10 @@ model_manager: Optional[ModelManager] = None
 def check_lm_studio() -> bool:
     """Check if LM Studio is available and initialize model manager."""
     global model_manager, chat_model
+    # Skip LM Studio check if a different provider is configured
+    if RTMDK_AI_PROVIDER not in ("lm_studio", ""):
+        logger.info(f"Provider set to '{RTMDK_AI_PROVIDER}', skipping LM Studio auto-detect")
+        return False
     try:
         model_manager = ModelManager(LM_STUDIO_URL)
         if model_manager.refresh_models():
@@ -353,27 +365,43 @@ def check_lm_studio() -> bool:
 
 
 def get_embedding(text: str, model: str = None) -> np.ndarray:
-    """Get embedding from LM Studio or cache."""
+    """Get embedding from configured provider (LM Studio, OpenAI, or OpenRouter)."""
     if text in embedder_cache:
         return embedder_cache[text]
 
     import requests
-    embedder_model = model or model_manager.default_embedder_model if model_manager else EMBED_MODEL
-    
-    max_retries = 3
+    embedder_model = model or (model_manager.default_embedder_model if model_manager else EMBED_MODEL)
+    provider = RTMDK_AI_PROVIDER
     base_timeout = int(os.getenv("RTMDK_LM_STUDIO_TIMEOUT", "30"))
+
+    # Determine endpoint and auth based on provider
+    if provider == "openai":
+        url = f"{OPENAI_BASE_URL}/embeddings"
+        headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
+    elif provider == "openrouter":
+        url = f"{OPENROUTER_BASE_URL}/embeddings"
+        headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"}
+    else:
+        url = f"{LM_STUDIO_URL}/embeddings"
+        headers = {"Content-Type": "application/json"}
+
+    max_retries = 3
+    last_error = None
     for attempt in range(max_retries):
         try:
             resp = requests.post(
-                f"{LM_STUDIO_URL}/embeddings",
+                url,
                 json={"model": embedder_model, "input": text},
+                headers=headers,
                 timeout=base_timeout,
             )
+            if not resp.ok:
+                raise RuntimeError(f"Embedding API returned {resp.status_code}: {resp.text[:200]}")
             data = resp.json()
             embedding = np.array(data["data"][0]["embedding"], dtype=np.float32)
             
             # Validate embedding dimension
-            expected_dim = 768  # Default, should match config
+            expected_dim = RTMDK_EMBED_DIM
             if len(embedding) != expected_dim:
                 logger.warning(f"Embedding dimension mismatch: got {len(embedding)}, expected {expected_dim}. Resizing.")
                 if len(embedding) > expected_dim:
@@ -388,17 +416,15 @@ def get_embedding(text: str, model: str = None) -> np.ndarray:
             return embedding
         except requests.exceptions.Timeout:
             logger.warning(f"Embedding timeout on attempt {attempt+1}/{max_retries}")
-            if attempt == max_retries - 1:
-                break
-            time.sleep(1 * (attempt + 1))
+            last_error = "Timeout"
+            if attempt < max_retries - 1:
+                time.sleep(1 * (attempt + 1))
         except Exception as e:
-            logger.warning(f"Embedding error: {e}, using fallback")
+            last_error = str(e)
+            logger.error(f"Embedding error: {e}")
             break
 
-    rng = np.random.default_rng(hash(text) % 2**32)
-    emb = rng.standard_normal(768).astype(np.float32) * 0.1
-    embedder_cache[text] = emb
-    return emb
+    raise RuntimeError(f"Embedding failed after {max_retries} attempts: {last_error}")
 
 
 def init_memory() -> RTMDKMemory:
@@ -810,18 +836,22 @@ async def test_streaming():
 @app.post("/v1/embeddings")
 async def create_embeddings(req: EmbeddingRequest):
     """Create embeddings using specified model."""
-    # Use model from request if provided
-    embedder_model = req.model if hasattr(req, 'model') and req.model else None
+    # Use model from request if provided and not the default placeholder
+    embedder_model = req.model if req.model and req.model != "rtmdk-embed" else None
     
     inputs = req.input if isinstance(req.input, list) else [req.input]
     data = []
     for i, text in enumerate(inputs):
-        embedding = get_embedding(text, model=embedder_model)
-        data.append({
-            "object": "embedding",
-            "embedding": embedding.tolist(),
-            "index": i,
-        })
+        try:
+            embedding = get_embedding(text, model=embedder_model)
+            data.append({
+                "object": "embedding",
+                "embedding": embedding.tolist(),
+                "index": i,
+            })
+        except RuntimeError as e:
+            logger.error(f"Embedding failed for input {i}: {e}")
+            raise HTTPException(status_code=503, detail=f"Embedding service unavailable: {e}")
     return {
         "object": "list",
         "data": data,
@@ -956,6 +986,168 @@ async def health_check():
         "version": "8.0.0",
         "lm_studio": lm_studio_available,
         "memory_nodes": len(memory.field.nodes) if memory else 0,
+    }
+
+
+# ============================================================================
+# ADMIN UI COMPATIBILITY ENDPOINTS
+# ============================================================================
+
+@app.get("/v1/memory/nodes")
+async def list_nodes(limit: int = 50, offset: int = 0):
+    """List memory nodes with pagination."""
+    if not memory or not memory.field:
+        raise HTTPException(status_code=503, detail="Memory not initialized")
+    nodes = list(memory.field.nodes.values())
+    total = len(nodes)
+    paginated = nodes[offset:offset + limit]
+    return {
+        "nodes": [
+            {
+                "id": n.id,
+                "content": getattr(n, "content", ""),
+                "metadata": getattr(n, "metadata", {}),
+                "latent_pos": n.latent_pos.tolist() if hasattr(n.latent_pos, "tolist") else n.latent_pos,
+                "phase": n.phase,
+                "amplitude": n.amplitude,
+                "salience": n.salience,
+                "tier": getattr(n, "tier", "semantic"),
+                "created_at": getattr(n, "created_at", 0),
+            }
+            for n in paginated
+        ],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+@app.post("/v1/memory/nodes")
+async def create_node(req: Request):
+    """Create a new memory node."""
+    if not memory:
+        raise HTTPException(status_code=503, detail="Memory not initialized")
+    data = await req.json()
+    content = data.get("content", "")
+    metadata = data.get("metadata", {})
+    try:
+        node = memory.add_node(content=content, metadata=metadata)
+        return {"id": node.id, "status": "created"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/v1/memory/nodes/{node_id}")
+async def get_node(node_id: str):
+    """Get a memory node by ID."""
+    if not memory or not memory.field:
+        raise HTTPException(status_code=503, detail="Memory not initialized")
+    node = memory.field.nodes.get(node_id)
+    if not node:
+        raise HTTPException(status_code=404, detail="Node not found")
+    return {
+        "id": node.id,
+        "content": getattr(node, "content", ""),
+        "metadata": getattr(node, "metadata", {}),
+        "latent_pos": node.latent_pos.tolist() if hasattr(node.latent_pos, "tolist") else node.latent_pos,
+        "phase": node.phase,
+        "amplitude": node.amplitude,
+        "salience": node.salience,
+        "tier": getattr(node, "tier", "semantic"),
+        "created_at": getattr(node, "created_at", 0),
+    }
+
+
+@app.put("/v1/memory/nodes/{node_id}")
+async def update_node(node_id: str, req: Request):
+    """Update a memory node."""
+    if not memory or not memory.field:
+        raise HTTPException(status_code=503, detail="Memory not initialized")
+    node = memory.field.nodes.get(node_id)
+    if not node:
+        raise HTTPException(status_code=404, detail="Node not found")
+    data = await req.json()
+    if "content" in data:
+        node.content = data["content"]
+    if "metadata" in data:
+        node.metadata = data["metadata"]
+    if "salience" in data:
+        node.salience = float(data["salience"])
+    if "amplitude" in data:
+        node.amplitude = float(data["amplitude"])
+    return {"id": node_id, "status": "updated"}
+
+
+@app.delete("/v1/memory/nodes/{node_id}")
+async def delete_node(node_id: str):
+    """Delete a memory node."""
+    if not memory or not memory.field:
+        raise HTTPException(status_code=503, detail="Memory not initialized")
+    if node_id not in memory.field.nodes:
+        raise HTTPException(status_code=404, detail="Node not found")
+    del memory.field.nodes[node_id]
+    if node_id in memory.field.node_index:
+        memory.field.node_index.remove(node_id)
+    return {"id": node_id, "status": "deleted"}
+
+
+@app.get("/v1/analytics/overview")
+async def analytics_overview():
+    """Analytics overview for admin dashboard."""
+    global _metrics_queries_total, _metrics_query_latencies
+    if not memory or not memory.field:
+        return {
+            "total_queries": _metrics_queries_total,
+            "avg_latency_ms": 0,
+            "cache_hit_rate": 0,
+            "memory_nodes": 0,
+            "query_volume": [],
+        }
+    avg_latency = sum(_metrics_query_latencies) / len(_metrics_query_latencies) if _metrics_query_latencies else 0
+    return {
+        "total_queries": _metrics_queries_total,
+        "avg_latency_ms": round(avg_latency, 2),
+        "cache_hit_rate": 0,
+        "memory_nodes": len(memory.field.nodes),
+        "query_volume": [],
+    }
+
+
+@app.get("/v1/memory/pipeline/dag")
+async def pipeline_dag():
+    """Pipeline DAG structure."""
+    return {"stages": [], "edges": []}
+
+
+@app.get("/v1/memory/pipeline/health")
+async def pipeline_health():
+    """Pipeline health status."""
+    return {"overall": "healthy", "stages": []}
+
+
+@app.get("/v1/sot/status")
+async def sot_status():
+    """SOT embedder status."""
+    if not memory:
+        return {"enabled": False, "vocab_size": 0, "max_vocab": 0, "mode": "none"}
+    sot = getattr(memory, "_sot_v2", None)
+    if sot is None:
+        return {"enabled": False, "vocab_size": 0, "max_vocab": 0, "mode": "none"}
+    vocab = getattr(sot, "_vocab", {})
+    return {
+        "enabled": True,
+        "vocab_size": len(vocab),
+        "max_vocab": getattr(sot, "max_vocab", 0),
+        "mode": "sif",
+    }
+
+
+@app.get("/v1/admin/config")
+async def admin_config():
+    """Admin runtime configuration."""
+    return {
+        "preset": os.getenv("RTMDK_PRESET", "local"),
+        "env": {k: v for k, v in os.environ.items() if k.startswith("RTMDK_") or k in ("LM_STUDIO_URL", "OPENAI_BASE_URL", "OPENROUTER_BASE_URL", "OPENAI_API_KEY", "OPENROUTER_API_KEY", "RTMDK_EMBED_DIM")},
     }
 
 
