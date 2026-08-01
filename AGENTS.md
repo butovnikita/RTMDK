@@ -19,7 +19,7 @@ rtmdk/support/      — HNSW, projection, BM25, circuit breaker
 rtmdk/server/       — FastAPI / GraphQL / WebSocket server
 rtmdk/utils/        — JSON logging, async embedder
 docs/               — Architecture, API reference, setup guides
-tests/              — 1123 tests (pytest: 1121 passed, 2 skipped)
+tests/              — 1128 tests (pytest: 1126 passed, 2 skipped)
 legacy/            — Frozen SillyTavern dev servers (rtmdk_server.py, st_proxy, ...)
 scripts/            — Benchmarks and diagnostics
 ```
