@@ -8,6 +8,12 @@ Usage:
 
 import sys
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()  # pick up .env (RTMDK_PORT, RTMDK_API_KEY, ...) if present
+except ImportError:
+    pass  # python-dotenv is optional; real env vars still work
+
 if len(
         sys.argv) > 1 and sys.argv[1] in {
             "status",

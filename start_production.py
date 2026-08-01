@@ -5,6 +5,12 @@ import os
 import sys
 import argparse
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()  # pick up .env (RTMDK_PORT, RTMDK_API_KEY, ...) if present
+except ImportError:
+    pass  # python-dotenv is optional; real env vars still work
+
 # Set env vars BEFORE importing the app
 if "--no-auth" in sys.argv:
     os.environ["RTMDK_ENABLE_API_AUTH"] = "false"

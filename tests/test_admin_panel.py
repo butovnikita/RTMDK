@@ -84,9 +84,10 @@ class TestAdminPanelStructure:
         assert len(css_files) >= 1, "No CSS bundle in dist/assets/"
 
     def test_api_base_configurable(self):
-        """Verify API base URL is defined in App.jsx."""
-        app_path = os.path.join(ADMIN_DIR, "src", "App.jsx")
-        with open(app_path, "r", encoding="utf-8") as f:
+        """Verify API base URL is centrally defined in the use-api hook."""
+        hook_path = os.path.join(ADMIN_DIR, "src", "hooks", "use-api.js")
+        assert os.path.isfile(hook_path), "src/hooks/use-api.js not found"
+        with open(hook_path, "r", encoding="utf-8") as f:
             content = f.read()
         assert "API_BASE" in content or "apiBase" in content, "API_BASE not configurable"
 

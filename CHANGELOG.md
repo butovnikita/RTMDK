@@ -4,6 +4,17 @@ All notable changes to RTMDK are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+- **Version sync**: `rtmdk/__init__.py` and `server/app.py` banners now report `8.3.1` (was `8.3.0`); AGENTS.md updated.
+- **`.env` not loaded by server**: `python -m rtmdk` and `start_production.py` now call `load_dotenv()` at entry (port 8081, `RTMDK_API_KEY` from `.env` are honored). Loading kept out of `server/app.py` import path to avoid polluting test env.
+- **`pyproject.toml`**: new `server` and `grpc` extras (uvicorn, httpx, msgpack, tenacity, strawberry-graphql, prometheus-client, python-dotenv, grpcio).
+- **Stale admin test**: `test_api_base_configurable` now checks `admin/src/hooks/use-api.js` (API_BASE moved out of `App.jsx`).
+- **Admin backend crash**: `POST /api/server/start` no longer 500s on empty body (`req.body` guard in `server.cjs`).
+- **Admin lint**: `ai-connection.jsx` — `looksLikeLMStudio` now used for symmetric provider-URL guards.
+- Verified: full pytest suite 1121 passed / 2 skipped; Playwright E2E audit of all 11 admin pages — no issues.
+
 ## [8.3.1] — 2026-05-11
 
 ### Documentation Audit

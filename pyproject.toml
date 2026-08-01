@@ -52,6 +52,19 @@ langchain = [
 llamaindex = [
     "llama-index-core>=0.10",
 ]
+server = [
+    "uvicorn[standard]>=0.24",
+    "httpx>=0.25",
+    "msgpack>=1.0",
+    "tenacity>=8.2",
+    "strawberry-graphql>=0.200",
+    "prometheus-client>=0.19",
+    "python-dotenv>=1.0",
+]
+grpc = [
+    "grpcio>=1.60",
+    "grpcio-tools>=1.60",
+]
 dev = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21",
