@@ -26,7 +26,10 @@ def main(path: str) -> int:
         classname = case.get("classname", "")
         name = case.get("name", "unknown")
         # classname like tests.test_module.TestClass -> tests/test_module.py
-        file_path = classname.replace(".", "/") + ".py"
+        parts = classname.split(".")
+        if parts and parts[-1][:1].isupper():
+            parts = parts[:-1]  # drop TestClass component
+        file_path = "/".join(parts) + ".py"
         message = (failure.get("message") or "test failed").splitlines()[0][:300]
         # Escape for workflow commands
         message = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
