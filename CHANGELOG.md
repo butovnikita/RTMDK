@@ -4,6 +4,18 @@ All notable changes to RTMDK are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed (CI overhaul, verified green end-to-end)
+- **GitHub CI was red on every push** — root-caused via clean-venv and WSL reproductions, plus new check-annotation tooling (`.github/scripts/`): 13/13 jobs now pass on ubuntu/windows/macos × py3.10–3.12.
+- **Missing runtime deps**: `cryptography`, `opentelemetry-api/sdk/exporter-otlp-grpc`, `python-multipart` added (hard imports in production modules and FastAPI form handling crashed container startup).
+- **Cross-platform test bugs**: SQLite DSN parser broke POSIX paths; path-sanitizer tests asserted Windows-only `normpath`; WAL readonly test used a read-only *directory* (POSIX write perm is per-file); rate-limit test raced its own 1s wall-clock window (now frozen-time).
+- **SOT bootstrap was a silent no-op for small corpora** (`n_texts < latent_dim` never fit the Ridge projection); a POSIX-only `skipif` (cmd-incompatible `os.system`) hid it on Windows. Both fixed; bootstrap verified 0.864 → 0.999 similarity gain.
+- **CUDA/CPU guards**: `GPUBackend.available` now requires `torch.cuda.is_available()` (`.cuda()` crashed on CPU-only runners); `TRITON_AVAILABLE` was unconditionally True.
+- **Torn-read race in node cache**: concurrent add/delete could interleave cache rebuild with vectorized query reads (broadcast ValueError); rebuild + snapshot now under `field._write_lock`.
+- **CI infrastructure**: `pip install -e .` in all jobs (scripts run outside pytest sys.path); `docker compose` v2 syntax; test-runner container gets pytest at runtime; CPU-only torch everywhere (SIGILL from arch-specific cached wheels on heterogeneous runners; pip cache dropped); `g++` for hnswlib builds; `python -m build` dep; trivy fs-scan; Pages deploy tolerant until Pages is enabled in repo settings.
+- **Latency-sensitive tests**: circuit-breaker stage threshold raised for loaded macOS runners; HF-download test skips on network failure.
+
 ## [8.3.2] — 2026-08-01
 
 ### Fixed

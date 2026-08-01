@@ -42,7 +42,7 @@ results = mem.retrieve_nodes("What color is the sky?", top_k=3)
 | Latency p50 @ 1K nodes | 0.26 ms |
 | Latency p50 @ 100K nodes | **16 ms** |
 | Latency p99 @ 100K nodes | **20 ms** |
-| Tests | 1126 passed, 2 skipped |
+| Tests | 1127 passed, 1 skipped |
 | Pipeline stages | 6 (explicit, observable) |
 | Circuit breakers | Per-stage |
 | Streaming protocols | SSE, WebSocket, GraphQL |
