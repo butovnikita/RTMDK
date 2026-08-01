@@ -32,6 +32,10 @@ def run_mypy() -> int:
         text=True,
     )
     output = (proc.stdout or "") + (proc.stderr or "")
+    if "errors prevented further checking" in output or proc.returncode == 2:
+        print(output)
+        print("check_mypy: mypy aborted with a fatal error (not a countable report)", file=sys.stderr)
+        sys.exit(2)
     match = re.search(r"Found (\d+) errors? in (\d+) files?", output)
     if not match:
         print(output)
