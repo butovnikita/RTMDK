@@ -20,7 +20,7 @@
 
 | Document | Audience | Content |
 |----------|----------|---------|
-| [01_API_REFERENCE.md](01_API_REFERENCE.md) | API consumers | Complete endpoint reference (44 endpoints), request/response schemas |
+| [01_API_REFERENCE.md](01_API_REFERENCE.md) | API consumers | Complete endpoint reference (49 endpoints), request/response schemas |
 | [09_LANGCHAIN_INTEGRATION.md](09_LANGCHAIN_INTEGRATION.md) | LangChain/LlamaIndex users | Adapters, LCEL pipelines, retrievers, chat history |
 | [21_PIPELINE_MIGRATION.md](21_PIPELINE_MIGRATION.md) | Existing users | Migrating from legacy `retrieve_nodes()` to pipeline API |
 | [ADR_001_PIPELINE_V83.md](ADR_001_PIPELINE_V83.md) | Architects | ADR: why pipeline architecture replaced monolithic retrieval |

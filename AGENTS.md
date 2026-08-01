@@ -1,4 +1,4 @@
-# RTMDK — Agent Context
+﻿# RTMDK — Agent Context
 
 > This file exists to help coding agents (Claude, Kimi, etc.) understand the project quickly.
 
@@ -19,7 +19,8 @@ rtmdk/support/      — HNSW, projection, BM25, circuit breaker
 rtmdk/server/       — FastAPI / GraphQL / WebSocket server
 rtmdk/utils/        — JSON logging, async embedder
 docs/               — Architecture, API reference, setup guides
-tests/              — 1112 tests (pytest)
+tests/              — 1123 tests (pytest: 1121 passed, 2 skipped)
+legacy/            — Frozen SillyTavern dev servers (rtmdk_server.py, st_proxy, ...)
 scripts/            — Benchmarks and diagnostics
 ```
 
