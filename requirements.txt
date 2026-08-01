@@ -14,4 +14,4 @@ python-dotenv>=1.0.0
 
 # Advanced features (optional)
 hnswlib>=0.7.0
-optuna>=3.0.0
+optuna>=4.8.0

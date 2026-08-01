@@ -20,7 +20,7 @@ pandas>=2.0.0
 sentence-transformers>=2.2.0
 
 # Meta-controller optimization (optional — falls back to random search if absent)
-optuna>=3.4.0
+optuna>=4.8.0
 
 # Scikit-learn (optional — for IncPCA with sklearn backend)
 scikit-learn>=1.3.0
