@@ -185,9 +185,11 @@ jobs:
             docker compose -f docker-compose.test.yml ps -a >> /tmp/compose.log 2>&1
             docker compose -f docker-compose.test.yml logs rtmdk >> /tmp/compose.log 2>&1
           fi
-          tail -40 /tmp/compose.log
+          # buildkit progress rewrites lines with \r — normalize before reading
+          tr '\r' '\n' < /tmp/compose.log > /tmp/compose_clean.log
+          tail -40 /tmp/compose_clean.log
           if [ $status -ne 0 ]; then
-            python .github/scripts/log_to_annotations.py /tmp/compose.log 80
+            python .github/scripts/log_to_annotations.py /tmp/compose_clean.log 40
           fi
           exit $status
 
