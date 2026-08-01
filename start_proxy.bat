@@ -20,5 +20,5 @@ if errorlevel 1 (
 )
 
 REM Start proxy
-python rtmdk_st_proxy.py %*
+python legacy\rtmdk_st_proxy.py %*
 pause

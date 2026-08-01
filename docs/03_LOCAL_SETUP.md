@@ -1,4 +1,4 @@
-# RTMDK — Локальный запуск
+﻿# RTMDK — Локальный запуск
 
 > Запуск RTMDK на своём ПК — 3 варианта: Docker, Python, SillyTavern
 
@@ -11,7 +11,7 @@
 ```bash
 cd C:\Users\Никита\Desktop\llm_lab
 pip install -r requirements-home.txt
-python rtmdk_server.py
+python legacy/rtmdk_server.py
 ```
 
 Сервер запущен на `http://localhost:8080`
@@ -47,16 +47,16 @@ docker-compose -f docker-compose.home.yml up -d
 
 ```bash
 # Локальный ассистент (по умолчанию)
-python rtmdk_server.py
+python legacy/rtmdk_server.py
 
 # Production сервер
-RTMDK_PRESET=production python rtmdk_server.py
+RTMDK_PRESET=production python legacy/rtmdk_server.py
 
 # Research режим
-RTMDK_PRESET=research python rtmdk_server.py
+RTMDK_PRESET=research python legacy/rtmdk_server.py
 
 # С кастомными параметрами
-RTMDK_PRESET=local RTMDK_LATENT_DIM=128 RTMDK_TOP_K=10 python rtmdk_server.py
+RTMDK_PRESET=local RTMDK_LATENT_DIM=128 RTMDK_TOP_K=10 python legacy/rtmdk_server.py
 ```
 
 ---
@@ -70,7 +70,7 @@ RTMDK_PRESET=local RTMDK_LATENT_DIM=128 RTMDK_TOP_K=10 python rtmdk_server.py
 
 2. **Запусти RTMDK:**
    ```bash
-   python rtmdk_server.py
+   python legacy/rtmdk_server.py
    ```
 
 3. **Проверь интеграцию:**
@@ -163,14 +163,14 @@ npm run build
 ### Вариант 1: Monolith (проще)
 
 ```bash
-python rtmdk_server.py
+python legacy/rtmdk_server.py
 # SillyTavern → API Type: OpenAI → Base URL: http://localhost:8080/v1
 ```
 
 ### Вариант 2: Proxy (рекомендуется)
 
 ```bash
-python rtmdk_sillytavern_launcher.py
+python legacy/rtmdk_sillytavern_launcher.py
 # Запускает сервер (8080) + proxy (5000)
 # SillyTavern → API Type: OpenAI → Base URL: http://localhost:5000/v1
 ```
@@ -295,7 +295,7 @@ pre-commit run --all-files
 
 | Проблема | Решение |
 |----------|---------|
-| Port 8080 занят | `RTMDK_PORT=8081 python rtmdk_server.py` |
+| Port 8080 занят | `RTMDK_PORT=8081 python legacy/rtmdk_server.py` |
 | LM Studio не подключается | Проверь что сервер запущен на 12345 |
 | Память не сохраняется | Проверь права на `~/.rtmdk/` |
 | Docker не запускается | `docker-compose down -v && docker-compose up -d --build` |

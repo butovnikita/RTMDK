@@ -1,4 +1,4 @@
-# RTMDK — Resonance-Topological Memory v8.3
+﻿# RTMDK — Resonance-Topological Memory v8.3
 
 ![CI](https://github.com/butovnikita/RTMDK/actions/workflows/ci.yml/badge.svg)
 ![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)
@@ -55,7 +55,7 @@ results = mem.retrieve_nodes("What color is the sky?", top_k=3)
 
 ```bash
 pip install -r requirements-home.txt
-python rtmdk_server.py
+python legacy/rtmdk_server.py
 # → http://localhost:8080
 ```
 
@@ -77,7 +77,7 @@ docker-compose -f docker-compose.home.yml up -d
 ### Вариант D: SillyTavern Launcher
 
 ```bash
-python rtmdk_sillytavern_launcher.py
+python legacy/rtmdk_sillytavern_launcher.py
 # Запускает сервер (8080) + proxy (5000) автоматически
 ```
 
@@ -215,13 +215,13 @@ config = RTMDKConfig.streaming()   # High-throughput (~3ms)
 
 ```bash
 # Выбрать пресет
-RTMDK_PRESET=production python rtmdk_server.py
+RTMDK_PRESET=production python legacy/rtmdk_server.py
 
 # Переопределить отдельные параметры
-RTMDK_LATENT_DIM=128 RTMDK_TOP_K=10 python rtmdk_server.py
+RTMDK_LATENT_DIM=128 RTMDK_TOP_K=10 python legacy/rtmdk_server.py
 
 # Комбинация
-RTMDK_PRESET=research RTMDK_DECAY_RATE=0.9995 python rtmdk_server.py
+RTMDK_PRESET=research RTMDK_DECAY_RATE=0.9995 python legacy/rtmdk_server.py
 ```
 
 ---
@@ -335,12 +335,12 @@ RTMDK v8.3 (74,000+ строк, 440+ файлов, 49 API)
 ├── docs/                       # Документация (15 файлов)
 ├── tests/                      # Тесты
 ├── archive/                    # Исторические файлы
-├── rtmdk_server.py             # Monolith сервер (с ST endpoints)
-├── rtmdk_server_ux.py          # UX endpoints router
-├── rtmdk_dashboard_ui.py       # Dashboard UI endpoints
-├── rtmdk_sillytavern_launcher.py  # SillyTavern launcher
-├── rtmdk_st_proxy.py           # SillyTavern proxy
-├── embedder_lmstudio.py        # LM Studio embedder
+├── legacy/rtmdk_server.py             # Monolith сервер (с ST endpoints)
+├── legacy/rtmdk_server_ux.py          # UX endpoints router
+├── legacy/rtmdk_dashboard_ui.py       # Dashboard UI endpoints
+├── legacy/rtmdk_sillytavern_launcher.py  # SillyTavern launcher
+├── legacy/rtmdk_st_proxy.py           # SillyTavern proxy
+├── legacy/embedder_lmstudio.py        # LM Studio embedder
 ├── archive/scripts/generate_qa_1000.py  # QA dataset generator
 ├── tests/smoke_test.py          # Smoke tests
 ├── Dockerfile / Dockerfile.home / Dockerfile.gpu

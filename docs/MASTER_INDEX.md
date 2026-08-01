@@ -1,4 +1,4 @@
-# RTMDK v8.3.1 — Полная документация
+﻿# RTMDK v8.3.1 — Полная документация
 
 > Resonance-Topological Memory для LLM — версия 8.3.1 (Phase 23)
 > Репозиторий: 440+ файлов, 74,000+ строк кода, 49 API endpoints
@@ -10,13 +10,13 @@
 ```bash
 # Вариант 1: Python (рекомендуется)
 pip install -r requirements-home.txt
-python rtmdk_server.py
+python legacy/rtmdk_server.py
 
 # Вариант 2: Docker
 docker-compose -f docker-compose.home.yml up -d
 
 # Вариант 3: SillyTavern
-python rtmdk_sillytavern_launcher.py
+python legacy/rtmdk_sillytavern_launcher.py
 ```
 
 ---
@@ -125,7 +125,7 @@ config = RTMDKConfig.streaming()   # ~3ms latency, high-throughput
 
 ### Две версии проекта
 
-| Функция | Home (`rtmdk_server.py`) | Production (`python -m rtmdk`) |
+| Функция | Home (`legacy/rtmdk_server.py`) | Production (`python -m rtmdk`) |
 |---------|:---:|:---:|
 | OpenAI API | ✅ | ✅ |
 | Dashboard UI | ✅ | ✅ |

@@ -1,7 +1,7 @@
 """RTMDK Production Server — OpenAI-compatible API with Resonance-Topological Memory.
 
 This is the CLEAN production version WITHOUT SillyTavern modules.
-For development with SillyTavern support, use rtmdk_server.py instead.
+For development with SillyTavern support, use legacy/rtmdk_server.py instead.
 
 Usage:
     python -m rtmdk
@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 import numpy as np
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from fastapi import APIRouter, FastAPI, HTTPException, Query, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -68,36 +69,39 @@ except ImportError:
     _PROMETHEUS_AVAILABLE = False
 
 if _PROMETHEUS_AVAILABLE:
-    _metric_nodes = Gauge("rtmdk_nodes_total", "Number of memory nodes")
-    _metric_queries = Counter("rtmdk_queries_total", "Total memory queries")
-    _metric_query_dur = Histogram(
-        "rtmdk_query_duration_seconds",
-        "Query duration")
-    _metric_consolidations = Counter(
-        "rtmdk_consolidations_total",
-        "Total consolidations")
-    _metric_security = Counter(
-        "rtmdk_security_violations_total",
-        "Security violations")
-    _metric_lm_requests = Counter(
-        "rtmdk_lm_requests_total",
-        "LM Studio requests",
+    from prometheus_client import REGISTRY
+    def _safe_metric(cls, *args, **kwargs):
+        try:
+            return cls(*args, **kwargs)
+        except ValueError:
+            # Already registered — remove and re-register
+            name = args[0]
+            if name in REGISTRY._names_to_collectors:
+                REGISTRY.unregister(REGISTRY._names_to_collectors[name])
+            return cls(*args, **kwargs)
+
+    _metric_nodes = _safe_metric(Gauge, "rtmdk_nodes_total", "Number of memory nodes")
+    _metric_queries = _safe_metric(Counter, "rtmdk_queries_total", "Total memory queries")
+    _metric_query_dur = _safe_metric(
+        Histogram, "rtmdk_query_duration_seconds", "Query duration")
+    _metric_consolidations = _safe_metric(
+        Counter, "rtmdk_consolidations_total", "Total consolidations")
+    _metric_security = _safe_metric(
+        Counter, "rtmdk_security_violations_total", "Security violations")
+    _metric_lm_requests = _safe_metric(
+        Counter, "rtmdk_lm_requests_total", "LM Studio requests",
         ["endpoint"])
-    _metric_lm_errors = Counter(
-        "rtmdk_lm_errors_total",
-        "LM Studio errors",
+    _metric_lm_errors = _safe_metric(
+        Counter, "rtmdk_lm_errors_total", "LM Studio errors",
         ["endpoint"])
     # SOT-specific metrics
-    _metric_sot_vocab = Gauge(
-        "rtmdk_sot_vocab_size",
-        "SOT vocabulary size",
+    _metric_sot_vocab = _safe_metric(
+        Gauge, "rtmdk_sot_vocab_size", "SOT vocabulary size",
         ["mode"])
-    _metric_sot_cooccurrence = Gauge(
-        "rtmdk_sot_cooccurrence_size",
-        "SOT cooccurrence store entries")
-    _metric_sot_bootstrap_time = Gauge(
-        "rtmdk_sot_bootstrap_time_seconds",
-        "SOT bootstrap duration")
+    _metric_sot_cooccurrence = _safe_metric(
+        Gauge, "rtmdk_sot_cooccurrence_size", "SOT cooccurrence store entries")
+    _metric_sot_bootstrap_time = _safe_metric(
+        Gauge, "rtmdk_sot_bootstrap_time_seconds", "SOT bootstrap duration")
 
 
 # ============================================================================
@@ -118,6 +122,8 @@ async def run_sync(func, *args, **kwargs):
 SERVER_HOST = os.getenv("RTMDK_HOST", "0.0.0.0")
 SERVER_PORT = int(os.getenv("RTMDK_PORT", "8080"))
 LM_STUDIO_URL = os.getenv("LM_STUDIO_URL", "http://localhost:12345/v1")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 MEMORY_FILE = os.getenv(
     "RTMDK_MEMORY_FILE",
     os.path.join(
@@ -127,19 +133,22 @@ MEMORY_FILE = os.getenv(
 EMBED_MODEL = os.getenv(
     "RTMDK_EMBED_MODEL",
     "nomic-ai/nomic-embed-text-v1.5-GGUF")
+CHAT_MODEL = os.getenv("RTMDK_CHAT_MODEL", "")
 API_KEY = os.getenv("RTMDK_API_KEY", "rtmdk-local")
 ENABLE_LM_STUDIO = os.getenv(
     "RTMDK_ENABLE_LM_STUDIO",
     "true").lower() == "true"
 ENABLE_API_AUTH = os.getenv("RTMDK_ENABLE_API_AUTH", "true").lower() == "true"
 MAX_PAYLOAD_SIZE = int(os.getenv("RTMDK_MAX_PAYLOAD_SIZE", "1048576"))
-ALLOWED_ORIGINS = os.getenv("RTMDK_ALLOWED_ORIGINS", "*").split(",")
+_raw_origins = os.getenv("RTMDK_ALLOWED_ORIGINS", "*")
+ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()] if _raw_origins else ["*"]
 
 # Shared async HTTP client
 http_client = httpx.AsyncClient()
 
 # Graceful shutdown state
 _active_requests = 0
+_active_requests_lock = asyncio.Lock()
 _shutdown_event = asyncio.Event()
 
 # Pipeline metrics store (optional)
@@ -154,7 +163,7 @@ async def _sot_bootstrap_from_memory():
     try:
         texts = []
         for node in memory.field.nodes.values():
-            text = node.content.get("text", "") if isinstance(node.content, dict) else str(node.content)
+            text = node.content.get("content", "") if isinstance(node.content, dict) else str(node.content)
             if text:
                 texts.append(text)
         if len(texts) >= 10:
@@ -166,12 +175,18 @@ async def _sot_bootstrap_from_memory():
 
 async def _drain_active_requests(timeout: float = 30.0):
     """Wait for active requests to complete before shutdown."""
-    t0 = time.time()
-    while _active_requests > 0 and (time.time() - t0) < timeout:
-        logger.info(f"Draining {_active_requests} active requests...")
+    t0 = time.perf_counter()
+    while True:
+        async with _active_requests_lock:
+            count = _active_requests
+        if count == 0 or (time.perf_counter() - t0) >= timeout:
+            break
+        logger.info(f"Draining {count} active requests...")
         await asyncio.sleep(0.5)
-    if _active_requests > 0:
-        logger.warning(f"Shutdown with {_active_requests} requests still active")
+    async with _active_requests_lock:
+        count = _active_requests
+    if count > 0:
+        logger.warning(f"Shutdown with {count} requests still active")
     else:
         logger.info("All requests drained gracefully")
 
@@ -210,8 +225,10 @@ def _handle_sigint(signum, frame):
     _handle_sigterm(signum, frame)
 
 
-signal.signal(signal.SIGTERM, _handle_sigterm)
-signal.signal(signal.SIGINT, _handle_sigint)
+if hasattr(signal, "SIGTERM"):
+    signal.signal(signal.SIGTERM, _handle_sigterm)
+if hasattr(signal, "SIGINT"):
+    signal.signal(signal.SIGINT, _handle_sigint)
 
 
 @atexit.register
@@ -267,7 +284,11 @@ async def _health_check_loop():
     while True:
         await asyncio.sleep(60)
         if health_monitor:
-            health_monitor.check_health()
+            try:
+                h = health_monitor.check_health()
+                logger.debug(f"Health check: {h}")
+            except Exception:
+                logger.warning("Health monitor check failed", exc_info=True)
 
 
 async def _auto_save_loop():
@@ -280,11 +301,12 @@ async def _auto_save_loop():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global memory, lm_studio_available
+    global memory, lm_studio_available, ai_provider_available
     global query_cache, embedding_cache, context_optimizer, health_monitor
     global analytics_dashboard, api_key_manager, tenant_rate_limiter
     global webhook_manager, audit_log, retention_manager
     global redis_query_cache, redis_embedding_cache, encryption_manager, telemetry_manager
+    global pipeline_metrics_store
     # Structured JSON logging in production mode
     if os.getenv("RTMDK_JSON_LOG", "").lower() in ("1", "true", "yes"):
         try:
@@ -292,12 +314,13 @@ async def lifespan(app: FastAPI):
             setup_json_logging()
         except Exception:
             pass
-    logger.info("Starting RTMDK Production API v8.3.0")
+    logger.info("Starting RTMDK Production API v8.3.1")
     logger.info(f"Memory file: {MEMORY_FILE}")
     logger.info(f"LM Studio URL: {LM_STUDIO_URL}")
 
     if ENABLE_LM_STUDIO:
-        lm_studio_available = await check_lm_studio()
+        ai_provider_available = await check_ai_provider()
+        lm_studio_available = ai_provider_available  # backward compat
 
     memory = init_memory()
     global _memory_ref
@@ -334,14 +357,15 @@ async def lifespan(app: FastAPI):
     audit_log = AuditLog()
 
     # Retention manager
-    retention_manager = RetentionManager(memory.field)
-    retention_manager.set_policy(
-        RetentionPolicy(
-            max_age_seconds=float(os.getenv("RTMDK_RETENTION_MAX_AGE_DAYS", "0")) * 86400 or None,
-            max_nodes=int(os.getenv("RTMDK_RETENTION_MAX_NODES", "0")) or None,
+    if memory and memory.field is not None:
+        retention_manager = RetentionManager(memory.field)
+        retention_manager.set_policy(
+            RetentionPolicy(
+                max_age_seconds=float(os.getenv("RTMDK_RETENTION_MAX_AGE_DAYS", "0")) * 86400 or None,
+                max_nodes=int(os.getenv("RTMDK_RETENTION_MAX_NODES", "0")) or None,
+            )
         )
-    )
-    retention_manager.start()
+        retention_manager.start()
 
     # Redis caches
     redis_query_cache = RedisQueryCache(redis_url=os.getenv("REDIS_URL"))
@@ -365,7 +389,7 @@ async def lifespan(app: FastAPI):
     _sot_checkpoint_path = os.path.join(
         os.path.expanduser("~"), ".rtmdk", "sot_checkpoint.json"
     )
-    if memory and memory.field and memory.field._projection_mgr.sot_tokenizer:
+    if memory and memory.field is not None and hasattr(memory.field, "_projection_mgr") and memory.field._projection_mgr.sot_tokenizer:
         if os.path.exists(_sot_checkpoint_path):
             try:
                 with open(_sot_checkpoint_path, "r", encoding="utf-8") as fh:
@@ -438,11 +462,17 @@ async def lifespan(app: FastAPI):
         except Exception:
             logger.exception("Failed to save memory on shutdown")
 
+    # Close shared HTTP client to avoid connection leaks
+    try:
+        await http_client.aclose()
+    except Exception:
+        pass
+
 
 app = FastAPI(
     title="RTMDK Production API",
     description="OpenAI-compatible API with Resonance-Topological Memory (No SillyTavern)",
-    version="8.3.0",
+    version="8.3.1",
     lifespan=lifespan,
 )
 
@@ -477,30 +507,14 @@ async def request_counter_middleware(request: Request, call_next):
         return JSONResponse(
             status_code=503,
             content={"error": "Server is shutting down"})
-    _active_requests += 1
+    async with _active_requests_lock:
+        _active_requests += 1
     try:
         response = await call_next(request)
         return response
     finally:
-        _active_requests -= 1
-
-
-# ============================================================================
-# REQUEST TIMEOUT MIDDLEWARE
-# ============================================================================
-
-
-@app.middleware("http")
-async def request_timeout_middleware(request: Request, call_next):
-    """Enforce per-request timeout."""
-    timeout = float(os.getenv("RTMDK_REQUEST_TIMEOUT", "60"))
-    try:
-        return await asyncio.wait_for(call_next(request), timeout=timeout)
-    except asyncio.TimeoutError:
-        logger.warning("Request timeout: %s %s", request.method, request.url.path)
-        return JSONResponse(
-            status_code=504,
-            content={"error": "Request timeout"})
+        async with _active_requests_lock:
+            _active_requests -= 1
 
 
 # ============================================================================
@@ -514,10 +528,10 @@ async def request_logging_middleware(request: Request, call_next):
     import uuid
     request_id = str(uuid.uuid4())[:8]
     request.state.request_id = request_id
-    t0 = time.time()
+    t0 = time.perf_counter()
     try:
         response = await call_next(request)
-        latency_ms = round((time.time() - t0) * 1000, 2)
+        latency_ms = round((time.perf_counter() - t0) * 1000, 2)
         logger.info(
             json.dumps({
                 "event": "http_request",
@@ -533,7 +547,7 @@ async def request_logging_middleware(request: Request, call_next):
         response.headers["X-Request-ID"] = request_id
         return response
     except Exception as exc:
-        latency_ms = round((time.time() - t0) * 1000, 2)
+        latency_ms = round((time.perf_counter() - t0) * 1000, 2)
         logger.warning(
             json.dumps({
                 "event": "http_request_error",
@@ -658,6 +672,7 @@ memory: Optional[RTMDKMemory] = None
 
 embedder_cache = LRUCache(maxsize=4096)
 lm_studio_available: bool = False
+ai_provider_available: bool = False
 chat_model: Optional[str] = None
 
 
@@ -715,34 +730,72 @@ class EmbeddingRequest(BaseModel):
 # ============================================================================
 
 
-async def check_lm_studio() -> bool:
-    """Check if LM Studio is available."""
+async def check_ai_provider() -> bool:
+    """Check if the configured AI provider (LM Studio, OpenRouter, OpenAI, etc.) is reachable."""
+    global chat_model
+    if CHAT_MODEL:
+        chat_model = CHAT_MODEL
+        logger.info(f"Using configured chat model: {chat_model}")
+        # Still verify endpoint is reachable
+        try:
+            await http_client.get(f"{LM_STUDIO_URL}/models", timeout=3)
+            return True
+        except Exception:
+            logger.warning(
+                "AI provider not reachable at %s",
+                LM_STUDIO_URL,
+                exc_info=True)
+        return False
     try:
         resp = await http_client.get(f"{LM_STUDIO_URL}/models", timeout=3)
-        global chat_model
         models = resp.json().get("data", [])
-        if models:
-            chat_model = models[0]["id"]
-            logger.info(f"LM Studio detected: {chat_model}")
+        # Filter for chat-capable models (heuristic: exclude embeddings)
+        chat_models = [m for m in models if "embed" not in m.get("id", "").lower()]
+        if chat_models:
+            chat_model = chat_models[0]["id"]
+            logger.info(f"AI provider detected: {chat_model}")
             return True
     except Exception:
         logger.warning(
-            "LM Studio not available at %s",
+            "AI provider not available at %s",
             LM_STUDIO_URL,
             exc_info=True)
     return False
 
 
+def _get_auth_header():
+    """Return auth header based on available API keys, not URL substring matching.
+    Priority: OpenRouter key > OpenAI key.
+    """
+    if OPENROUTER_API_KEY:
+        return {"Authorization": f"Bearer {OPENROUTER_API_KEY}"}
+    if OPENAI_API_KEY:
+        return {"Authorization": f"Bearer {OPENAI_API_KEY}"}
+    return {}
+
+
 async def _fetch_embedding(text: str, model: str) -> np.ndarray:
-    """Raw embedding fetch — wrapped by circuit breaker."""
+    """Raw embedding fetch — wrapped by circuit breaker and retry."""
     if _PROMETHEUS_AVAILABLE:
         _metric_lm_requests.labels(endpoint="embeddings").inc()
-    resp = await http_client.post(
-        f"{LM_STUDIO_URL}/embeddings",
-        json={"model": model, "input": text},
-        timeout=30,
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type((httpx.HTTPStatusError, httpx.ConnectError, httpx.TimeoutException)),
+        reraise=True,
     )
-    data = resp.json()
+    async def _call():
+        resp = await http_client.post(
+            f"{LM_STUDIO_URL}/embeddings",
+            json={"model": model, "input": text},
+            headers=_get_auth_header(),
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    data = await _call()
     return np.array(data["data"][0]["embedding"], dtype=np.float32)
 
 
@@ -959,21 +1012,16 @@ def build_system_prompt(
 
 def _get_save_path(base_path: str) -> str:
     """Select msgpack path if available, otherwise json."""
-    try:
-        pass
-
-        if not base_path.endswith(".msgpack"):
-            return os.path.splitext(base_path)[0] + ".msgpack"
-    except ImportError:
-        pass
+    if not base_path.endswith(".msgpack"):
+        return os.path.splitext(base_path)[0] + ".msgpack"
     return base_path
 
 
 def auto_save():
     """Auto-save memory to file if state changed since last save."""
-    if not memory:
+    if not memory or memory.field is None:
         return
-    if not memory.field._dirty:
+    if not getattr(memory.field, "_dirty", False):
         logger.debug("Auto-save skipped: no changes since last save")
         return
     try:
@@ -1039,8 +1087,8 @@ async def list_models():
 @app.post("/v1/chat/completions")
 async def chat_completions(req: ChatCompletionRequest):
     """Chat completions with RTMDK memory context."""
-    if not lm_studio_available:
-        raise HTTPException(status_code=503, detail="LM Studio not available")
+    if not ai_provider_available:
+        raise HTTPException(status_code=503, detail="AI provider not available")
 
     system_prompt = await run_sync(build_system_prompt, req.messages, req.session_id)
     messages = []
@@ -1067,18 +1115,33 @@ async def chat_completions(req: ChatCompletionRequest):
     async def _fetch_chat():
         if _PROMETHEUS_AVAILABLE:
             _metric_lm_requests.labels(endpoint="chat").inc()
-        return await http_client.post(
-            f"{LM_STUDIO_URL}/chat/completions",
-            json={
-                "model": actual_model,
-                "messages": messages,
-                "temperature": req.temperature,
-                "max_tokens": req.max_tokens,
-                "stream": req.stream,
-            },
-            timeout=lm_timeout,
-            stream=req.stream,
+
+        @retry(
+            stop=stop_after_attempt(3),
+            wait=wait_exponential(multiplier=1, min=1, max=10),
+            retry=retry_if_exception_type((httpx.HTTPStatusError, httpx.ConnectError, httpx.TimeoutException)),
+            reraise=True,
         )
+        async def _call():
+            resp = await http_client.post(
+                f"{LM_STUDIO_URL}/chat/completions",
+                json={
+                    "model": actual_model,
+                    "messages": messages,
+                    "temperature": req.temperature,
+                    "max_tokens": req.max_tokens,
+                    "stream": req.stream,
+                },
+                headers=_get_auth_header(),
+                timeout=lm_timeout,
+                stream=req.stream,
+            )
+            # Only raise for status on non-streaming; streaming responses are validated later
+            if not req.stream:
+                resp.raise_for_status()
+            return resp
+
+        return await _call()
 
     resp = await llm_chat_circuit.call(_fetch_chat)
     if resp is None:
@@ -1335,17 +1398,18 @@ async def memory_query(req: MemoryQueryRequest):
         raise HTTPException(status_code=503, detail="Memory not initialized")
 
     _metric_queries.inc()
-    t0 = time.time()
+    t0 = time.perf_counter()
     try:
         # Query cache check
         if query_cache is not None:
             cached = query_cache.get(req.query)
             if cached is not None:
-                _metric_query_dur.observe(time.time() - t0)
+                _metric_query_dur.observe(time.perf_counter() - t0)
                 return cached
 
         embedding = await _get_embedding_cached(req.query)
-        assert memory.field is not None
+        if memory.field is None:
+            raise HTTPException(status_code=503, detail="Memory field not initialized")
         results = await run_sync(memory.field.query, embedding, top_k=req.top_k)
         # Filter by threshold and format
         formatted = []
@@ -1370,10 +1434,10 @@ async def memory_query(req: MemoryQueryRequest):
         }
         if query_cache is not None:
             query_cache.put(req.query, resp)
-        _metric_query_dur.observe(time.time() - t0)
+        _metric_query_dur.observe(time.perf_counter() - t0)
         return resp
     except Exception as exc:
-        _metric_query_dur.observe(time.time() - t0)
+        _metric_query_dur.observe(time.perf_counter() - t0)
         logger.warning("Memory query failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -1386,10 +1450,14 @@ async def memory_query_pipeline(req: MemoryQueryPipelineRequest):
     if not memory:
         raise HTTPException(status_code=503, detail="Memory not initialized")
 
-    t0 = time.time()
+    t0 = time.perf_counter()
     try:
+        # Pre-compute embedding async so the sync pipeline doesn't need to
+        # call an async embedder inside run_in_executor.
+        embedding = await _get_embedding_cached(req.query)
         result = await memory.retrieve_nodes_pipeline_async(
             query,
+            embedding=embedding,
             top_k=req.top_k,
             session_id=req.session_id,
         )
@@ -1418,10 +1486,10 @@ async def memory_query_pipeline(req: MemoryQueryPipelineRequest):
             resp["cost"] = result["cost"]
         if pipeline_metrics_store is not None:
             pipeline_metrics_store.write(result.get("metrics", {}))
-        _metric_query_dur.observe(time.time() - t0)
+        _metric_query_dur.observe(time.perf_counter() - t0)
         return resp
     except Exception as exc:
-        _metric_query_dur.observe(time.time() - t0)
+        _metric_query_dur.observe(time.perf_counter() - t0)
         logger.warning("Pipeline query failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -1453,9 +1521,10 @@ async def memory_pipeline_stream(
 
     pipeline = memory.build_pipeline()
     streamer = StreamingPipelineExecutor(pipeline.stages)
+    embedding = await _get_embedding_cached(query)
 
     async def _generator():
-        async for chunk in streamer.run_async(query, top_k=top_k, session_id=session_id):
+        async for chunk in streamer.run_async(query, top_k=top_k, session_id=session_id, embedding=embedding):
             yield chunk
 
     return StreamingResponse(
@@ -1648,7 +1717,7 @@ async def memory_batch_query(req: BatchQueryRequest):
         raise HTTPException(status_code=503, detail="Memory not initialized")
 
     _metric_queries.inc(len(req.queries))
-    t0 = time.time()
+    t0 = time.perf_counter()
     try:
         # Phase 1: per-query cache check and embedding gathering
         uncached_indices: List[int] = []
@@ -1698,13 +1767,13 @@ async def memory_batch_query(req: BatchQueryRequest):
                         q, {"query": q, "results": formatted, "total": len(formatted)})
                 responses[i] = resp
 
-        _metric_query_dur.observe(time.time() - t0)
+        _metric_query_dur.observe(time.perf_counter() - t0)
         return {
             "queries": len(req.queries),
             "results": responses,
-            "latency_ms": round((time.time() - t0) * 1000, 2)}
+            "latency_ms": round((time.perf_counter() - t0) * 1000, 2)}
     except Exception as exc:
-        _metric_query_dur.observe(time.time() - t0)
+        _metric_query_dur.observe(time.perf_counter() - t0)
         logger.warning("Batch memory query failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -1719,7 +1788,8 @@ async def create_node(req: CreateNodeRequest):
     """Create a new memory node."""
     if not memory:
         raise HTTPException(status_code=503, detail="Memory not initialized")
-    assert memory.field is not None
+    if memory.field is None:
+        raise HTTPException(status_code=503, detail="Memory field not initialized")
     try:
         embedding = await _get_embedding_cached(req.content)
         content_dict = {"content": req.content, **req.metadata}
@@ -1745,13 +1815,14 @@ async def get_node(node_id: str):
     """Get a memory node by ID."""
     if not memory:
         raise HTTPException(status_code=503, detail="Memory not initialized")
-    assert memory.field is not None
+    if memory.field is None:
+        raise HTTPException(status_code=503, detail="Memory field not initialized")
     node = memory.field.nodes.get(node_id)
     if node is None:
         raise HTTPException(status_code=404, detail="Node not found")
     return {
         "id": node_id,
-        "content": node.content,
+        "content": node.content if isinstance(node.content, dict) else {"content": str(node.content)},
         "salience": node.salience,
         "created_at": getattr(node, "created_at", None),
         "last_accessed": getattr(node, "last_accessed", None),
@@ -1763,7 +1834,8 @@ async def update_node(node_id: str, req: UpdateNodeRequest):
     """Update an existing memory node."""
     if not memory:
         raise HTTPException(status_code=503, detail="Memory not initialized")
-    assert memory.field is not None
+    if memory.field is None:
+        raise HTTPException(status_code=503, detail="Memory field not initialized")
     node = memory.field.nodes.get(node_id)
     if node is None:
         raise HTTPException(status_code=404, detail="Node not found")
@@ -1794,7 +1866,8 @@ async def delete_node(node_id: str):
     """Delete a memory node by ID."""
     if not memory:
         raise HTTPException(status_code=503, detail="Memory not initialized")
-    assert memory.field is not None
+    if memory.field is None:
+        raise HTTPException(status_code=503, detail="Memory field not initialized")
     node = memory.field.nodes.get(node_id)
     if node is None:
         raise HTTPException(status_code=404, detail="Node not found")
@@ -1819,10 +1892,11 @@ async def list_nodes(
     """List memory nodes with pagination."""
     if not memory:
         raise HTTPException(status_code=503, detail="Memory not initialized")
-    assert memory.field is not None
-    nodes = list(memory.field.nodes.items())
-    total = len(nodes)
-    page = nodes[offset:offset + limit]
+    if memory.field is None:
+        raise HTTPException(status_code=503, detail="Memory field not initialized")
+    from itertools import islice
+    total = len(memory.field.nodes)
+    page = list(islice(memory.field.nodes.items(), offset, offset + limit))
     results = []
     for nid, node in page:
         results.append({
@@ -1838,9 +1912,10 @@ async def batch_ingest(req: BatchIngestRequest):
     """Batch ingest documents into memory."""
     if not memory:
         raise HTTPException(status_code=503, detail="Memory not initialized")
-    assert memory.field is not None
+    if memory.field is None:
+        raise HTTPException(status_code=503, detail="Memory field not initialized")
     try:
-        t0 = time.time()
+        t0 = time.perf_counter()
         created = []
         for idx, doc in enumerate(req.documents):
             embedding = await _get_embedding_cached(doc)
@@ -1852,7 +1927,7 @@ async def batch_ingest(req: BatchIngestRequest):
                 node_id=nid,
             )
             created.append(node_id)
-        latency_ms = round((time.time() - t0) * 1000, 2)
+        latency_ms = round((time.perf_counter() - t0) * 1000, 2)
         return {
             "ingested": len(created),
             "node_ids": created,
@@ -1868,18 +1943,15 @@ async def memory_export():
     """Export all memory nodes as JSON."""
     if not memory:
         raise HTTPException(status_code=503, detail="Memory not initialized")
-    assert memory.field is not None
+    if memory.field is None:
+        raise HTTPException(status_code=503, detail="Memory field not initialized")
     try:
         nodes = []
         for nid, node in memory.field.nodes.items():
             nodes.append({
                 "id": nid,
                 "content": node.content,
-                "latent_pos": (
-                    node.latent_pos.tolist()
-                    if hasattr(node.latent_pos, "tolist")
-                    else list(node.latent_pos)
-                ),
+                "latent_pos": node.latent_pos.tolist(),
                 "salience": node.salience,
                 "created_at": getattr(node, "created_at", None),
                 "last_accessed": getattr(node, "last_accessed", None),
@@ -1895,10 +1967,11 @@ async def memory_import(req: MemoryImportRequest):
     """Import memory nodes from JSON payload."""
     if not memory:
         raise HTTPException(status_code=503, detail="Memory not initialized")
-    assert memory.field is not None
+    if memory.field is None:
+        raise HTTPException(status_code=503, detail="Memory field not initialized")
     try:
         import numpy as np
-        t0 = time.time()
+        t0 = time.perf_counter()
         if req.clear_existing:
             memory.field.nodes.clear()
         created = []
@@ -1912,7 +1985,7 @@ async def memory_import(req: MemoryImportRequest):
                 node_id=nid,
             )
             created.append(node_id)
-        latency_ms = round((time.time() - t0) * 1000, 2)
+        latency_ms = round((time.perf_counter() - t0) * 1000, 2)
         return {
             "imported": len(created),
             "node_ids": created,
@@ -1928,8 +2001,9 @@ async def health():
     """Health check with production metrics."""
     base = {
         "status": "ok",
-        "version": "8.3.0",
+        "version": "8.3.1",
         "lm_studio": lm_studio_available,
+        "ai_provider": ai_provider_available,
         "memory_nodes": len(memory.field.nodes) if memory else 0,
     }
     if health_monitor is not None:
@@ -2021,7 +2095,7 @@ async def health_deep():
 
     return {
         "status": overall,
-        "version": "8.3.0",
+        "version": "8.3.1",
         "checks": checks,
     }
 
@@ -2241,7 +2315,7 @@ async def memory_websocket(websocket: WebSocket):
                             content = ""
                             if hasattr(node, "content"):
                                 if isinstance(node.content, dict):
-                                    content = node.content.get("text", str(node.content))
+                                    content = node.content.get("content", str(node.content))
                                 else:
                                     content = str(node.content)
                             out.append({
@@ -2263,7 +2337,8 @@ async def memory_websocket(websocket: WebSocket):
                                 from rtmdk.pipeline.streaming import StreamingPipelineExecutor
                                 pipeline = memory.build_pipeline()
                                 streamer = StreamingPipelineExecutor(pipeline.stages)
-                                async for chunk in streamer.run_async(query, top_k=top_k, session_id=session_id):
+                                embedding = await _get_embedding_cached(query)
+                                async for chunk in streamer.run_async(query, top_k=top_k, session_id=session_id, embedding=embedding):
                                     # chunk is already SSE-formatted "data: {...}\n\n"
                                     # strip prefix for WebSocket JSON
                                     raw = chunk.strip()
@@ -2275,8 +2350,9 @@ async def memory_websocket(websocket: WebSocket):
                                         "event": event_data,
                                     })
                             else:
+                                embedding = await _get_embedding_cached(query)
                                 result = await memory.retrieve_nodes_pipeline_async(
-                                    query, top_k=top_k, session_id=session_id
+                                    query, embedding=embedding, top_k=top_k, session_id=session_id
                                 )
                                 formatted = []
                                 for nid, score, node in result["results"]:
@@ -2310,7 +2386,7 @@ async def memory_websocket(websocket: WebSocket):
             except json.JSONDecodeError:
                 await websocket.send_json({"type": "error", "message": "Invalid JSON"})
     except Exception:
-        pass
+        logger.warning("WebSocket error", exc_info=True)
     finally:
         try:
             await websocket.close()
@@ -2352,13 +2428,15 @@ async def sot_vocab(
     sot = memory.field._projection_mgr.sot_tokenizer
     if sot is None:
         raise HTTPException(status_code=503, detail="SOT not enabled")
-    items = []
     word_map = getattr(sot, "word_to_id", {})
-    for word, tid in list(word_map.items())[offset:offset + limit]:
-        if search and search.lower() not in word.lower():
-            continue
+    items = []
+    filtered = list(word_map.items())
+    if search:
+        search_lower = search.lower()
+        filtered = [(w, t) for w, t in filtered if search_lower in w.lower()]
+    for word, tid in filtered[offset:offset + limit]:
         items.append({"word": word, "token_id": tid})
-    return {"items": items, "total": len(word_map), "limit": limit, "offset": offset}
+    return {"items": items, "total": len(filtered), "limit": limit, "offset": offset}
 
 
 @app.post("/v1/sot/bootstrap")
@@ -2374,7 +2452,7 @@ async def sot_bootstrap(req: SOTBootstrapRequest):
     if not texts:
         raise HTTPException(status_code=400, detail="texts required")
 
-    async def _do_bootstrap():
+    def _do_bootstrap():
         if teacher:
             memory.field.sot_bootstrap(texts, teacher_model=teacher)
         else:
@@ -2622,15 +2700,27 @@ async def webhook_list(request: Request):
 # ============================================================================
 
 
+def _ensure_legacy_path() -> None:
+    """Make legacy/ modules (UX/dashboard routers) importable."""
+    legacy_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "legacy",
+    )
+    if os.path.isdir(legacy_dir) and legacy_dir not in sys.path:
+        sys.path.insert(0, legacy_dir)
+
+
 def create_ux_router(memory_fn, config: Dict) -> "APIRouter":
-    """Import and return UX router from the package."""
+    """Import and return UX router from the legacy modules."""
+    _ensure_legacy_path()
     from rtmdk_server_ux import create_ux_router as _create_ux
 
     return _create_ux(memory_fn, config)
 
 
 def create_dashboard_router(memory_fn, config: Dict) -> "APIRouter":
-    """Import and return Dashboard router from the package."""
+    """Import and return Dashboard router from the legacy modules."""
+    _ensure_legacy_path()
     from rtmdk_dashboard_ui import create_dashboard_router as _create_dash
 
     return _create_dash(memory_fn, config)
@@ -2663,7 +2753,7 @@ app.include_router(create_dashboard_router(lambda: memory, _ux_config))
 
 def main():
     print("=" * 60)
-    print("  RTMDK Production API v8.3.0")
+    print("  RTMDK Production API v8.3.1")
     print("  (No SillyTavern modules)")
     print("=" * 60)
     print()

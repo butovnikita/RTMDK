@@ -34,5 +34,5 @@ echo.
 REM Start launcher
 echo [*] Starting RTMDK + SillyTavern Proxy...
 echo.
-python rtmdk_sillytavern_launcher.py %*
+python legacy\rtmdk_sillytavern_launcher.py %*
 pause

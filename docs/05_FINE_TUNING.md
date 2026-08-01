@@ -1,4 +1,4 @@
-# RTMDK Fine-Tuning Guide
+﻿# RTMDK Fine-Tuning Guide
 
 > Полное руководство по настройке RTMDK для максимальной эффективности.
 > Версия: 3.0 (unified config, env vars, 8 профилей)
@@ -50,16 +50,16 @@ config = RTMDKConfig(
 
 ```bash
 # Выбрать пресет
-RTMDK_PRESET=production python rtmdk_server.py
+RTMDK_PRESET=production python legacy/rtmdk_server.py
 
 # Переопределить параметры пресета
-RTMDK_PRESET=local RTMDK_LATENT_DIM=128 RTMDK_TOP_K=10 python rtmdk_server.py
+RTMDK_PRESET=local RTMDK_LATENT_DIM=128 RTMDK_TOP_K=10 python legacy/rtmdk_server.py
 
 # Полный контроль
 RTMDK_PRESET=research \
   RTMDK_DECAY_RATE=0.9995 \
   RTMDK_CAUSAL_TOPOLOGICAL=true \
-  python rtmdk_server.py
+  python legacy/rtmdk_server.py
 ```
 
 **Все поддерживаемые env vars:**

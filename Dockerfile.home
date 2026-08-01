@@ -18,13 +18,13 @@ RUN pip install --no-cache-dir -r requirements-home.txt
 COPY rtmdk/ ./rtmdk/
 
 # Copy all server files (monolith with ST compat)
-COPY rtmdk_server.py .
-COPY rtmdk_server_ux.py .
-COPY rtmdk_dashboard_ui.py .
-COPY rtmdk_sillytavern_compat.py .
-COPY rtmdk_st_proxy.py .
-COPY rtmdk_sillytavern_launcher.py .
-COPY embedder_lmstudio.py .
+COPY legacy/rtmdk_server.py .
+COPY legacy/rtmdk_server_ux.py .
+COPY legacy/rtmdk_dashboard_ui.py .
+COPY legacy/rtmdk_sillytavern_compat.py .
+COPY legacy/rtmdk_st_proxy.py .
+COPY legacy/rtmdk_sillytavern_launcher.py .
+COPY legacy/embedder_lmstudio.py .
 
 # Copy SillyTavern config
 COPY st_config.json .

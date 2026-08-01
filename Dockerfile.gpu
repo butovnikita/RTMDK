@@ -17,7 +17,7 @@ RUN pip install --no-cache-dir \
     torch --index-url https://download.pytorch.org/whl/cu121
 
 # Application code
-COPY rtmdk_server.py .
+COPY legacy/rtmdk_server.py .
 COPY rtmdk/ ./rtmdk/
 
 # Create memory directory

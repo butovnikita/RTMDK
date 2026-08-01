@@ -21,9 +21,9 @@ COPY rtmdk/ ./rtmdk/
 
 # Copy production entry point and shared modules
 COPY start_production.py .
-COPY rtmdk_server_ux.py .
-COPY rtmdk_dashboard_ui.py .
-COPY embedder_lmstudio.py .
+COPY legacy/rtmdk_server_ux.py ./legacy/
+COPY legacy/rtmdk_dashboard_ui.py ./legacy/
+COPY legacy/embedder_lmstudio.py ./legacy/
 
 # Create data directories
 RUN mkdir -p /app/data/memory \

@@ -50,9 +50,10 @@ docs/
 # Production build: exclude SillyTavern-specific files
 # (Use .dockerignore.home for home build)
 # ============================================================
-rtmdk_st_proxy.py
-rtmdk_sillytavern_compat.py
-rtmdk_sillytavern_launcher.py
+legacy/rtmdk_st_proxy.py
+legacy/rtmdk_sillytavern_compat.py
+legacy/rtmdk_sillytavern_launcher.py
+legacy/benchmark.py
 st_config.json
 start_sillytavern.bat
 start_proxy.bat
@@ -64,7 +65,7 @@ test_*.py
 generate_qa_1000.py
 rtmdk_monitor.py
 rtmdk_monitor_log.json
-rtmdk_setup_wizard.py
+legacy/rtmdk_setup_wizard.py
 REFACTORING_PLAN.md
 SILLYTAVERN_CONNECTION_GUIDE.md
 Values.md

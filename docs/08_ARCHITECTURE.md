@@ -1,4 +1,4 @@
-# Архитектура RTMDK v8.3
+﻿# Архитектура RTMDK v8.3
 
 > Полный обзор всех фаз, модулей и компонентов системы
 > Обновлено после Leadership Cleanup (v8.3-alpha) — декомпозиция monolithic field.py / core.py
@@ -305,7 +305,7 @@ rtmdk/memory/config.py   ← ЕДИНСТВЕННЫЙ RTMDKConfig dataclass (~15
 
 ```bash
 # Через env vars
-RTMDK_PRESET=production RTMDK_LATENT_DIM=128 python rtmdk_server.py
+RTMDK_PRESET=production RTMDK_LATENT_DIM=128 python legacy/rtmdk_server.py
 
 # Через API
 curl -X POST http://localhost:8080/v1/admin/config \

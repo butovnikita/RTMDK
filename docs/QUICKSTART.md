@@ -1,10 +1,10 @@
-# Quick Start Guide — RTMDK + SillyTavern
+﻿# Quick Start Guide — RTMDK + SillyTavern
 
 ## The Easy Way (Recommended)
 
 ### 1. Start Everything
 ```bash
-python rtmdk_sillytavern_launcher.py
+python legacy/rtmdk_sillytavern_launcher.py
 ```
 Or on Windows, double-click `start_sillytavern.bat`
 
@@ -32,12 +32,12 @@ This starts:
 
 ### 1. Start RTMDK Server
 ```bash
-python rtmdk_server.py
+python legacy/rtmdk_server.py
 ```
 
 ### 2. Start Proxy (in new terminal)
 ```bash
-python rtmdk_st_proxy.py
+python legacy/rtmdk_st_proxy.py
 ```
 
 ### 3. Configure SillyTavern
@@ -81,10 +81,10 @@ Edit `st_config.json`:
 
 ```bash
 # Show status
-python rtmdk_sillytavern_launcher.py --status
+python legacy/rtmdk_sillytavern_launcher.py --status
 
 # Custom ports
-python rtmdk_sillytavern_launcher.py --rtmdk-port 9090 --proxy-port 6000
+python legacy/rtmdk_sillytavern_launcher.py --rtmdk-port 9090 --proxy-port 6000
 
 # Stop services
 Ctrl+C in the launcher window
@@ -94,10 +94,10 @@ Ctrl+C in the launcher window
 
 ```bash
 # Выбрать пресет
-RTMDK_PRESET=local python rtmdk_sillytavern_launcher.py
+RTMDK_PRESET=local python legacy/rtmdk_sillytavern_launcher.py
 
 # С кастомными параметрами
-RTMDK_PRESET=local RTMDK_LATENT_DIM=128 python rtmdk_sillytavern_launcher.py
+RTMDK_PRESET=local RTMDK_LATENT_DIM=128 python legacy/rtmdk_sillytavern_launcher.py
 ```
 
 Доступные пресеты: `local`, `production`, `research`, `enterprise`, `agent`, `legal`, `medical`, `streaming`.

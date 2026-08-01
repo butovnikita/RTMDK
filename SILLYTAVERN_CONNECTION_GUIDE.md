@@ -1,4 +1,4 @@
-# RTMDK SillyTavern Connection Guide
+﻿# RTMDK SillyTavern Connection Guide
 
 ## Server Status: WORKING ✅
 
@@ -34,7 +34,7 @@ SillyTavern → http://127.0.0.1:5000/v1 → RTMDK Server (8080) → LM Studio (
 ```
 
 ```bash
-python rtmdk_sillytavern_launcher.py
+python legacy/rtmdk_sillytavern_launcher.py
 # Запускает сервер (8080) + proxy (5000)
 ```
 
@@ -93,7 +93,7 @@ curl -X POST http://127.0.0.1:8080/api/v1/generate ^
 **Solution**: Change SillyTavern to use port 8080
 
 ### Issue 2: Server not running
-**Solution**: Run `python rtmdk_server.py`
+**Solution**: Run `python legacy/rtmdk_server.py`
 
 ### Issue 3: Streaming doesn't work
 **Solution**: Try disabling streaming in SillyTavern settings

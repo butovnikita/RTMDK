@@ -1,4 +1,4 @@
-# RTMDK — Полная документация
+﻿# RTMDK — Полная документация
 
 > Версия 8.3 | Pipeline Architecture | HNSW + Observability | 266 модулей | 49 API endpoints | 1112 тестов | Production Hardening
 
@@ -173,7 +173,7 @@ rtmdk/                              # Python-пакет (72+ публичных 
 | Файл | Описание |
 |------|----------|
 | `rtmdk/memory/core.py` | Ядро системы: RTMDKField + RTMDKMemory (~7000 строк) |
-| `rtmdk_server.py` | OpenAI-compatible HTTP-сервер |
+| `legacy/rtmdk_server.py` | OpenAI-compatible HTTP-сервер |
 | `tests/smoke_test.py` | Быстрая проверка критических путей |
 
 ---
@@ -904,7 +904,7 @@ vec = embedder("hello world")  # → np.ndarray shape (768,)
 ### Запуск
 
 ```bash
-python rtmdk_server.py  # → http://0.0.0.0:8080
+python legacy/rtmdk_server.py  # → http://0.0.0.0:8080
 # или
 docker-compose up -d
 ```

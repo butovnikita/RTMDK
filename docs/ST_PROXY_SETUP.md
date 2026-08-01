@@ -1,4 +1,4 @@
-# SillyTavern Setup Guide with RTMDK Proxy
+﻿# SillyTavern Setup Guide with RTMDK Proxy
 
 ## Architecture
 
@@ -14,12 +14,12 @@ SillyTavern ←→ RTMDK Proxy (port 5000) ←→ LM Studio (port 12345)
 
 ### 1. Start RTMDK Server
 ```bash
-python rtmdk_server.py
+python legacy/rtmdk_server.py
 ```
 
 ### 2. Start RTMDK Proxy
 ```bash
-python rtmdk_st_proxy.py
+python legacy/rtmdk_st_proxy.py
 ```
 
 ### 3. Configure SillyTavern

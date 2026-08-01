@@ -1,8 +1,8 @@
-# RTMDK — Версии для Развёртывания
+﻿# RTMDK — Версии для Развёртывания
 
 ## Сравнение версий
 
-| Функция | Home (`rtmdk_server.py`) | Production (`python -m rtmdk`) |
+| Функция | Home (`legacy/rtmdk_server.py`) | Production (`python -m rtmdk`) |
 |---------|:---:|:---:|
 | OpenAI API (/v1/chat/completions) | ✅ | ✅ |
 | Embeddings (/v1/embeddings) | ✅ | ✅ |
@@ -18,7 +18,7 @@
 
 ## Какую версию выбрать?
 
-### Home Version (`rtmdk_server.py`)
+### Home Version (`legacy/rtmdk_server.py`)
 **Используйте когда:**
 - Разрабатываете и тестируете
 - Нужен SillyTavern integration
@@ -26,13 +26,13 @@
 - Нужен полный набор endpoints
 
 ```bash
-python rtmdk_server.py
+python legacy/rtmdk_server.py
 
 # С пресетом
-RTMDK_PRESET=local python rtmdk_server.py
+RTMDK_PRESET=local python legacy/rtmdk_server.py
 
 # С параметрами
-RTMDK_PRESET=local RTMDK_LATENT_DIM=128 python rtmdk_server.py
+RTMDK_PRESET=local RTMDK_LATENT_DIM=128 python legacy/rtmdk_server.py
 ```
 
 ### Production Version (`python -m rtmdk`)
