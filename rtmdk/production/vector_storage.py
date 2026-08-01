@@ -179,12 +179,30 @@ class SQLiteVectorStorage(VectorStorage):
     def __init__(self, dsn: str, dim: int = 64):
         super().__init__(dsn=dsn)
         self.dim = dim
-        # Parse dsn: sqlite:///path/to/file.db
-        path = dsn.replace("sqlite://", "").lstrip("/")
-        if path == ":memory:":
-            path = ":memory:"
+        # Parse dsn: sqlite:///path/to/file.db (cross-platform)
+        path = self._parse_sqlite_dsn(dsn)
         self._conn = sqlite3.connect(path, check_same_thread=False)
         self._ensure_schema()
+
+    @staticmethod
+    def _parse_sqlite_dsn(dsn: str) -> str:
+        """Parse ``sqlite://`` DSNs on any OS.
+
+        - ``sqlite:///:memory:``           -> ``:memory:``
+        - ``sqlite:////tmp/x.db`` (POSIX)  -> ``/tmp/x.db``
+        - ``sqlite:///C:/x.db`` (Windows)  -> ``C:/x.db``
+        - ``sqlite:///rel/x.db``           -> ``rel/x.db``
+        """
+        import re
+
+        raw = dsn.replace("sqlite://", "", 1)
+        if raw.lstrip("/") == ":memory:":
+            return ":memory:"
+        if raw.startswith("//"):
+            return raw[1:]  # POSIX absolute
+        if re.match(r"^/[A-Za-z]:[/\\\\]", raw):
+            return raw[1:]  # Windows drive after slash
+        return raw.lstrip("/")
 
     def _ensure_schema(self) -> None:
         self._conn.execute("""

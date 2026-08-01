@@ -14,7 +14,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy requirements first for better caching
 COPY requirements-prod.txt .
 COPY requirements-sot.txt .
-RUN pip install --no-cache-dir -r requirements-prod.txt -r requirements-sot.txt
+# CPU-only torch first: keeps the production image ~2.3GB smaller and avoids
+# runner disk pressure (CUDA wheels are only needed in Dockerfile.gpu)
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu \
+    && pip install --no-cache-dir -r requirements-prod.txt -r requirements-sot.txt
 
 # Copy the rtmdk package
 COPY rtmdk/ ./rtmdk/

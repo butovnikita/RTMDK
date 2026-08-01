@@ -45,6 +45,7 @@ from rtmdk.pipeline.profiler import PipelineMemoryProfiler
 from rtmdk.pipeline.planner import QueryPlanner, ExecutionPlan
 from rtmdk.pipeline.cost import PipelineCostAnalyzer, CostBreakdown
 from rtmdk.pipeline.planned_executor import PlannedPipelineExecutor
+from rtmdk.pipeline.streaming import StreamingPipelineExecutor
 
 # Register default stages in the global registry
 GLOBAL_REGISTRY.register("embed", EmbedStage)
@@ -83,4 +84,5 @@ __all__ = [
     "PipelineCostAnalyzer",
     "CostBreakdown",
     "PlannedPipelineExecutor",
+    "StreamingPipelineExecutor",
 ]

@@ -122,6 +122,10 @@ class TestWALConcurrent:
 
 class TestWALReadOnly:
     @pytest.mark.skipif(sys.platform == "win32", reason="chmod read-only dir not supported on Windows")
+    @pytest.mark.skipif(
+        hasattr(os, "geteuid") and os.geteuid() == 0,
+        reason="root bypasses file permission checks",
+    )
     def test_append_fails_gracefully_on_readonly_dir(self):
         with tempfile.TemporaryDirectory() as td:
             path = os.path.join(td, "wal.jsonl")
@@ -130,8 +134,9 @@ class TestWALReadOnly:
             wal.append_add_node("n1", {"text": "hello"})
             wal.close()
 
-            # Make directory read-only
-            os.chmod(td, 0o555)
+            # Read-only DIRECTORY still allows appending to the existing file
+            # (write perm is on the file, not the dir) — make the FILE read-only
+            os.chmod(path, 0o444)
             try:
                 wal2 = WAL(path, enabled=True, fsync_interval_ms=0)
                 # Append should fail gracefully (enabled becomes False)
@@ -142,4 +147,4 @@ class TestWALReadOnly:
                 assert len(lines) == 1
                 wal2.close()
             finally:
-                os.chmod(td, 0o755)
+                os.chmod(path, 0o644)

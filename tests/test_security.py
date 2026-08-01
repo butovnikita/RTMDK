@@ -29,13 +29,13 @@ class TestPathSanitization:
     def test_allows_absolute_unix_path(self):
         # Absolute paths are allowed (blocked by OS/container policy, not by
         # us)
-        assert _sanitize_path("/etc/passwd") == "\\etc\\passwd"
+        assert _sanitize_path("/etc/passwd") == os.path.normpath("/etc/passwd")
 
     def test_allows_absolute_windows_path(self):
         assert _sanitize_path("C:\\Windows\\system.ini") == "C:\\Windows\\system.ini"
 
     def test_allows_safe_relative_path(self):
-        assert _sanitize_path("memory/state.json") == "memory\\state.json"
+        assert _sanitize_path("memory/state.json") == os.path.normpath("memory/state.json")
         assert _sanitize_path("backup_2024.json") == "backup_2024.json"
 
     def test_blocks_dotdot_in_absolute_path(self):
