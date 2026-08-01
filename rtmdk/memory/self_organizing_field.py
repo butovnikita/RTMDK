@@ -401,7 +401,10 @@ class SOTokenizer:
             pooled = np.mean([self.token_embeddings[t] for t in tokens if t in self.token_embeddings], axis=0)
             X.append(pooled)
             Y.append(teacher_reduced[idx])
-        if len(X) >= self.latent_dim:
+        # Ridge works for n < d as well (regularized); skip only degenerate
+        # empty input. Previously required n >= latent_dim, which silently
+        # made bootstrap a no-op for small corpora (< latent_dim texts).
+        if len(X) >= 1:
             X = np.stack(X).astype(np.float32)
             Y = np.stack(Y).astype(np.float32)
             # Ridge: W = (X^T X + λI)^{-1} X^T Y

@@ -204,7 +204,9 @@ class TestPipelineContextBreakerStates:
         stage1.circuit_breaker = CircuitBreaker(name="s1", latency_threshold_ms=5.0, latency_violation_threshold=1)
         stage2 = SlowStage()
         stage2.name = "s2"
-        stage2.circuit_breaker = CircuitBreaker(name="s2", latency_threshold_ms=50.0, latency_violation_threshold=1)
+        # Generous margin: loaded CI runners (esp. macOS) can overshoot a 50ms
+        # threshold for a 20ms sleep; per-stage tracking is what matters here
+        stage2.circuit_breaker = CircuitBreaker(name="s2", latency_threshold_ms=1000.0, latency_violation_threshold=1)
 
         ctx = PipelineContext(query_text="q")
         ctx = stage1.run(ctx)

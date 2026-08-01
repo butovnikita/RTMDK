@@ -1,5 +1,7 @@
 """Tests for SOT v2 improvements (A-F)."""
 
+import importlib
+
 import numpy as np
 import pytest
 import tempfile
@@ -286,7 +288,7 @@ class TestSOTSkipGram:
 # ------------------------------------------------------------------
 class TestSOTBootstrap:
     @pytest.mark.skipif(
-        os.system("python -c 'import sentence_transformers' 2>nul") != 0,
+        importlib.util.find_spec("sentence_transformers") is None,
         reason="sentence-transformers not installed",
     )
     def test_bootstrap_improves_similarity(self):
