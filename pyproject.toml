@@ -60,6 +60,10 @@ server = [
     "strawberry-graphql>=0.200",
     "prometheus-client>=0.19",
     "python-dotenv>=1.0",
+    "cryptography>=41.0",
+    "opentelemetry-api>=1.20",
+    "opentelemetry-sdk>=1.20",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.20",
 ]
 grpc = [
     "grpcio>=1.60",

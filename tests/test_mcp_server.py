@@ -3,6 +3,9 @@
 import json
 import numpy as np
 import pytest
+
+mcp = pytest.importorskip("mcp", reason="mcp package is an optional dependency (extra: rtmdk[mcp])")
+
 from rtmdk.mcp_server import _ctx, add_memory, query_memory, delete_memory, consolidate_memory, get_memory_stats
 from rtmdk.mcp_server import memory_stats, memory_nodes, memory_node, memory_context_prompt
 from rtmdk.memory.core import RTMDKMemory

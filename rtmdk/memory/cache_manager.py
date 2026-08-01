@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from typing import Dict, List, Optional, Any
 
 import numpy as np
@@ -104,7 +105,19 @@ class NodeCacheManager:
         field : RTMDKField
             Must expose: nodes, node_index, cfg, _quant, _tiered_store,
             causal_engine.
+
+        Thread-safety: the whole rebuild runs under ``field._write_lock``
+        (RLock) so concurrent add/delete writers cannot mutate the node
+        dict mid-iteration or interleave a second rebuild between the
+        per-attribute assignments (torn-read fix, 2026-08-01).
+        Field-like objects without a lock (test doubles) run unlocked.
         """
+        lock = getattr(field, "_write_lock", None)
+        with lock if lock is not None else contextlib.nullcontext():
+            self._build_locked(field)
+
+    def _build_locked(self, field: Any) -> None:
+        """Actual rebuild; must be called with ``field._write_lock`` held."""
         # Thread-safety: compact node_index to exclude deleted nodes
         if field._tiered_store is not None:
             valid_entries = list(field._tiered_store.cacheable_nodes())

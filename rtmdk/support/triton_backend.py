@@ -14,9 +14,21 @@ from numpy.typing import NDArray
 TRITON_AVAILABLE = False
 _triton = None
 try:
+    import triton as _triton  # noqa: F401
+
     TRITON_AVAILABLE = True
 except ImportError:
     pass
+
+
+def _cuda_available() -> bool:
+    """True only when torch is installed AND a CUDA device is present."""
+    try:
+        import torch
+
+        return bool(torch.cuda.is_available())
+    except Exception:
+        return False
 
 
 def sparse_resonance_kernel(
@@ -163,15 +175,17 @@ class GPUBackend:
 
     def __init__(self, min_nodes_for_gpu: int = 2000):
         self.min_nodes_for_gpu = min_nodes_for_gpu
-        self.available = TRITON_AVAILABLE
+        self.available = TRITON_AVAILABLE and _cuda_available()
         self._use_gpu = False
         self._fallback_reason = ""
         if not TRITON_AVAILABLE:
             self._fallback_reason = "triton not installed"
+        elif not self.available:
+            self._fallback_reason = "CUDA device not available"
 
     def should_use_gpu(self, n_nodes: int, n_queries: int = 1) -> bool:
         """Decide whether to use GPU based on problem size."""
-        if not TRITON_AVAILABLE:
+        if not self.available:
             return False
         # GPU is beneficial when total operations > threshold
         total_ops = n_nodes * n_queries

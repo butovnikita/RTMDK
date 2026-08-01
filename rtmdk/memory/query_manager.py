@@ -298,24 +298,38 @@ class QueryManager:
         if n_nodes == 0:
             return []
 
-        if f._cache_dirty or f._cached_positions is None:
-            f._build_node_cache()
+        # Snapshot all cached arrays atomically under the write lock.
+        # Concurrent add/delete triggers a cache rebuild whose per-attribute
+        # assignments could otherwise be interleaved with these reads,
+        # producing length-mismatched arrays (broadcast ValueError downstream).
+        with f._write_lock:
+            if f._cache_dirty or f._cached_positions is None:
+                f._build_node_cache()
 
-        session_mask = None
-        if session_id and session_id != "default":
-            session_mask = np.array(
-                [f.nodes[nid].content.get("session") == session_id for nid in f.node_index], dtype=bool
-            )
-            n_session = session_mask.sum()
-            if 0 < n_session < n_nodes * 0.3:
-                positions = f._cached_positions[session_mask]
-                phases = f._cached_phases[session_mask]
-                amplitudes = f._cached_amplitudes[session_mask]
-                saliences = f._cached_saliences[session_mask]
-                modal_weights = f._cached_modal_weights[session_mask]
-                gates = f._cached_gates[session_mask]
-                causal_boost = f._cached_causal_boost[session_mask]
-                session_indices = np.where(session_mask)[0]
+            session_mask = None
+            if session_id and session_id != "default":
+                session_mask = np.array(
+                    [f.nodes[nid].content.get("session") == session_id for nid in f.node_index], dtype=bool
+                )
+                n_session = session_mask.sum()
+                if 0 < n_session < n_nodes * 0.3:
+                    positions = f._cached_positions[session_mask]
+                    phases = f._cached_phases[session_mask]
+                    amplitudes = f._cached_amplitudes[session_mask]
+                    saliences = f._cached_saliences[session_mask]
+                    modal_weights = f._cached_modal_weights[session_mask]
+                    gates = f._cached_gates[session_mask]
+                    causal_boost = f._cached_causal_boost[session_mask]
+                    session_indices = np.where(session_mask)[0]
+                else:
+                    positions = f._cached_positions
+                    phases = f._cached_phases
+                    amplitudes = f._cached_amplitudes
+                    saliences = f._cached_saliences
+                    modal_weights = f._cached_modal_weights
+                    gates = f._cached_gates
+                    causal_boost = f._cached_causal_boost
+                    session_indices = None
             else:
                 positions = f._cached_positions
                 phases = f._cached_phases
@@ -325,15 +339,6 @@ class QueryManager:
                 gates = f._cached_gates
                 causal_boost = f._cached_causal_boost
                 session_indices = None
-        else:
-            positions = f._cached_positions
-            phases = f._cached_phases
-            amplitudes = f._cached_amplitudes
-            saliences = f._cached_saliences
-            modal_weights = f._cached_modal_weights
-            gates = f._cached_gates
-            causal_boost = f._cached_causal_boost
-            session_indices = None
 
         batch_size = gpu_batch_size
         n = len(positions)

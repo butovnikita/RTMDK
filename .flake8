@@ -21,3 +21,5 @@ per-file-ignores =
     rtmdk/memory/serialization.py: E402
     tests/test_export.py: E402
     tests/test_feedback_loop.py: E402
+    # importorskip guard before optional-dependency imports
+    tests/test_mcp_server.py: E402
