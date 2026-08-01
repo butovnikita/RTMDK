@@ -81,7 +81,9 @@ jobs:
           output: 'trivy-results.sarif'
 
       - name: Build package
-        run: python -m build
+        run: |
+          pip install build
+          python -m build
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10'
 
       - name: Run benchmark (smoke test)
