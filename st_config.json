@@ -1,0 +1,24 @@
+{
+  "rtmdk_url": "http://127.0.0.1:8080",
+  "lm_studio_url": "http://127.0.0.1:12345/v1",
+  "proxy_port": 5000,
+  
+  "memory": {
+    "save_user_messages": true,
+    "save_ai_messages": true,
+    "session_per_character": true,
+    "default_session_id": "default"
+  },
+  
+  "retrieval": {
+    "enabled": true,
+    "max_memories": 3,
+    "insert_in_system_prompt": true,
+    "memory_format": "narrative"
+  },
+  
+  "logging": {
+    "log_memory_saves": true,
+    "log_memory_retrieval": true
+  }
+}

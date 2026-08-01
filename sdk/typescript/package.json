@@ -1,0 +1,28 @@
+{
+  "name": "@rtmdk/client",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for RTMDK — Resonance-Topological Memory",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "jest",
+    "lint": "eslint src/**/*.ts"
+  },
+  "keywords": [
+    "rtmdk",
+    "memory",
+    "llm",
+    "rag",
+    "vector-search"
+  ],
+  "license": "AGPL-3.0",
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0"
+  },
+  "dependencies": {}
+}

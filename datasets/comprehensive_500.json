@@ -1,0 +1,3508 @@
+{
+  "dataset": "comprehensive_500",
+  "n_records": 500,
+  "n_en": 430,
+  "n_ru": 70,
+  "records": [
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Which is the largest desert in the world?",
+      "answer": "Antarctic Desert",
+      "context": "The Antarctic Desert is the largest at 14 million sq km. The Sahara is the largest hot desert.",
+      "topic": "geography",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is a fossil?",
+      "answer": "Preserved remains of ancient organisms",
+      "context": "Fossils provide evidence of past life. They form when organisms are buried and mineralized over time.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Кто написал Идиот?",
+      "answer": "Фёдор Достоевский",
+      "context": "Идиот — роман Достоевского, впервые опубликованный в 1869 году.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "Какой металл жидкий при комнатной температуре?",
+      "answer": "Ртуть",
+      "context": "Ртуть — единственный металл, остающийся жидким при обычной комнатной температуре.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is a neutron star?",
+      "answer": "An extremely dense stellar remnant",
+      "context": "Neutron stars form from collapsed massive stars. A teaspoon would weigh about a billion tons on Earth.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Какой витамин вырабатывается на солнце?",
+      "answer": "Витамин D",
+      "context": "Витамин D синтезируется в коже под воздействием ультрафиолетового излучения.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "Who was Napoleon Bonaparte?",
+      "answer": "French military leader and emperor",
+      "context": "Napoleon ruled France from 1804 to 1815 and conquered much of Europe.",
+      "topic": "history",
+      "language": "en"
+    },
+    {
+      "query": "Who was Alexander the Great?",
+      "answer": "King of Macedon who conquered much of the known world",
+      "context": "Alexander ruled from 336 to 323 BC, creating one of the largest empires in ancient history.",
+      "topic": "history",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is an atom?",
+      "answer": "The smallest unit of ordinary matter",
+      "context": "Atoms consist of a nucleus with protons and neutrons, surrounded by electrons in orbital shells.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is a black hole?",
+      "answer": "A region of spacetime with extreme gravity",
+      "context": "Black holes form when massive stars collapse. Their gravity is so strong that nothing, not even light, can escape.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "How do vaccines work?",
+      "answer": "They train the immune system to recognize pathogens",
+      "context": "Vaccines contain weakened parts of a pathogen that trigger an immune response, creating antibodies that remember the invader.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is gravity?",
+      "answer": "A force that attracts objects with mass",
+      "context": "Gravity is one of four fundamental forces. It keeps planets in orbit and gives objects weight on Earth.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Какая столица Франции?",
+      "answer": "Париж",
+      "context": "Париж — столица Франции, крупнейший город страны, расположенный на реке Сене.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is the capital of Australia?",
+      "answer": "Canberra",
+      "context": "Canberra was purpose-built as Australia's capital, located between Sydney and Melbourne.",
+      "topic": "geography",
+      "language": "en"
+    },
+    {
+      "query": "What is a quantum computer?",
+      "answer": "A computer using quantum mechanics for computation",
+      "context": "Quantum computers use qubits that can exist in superposition, enabling parallel processing of complex problems.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Кто написал Войну и мир?",
+      "answer": "Лев Толстой",
+      "context": "Роман Война и мир написан Львом Толстым в 1863-1869 годах.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "Who invented the printing press?",
+      "answer": "Johannes Gutenberg",
+      "context": "Gutenberg invented the movable-type printing press around 1440 in Germany.",
+      "topic": "history",
+      "language": "en"
+    },
+    {
+      "query": "What is a hurricane?",
+      "answer": "A massive rotating storm system",
+      "context": "Hurricanes form over warm ocean waters. They are classified by wind speed on the Saffir-Simpson scale.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Какой полуостров самый большой?",
+      "answer": "Аравийский",
+      "context": "Аравийский полуостров — крупнейший в мире площадью около 3 миллионов кв. км.",
+      "topic": "geography",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is plate tectonics?",
+      "answer": "The theory explaining Earth's crustal movement",
+      "context": "Earth's crust is divided into plates that float on molten rock, causing earthquakes and volcanic activity.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Кто написал Евгения Онегина?",
+      "answer": "Александр Пушкин",
+      "context": "Евгений Онегин — роман в стихах Александра Сергеевича Пушкина.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is a parasite?",
+      "answer": "An organism living on or in a host",
+      "context": "Parasites benefit at the host's expense. Common examples include ticks, fleas, and tapeworms.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is mitosis?",
+      "answer": "Cell division producing two identical cells",
+      "context": "Mitosis is essential for growth and repair. One cell divides into two genetically identical daughter cells.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Какой город самый большой в России?",
+      "answer": "Москва",
+      "context": "Москва — крупнейший город России с населением более 13 миллионов человек.",
+      "topic": "geography",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is nuclear fusion?",
+      "answer": "Combining atomic nuclei to release energy",
+      "context": "Nuclear fusion powers stars. Hydrogen nuclei fuse into helium, releasing enormous amounts of energy.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Какой водопад самый высокий?",
+      "answer": "Анхель",
+      "context": "Водопад Анхель в Венесуэле — высочайший в мире с высотой свободного падения 979 метров.",
+      "topic": "geography",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Кто основал Санкт-Петербург?",
+      "answer": "Пётр I",
+      "context": "Пётр I основал Санкт-Петербург 27 мая 1703 года.",
+      "topic": "history",
+      "language": "ru"
+    },
+    {
+      "query": "Какой самый твёрдый минерал?",
+      "answer": "Алмаз",
+      "context": "Алмаз — самый твёрдый природный минерал с твёрдостью 10 по шкале Мооса.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is photosynthesis?",
+      "answer": "Plants convert sunlight into chemical energy",
+      "context": "Plants use chlorophyll to absorb light, converting CO2 and water into glucose and oxygen through photosynthesis.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Сколько мышц в теле человека?",
+      "answer": "Более 600",
+      "context": "В теле человека более 600 скелетных мышц, обеспечивающих движение.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is a catalyst?",
+      "answer": "A substance that speeds up chemical reactions",
+      "context": "Catalysts are not consumed in reactions. Enzymes are biological catalysts essential for life.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is a comet?",
+      "answer": "A icy body orbiting the Sun",
+      "context": "Comets develop glowing tails when they approach the Sun. Their ice sublimates into gas and dust.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is electricity?",
+      "answer": "The flow of electric charge",
+      "context": "Electricity powers modern civilization. It flows through conductors and can be generated by various means.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is evolution?",
+      "answer": "Change in heritable traits over generations",
+      "context": "Evolution by natural selection explains how species adapt. Beneficial traits become more common over time.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Кто изобрёл лампочку?",
+      "answer": "Томас Эдисон",
+      "context": "Томас Эдисон создал первую коммерчески успешную лампу накаливания в 1879 году.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Какая самая длинная река в мире?",
+      "answer": "Нил",
+      "context": "Нил — река в Африке, считающаяся самой длинной рекой в мире длиной около 6650 км.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "When did the American Civil War end?",
+      "answer": "1865",
+      "context": "The American Civil War ended on April 9, 1865, with Lee's surrender at Appomattox.",
+      "topic": "history",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Who was the first President of the United States?",
+      "answer": "George Washington",
+      "context": "George Washington served as the first US President from 1789 to 1797.",
+      "topic": "history",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is the Big Bang?",
+      "answer": "The event that created the universe 13.8 billion years ago",
+      "context": "The Big Bang theory describes how the universe expanded from an extremely hot, dense initial state.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Who built the Great Wall of China?",
+      "answer": "Various Chinese dynasties",
+      "context": "The Great Wall was built over centuries by multiple Chinese dynasties, mostly during the Ming Dynasty.",
+      "topic": "history",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Who led the Russian Revolution?",
+      "answer": "Vladimir Lenin",
+      "context": "Lenin led the Bolshevik Revolution in October 1917, overthrowing the provisional government.",
+      "topic": "history",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is a photon?",
+      "answer": "A particle of light",
+      "context": "Photons carry electromagnetic energy. They have no mass but travel at the speed of light.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "When was the Declaration of Independence signed?",
+      "answer": "1776",
+      "context": "The Declaration of Independence was adopted on July 4, 1776, in Philadelphia.",
+      "topic": "history",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is the speed of light?",
+      "answer": "Approximately 299,792,458 meters per second",
+      "context": "Light speed is a fundamental constant denoted by c. Nothing can travel faster than light in a vacuum.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is biodiversity?",
+      "answer": "The variety of life in an ecosystem",
+      "context": "High biodiversity makes ecosystems more resilient. Tropical rainforests have the greatest biodiversity.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Какой океан самый маленький?",
+      "answer": "Северный Ледовитый",
+      "context": "Северный Ледовитый океан — самый маленький и мелководный из пяти океанов.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Which country has the most population?",
+      "answer": "India",
+      "context": "India surpassed China as the most populous country in 2023 with over 1.4 billion people.",
+      "topic": "geography",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is CRISPR?",
+      "answer": "A gene editing technology",
+      "context": "CRISPR-Cas9 allows scientists to precisely modify DNA sequences, potentially curing genetic diseases.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Сколько континентов на Земле?",
+      "answer": "Семь",
+      "context": "Семь континентов: Азия, Африка, Северная Америка, Южная Америка, Антарктида, Европа, Австралия.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Сколько планет в Солнечной системе?",
+      "answer": "Восемь",
+      "context": "В Солнечной системе восемь планет: Меркурий, Венера, Земля, Марс, Юпитер, Сатурн, Уран, Нептун.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Какой газ составляет большую часть атмосферы?",
+      "answer": "Азот",
+      "context": "Азот составляет около 78% атмосферы Земли, кислород — около 21%.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is entropy?",
+      "answer": "A measure of disorder in a system",
+      "context": "Entropy always increases in isolated systems according to the second law of thermodynamics.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Сколько хромосом у человека?",
+      "answer": "46",
+      "context": "У человека 46 хромосом (23 пары). Отклонения могут вызывать генетические нарушения.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What is a nebula?",
+      "answer": "A giant cloud of gas and dust in space",
+      "context": "Nebulae are stellar nurseries where new stars form. Some are remnants of dead stars.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Какая страна производит больше всего кофе?",
+      "answer": "Бразилия",
+      "context": "Бразилия — крупнейший производитель кофе в мире, обеспечивая около трети мирового объёма.",
+      "topic": "geography",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Какая самая большая страна в Южной Америке?",
+      "answer": "Бразилия",
+      "context": "Бразилия — крупнейшая страна Южной Америки, занимающая почти половину континента.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "Which US state is the largest?",
+      "answer": "Alaska",
+      "context": "Alaska is the largest US state at 1.72 million sq km, more than twice the size of Texas.",
+      "topic": "geography",
+      "language": "en"
+    },
+    {
+      "query": "When was the Magna Carta signed?",
+      "answer": "1215",
+      "context": "The Magna Carta was signed by King John of England in 1215 at Runnymede.",
+      "topic": "history",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Кто победил в Куликовской битве?",
+      "answer": "Дмитрий Донской",
+      "context": "Куликовская битва произошла 8 сентября 1380 года. Русские войска победили Мамая.",
+      "topic": "history",
+      "language": "ru"
+    },
+    {
+      "query": "Which river flows through Egypt?",
+      "answer": "The Nile",
+      "context": "The Nile flows north through Egypt for about 6,650 km before emptying into the Mediterranean.",
+      "topic": "geography",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Кто написал Герой нашего времени?",
+      "answer": "Михаил Лермонтов",
+      "context": "Герой нашего времени — роман Лермонтова, опубликованный в 1840 году.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is the smallest country?",
+      "answer": "Vatican City",
+      "context": "Vatican City is the smallest country at 0.44 sq km with about 800 residents.",
+      "topic": "geography",
+      "language": "en"
+    },
+    {
+      "query": "Кто командовал русской армией в 1812 году?",
+      "answer": "Михаил Кутузов",
+      "context": "Кутузов командовал русской армией в Отечественной войне 1812 года против Наполеона.",
+      "topic": "history",
+      "language": "ru"
+    },
+    {
+      "query": "В каком году произошла Октябрьская революция?",
+      "answer": "1917",
+      "context": "Октябрьская революция произошла 25 октября 1917 года по старому стилю.",
+      "topic": "history",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "When did World War II end?",
+      "answer": "1945",
+      "context": "World War II ended in 1945 with the surrender of Japan on September 2, after Germany surrendered in May.",
+      "topic": "history",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "В каком году началась Вторая мировая война?",
+      "answer": "1939",
+      "context": "Вторая мировая война началась 1 сентября 1939 года с нападения Германии на Польшу.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is an eclipse?",
+      "answer": "When one celestial body blocks another",
+      "context": "Solar eclipses occur when the Moon blocks the Sun. Lunar eclipses happen when Earth blocks sunlight from the Moon.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Какой язык самый распространённый в мире?",
+      "answer": "Английский",
+      "context": "Английский — самый распространённый язык с примерно 1,5 миллиарда говорящих.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is the periodic table?",
+      "answer": "A chart organizing all chemical elements",
+      "context": "The periodic table arranges elements by atomic number. Elements in the same column share similar properties.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Кто написал Преступление и наказание?",
+      "answer": "Фёдор Достоевский",
+      "context": "Преступление и наказание — роман Достоевского, опубликованный в 1866 году.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "Сколько морей омывает Россию?",
+      "answer": "13",
+      "context": "Территорию России омывают 13 морей трёх океанов: Атлантического, Северного Ледовитого и Тихого.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is erosion?",
+      "answer": "The wearing away of Earth's surface",
+      "context": "Wind, water, and ice gradually wear down rocks and soil, reshaping landscapes over millions of years.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Какой элемент обозначается символом Au?",
+      "answer": "Золото",
+      "context": "Au — химический символ золота в периодической таблице Менделеева.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Какая река протекает через Лондон?",
+      "answer": "Темза",
+      "context": "Темза протекает через южную Англию, включая Лондон, и впадает в Северное море.",
+      "topic": "geography",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Кто написал Мёртвые души?",
+      "answer": "Николай Гоголь",
+      "context": "Мёртвые души — поэма Гоголя, опубликованная в 1842 году.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is a chromosome?",
+      "answer": "A structure containing DNA",
+      "context": "Humans have 23 pairs of chromosomes. Chromosomal abnormalities can cause genetic disorders.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is magnetism?",
+      "answer": "A force produced by moving electric charges",
+      "context": "Magnets have north and south poles. Opposite poles attract while like poles repel each other.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Кто был первым царём России?",
+      "answer": "Иван Грозный",
+      "context": "Иван IV Грозный стал первым царём всея Руси в 1547 году.",
+      "topic": "history",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "When did the French Revolution begin?",
+      "answer": "1789",
+      "context": "The French Revolution began in 1789 with the storming of the Bastille prison in Paris.",
+      "topic": "history",
+      "language": "en"
+    },
+    {
+      "query": "Какая страна самая маленькая?",
+      "answer": "Ватикан",
+      "context": "Ватикан — самое маленькое государство площадью 0,44 кв. км и населением около 800 человек.",
+      "topic": "geography",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is a cell membrane?",
+      "answer": "The outer boundary of a cell",
+      "context": "Cell membranes control what enters and exits cells. They are made of a phospholipid bilayer.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Какой город называют Вечным?",
+      "answer": "Рим",
+      "context": "Рим называют Вечным городом из-за его более чем 2800-летней истории.",
+      "topic": "geography",
+      "language": "ru"
+    },
+    {
+      "query": "Who discovered America?",
+      "answer": "Christopher Columbus",
+      "context": "Columbus reached the Americas in 1492, sailing from Spain with three ships.",
+      "topic": "history",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is a virus?",
+      "answer": "A microscopic infectious agent",
+      "context": "Viruses need host cells to replicate. They inject genetic material into cells to produce more viruses.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Сколько часовых поясов в России?",
+      "answer": "11",
+      "context": "Россия имеет 11 часовых поясов — больше любой другой страны мира.",
+      "topic": "geography",
+      "language": "ru"
+    },
+    {
+      "query": "Какая планета ближе всего к Солнцу?",
+      "answer": "Меркурий",
+      "context": "Меркурий — ближайшая к Солнцу планета, находящаяся на расстоянии около 58 миллионов км.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Какая река самая длинная в России?",
+      "answer": "Обь",
+      "context": "Обь — одна из длиннейших рек России протяжённостью 3650 км.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What is a prism?",
+      "answer": "A transparent object that splits light into colors",
+      "context": "Prisms demonstrate that white light contains all colors of the rainbow through refraction.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Кто первый полетел в космос?",
+      "answer": "Юрий Гагарин",
+      "context": "12 апреля 1961 года Юрий Гагарин стал первым человеком в космосе на корабле Восток-1.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What is absolute zero?",
+      "answer": "The lowest possible temperature at -273.15°C",
+      "context": "At absolute zero, all molecular motion theoretically stops. It cannot be reached in practice.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "В каком году началась Великая Отечественная война?",
+      "answer": "1941",
+      "context": "Великая Отечественная война началась 22 июня 1941 года с нападения Германии на СССР.",
+      "topic": "history",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Какая страна самая большая по площади?",
+      "answer": "Россия",
+      "context": "Россия — крупнейшая страна мира, занимающая более 17 миллионов квадратных километров.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "Who wrote the Communist Manifesto?",
+      "answer": "Karl Marx and Friedrich Engels",
+      "context": "The Communist Manifesto was published in 1848 by Marx and Engels.",
+      "topic": "history",
+      "language": "en"
+    },
+    {
+      "query": "What is the atmosphere?",
+      "answer": "The layer of gases surrounding Earth",
+      "context": "Earth's atmosphere has five layers. The troposphere is where weather occurs and life exists.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "When did the Titanic sink?",
+      "answer": "1912",
+      "context": "The Titanic sank on April 15, 1912, after hitting an iceberg on its maiden voyage.",
+      "topic": "history",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Кто написал Мастер и Маргарита?",
+      "answer": "Михаил Булгаков",
+      "context": "Мастер и Маргарита — роман Михаила Булгакова, опубликованный посмертно в 1967 году.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Какая самая глубокая точка океана?",
+      "answer": "Марианская впадина",
+      "context": "Марианская впадина в Тихом океане имеет глубину около 11 034 метров.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Какая самая высокая гора в мире?",
+      "answer": "Эверест",
+      "context": "Эверест — высочайшая вершина мира с высотой 8849 метров над уровнем моря.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is radioactivity?",
+      "answer": "The spontaneous emission of radiation from unstable atoms",
+      "context": "Radioactive decay releases alpha, beta, or gamma radiation. It is used in medicine and energy production.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Какое озеро самое глубокое?",
+      "answer": "Байкал",
+      "context": "Байкал — самое глубокое озеро в мире с максимальной глубиной 1642 метра.",
+      "topic": "geography",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Who was Cleopatra?",
+      "answer": "The last Pharaoh of Egypt",
+      "context": "Cleopatra VII was the last active ruler of the Ptolemaic Kingdom of Egypt.",
+      "topic": "history",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "How many countries are in Europe?",
+      "answer": "44-50",
+      "context": "Europe has between 44 and 50 countries depending on how boundaries are defined.",
+      "topic": "geography",
+      "language": "en"
+    },
+    {
+      "query": "What is a meteorite?",
+      "answer": "A space rock that reaches Earth's surface",
+      "context": "Most meteorites are fragments of asteroids. They create craters upon impact with Earth.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is DNA?",
+      "answer": "The molecule carrying genetic information",
+      "context": "Deoxyribonucleic acid contains instructions for organisms to develop, survive, and reproduce. It has a double helix structure.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "When did the Roman Empire fall?",
+      "answer": "476 AD",
+      "context": "The Western Roman Empire fell in 476 AD when the last emperor was deposed.",
+      "topic": "history",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Сколько букв в русском алфавите?",
+      "answer": "33",
+      "context": "Русский алфавит содержит 33 буквы: 10 гласных, 21 согласная и 2 знака.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What is the water cycle?",
+      "answer": "The continuous movement of water on Earth",
+      "context": "Water evaporates, condenses into clouds, precipitates as rain or snow, and flows back to oceans.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is a gene?",
+      "answer": "A segment of DNA that codes for a protein",
+      "context": "Genes determine inherited traits. Humans have approximately 20,000 to 25,000 genes.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is a tsunami?",
+      "answer": "A massive ocean wave caused by underwater earthquakes",
+      "context": "Tsunamis can travel at 500 mph in deep water and grow to enormous heights near shorelines.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is a volcano?",
+      "answer": "An opening in Earth's crust releasing magma",
+      "context": "Volcanic eruptions can create new land. The Pacific Ring of Fire contains most of Earth's volcanoes.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Кто открыл Америку?",
+      "answer": "Христофор Колумб",
+      "context": "Христофор Колумб достиг Америки в 1492 году, отправившись из Испании.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is the longest mountain range?",
+      "answer": "The Andes",
+      "context": "The Andes stretch about 7,000 km along the western coast of South America.",
+      "topic": "geography",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "В каком году распался СССР?",
+      "answer": "1991",
+      "context": "СССР официально прекратил существование 26 декабря 1991 года.",
+      "topic": "history",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Кто нарисовал Мону Лизу?",
+      "answer": "Леонардо да Винчи",
+      "context": "Мона Лиза — картина Леонардо да Винчи, написанная около 1503-1519 годов.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Какой самый высокий водопад в мире?",
+      "answer": "Анхель",
+      "context": "Водопад Анхель в Венесуэле — самый высокий в мире с высотой падения 979 метров.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "When did the Soviet Union dissolve?",
+      "answer": "1991",
+      "context": "The Soviet Union officially dissolved on December 26, 1991.",
+      "topic": "history",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Какой самый большой орган человека?",
+      "answer": "Кожа",
+      "context": "Кожа — самый большой орган тела взрослого человека площадью около 2 квадратных метров.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is the greenhouse effect?",
+      "answer": "Trapping of heat by atmospheric gases",
+      "context": "Greenhouse gases like CO2 trap solar radiation, warming Earth. Human activities intensify this effect.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Какой элемент нужен для фотосинтеза?",
+      "answer": "Углерод",
+      "context": "Растения поглощают углекислый газ для фотосинтеза, преобразуя его в глюкозу.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is natural selection?",
+      "answer": "Survival of organisms best adapted to their environment",
+      "context": "Organisms with advantageous traits reproduce more, passing those traits to future generations.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is a glacier?",
+      "answer": "A large persistent body of ice",
+      "context": "Glaciers slowly flow over land. They shape valleys and store about 69% of Earth's freshwater.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is a constellation?",
+      "answer": "A group of stars forming a pattern",
+      "context": "There are 88 recognized constellations. Ancient civilizations named many after mythological figures.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Какой газ нужен для дыхания?",
+      "answer": "Кислород",
+      "context": "Кислород составляет около 21% атмосферы Земли и необходим для дыхания большинства организмов.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What is dark matter?",
+      "answer": "Invisible matter that makes up 27% of the universe",
+      "context": "Dark matter does not emit light but exerts gravitational influence. Its exact nature remains unknown.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Кто написал Анна Каренина?",
+      "answer": "Лев Толстой",
+      "context": "Анна Каренина — роман Льва Толстого, опубликованный в 1877 году.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Сколько костей в теле взрослого человека?",
+      "answer": "206",
+      "context": "У взрослого человека 206 костей. У младенцев при рождении около 270 костей, которые срастаются.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Какой океан самый большой?",
+      "answer": "Тихий океан",
+      "context": "Тихий океан покрывает около 63 миллионов квадратных миль, более трети поверхности Земли.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Who was the first man on the Moon?",
+      "answer": "Neil Armstrong",
+      "context": "Neil Armstrong stepped on the Moon on July 20, 1969, during the Apollo 11 mission.",
+      "topic": "history",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is ozone?",
+      "answer": "A molecule of three oxygen atoms",
+      "context": "The ozone layer in the stratosphere protects Earth from harmful ultraviolet radiation from the Sun.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Кто написал Тихий Дон?",
+      "answer": "Михаил Шолохов",
+      "context": "Тихий Дон — роман-эпопея Шолохова, за который он получил Нобелевскую премию.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Кто изобрёл радио?",
+      "answer": "Александр Попов",
+      "context": "Александр Попов продемонстрировал первый радиоприёмник 7 мая 1895 года в Санкт-Петербурге.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "Какая планета известна кольцами?",
+      "answer": "Сатурн",
+      "context": "Сатурн знаменит своими кольцами из льда и камней, видимыми даже в небольшой телескоп.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "Сколько сторон у куба?",
+      "answer": "6",
+      "context": "Куб имеет 6 граней, 12 рёбер и 8 вершин.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "Какой самый маленький элемент в таблице Менделеева?",
+      "answer": "Водород",
+      "context": "Водород — самый лёгкий и распространённый элемент во Вселенной с атомным номером 1.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Какая страна самая населённая?",
+      "answer": "Индия",
+      "context": "Индия обогнала Китай как самая населённая страна в 2023 году с более чем 1,4 млрд человек.",
+      "topic": "geography",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is the deepest lake?",
+      "answer": "Lake Baikal",
+      "context": "Lake Baikal in Russia is the deepest lake at 1,642 meters and holds 20% of world's freshwater.",
+      "topic": "geography",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Какая пустыня самая большая?",
+      "answer": "Сахара",
+      "context": "Сахара — крупнейшая жаркая пустыня мира, занимающая около 9 миллионов кв. км.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Сколько зубов у взрослого человека?",
+      "answer": "32",
+      "context": "У взрослого человека обычно 32 зуба, включая зубы мудрости.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "When did the Berlin Wall fall?",
+      "answer": "1989",
+      "context": "The Berlin Wall fell on November 9, 1989, leading to German reunification.",
+      "topic": "history",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Сколько дней в високосном году?",
+      "answer": "366",
+      "context": "В високосном году 366 дней. Дополнительный день добавляется в февраль каждые четыре года.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "Кто был последним императором России?",
+      "answer": "Николай II",
+      "context": "Николай II отрекся от престола 2 марта 1917 года во время Февральской революции.",
+      "topic": "history",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "В каком году было отменено крепостное право?",
+      "answer": "1861",
+      "context": "Крепостное право было отменено манифестом Александра II 19 февраля 1861 года.",
+      "topic": "history",
+      "language": "ru"
+    },
+    {
+      "query": "Какая самая быстрая птица?",
+      "answer": "Сапсан",
+      "context": "Сапсан — самая быстрая птица, развивающая скорость более 320 км/ч в пикировании.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "В каком году крестили Русь?",
+      "answer": "988",
+      "context": "Крещение Руси произошло в 988 году при князе Владимире Святославиче.",
+      "topic": "history",
+      "language": "ru"
+    },
+    {
+      "query": "What is a wavelength?",
+      "answer": "The distance between consecutive wave peaks",
+      "context": "Shorter wavelengths carry more energy. Visible light ranges from 380 to 700 nanometers.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is a supernova?",
+      "answer": "A massive stellar explosion",
+      "context": "Supernovae occur when massive stars exhaust their fuel. They can outshine entire galaxies briefly.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "Сколько весит литр воды?",
+      "answer": "1 килограмм",
+      "context": "Один литр чистой воды при 4°C весит ровно один килограмм.",
+      "topic": "science",
+      "language": "ru"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "When did the Industrial Revolution begin?",
+      "answer": "Late 1700s",
+      "context": "The Industrial Revolution began in Britain in the late 18th century.",
+      "topic": "history",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement along fault lines",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines, releasing energy as seismic waves.",
+      "topic": "science",
+      "language": "en"
+    },
+    {
+      "query": "What is the largest island?",
+      "answer": "Greenland",
+      "context": "Greenland is the world's largest island at 2.16 million sq km, belonging to Denmark.",
+      "topic": "geography",
+      "language": "en"
+    }
+  ]
+}

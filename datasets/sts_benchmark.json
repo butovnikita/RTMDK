@@ -1,0 +1,66 @@
+{
+  "dataset": "sts_benchmark",
+  "n_records": 10,
+  "records": [
+    {
+      "sentence1": "A man is playing guitar",
+      "sentence2": "A man plays a guitar",
+      "similarity_score": 5.0,
+      "topic": "general"
+    },
+    {
+      "sentence1": "The bird is bathing in the sink",
+      "sentence2": "The bird is washing itself in the water",
+      "similarity_score": 4.8,
+      "topic": "general"
+    },
+    {
+      "sentence1": "A woman is slicing a potato",
+      "sentence2": "A woman is cutting a potato",
+      "similarity_score": 4.6,
+      "topic": "general"
+    },
+    {
+      "sentence1": "Two dogs playing in the snow",
+      "sentence2": "Dogs are running through snow",
+      "similarity_score": 4.4,
+      "topic": "general"
+    },
+    {
+      "sentence1": "A man is riding a motorcycle",
+      "sentence2": "A person is riding a bike",
+      "similarity_score": 2.6,
+      "topic": "general"
+    },
+    {
+      "sentence1": "The president gave a speech",
+      "sentence2": "The president addressed the nation",
+      "similarity_score": 4.2,
+      "topic": "general"
+    },
+    {
+      "sentence1": "A group of men playing soccer",
+      "sentence2": "Men are playing football",
+      "similarity_score": 4.0,
+      "topic": "general"
+    },
+    {
+      "sentence1": "A cat is sitting on the table",
+      "sentence2": "A feline is resting on furniture",
+      "similarity_score": 3.8,
+      "topic": "general"
+    },
+    {
+      "sentence1": "Scientists discovered a new planet",
+      "sentence2": "Astronomers found a new planet",
+      "similarity_score": 4.5,
+      "topic": "science"
+    },
+    {
+      "sentence1": "The stock market crashed today",
+      "sentence2": "The financial market collapsed",
+      "similarity_score": 4.0,
+      "topic": "finance"
+    }
+  ]
+}

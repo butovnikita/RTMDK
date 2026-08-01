@@ -1,0 +1,66 @@
+{
+  "dataset": "ms_marco_dev",
+  "n_records": 10,
+  "records": [
+    {
+      "query": "What causes earthquakes?",
+      "answer": "Tectonic plate movement causes earthquakes when plates shift along fault lines.",
+      "context": "Earthquakes occur when tectonic plates move suddenly along geological fault lines. The energy released creates seismic waves.",
+      "topic": "science"
+    },
+    {
+      "query": "How do vaccines work?",
+      "answer": "Vaccines train the immune system to recognize and fight specific pathogens.",
+      "context": "Vaccines contain weakened or inactive parts of a pathogen. They trigger an immune response that creates antibodies.",
+      "topic": "health"
+    },
+    {
+      "query": "What is machine learning?",
+      "answer": "Machine learning is a subset of AI where algorithms learn patterns from data.",
+      "context": "ML algorithms build mathematical models based on sample data (training data) to make predictions without being explicitly programmed.",
+      "topic": "technology"
+    },
+    {
+      "query": "Who invented the telephone?",
+      "answer": "Alexander Graham Bell is credited with inventing the telephone in 1876.",
+      "context": "Bell patented the first practical telephone. The invention revolutionized long-distance communication.",
+      "topic": "history"
+    },
+    {
+      "query": "What is the speed of light?",
+      "answer": "The speed of light in vacuum is approximately 299,792,458 meters per second.",
+      "context": "Light speed is a fundamental constant denoted by c. Nothing can travel faster than light in vacuum.",
+      "topic": "physics"
+    },
+    {
+      "query": "What is photosynthesis?",
+      "answer": "Photosynthesis is the process by which plants convert sunlight into chemical energy.",
+      "context": "Plants use chlorophyll to absorb light energy, converting CO2 and water into glucose and oxygen.",
+      "topic": "biology"
+    },
+    {
+      "query": "How many continents are there?",
+      "answer": "There are seven continents on Earth.",
+      "context": "The seven continents are Asia, Africa, North America, South America, Antarctica, Europe, and Australia.",
+      "topic": "geography"
+    },
+    {
+      "query": "What is DNA?",
+      "answer": "DNA is the molecule that carries genetic information in living organisms.",
+      "context": "Deoxyribonucleic acid contains the instructions needed for an organism to develop, survive, and reproduce.",
+      "topic": "biology"
+    },
+    {
+      "query": "Who wrote Romeo and Juliet?",
+      "answer": "William Shakespeare wrote Romeo and Juliet.",
+      "context": "Romeo and Juliet is a tragedy written early in Shakespeare's career about two young star-crossed lovers.",
+      "topic": "literature"
+    },
+    {
+      "query": "What is the largest ocean?",
+      "answer": "The Pacific Ocean is the largest ocean on Earth.",
+      "context": "The Pacific Ocean covers about 63 million square miles and contains more than half of the free water on Earth.",
+      "topic": "geography"
+    }
+  ]
+}
