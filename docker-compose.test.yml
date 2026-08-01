@@ -38,7 +38,13 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: rtmdk-test-runner
-    command: ["pytest", "tests/test_server_load.py", "-v"]
+    # Prod image has no pytest/tests — install at runtime and mount tests
+    command:
+      - sh
+      - -c
+      - pip install --no-cache-dir --user pytest pytest-asyncio && python -m pytest tests/test_server_load.py -v
+    volumes:
+      - ./tests:/app/tests:ro
     environment:
       - RTMDK_BASE_URL=http://rtmdk:8080
     depends_on:
