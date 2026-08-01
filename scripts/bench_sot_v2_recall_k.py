@@ -33,6 +33,7 @@ def main():
 
     # SOT v2
     from rtmdk.memory.sot_v2.integration import SOTv2Embedder
+
     sot = SOTv2Embedder(latent_dim=384, a=0.01, window_size=5)
     sot.train(corpus_texts)
     sot_recalls, sot_mrr = evaluate(sot, corpus_texts, records)
@@ -40,6 +41,7 @@ def main():
 
     # SBERT
     from sentence_transformers import SentenceTransformer
+
     teacher = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
     t_recalls, t_mrr = evaluate(lambda t: teacher.encode(t), corpus_texts, records)
     print(f"SBERT:     {t_recalls}  MRR={t_mrr:.3f}")

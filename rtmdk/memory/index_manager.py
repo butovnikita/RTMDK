@@ -68,7 +68,12 @@ class IndexManager:
 
         # Async builder wrapper
         self._async_builder: Optional[Any] = None
-        if cfg.use_hnsw and getattr(cfg, "async_hnsw_build", False) and self.hnsw_index and AsyncIndexBuilder:
+        if (
+            cfg.use_hnsw
+            and getattr(cfg, "async_hnsw_build", False)
+            and self.hnsw_index
+            and AsyncIndexBuilder is not None
+        ):
             self._async_builder = AsyncIndexBuilder(
                 self.hnsw_index,
                 interval_ms=cfg.async_hnsw_interval_ms,
@@ -203,7 +208,7 @@ class IndexManager:
         for nid in node_index:
             if nid not in nodes:
                 continue
-            vec = np.zeros(len(vocab), dtype=np.float32)
+            vec: NDArray = np.zeros(len(vocab), dtype=np.float32)
             for token, tf in self.bm25_index.inverted_index.items():
                 if nid in tf:
                     idx = vocab.index(token)

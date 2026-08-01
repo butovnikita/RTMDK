@@ -77,7 +77,7 @@ class QueryManager:
             sims = sample_queries @ doc_embs.T
             np.fill_diagonal(sims, -1.0)
             ranks = np.argmax(sims, axis=1)
-            hits = np.sum(ranks == sample_targets)
+            hits = int(np.sum(ranks == sample_targets))
             recall1 = hits / len(sample_targets)
             threshold = getattr(f.cfg, "adaptive_pc_disable_threshold", 0.93)
             if recall1 >= threshold:
@@ -203,25 +203,39 @@ class QueryManager:
         indices = np.array([mapping[nid] for nid in node_ids if nid in mapping], dtype=np.int32)
         if len(indices) == 0:
             return np.empty((len(query_latents), 0), dtype=np.float32)
+        cached_positions = f._cached_positions
+        if cached_positions is None:
+            return np.empty((len(query_latents), 0), dtype=np.float32)
+        # Invariant: _build_node_cache() populates all cached arrays together
+        cached_phases = f._cached_phases
+        cached_amplitudes = f._cached_amplitudes
+        cached_saliences = f._cached_saliences
+        assert (
+            cached_phases is not None and cached_amplitudes is not None and cached_saliences is not None
+        ), "node cache arrays are built together"
         # Fast path for int8 cached positions: avoid cdist float64 cast
-        if f._cached_positions.dtype == np.int8 and f._cached_norms_sq is not None:
+        cached_norms_sq = f._cached_norms_sq
+        if cached_positions.dtype == np.int8 and cached_norms_sq is not None:
+            # Invariant: int8 cache always has per-vector scales
+            cached_scales = f._cached_scales
+            assert cached_scales is not None, "int8 node cache requires scales"
             return f._resonance_engine.batch_response_numpy_int8(
                 query_latents,
                 query_phases,
-                f._cached_positions[indices],
-                f._cached_norms_sq[indices],
-                f._cached_scales[indices],
-                f._cached_phases[indices],
-                f._cached_amplitudes[indices],
-                f._cached_saliences[indices],
+                cached_positions[indices],
+                cached_norms_sq[indices],
+                cached_scales[indices],
+                cached_phases[indices],
+                cached_amplitudes[indices],
+                cached_saliences[indices],
             )
         return f._resonance_engine.batch_response_numpy(
             query_latents,
             query_phases,
-            f._cached_positions[indices],
-            f._cached_phases[indices],
-            f._cached_amplitudes[indices],
-            f._cached_saliences[indices],
+            cached_positions[indices],
+            cached_phases[indices],
+            cached_amplitudes[indices],
+            cached_saliences[indices],
         )
 
     def _batch_resonance_torch(self, query_latents: NDArray, query_phases: NDArray, node_ids: List[str]) -> NDArray:
@@ -306,6 +320,24 @@ class QueryManager:
             if f._cache_dirty or f._cached_positions is None:
                 f._build_node_cache()
 
+            # Invariant: _build_node_cache() populates all cached arrays together
+            cached_positions = f._cached_positions
+            cached_phases = f._cached_phases
+            cached_amplitudes = f._cached_amplitudes
+            cached_saliences = f._cached_saliences
+            cached_modal_weights = f._cached_modal_weights
+            cached_gates = f._cached_gates
+            cached_causal_boost = f._cached_causal_boost
+            assert (
+                cached_positions is not None
+                and cached_phases is not None
+                and cached_amplitudes is not None
+                and cached_saliences is not None
+                and cached_modal_weights is not None
+                and cached_gates is not None
+                and cached_causal_boost is not None
+            ), "node cache arrays are built together"
+
             session_mask = None
             if session_id and session_id != "default":
                 session_mask = np.array(
@@ -313,31 +345,31 @@ class QueryManager:
                 )
                 n_session = session_mask.sum()
                 if 0 < n_session < n_nodes * 0.3:
-                    positions = f._cached_positions[session_mask]
-                    phases = f._cached_phases[session_mask]
-                    amplitudes = f._cached_amplitudes[session_mask]
-                    saliences = f._cached_saliences[session_mask]
-                    modal_weights = f._cached_modal_weights[session_mask]
-                    gates = f._cached_gates[session_mask]
-                    causal_boost = f._cached_causal_boost[session_mask]
+                    positions = cached_positions[session_mask]
+                    phases = cached_phases[session_mask]
+                    amplitudes = cached_amplitudes[session_mask]
+                    saliences = cached_saliences[session_mask]
+                    modal_weights = cached_modal_weights[session_mask]
+                    gates = cached_gates[session_mask]
+                    causal_boost = cached_causal_boost[session_mask]
                     session_indices = np.where(session_mask)[0]
                 else:
-                    positions = f._cached_positions
-                    phases = f._cached_phases
-                    amplitudes = f._cached_amplitudes
-                    saliences = f._cached_saliences
-                    modal_weights = f._cached_modal_weights
-                    gates = f._cached_gates
-                    causal_boost = f._cached_causal_boost
+                    positions = cached_positions
+                    phases = cached_phases
+                    amplitudes = cached_amplitudes
+                    saliences = cached_saliences
+                    modal_weights = cached_modal_weights
+                    gates = cached_gates
+                    causal_boost = cached_causal_boost
                     session_indices = None
             else:
-                positions = f._cached_positions
-                phases = f._cached_phases
-                amplitudes = f._cached_amplitudes
-                saliences = f._cached_saliences
-                modal_weights = f._cached_modal_weights
-                gates = f._cached_gates
-                causal_boost = f._cached_causal_boost
+                positions = cached_positions
+                phases = cached_phases
+                amplitudes = cached_amplitudes
+                saliences = cached_saliences
+                modal_weights = cached_modal_weights
+                gates = cached_gates
+                causal_boost = cached_causal_boost
                 session_indices = None
 
         batch_size = gpu_batch_size
@@ -517,7 +549,7 @@ class QueryManager:
                 results = []
         # HNSW fast path
         elif cfg.use_hnsw:
-            candidate_ids: List[str] = []
+            candidate_ids = []
             n_pos = f._index_mgr.hnsw_count()
             if n_pos > getattr(cfg, "hnsw_min_nodes", 50):
                 hnsw_k = min(n_pos, max(top_k * 20, min(n_pos // 20, 2000)))
@@ -721,8 +753,8 @@ class QueryManager:
             if len(results) >= 2:
                 responses = np.array([r for _, r, _ in results])
                 normalized = responses / (np.sum(responses) + 1e-8)
-                entropy = -np.sum(normalized * np.log(normalized + 1e-8))
-                f.meta_kernel.record_uncertainty(float(entropy))
+                entropy = float(-np.sum(normalized * np.log(normalized + 1e-8)))
+                f.meta_kernel.record_uncertainty(entropy)
 
         f._last_query_results = results
 
@@ -785,7 +817,7 @@ class QueryManager:
         if n_nodes == 0:
             return [[] for _ in range(n_queries)]
 
-        query_phases = np.full(n_queries, phase, dtype=np.float32)
+        query_phases: np.ndarray = np.full(n_queries, phase, dtype=np.float32)
         all_scores = self._batch_resonance(query_latents, query_phases, f.node_index)
 
         results_per_query: List[List[Tuple[str, float, MemoryNode]]] = []

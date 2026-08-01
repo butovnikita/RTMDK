@@ -90,7 +90,9 @@ def main():
     sot = SOTv2Embedder(latent_dim=args.latent_dim, a=args.a, window_size=args.window)
     sot.train(corpus_texts)
     baseline = evaluate(sot, corpus_texts, records, top_k=args.top_k)
-    print(f"\n[SOT v2 baseline]     recall@{args.top_k}={baseline[f'recall@{args.top_k}']:.3f}  MRR={baseline['mrr']:.3f}  query_p50={baseline['query_p50_ms']:.2f}ms")
+    print(
+        f"\n[SOT v2 baseline]     recall@{args.top_k}={baseline[f'recall@{args.top_k}']:.3f}  MRR={baseline['mrr']:.3f}  query_p50={baseline['query_p50_ms']:.2f}ms"
+    )
 
     # ---------- 2. SBERT teacher ----------
     from sentence_transformers import SentenceTransformer
@@ -100,6 +102,7 @@ def main():
     class TeacherWrapper:
         def __init__(self, model):
             self.model = model
+
         def __call__(self, text):
             if isinstance(text, str):
                 return self.model.encode(text)
@@ -107,14 +110,18 @@ def main():
 
     tw = TeacherWrapper(teacher)
     teacher_res = evaluate(tw, corpus_texts, records, top_k=args.top_k)
-    print(f"[SBERT teacher]       recall@{args.top_k}={teacher_res[f'recall@{args.top_k}']:.3f}  MRR={teacher_res['mrr']:.3f}  query_p50={teacher_res['query_p50_ms']:.2f}ms")
+    print(
+        f"[SBERT teacher]       recall@{args.top_k}={teacher_res[f'recall@{args.top_k}']:.3f}  MRR={teacher_res['mrr']:.3f}  query_p50={teacher_res['query_p50_ms']:.2f}ms"
+    )
 
     # ---------- 3. Procrustes aligned ----------
     sot_aligned = SOTv2Embedder(latent_dim=args.latent_dim, a=args.a, window_size=args.window)
     sot_aligned.train(corpus_texts)
     sot_aligned.align_to_teacher(corpus_texts, teacher.encode, batch_size=64, center=True)
     aligned = evaluate(sot_aligned, corpus_texts, records, top_k=args.top_k)
-    print(f"[SOT v2 + Procrustes] recall@{args.top_k}={aligned[f'recall@{args.top_k}']:.3f}  MRR={aligned['mrr']:.3f}  query_p50={aligned['query_p50_ms']:.2f}ms")
+    print(
+        f"[SOT v2 + Procrustes] recall@{args.top_k}={aligned[f'recall@{args.top_k}']:.3f}  MRR={aligned['mrr']:.3f}  query_p50={aligned['query_p50_ms']:.2f}ms"
+    )
 
     diag = sot_aligned._embedder._aligner.diagnostics()
     print(f"  Alignment diag: MSE={diag['mse']:.6f}  mean_cosine={diag['mean_cosine']:.4f}")
@@ -129,9 +136,15 @@ def main():
     print("=" * 60)
     print(f"{'Method':<22}  Recall@{args.top_k}  MRR     Query p50")
     print("-" * 60)
-    print(f"{'SOT v2 baseline':<22}  {baseline[f'recall@{args.top_k}']:.3f}       {baseline['mrr']:.3f}   {baseline['query_p50_ms']:.2f}ms")
-    print(f"{'SBERT teacher':<22}  {teacher_res[f'recall@{args.top_k}']:.3f}       {teacher_res['mrr']:.3f}   {teacher_res['query_p50_ms']:.2f}ms")
-    print(f"{'SOT v2 + Procrustes':<22}  {aligned[f'recall@{args.top_k}']:.3f}       {aligned['mrr']:.3f}   {aligned['query_p50_ms']:.2f}ms")
+    print(
+        f"{'SOT v2 baseline':<22}  {baseline[f'recall@{args.top_k}']:.3f}       {baseline['mrr']:.3f}   {baseline['query_p50_ms']:.2f}ms"
+    )
+    print(
+        f"{'SBERT teacher':<22}  {teacher_res[f'recall@{args.top_k}']:.3f}       {teacher_res['mrr']:.3f}   {teacher_res['query_p50_ms']:.2f}ms"
+    )
+    print(
+        f"{'SOT v2 + Procrustes':<22}  {aligned[f'recall@{args.top_k}']:.3f}       {aligned['mrr']:.3f}   {aligned['query_p50_ms']:.2f}ms"
+    )
     print("-" * 60)
 
     baseline_r = baseline[f"recall@{args.top_k}"]

@@ -410,7 +410,7 @@ class ConsolidationManager:
                 for i in range(len(nids_list)):
                     for j in range(i + 1, len(nids_list)):
                         nid_i, nid_j = nids_list[i], nids_list[j]
-                        d = np.linalg.norm(cluster_positions[nid_i] - cluster_positions[nid_j])
+                        d = float(np.linalg.norm(cluster_positions[nid_i] - cluster_positions[nid_j]))
                         if d < best_dist:
                             best_dist = d
                             best_pair = (nid_i, nid_j)

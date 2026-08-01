@@ -53,7 +53,7 @@ class BM25Index:
 
     def score(self, query_tokens: List[int]) -> np.ndarray:
         """Return BM25 scores for all documents."""
-        scores = np.zeros(self.N, dtype=np.float32)
+        scores: np.ndarray = np.zeros(self.N, dtype=np.float32)
         for doc_idx, doc_freq in enumerate(self.doc_token_freqs):
             d_len = self.doc_lengths[doc_idx]
             score = 0.0
@@ -115,8 +115,10 @@ class HybridSIFBM25Retriever:
             q = q_emb / (np.linalg.norm(q_emb) + 1e-8)
             dense_scores = doc_matrix @ q
             sparse_scores = self.bm25.score(q_tokens)
-            d_min, d_max = dense_scores.min(), dense_scores.max()
-            s_min, s_max = sparse_scores.min(), sparse_scores.max()
+            d_min: float = float(dense_scores.min())
+            d_max: float = float(dense_scores.max())
+            s_min: float = float(sparse_scores.min())
+            s_max: float = float(sparse_scores.max())
             dense_norm = (dense_scores - d_min) / (d_max - d_min + 1e-8)
             sparse_norm = (sparse_scores - s_min) / (s_max - s_min + 1e-8)
             return self.alpha * dense_norm + (1 - self.alpha) * sparse_norm

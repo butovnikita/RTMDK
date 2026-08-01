@@ -3,6 +3,7 @@
 Usage:
     python scripts/bench_quantization_recall.py --dataset datasets/qa_1000_en.json
 """
+
 from __future__ import annotations
 
 import argparse
@@ -17,9 +18,10 @@ from rtmdk.memory.field import RTMDKField
 
 def _make_embedder(dim: int = 64):
     def embed(text: str) -> np.ndarray:
-        h = hash(text) % (2 ** 32)
+        h = hash(text) % (2**32)
         rng = np.random.default_rng(h)
         return rng.standard_normal(dim, dtype=np.float32)
+
     return embed
 
 
@@ -62,8 +64,10 @@ def evaluate_recall(field, dataset, embedder, k: int = 1):
 def measure_ram(field):
     import gc
     import os
+
     try:
         import psutil
+
         gc.collect()
         process = psutil.Process(os.getpid())
         return process.memory_info().rss // (1024 * 1024)

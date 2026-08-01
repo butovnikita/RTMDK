@@ -88,7 +88,7 @@ class BatchPipelineExecutor:
 
         # Backward-compatible fallback: no field → sequential execution
         if self.field is None:
-            results = []
+            results: List[Dict[str, Any]] = []
             for i, query in enumerate(queries):
                 sid = session_ids[i] if session_ids else None
                 ctx = PipelineContext(
@@ -102,7 +102,7 @@ class BatchPipelineExecutor:
             return results
 
         t0 = time.perf_counter()
-        results: List[Dict[str, Any]] = []
+        results = []
 
         # Stage 1: Batch embed — bypass stage circuit breaker for batch safety
         embedder = None

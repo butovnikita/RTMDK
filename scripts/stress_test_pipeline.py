@@ -13,6 +13,7 @@ Usage:
     python scripts/stress_test_pipeline.py --nodes 50000 --queries 500 --planner
     python scripts/stress_test_pipeline.py --nodes 100000 --queries 1000 --cost-tracking
 """
+
 from __future__ import annotations
 
 import argparse
@@ -35,9 +36,10 @@ from rtmdk.memory.core import RTMDKMemory
 
 def _make_embedder(dim: int = 384):
     def embed(text: str) -> np.ndarray:
-        h = hash(text) % (2 ** 32)
+        h = hash(text) % (2**32)
         rng = np.random.default_rng(h)
         return rng.standard_normal(dim, dtype=np.float32)
+
     return embed
 
 
@@ -108,6 +110,7 @@ class StressResult:
 def get_memory_mb() -> float:
     try:
         import psutil
+
         return psutil.Process().memory_info().rss / (1024 * 1024)
     except ImportError:
         return 0.0
@@ -115,9 +118,28 @@ def get_memory_mb() -> float:
 
 def generate_text(dim: int = 384) -> tuple[str, np.ndarray]:
     """Generate random synthetic document + embedding."""
-    words = ["the", "quick", "brown", "fox", "jumps", "over", "lazy", "dog",
-             "memory", "resonance", "topology", "field", "vector", "search",
-             "neural", "embedding", "semantic", "retrieval", "knowledge", "graph"]
+    words = [
+        "the",
+        "quick",
+        "brown",
+        "fox",
+        "jumps",
+        "over",
+        "lazy",
+        "dog",
+        "memory",
+        "resonance",
+        "topology",
+        "field",
+        "vector",
+        "search",
+        "neural",
+        "embedding",
+        "semantic",
+        "retrieval",
+        "knowledge",
+        "graph",
+    ]
     text = " ".join(random.choices(words, k=random.randint(5, 20)))
     emb = np.random.randn(dim).astype(np.float32)
     emb = emb / (np.linalg.norm(emb) + 1e-12)

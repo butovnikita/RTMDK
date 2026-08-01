@@ -4,6 +4,12 @@ All notable changes to RTMDK are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+- **mypy debt eliminated**: 1088 → 0 errors across all 203 source files (both Windows and POSIX counts). ~160 real fixes: None-guards (union-attr), missing annotations, `any`→`Any`, truthy-function bug in `index_manager`, broken `RollbackManager.rollback` (crashed on missing node fields — now restores correctly), PrivateAttr reading in `core.__getattr__`, POSIX-only float64/var-annotated issues. Config: `attr-defined` disabled (unsound for the manager-delegation pattern), third-party stubs skipped. Ratchet baseline now **0** — any new mypy error fails CI.
+- `check_mypy.py`: handles "Success: no issues found" (0) and fatal aborts correctly.
+
 ## [8.3.3] — 2026-08-01
 
 ### Added

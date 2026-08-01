@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 import threading
 from collections import OrderedDict
-from typing import Dict, Optional, Iterator, Tuple
+from typing import Any, Dict, Optional, Iterator, Tuple
 import numpy as np
 
 
@@ -102,7 +102,8 @@ class EngramEmbeddingCache:
         if not data:
             np.savez(path, _empty=True)
             return
-        np.savez(path, **{k.replace("/", "_"): v for k, v in data.items()})
+        arrays: Dict[str, Any] = {k.replace("/", "_"): v for k, v in data.items()}
+        np.savez(path, **arrays)
 
     def load(self, path: str) -> None:
         """Deserialize cache from NPZ file."""

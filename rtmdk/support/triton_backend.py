@@ -12,13 +12,12 @@ import numpy as np
 from numpy.typing import NDArray
 
 TRITON_AVAILABLE = False
-_triton = None
 try:
     import triton as _triton  # noqa: F401
 
     TRITON_AVAILABLE = True
 except ImportError:
-    pass
+    _triton = None
 
 
 def _cuda_available() -> bool:

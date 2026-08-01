@@ -8,7 +8,7 @@ import threading
 import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Optional
 
 import numpy as np
 
@@ -102,8 +102,8 @@ class FieldInitializer:
         f.cfg = cfg
         f._quant = QuantizationHelper(cfg.quantization)
         f._rng = np.random.default_rng(cfg.seed)
-        f.nodes: Dict[str, Any] = {}
-        f.node_index: List[str] = []
+        f.nodes = {}
+        f.node_index = []
 
         # Early: ResonanceEngine (other subsystems register against it)
         f._resonance_engine = ResonanceEngine(
@@ -182,19 +182,20 @@ class FieldInitializer:
             f._tiered_store = TieredNodeStoreAdapter(inner)
             f.nodes = f._tiered_store  # type: ignore[assignment]
         elif cfg.tiered_storage_enabled:
-            from rtmdk.memory.tiered_storage import TieredNodeStore
+            from rtmdk.memory.tiered_storage import TieredNodeStore as LegacyTieredNodeStore
 
             hot_limit = max(1, int(cfg.max_nodes * cfg.tiered_hot_pct)) if cfg.max_nodes else 100
             warm_limit = max(1, int(cfg.max_nodes * cfg.tiered_warm_pct)) if cfg.max_nodes else 1000
             cold_dir = cfg.tiered_storage_path or "./rtmdk_cold_storage"
-            f._tiered_store = TieredNodeStore(hot_limit, warm_limit, cold_dir, cfg.latent_dim)
+            f._tiered_store = LegacyTieredNodeStore(hot_limit, warm_limit, cold_dir, cfg.latent_dim)
             f.nodes = f._tiered_store  # type: ignore[assignment]
 
     def _init_wal(self) -> None:
         from rtmdk.memory.wal import WAL
 
         self.field.wal = WAL(
-            self.wal_path,
+            # Path is unused when the WAL is disabled (all I/O is guarded by `enabled`)
+            self.wal_path if self.wal_path is not None else "",
             enabled=self.wal_path is not None,
             fsync_interval_ms=self.cfg.wal_fsync_interval_ms,
             batch_size=self.cfg.wal_batch_size,
@@ -370,7 +371,7 @@ class FieldInitializer:
         f.predictor = None
         if cfg.predictive_coding:
             f.predictor = PredictiveCodingModel(cfg.latent_dim, lr=cfg.pc_lr)
-        f._state_history: deque = deque(maxlen=100)
+        f._state_history = deque(maxlen=100)
 
         f.scenario_planner = None
         if cfg.counterfactual_imagination:
@@ -384,18 +385,18 @@ class FieldInitializer:
         f = self.field
         cfg = self.cfg
         f.shard_router = None
-        f._node_shard_map: Dict[str, int] = {}
+        f._node_shard_map = {}
         if cfg.sparse_routing:
             f.shard_router = np.zeros(cfg.num_shards, dtype=np.float32)
 
     def _init_crystallization_counters(self) -> None:
         f = self.field
         f._crystallization_counter = 0
-        f._crystallized_nodes: Set[str] = set()
+        f._crystallized_nodes = set()
 
     def _init_lifecycle_controls(self) -> None:
         f = self.field
-        f._workers: List[asyncio.Task] = []
+        f._workers = []
         f._write_lock = threading.RLock()
         f._consolidation_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="rtmdk_consolidate")
         f._consolidation_future = None
@@ -423,7 +424,7 @@ class FieldInitializer:
 
     def _init_tension_cache(self) -> None:
         f = self.field
-        f._tension_cache: Dict[str, tuple] = {}
+        f._tension_cache = {}
         f._tension_cache_max_age = 25
         f._tension_cache_hits = 0
         f._tension_cache_misses = 0
@@ -617,11 +618,11 @@ class FieldInitializer:
         f = self.field
         cfg = self.cfg
         f._step_counter = 0
-        f._add_node_timestamps: deque = deque(maxlen=1000)
-        f._rollback_history: deque = deque(maxlen=cfg.max_rollback_history)
-        f._stability_buffer: deque = deque(maxlen=cfg.field_stability_window)
-        f._active_node_history: deque = deque(maxlen=50)
-        f._semantic_phase_cache: Dict[str, float] = {}
+        f._add_node_timestamps = deque(maxlen=1000)
+        f._rollback_history = deque(maxlen=cfg.max_rollback_history)
+        f._stability_buffer = deque(maxlen=cfg.field_stability_window)
+        f._active_node_history = deque(maxlen=50)
+        f._semantic_phase_cache = {}
 
     def _init_managers(self) -> None:
         f = self.field

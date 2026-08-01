@@ -14,6 +14,7 @@ import os
 import sys
 import json
 import time
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
@@ -50,6 +51,7 @@ def run_correct_sot_benchmark(n_records=300):
     # Bootstrap SOT from corpus using SBERT teacher
     print("Bootstrapping SOT from corpus...")
     from sentence_transformers import SentenceTransformer
+
     teacher = SentenceTransformer("all-MiniLM-L6-v2")
     texts = [r["query"] + " " + r["answer"] for r in data]
     field.sot_bootstrap(texts, teacher_model="all-MiniLM-L6-v2")
@@ -93,11 +95,17 @@ def run_correct_sot_benchmark(n_records=300):
     # Also compare with external SBERT baseline
     print("\n--- SBERT baseline (same data, external embedder) ---")
     cfg2 = RTMDKConfig(
-        latent_dim=384, top_k=5, min_response=0.001,
-        decay_rate=0.999, use_hnsw=False,
-        learn_projection=False, bm25_fallback=False,
-        enable_async=False, resonance_kernel="cosine",
-        phase_coupling=0.0, adaptive_bandwidth=False,
+        latent_dim=384,
+        top_k=5,
+        min_response=0.001,
+        decay_rate=0.999,
+        use_hnsw=False,
+        learn_projection=False,
+        bm25_fallback=False,
+        enable_async=False,
+        resonance_kernel="cosine",
+        phase_coupling=0.0,
+        adaptive_bandwidth=False,
     )
     field2 = RTMDKField(cfg2)
     for rec in data:
@@ -115,10 +123,7 @@ def run_correct_sot_benchmark(n_records=300):
 
     hits2 = 0
     for rec in data:
-        q_emb = teacher.encode(
-            rec["query"],
-            convert_to_numpy=True).astype(
-            np.float32)
+        q_emb = teacher.encode(rec["query"], convert_to_numpy=True).astype(np.float32)
         result = field2.query(q_emb, top_k=1)
         if result:
             top_ctx = result[0][2].content.get("text", "")

@@ -33,6 +33,7 @@ def bench_all(records: List[Dict]) -> Dict[str, Dict[str, float]]:
 
     # --- SBERT baseline ---
     from sentence_transformers import SentenceTransformer
+
     model = SentenceTransformer("all-MiniLM-L6-v2")
     ctx_embs = np.vstack([model.encode(r["context"], convert_to_numpy=True) for r in records])
     ctx_embs = ctx_embs / (np.linalg.norm(ctx_embs, axis=1, keepdims=True) + 1e-8)

@@ -5,6 +5,8 @@ import copy
 import time
 from typing import Dict, List, Optional, Any
 
+import numpy as np
+
 
 class MemorySnapshot:
     """Immutable snapshot of memory state for rollback."""
@@ -66,11 +68,23 @@ class RollbackManager:
         for nid, content in snapshot.nodes.items():
             from rtmdk.nodes import MemoryNode
 
-            node = MemoryNode(id=nid, content=content)
+            emb = snapshot.embeddings.get(nid)
+            if emb is not None:
+                latent_pos = np.asarray(emb, dtype=np.float32)
+            else:
+                latent_pos = np.zeros(field.cfg.latent_dim, dtype=np.float32)
+            node = MemoryNode(
+                id=nid,
+                latent_pos=latent_pos,
+                phase=0.0,
+                amplitude=1.0,
+                salience=1.0,
+                content=content,
+            )
             if nid in snapshot.embeddings:
                 node._embedding = snapshot.embeddings[nid]
             field.nodes[nid] = node
-            field.node_index[nid] = len(field.node_index)
+            field.node_index.append(nid)
 
         field.stats = copy.deepcopy(snapshot.stats)
         return True
@@ -96,7 +110,7 @@ class PoisonedMemoryDetector:
     def scan(self, field) -> List[Dict[str, Any]]:
         """Scan all nodes and return list of suspicious nodes."""
         suspicious = []
-        texts = []
+        texts: List[str] = []
 
         for nid, node in field.nodes.items():
             flags = []

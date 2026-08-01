@@ -11,6 +11,7 @@ Datasets:
 """
 
 import os
+
 os.environ["RTMDK_ADD_RATE_LIMIT"] = "0"
 
 import json
@@ -85,8 +86,7 @@ def dataset_hardness(records: List[Dict]) -> dict:
     }
 
 
-def build_sot_embedder(records: List[Dict], contrastive: bool = False,
-                       latent_dim: int = 384, model_path: str = None):
+def build_sot_embedder(records: List[Dict], contrastive: bool = False, latent_dim: int = 384, model_path: str = None):
     """Train SOT v2 on corpus + queries. Optionally contrastive-fine-tune."""
     if model_path and Path(model_path).exists():
         print(f"  Loading SOT v2 from {model_path}")
@@ -111,8 +111,12 @@ def build_sot_embedder(records: List[Dict], contrastive: bool = False,
 
         if len(tokenized_queries) >= 10:
             sot._embedder.contrastive_fine_tune(
-                tokenized_queries, tokenized_positives,
-                n_epochs=5, lr=0.005, temperature=1.0, n_negatives=5,
+                tokenized_queries,
+                tokenized_positives,
+                n_epochs=5,
+                lr=0.005,
+                temperature=1.0,
+                n_negatives=5,
             )
 
     if model_path:
@@ -122,8 +126,7 @@ def build_sot_embedder(records: List[Dict], contrastive: bool = False,
     return sot
 
 
-def evaluate_pure_cosine(doc_embs: np.ndarray, records: List[Dict],
-                         embedder, corpus_texts: List[str], top_k: int = 5):
+def evaluate_pure_cosine(doc_embs: np.ndarray, records: List[Dict], embedder, corpus_texts: List[str], top_k: int = 5):
     query_times = []
     hits = 0
     hits1 = 0
@@ -156,8 +159,9 @@ def evaluate_pure_cosine(doc_embs: np.ndarray, records: List[Dict],
     }
 
 
-def evaluate_bm25_sot_hybrid(records: List[Dict], embedder, corpus_texts: List[str],
-                             alpha: float = 0.7, top_k: int = 5):
+def evaluate_bm25_sot_hybrid(
+    records: List[Dict], embedder, corpus_texts: List[str], alpha: float = 0.7, top_k: int = 5
+):
     """BM25 + SOT cosine hybrid scoring.
 
     score = alpha * cosine_normalized + (1-alpha) * bm25_normalized
@@ -255,18 +259,19 @@ def evaluate_rtmdk(memory, records: List[Dict], embedder, top_k: int = 5):
     }
 
 
-def benchmark_dataset(name: str, records: List[Dict], contrastive: bool = False,
-                        save_model: str = None):
+def benchmark_dataset(name: str, records: List[Dict], contrastive: bool = False, save_model: str = None):
     corpus_texts = list({r["context"] for r in records})
     print(f"\n{'='*60}")
     print(f"Dataset: {name} | Records: {len(records)} | Contexts: {len(corpus_texts)}")
     print("=" * 60)
 
     hardness = dataset_hardness(records)
-    print(f"  Hardness: qpc={hardness['queries_per_context']:.1f}, "
-          f"overlap={hardness['vocab_overlap_qc']:.2f}, "
-          f"diversity={hardness['lexical_diversity']:.2f}, "
-          f"recommend_contrastive={hardness['recommend_contrastive']}")
+    print(
+        f"  Hardness: qpc={hardness['queries_per_context']:.1f}, "
+        f"overlap={hardness['vocab_overlap_qc']:.2f}, "
+        f"diversity={hardness['lexical_diversity']:.2f}, "
+        f"recommend_contrastive={hardness['recommend_contrastive']}"
+    )
 
     # Train SOT v2
     model_path = f"models/sotv2_{name.replace(' ', '_')}.json" if save_model else None
@@ -284,11 +289,15 @@ def benchmark_dataset(name: str, records: List[Dict], contrastive: bool = False,
 
     # --- Pure SOT cosine ---
     res_cos = evaluate_pure_cosine(doc_embs, records, embedder, corpus_texts)
-    print(f"  SOT Cosine:      recall@5={res_cos['recall@5']:.3f}  recall@1={res_cos['recall@1']:.3f}  MRR={res_cos['mrr']:.3f}  p50={res_cos['latency_p50_ms']:.2f}ms")
+    print(
+        f"  SOT Cosine:      recall@5={res_cos['recall@5']:.3f}  recall@1={res_cos['recall@1']:.3f}  MRR={res_cos['mrr']:.3f}  p50={res_cos['latency_p50_ms']:.2f}ms"
+    )
 
     # --- BM25 + SOT Hybrid ---
     res_hybrid = evaluate_bm25_sot_hybrid(records, embedder, corpus_texts, alpha=0.7)
-    print(f"  BM25+SOT(0.7):   recall@5={res_hybrid['recall@5']:.3f}  recall@1={res_hybrid['recall@1']:.3f}  MRR={res_hybrid['mrr']:.3f}  p50={res_hybrid['latency_p50_ms']:.2f}ms")
+    print(
+        f"  BM25+SOT(0.7):   recall@5={res_hybrid['recall@5']:.3f}  recall@1={res_hybrid['recall@1']:.3f}  MRR={res_hybrid['mrr']:.3f}  p50={res_hybrid['latency_p50_ms']:.2f}ms"
+    )
 
     # --- RTMDK + SOT v2 ---
     cfg = RTMDKConfig(
@@ -314,7 +323,9 @@ def benchmark_dataset(name: str, records: List[Dict], contrastive: bool = False,
             mem.add_node(embedder(ctx), {"text": ctx})
 
     res_rtmdk = evaluate_rtmdk(mem, records, embedder)
-    print(f"  RTMDK+SOT:       recall@5={res_rtmdk['recall@5']:.3f}  recall@1={res_rtmdk['recall@1']:.3f}  MRR={res_rtmdk['mrr']:.3f}  p50={res_rtmdk['latency_p50_ms']:.2f}ms")
+    print(
+        f"  RTMDK+SOT:       recall@5={res_rtmdk['recall@5']:.3f}  recall@1={res_rtmdk['recall@1']:.3f}  MRR={res_rtmdk['mrr']:.3f}  p50={res_rtmdk['latency_p50_ms']:.2f}ms"
+    )
 
     return {
         "sot_cosine": res_cos,
@@ -326,7 +337,9 @@ def benchmark_dataset(name: str, records: List[Dict], contrastive: bool = False,
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", default="all", choices=["all", "en", "ru", "hard", "ms_marco", "rubq"])
-    parser.add_argument("--contrastive", action="store_true", help="Contrastive fine-tune SOT v2 on query-context pairs")
+    parser.add_argument(
+        "--contrastive", action="store_true", help="Contrastive fine-tune SOT v2 on query-context pairs"
+    )
     parser.add_argument("--save-model", action="store_true", help="Save trained SOT v2 models to models/")
     parser.add_argument("--max-records", type=int, default=None, help="Limit records per dataset")
     args = parser.parse_args()
@@ -340,11 +353,15 @@ def main():
     if args.dataset in ("all", "ru"):
         records = load_dataset(DATASET_PATHS["comprehensive_500"], language="ru", max_records=args.max_records)
         if records:
-            results["comprehensive_500_ru"] = benchmark_dataset("comprehensive_500_ru", records, args.contrastive, save_model=args.save_model)
+            results["comprehensive_500_ru"] = benchmark_dataset(
+                "comprehensive_500_ru", records, args.contrastive, save_model=args.save_model
+            )
 
     if args.dataset in ("all", "hard"):
         records = load_dataset(DATASET_PATHS["comprehensive_500"], language="en", max_records=args.max_records)
-        results["comprehensive_500"] = benchmark_dataset("comprehensive_500", records, args.contrastive, save_model=args.save_model)
+        results["comprehensive_500"] = benchmark_dataset(
+            "comprehensive_500", records, args.contrastive, save_model=args.save_model
+        )
 
     if args.dataset in ("all", "ms_marco"):
         records = load_dataset(DATASET_PATHS["ms_marco"], max_records=args.max_records)
@@ -363,7 +380,9 @@ def main():
     for ds_name, res in results.items():
         print(f"\n{ds_name}:")
         for sys_name, metrics in res.items():
-            print(f"  {sys_name:16s} recall@5={metrics['recall@5']:.3f}  recall@1={metrics['recall@1']:.3f}  MRR={metrics['mrr']:.3f}")
+            print(
+                f"  {sys_name:16s} recall@5={metrics['recall@5']:.3f}  recall@1={metrics['recall@1']:.3f}  MRR={metrics['mrr']:.3f}"
+            )
 
 
 if __name__ == "__main__":

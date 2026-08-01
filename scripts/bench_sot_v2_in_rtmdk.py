@@ -17,6 +17,7 @@ def main():
 
     # 1. Pure cosine on SOT v2 embeddings
     from rtmdk.memory.sot_v2.integration import SOTv2Embedder
+
     sot = SOTv2Embedder(latent_dim=384, a=0.01, window_size=5)
     sot.train(corpus_texts)
     doc_embs = np.vstack([sot(t) for t in corpus_texts])

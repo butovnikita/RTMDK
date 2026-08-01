@@ -36,6 +36,8 @@ def run_mypy() -> int:
         print(output)
         print("check_mypy: mypy aborted with a fatal error (not a countable report)", file=sys.stderr)
         sys.exit(2)
+    if "Success: no issues found" in output:
+        return 0
     match = re.search(r"Found (\d+) errors? in (\d+) files?", output)
     if not match:
         print(output)

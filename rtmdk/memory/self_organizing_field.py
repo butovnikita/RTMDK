@@ -134,6 +134,7 @@ class SOTokenizer:
         self._pruned_words: Set[str] = set()
 
         # Learnable projection: token_dim -> latent_dim
+        self.projection: np.ndarray
         if self.token_dim == self.latent_dim:
             self.projection = np.eye(self.token_dim, dtype=np.float32)
         else:

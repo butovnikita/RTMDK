@@ -7,6 +7,7 @@ Usage:
     python scripts/bench_planner_savings.py --dataset datasets/comprehensive_500.json --n 200
     python scripts/bench_planner_savings.py --dataset datasets/qa_1000_en.json --n 500 --top-k 5
 """
+
 from __future__ import annotations
 
 import argparse
@@ -27,9 +28,10 @@ from rtmdk.memory.core import RTMDKMemory
 
 def _make_embedder(dim: int = 384):
     def embed(text: str) -> np.ndarray:
-        h = hash(text) % (2 ** 32)
+        h = hash(text) % (2**32)
         rng = np.random.default_rng(h)
         return rng.standard_normal(dim, dtype=np.float32)
+
     return embed
 
 
@@ -144,13 +146,17 @@ def main():
 
     if args.output:
         with open(args.output, "w", encoding="utf-8") as f:
-            json.dump({
-                "queries": result.queries,
-                "baseline_p50_ms": result.baseline_p50,
-                "planned_p50_ms": result.planned_p50,
-                "latency_reduction_pct": result.latency_reduction_pct,
-                "cost_reduction_pct": result.cost_reduction_pct,
-            }, f, indent=2)
+            json.dump(
+                {
+                    "queries": result.queries,
+                    "baseline_p50_ms": result.baseline_p50,
+                    "planned_p50_ms": result.planned_p50,
+                    "latency_reduction_pct": result.latency_reduction_pct,
+                    "cost_reduction_pct": result.cost_reduction_pct,
+                },
+                f,
+                indent=2,
+            )
         print(f"\nSaved to {args.output}")
 
     # Note: Savings depend on configuration. Max theoretical savings ~40%

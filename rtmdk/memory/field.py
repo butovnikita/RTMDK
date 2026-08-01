@@ -505,6 +505,16 @@ def _locked(method):
 
 
 class RTMDKField:
+    # Type declarations for attributes initialized by FieldInitializer.
+    # They live here (not at the assignment sites) because FieldInitializer
+    # sets them on a non-self object, where mypy forbids annotations.
+    _step_counter: int
+    _async_index_builder: Optional[Any]
+    _causal_engine: Optional[Any]
+    _causal_engine_initialized: bool
+    _meta_controller: Optional[Any]
+    _meta_controller_initialized: bool
+
     def __init__(
         self, config: RTMDKConfig, projection_matrix: Optional[NDArray] = None, wal_path: Optional[str] = None
     ):

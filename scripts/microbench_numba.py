@@ -1,13 +1,27 @@
 """Microbenchmark Numba vs Numpy resonance chunk."""
+
 import time
 import numpy as np
 from rtmdk.memory._resonance_numba import chunk_resonance as chunk_numba
 
 
-def chunk_numpy(positions, phases, amplitudes, saliences, modal_weights, gates, causal_boost,
-                query_latent, query_phase, bw, pc, use_gates, use_causal):
+def chunk_numpy(
+    positions,
+    phases,
+    amplitudes,
+    saliences,
+    modal_weights,
+    gates,
+    causal_boost,
+    query_latent,
+    query_phase,
+    bw,
+    pc,
+    use_gates,
+    use_causal,
+):
     dists = np.linalg.norm(positions - query_latent, axis=1)
-    spatial = np.exp(-dists ** 2 / (2.0 * bw * bw))
+    spatial = np.exp(-(dists**2) / (2.0 * bw * bw))
     phase_align = 0.5 + 0.5 * np.cos(phases - query_phase)
     resp = spatial * ((1.0 - pc) + pc * phase_align)
     resp *= amplitudes * saliences * modal_weights
@@ -22,7 +36,7 @@ def bench(n, dim=384, repeats=20, warmup=5):
     rng = np.random.default_rng(42)
     positions = rng.standard_normal((n, dim), dtype=np.float32)
     # normalize for realistic distances
-    positions /= (np.linalg.norm(positions, axis=1, keepdims=True) + 1e-8)
+    positions /= np.linalg.norm(positions, axis=1, keepdims=True) + 1e-8
     phases = rng.random(n, dtype=np.float32)
     amps = rng.random(n, dtype=np.float32)
     sal = rng.random(n, dtype=np.float32)

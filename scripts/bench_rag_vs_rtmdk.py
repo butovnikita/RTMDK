@@ -38,9 +38,12 @@ def load_dataset(path: str, n: int) -> List[Dict]:
 
 def make_sbert_embedder():
     from sentence_transformers import SentenceTransformer
+
     model = SentenceTransformer("all-MiniLM-L6-v2")
+
     def embed(text: str):
         return model.encode(text, convert_to_numpy=True).astype(np.float32)
+
     return embed
 
 
@@ -83,17 +86,21 @@ def bench_rtmdk(
     from rtmdk.memory.core import RTMDKMemory
 
     # Base benchmark config
-    cfg = RTMDKConfig.benchmark() if latent_dim == 384 else RTMDKConfig(
-        latent_dim=latent_dim,
-        embedding_dim=384,
-        max_nodes=len(records) + 10,
-        top_k=top_k,
-        min_response=0.001,
-        bandwidth=1.0,
-        phase_coupling=0.3,
-        use_hnsw=True,
-        learn_projection=False,
-        projection_mode="identity",
+    cfg = (
+        RTMDKConfig.benchmark()
+        if latent_dim == 384
+        else RTMDKConfig(
+            latent_dim=latent_dim,
+            embedding_dim=384,
+            max_nodes=len(records) + 10,
+            top_k=top_k,
+            min_response=0.001,
+            bandwidth=1.0,
+            phase_coupling=0.3,
+            use_hnsw=True,
+            learn_projection=False,
+            projection_mode="identity",
+        )
     )
 
     if mode == "sot":
@@ -118,6 +125,7 @@ def bench_rtmdk(
         memory = RTMDKMemory(config=cfg, embedder=lambda t: np.zeros(cfg.latent_dim, dtype=np.float32))
     elif mode == "sot_v2":
         from rtmdk.memory.sot_v2.integration import SOTv2Embedder
+
         corpus = [r["context"] + " " + r["query"] for r in records]
         sot_v2 = SOTv2Embedder(latent_dim=latent_dim)
         sot_v2.train(corpus)
@@ -131,11 +139,12 @@ def bench_rtmdk(
     if mode == "sot":
         print("  Bootstrapping SOT from SBERT teacher...")
         texts = [r["context"] + " " + r["query"] for r in records]
-        memory.field.sot_bootstrap(texts, teacher_model="all-MiniLM-L6-v2",
-                                   fit_projection_only=False, n_epochs=50)
+        memory.field.sot_bootstrap(texts, teacher_model="all-MiniLM-L6-v2", fit_projection_only=False, n_epochs=50)
+
         def sot_embed(text: str):
             tokens = memory.field._projection_mgr.sot_tokenizer.encode(text)
             return memory.field._projection_mgr.sot_tokenizer.embed(tokens).astype(np.float32)
+
         for rec in records:
             emb = sot_embed(rec["context"])
             memory.add_node(embedding=emb, content={"text": rec["context"]}, phase=0.0)
@@ -187,11 +196,13 @@ def bench_rtmdk(
     batch_latencies = []
     batch_size = 32
     for offset in range(0, len(query_embs), batch_size):
-        batch = query_embs[offset:offset + batch_size]
+        batch = query_embs[offset : offset + batch_size]
         t0 = time.perf_counter()
         _ = memory.batch_query(batch, top_k=top_k * 2)
         batch_latencies.append((time.perf_counter() - t0) * 1000)
-    per_query_batch_latency = [lat / batch_size for lat in batch_latencies for _ in range(batch_size)][:len(query_embs)]
+    per_query_batch_latency = [lat / batch_size for lat in batch_latencies for _ in range(batch_size)][
+        : len(query_embs)
+    ]
 
     return {
         "recall_at_k": float(np.mean(recalls)),
@@ -202,12 +213,16 @@ def bench_rtmdk(
     }
 
 
-def run_single(mode: str, records: List[Dict], top_k: int, latent_dim: int, cosine: Dict[str, float]) -> Dict[str, float]:
+def run_single(
+    mode: str, records: List[Dict], top_k: int, latent_dim: int, cosine: Dict[str, float]
+) -> Dict[str, float]:
     print(f"\n=== RTMDK ({mode.upper()}, latent_dim={latent_dim}) ===")
     rtmdk = bench_rtmdk(records, mode=mode, top_k=top_k, latent_dim=latent_dim)
     for k, v in rtmdk.items():
         print(f"  {k}: {v:.4f}")
-    print(f"  vs RAG — recall delta={rtmdk['recall_at_k']-cosine['recall_at_k']:+.3f}, mrr delta={rtmdk['mrr']-cosine['mrr']:+.3f}")
+    print(
+        f"  vs RAG — recall delta={rtmdk['recall_at_k']-cosine['recall_at_k']:+.3f}, mrr delta={rtmdk['mrr']-cosine['mrr']:+.3f}"
+    )
     if "batch_latency_p50_ms" in rtmdk:
         print(f"  batch per-query latency p50: {rtmdk['batch_latency_p50_ms']:.4f} ms")
     return rtmdk

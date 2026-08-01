@@ -33,6 +33,7 @@ class ProjectionManager:
         self._rng = rng or np.random.default_rng(cfg.seed)
 
         # --- Projection learner / raw matrix ---
+        self.projection_learner: Optional[Any] = None
         if cfg.projection_mode == "identity":
             self.projection_learner = IdentityProjection(cfg.embedding_dim, cfg.latent_dim)
             self._raw_projection = None
@@ -144,7 +145,7 @@ class ProjectionManager:
     # ------------------------------------------------------------------
     def _maybe_warm_start_sot(self) -> None:
         cfg = self.cfg
-        if not cfg.sot_warm_start_corpus:
+        if not cfg.sot_warm_start_corpus or self.sot_tokenizer is None:
             return
         try:
             import json
@@ -200,7 +201,7 @@ class ProjectionManager:
 
                 with open(cfg.sot_bootstrap_corpus, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                texts: List[str] = []
+                texts = []
                 if isinstance(data, dict) and "records" in data:
                     texts = [r.get("context", "") + " " + r.get("answer", "") for r in data["records"]]
                 elif isinstance(data, list):
@@ -208,13 +209,14 @@ class ProjectionManager:
                 from sentence_transformers import SentenceTransformer
 
                 teacher = SentenceTransformer(cfg.sot_bootstrap_model)
-                self.sot_tokenizer.bootstrap_from_teacher(
-                    texts,
-                    lambda t: teacher.encode(t, show_progress_bar=False),
-                    fit_projection_only=False,
-                    n_epochs=10,
-                    lr=0.05,
-                )
+                if self.sot_tokenizer is not None:
+                    self.sot_tokenizer.bootstrap_from_teacher(
+                        texts,
+                        lambda t: teacher.encode(t, show_progress_bar=False),
+                        fit_projection_only=False,
+                        n_epochs=10,
+                        lr=0.05,
+                    )
             except Exception as e:
                 logger.warning(f"SOT auto-bootstrap failed: {e}")
 

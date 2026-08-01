@@ -34,6 +34,7 @@ def load_dataset(path: str, n: int) -> List[Dict]:
 def _word_tokenize(text: str) -> List[str]:
     """Simple unicode-aware word tokenization."""
     import unicodedata
+
     text = text.lower()
     tokens = []
     current = []
@@ -86,8 +87,6 @@ def bench_sot_v2(records: List[Dict], top_k: int = 5) -> Dict[str, float]:
     all_tokenized = tokenized_contexts + tokenized_queries
     embedder.fit(all_tokenized, vocab_size=len(vocab))
 
-
-
     print("[SOT v2.0] Building hybrid BM25 + SIF index...")
     retriever = HybridSIFBM25Retriever(latent_dim=384, alpha=0.5)
     for i, tokens in enumerate(tokenized_contexts):
@@ -122,6 +121,7 @@ def bench_sot_v2(records: List[Dict], top_k: int = 5) -> Dict[str, float]:
 
 def bench_sbert(records: List[Dict], top_k: int = 5) -> Dict[str, float]:
     from sentence_transformers import SentenceTransformer
+
     model = SentenceTransformer("all-MiniLM-L6-v2")
 
     contexts = [r["context"] for r in records]
@@ -169,7 +169,9 @@ def main():
     sot = bench_sot_v2(records, top_k=args.top_k)
     for k, v in sot.items():
         print(f"  {k}: {v:.4f}")
-    print(f"  vs SBERT — recall delta={sot['recall_at_k']-sbert['recall_at_k']:+.3f}, mrr delta={sot['mrr']-sbert['mrr']:+.3f}")
+    print(
+        f"  vs SBERT — recall delta={sot['recall_at_k']-sbert['recall_at_k']:+.3f}, mrr delta={sot['mrr']-sbert['mrr']:+.3f}"
+    )
 
 
 if __name__ == "__main__":

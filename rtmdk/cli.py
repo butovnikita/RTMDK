@@ -105,6 +105,7 @@ def cmd_pipeline_diagnose(
             print(f"  [WARN] Could not load: {exc}")
     else:
         print("No memory file — using empty field for smoke test")
+        assert mem.field is not None  # field is created in model_post_init
         mem.field.add_node(
             embedding=np.zeros(cfg.latent_dim, dtype=np.float32),
             content={"text": "smoke test node"},

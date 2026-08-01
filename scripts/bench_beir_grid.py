@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Grid search RTMDK hyperparameters on BEIR datasets."""
+
 from __future__ import annotations
 
 import argparse
@@ -12,15 +13,17 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from scripts.bench_beir_rtmdk import (
-    load_beir_dataset, embed_corpus_and_queries,
-    build_rtmdk, evaluate_rtmdk, evaluate_cosine,
+    load_beir_dataset,
+    embed_corpus_and_queries,
+    build_rtmdk,
+    evaluate_rtmdk,
+    evaluate_cosine,
 )
 
 
 def grid_search(dataset: str, model: str, batch_size: int):
     corpus, queries, qrels = load_beir_dataset(dataset)
-    corpus_ids, corpus_embs, query_ids, query_embs = embed_corpus_and_queries(
-        corpus, queries, model, batch_size)
+    corpus_ids, corpus_embs, query_ids, query_embs = embed_corpus_and_queries(corpus, queries, model, batch_size)
 
     # Baseline
     cosine = evaluate_cosine(corpus_embs, query_embs, query_ids, qrels, corpus_ids)
@@ -36,8 +39,10 @@ def grid_search(dataset: str, model: str, batch_size: int):
     for cfg in configs:
         mem = build_rtmdk(corpus_ids, corpus_embs, **cfg)
         metrics = evaluate_rtmdk(mem, query_ids, query_embs, qrels, corpus_ids)
-        print(f"  bw={cfg['bandwidth']:.1f} pc={cfg['phase_coupling']:.1f} hyp={cfg['hyperbolic']:<5} "
-              f"recall@1={metrics['recall@1']:.4f} mrr={metrics['mrr']:.4f}")
+        print(
+            f"  bw={cfg['bandwidth']:.1f} pc={cfg['phase_coupling']:.1f} hyp={cfg['hyperbolic']:<5} "
+            f"recall@1={metrics['recall@1']:.4f} mrr={metrics['mrr']:.4f}"
+        )
         if metrics["mrr"] > best["mrr"]:
             best = {"mrr": metrics["mrr"], "cfg": cfg, "metrics": metrics}
 

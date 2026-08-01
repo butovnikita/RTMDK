@@ -135,7 +135,7 @@ class QuantumResonanceRetriever:
         q^T ρ q = ||V^T q||^2, which is computed as a single matrix-vector
         product followed by a norm squared.
         """
-        q = query_emb.astype(np.float32)
+        q: np.ndarray = query_emb.astype(np.float32)
         scores = []
         for doc_id, rho in self.doc_states.items():
             # Fast path: use precomputed factorisation if available

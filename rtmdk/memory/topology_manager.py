@@ -114,7 +114,7 @@ class TopologyManager:
             neighbors = [f.nodes[oid] for oid in neighbor_ids]
             phases = np.array([n.phase for n in neighbors])
             saliences = np.array([n.salience for n in neighbors])
-            tension = 0.6 * (np.std(np.cos(phases)) + np.std(np.sin(phases))) + 0.4 * np.std(saliences)
+            tension = float(0.6 * (np.std(np.cos(phases)) + np.std(np.sin(phases))) + 0.4 * np.std(saliences))
 
         if f.security and not f.security.validate_tension_spike(float(tension)):
             f.stats["tension_spikes_blocked"] += 1

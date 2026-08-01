@@ -65,7 +65,7 @@ class CognitiveManager:
         mean_phase = np.mean(phases)
         mean_amp = np.mean(amps)
         mean_sal = np.mean(sals)
-        state = np.zeros(f.cfg.latent_dim * 4, dtype=np.float32)
+        state: np.ndarray = np.zeros(f.cfg.latent_dim * 4, dtype=np.float32)
         pos_dim = min(len(mean_pos), f.cfg.latent_dim)
         state[:pos_dim] = mean_pos[:pos_dim]
         state[f.cfg.latent_dim] = mean_phase

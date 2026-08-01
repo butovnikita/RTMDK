@@ -3,6 +3,7 @@
 Usage:
     python scripts/bench_tiered_storage.py --nodes 100000 --queries 1000
 """
+
 from __future__ import annotations
 
 import argparse
@@ -145,7 +146,9 @@ def main():
             break
         result = run_benchmark(scale, args.queries, args.latent_dim, tmp_dir)
         results.append(result)
-        print(f"  RAM: {result['ram_mb']} MB | Ingest: {result['nodes_per_sec']:.0f} nodes/s | Query p50: {result['latency_p50_ms']:.2f} ms")
+        print(
+            f"  RAM: {result['ram_mb']} MB | Ingest: {result['nodes_per_sec']:.0f} nodes/s | Query p50: {result['latency_p50_ms']:.2f} ms"
+        )
 
     # Summary table
     print("\n=== Summary ===")

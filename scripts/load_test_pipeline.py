@@ -12,6 +12,7 @@ Outputs:
     - Error rate
     - Pipeline stage breakdown (if available)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -197,9 +198,7 @@ async def run_load_test(
 
         # Spawn workers
         workers = [
-            asyncio.create_task(
-                _worker(client, base_url, endpoint, queries, top_k, result, semaphore, stop_event)
-            )
+            asyncio.create_task(_worker(client, base_url, endpoint, queries, top_k, result, semaphore, stop_event))
             for _ in range(target_rps)
         ]
 
@@ -215,19 +214,20 @@ async def run_load_test(
 
 def main():
     parser = argparse.ArgumentParser(description="Load test RTMDK pipeline endpoints")
-    parser.add_argument("--endpoint", "-e", default="query_pipeline",
-                        choices=["query_pipeline", "stream", "health"],
-                        help="Endpoint to test")
-    parser.add_argument("--rps", "-r", type=int, default=10,
-                        help="Target requests per second (concurrency)")
-    parser.add_argument("--duration", "-d", type=int, default=30,
-                        help="Test duration in seconds")
-    parser.add_argument("--url", "-u", default="http://localhost:8080",
-                        help="Base URL of RTMDK server")
-    parser.add_argument("--queries", "-q", default="hello,world,test,query,search",
-                        help="Comma-separated query strings")
-    parser.add_argument("--top-k", "-k", type=int, default=5,
-                        help="top_k parameter for queries")
+    parser.add_argument(
+        "--endpoint",
+        "-e",
+        default="query_pipeline",
+        choices=["query_pipeline", "stream", "health"],
+        help="Endpoint to test",
+    )
+    parser.add_argument("--rps", "-r", type=int, default=10, help="Target requests per second (concurrency)")
+    parser.add_argument("--duration", "-d", type=int, default=30, help="Test duration in seconds")
+    parser.add_argument("--url", "-u", default="http://localhost:8080", help="Base URL of RTMDK server")
+    parser.add_argument(
+        "--queries", "-q", default="hello,world,test,query,search", help="Comma-separated query strings"
+    )
+    parser.add_argument("--top-k", "-k", type=int, default=5, help="top_k parameter for queries")
 
     args = parser.parse_args()
 
@@ -235,14 +235,16 @@ def main():
     if not queries:
         queries = ["hello", "world", "test"]
 
-    result = asyncio.run(run_load_test(
-        base_url=args.url,
-        endpoint=args.endpoint,
-        target_rps=args.rps,
-        duration_sec=args.duration,
-        queries=queries,
-        top_k=args.top_k,
-    ))
+    result = asyncio.run(
+        run_load_test(
+            base_url=args.url,
+            endpoint=args.endpoint,
+            target_rps=args.rps,
+            duration_sec=args.duration,
+            queries=queries,
+            top_k=args.top_k,
+        )
+    )
 
     result.print_summary()
 

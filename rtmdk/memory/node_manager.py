@@ -618,6 +618,7 @@ class NodeManager:
         for i in range(n):
             nid = node_ids[i] if node_ids else f"n_{base_idx + i}_{int(now * 1000)}_{i}"
             batch_nids.append(nid)
+            scale_arr = _latent_scale_arrays[i]
             node = MemoryNode(
                 id=nid,
                 latent_pos=latents[i],
@@ -629,9 +630,7 @@ class NodeManager:
                 modality=modalities[i] if modalities else "text",
                 latent_scale=_latent_scales[i],
                 latent_zero_point=_latent_zps[i],
-                latent_scale_array=(
-                    _latent_scale_arrays[i].astype(np.float32) if _latent_scale_arrays[i] is not None else None
-                ),
+                latent_scale_array=scale_arr.astype(np.float32) if scale_arr is not None else None,
             )
             if f.cfg.cross_modal:
                 node.modal_embedding = embeddings[i].copy()

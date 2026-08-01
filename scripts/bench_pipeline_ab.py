@@ -4,6 +4,7 @@ Usage:
     python scripts/bench_pipeline_ab.py --queries 100 --top-k 5
     python scripts/bench_pipeline_ab.py --queries 100 --dataset datasets/qa_1000_en.json
 """
+
 from __future__ import annotations
 import argparse
 import json
@@ -23,9 +24,10 @@ from rtmdk.pipeline.ab_testing import PipelineABTester
 
 def _make_embedder(dim: int = 64):
     def embed(text: str) -> np.ndarray:
-        h = hash(text) % (2 ** 32)
+        h = hash(text) % (2**32)
         rng = np.random.default_rng(h)
         return rng.standard_normal(dim, dtype=np.float32)
+
     return embed
 
 
@@ -91,36 +93,48 @@ def main():
     print("=" * 60)
     print(f"Queries: {summary['runs']}")
     print(f"\nLatency (ms):")
-    print(f"  Legacy:   mean={summary['legacy_latency_ms']['mean']:.2f}  "
-          f"median={summary['legacy_latency_ms']['median']:.2f}  "
-          f"p95={summary['legacy_latency_ms']['p95']:.2f}")
-    print(f"  Pipeline: mean={summary['pipeline_latency_ms']['mean']:.2f}  "
-          f"median={summary['pipeline_latency_ms']['median']:.2f}  "
-          f"p95={summary['pipeline_latency_ms']['p95']:.2f}")
-    print(f"\nPipeline faster: {summary['pipeline_faster_count']} / {summary['runs']} "
-          f"({100*summary['pipeline_faster_count']/max(summary['runs'],1):.1f}%)")
+    print(
+        f"  Legacy:   mean={summary['legacy_latency_ms']['mean']:.2f}  "
+        f"median={summary['legacy_latency_ms']['median']:.2f}  "
+        f"p95={summary['legacy_latency_ms']['p95']:.2f}"
+    )
+    print(
+        f"  Pipeline: mean={summary['pipeline_latency_ms']['mean']:.2f}  "
+        f"median={summary['pipeline_latency_ms']['median']:.2f}  "
+        f"p95={summary['pipeline_latency_ms']['p95']:.2f}"
+    )
+    print(
+        f"\nPipeline faster: {summary['pipeline_faster_count']} / {summary['runs']} "
+        f"({100*summary['pipeline_faster_count']/max(summary['runs'],1):.1f}%)"
+    )
     print(f"\nResult quality:")
-    print(f"  Jaccard overlap: mean={summary['jaccard_overlap']['mean']:.4f}  "
-          f"median={summary['jaccard_overlap']['median']:.4f}")
-    print(f"  Kendall tau:     mean={summary['kendall_tau']['mean']:.4f}  "
-          f"median={summary['kendall_tau']['median']:.4f}")
+    print(
+        f"  Jaccard overlap: mean={summary['jaccard_overlap']['mean']:.4f}  "
+        f"median={summary['jaccard_overlap']['median']:.4f}"
+    )
+    print(
+        f"  Kendall tau:     mean={summary['kendall_tau']['mean']:.4f}  "
+        f"median={summary['kendall_tau']['median']:.4f}"
+    )
 
     # Per-query details
     print("\n" + "-" * 60)
     print("Per-query samples (first 5):")
     for r in results[:5]:
         comp = r["comparison"]
-        print(f"  '{r['query'][:40]}...'  "
-              f"jaccard={comp['jaccard_overlap']:.2f}  "
-              f"tau={comp['kendall_tau']:.2f}  "
-              f"legacy={r['legacy']['latency_ms']:.2f}ms  "
-              f"pipeline={r['pipeline']['latency_ms']:.2f}ms  "
-              f"faster={comp['faster']}")
+        print(
+            f"  '{r['query'][:40]}...'  "
+            f"jaccard={comp['jaccard_overlap']:.2f}  "
+            f"tau={comp['kendall_tau']:.2f}  "
+            f"legacy={r['legacy']['latency_ms']:.2f}ms  "
+            f"pipeline={r['pipeline']['latency_ms']:.2f}ms  "
+            f"faster={comp['faster']}"
+        )
 
     print("\n" + "=" * 60)
-    if summary['pipeline_faster_count'] >= summary['runs'] * 0.8:
+    if summary["pipeline_faster_count"] >= summary["runs"] * 0.8:
         print("[PASS] Pipeline is consistently faster -- ready for production")
-    elif summary['jaccard_overlap']['mean'] >= 0.95:
+    elif summary["jaccard_overlap"]["mean"] >= 0.95:
         print("[PASS] Results are nearly identical -- pipeline is safe to enable")
     else:
         print("[WARN] Significant differences detected -- review before enabling")

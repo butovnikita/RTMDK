@@ -3,19 +3,32 @@
 Basic GraphQL API for querying memory, nodes, and health.
 """
 
-from typing import AsyncGenerator, List, Optional
+from typing import TYPE_CHECKING, AsyncGenerator, List, Optional
 
 import strawberry
 
+if TYPE_CHECKING:
+    from typing import dataclass_transform
 
-@strawberry.type
+    @dataclass_transform()
+    def strawberry_type(cls):
+        # PEP 681: strawberry.type is a dataclass transform, but mypy cannot
+        # see it (follow_imports=skip turns strawberry into Any). Declare the
+        # transform locally so generated __init__ signatures type-check.
+        return cls
+
+else:
+    strawberry_type = strawberry.type
+
+
+@strawberry_type
 class Health:
     status: str
     version: str
     memory_nodes: int
 
 
-@strawberry.type
+@strawberry_type
 class MemoryNode:
     id: str
     content: str
@@ -24,14 +37,14 @@ class MemoryNode:
     amplitude: float
 
 
-@strawberry.type
+@strawberry_type
 class MemoryResult:
     node_id: str
     score: float
     content: str
 
 
-@strawberry.type
+@strawberry_type
 class StageMetric:
     stage: str
     latency_ms: float
@@ -39,14 +52,14 @@ class StageMetric:
     degraded: bool
 
 
-@strawberry.type
+@strawberry_type
 class PipelineMetrics:
     stages: List[StageMetric]
     total_latency_ms: float
     breaker_states: Optional[str] = None
 
 
-@strawberry.type
+@strawberry_type
 class PipelineResult:
     query: str
     results: List[MemoryResult]
@@ -55,7 +68,7 @@ class PipelineResult:
     metrics: PipelineMetrics
 
 
-@strawberry.type
+@strawberry_type
 class Query:
     @strawberry.field
     def health(self) -> Health:
@@ -157,7 +170,7 @@ class Query:
         return results
 
 
-@strawberry.type
+@strawberry_type
 class PipelineStreamEvent:
     event_type: str
     stage: Optional[str] = None
@@ -169,7 +182,7 @@ class PipelineStreamEvent:
     results: Optional[List[MemoryResult]] = None
 
 
-@strawberry.type
+@strawberry_type
 class Mutation:
     @strawberry.mutation
     def create_node(self, content: str, salience: Optional[float] = None) -> MemoryNode:
@@ -206,7 +219,7 @@ class Mutation:
         return False
 
 
-@strawberry.type
+@strawberry_type
 class Subscription:
     @strawberry.subscription
     async def pipeline_stream(

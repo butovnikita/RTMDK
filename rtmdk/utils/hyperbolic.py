@@ -75,8 +75,8 @@ def log_map_poincare(point: NDArray, base: NDArray, ball_radius: float = 0.85) -
     lambda_base = 2.0 / (1.0 - base_norm_sq / (ball_radius**2))
 
     # factor = 2R · arctanh(||diff||/R) / (λ_base · ||diff||)
-    ratio = diff_norm / ball_radius
-    ratio = min(ratio, 1.0 - 1e-8)  # type: ignore[arg-type]
+    ratio = float(diff_norm / ball_radius)
+    ratio = min(ratio, 1.0 - 1e-8)
     factor = (2.0 * ball_radius * np.arctanh(ratio)) / (lambda_base * diff_norm)
     tangent = diff * factor
     return tangent.astype(np.float32)

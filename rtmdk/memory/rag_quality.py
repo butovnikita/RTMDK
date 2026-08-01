@@ -6,7 +6,7 @@ import os
 import re
 import time
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 logger = logging.getLogger(__name__)
@@ -37,9 +37,9 @@ class SentenceReranker:
     def rerank(
         self,
         query: str,
-        results: List[Tuple[str, float, any]],
+        results: List[Tuple[str, float, Any]],
         top_k: int = 5,
-    ) -> List[Tuple[str, float, any]]:
+    ) -> List[Tuple[str, float, Any]]:
         """Re-rank results by sentence-level similarity."""
         if not results:
             return results

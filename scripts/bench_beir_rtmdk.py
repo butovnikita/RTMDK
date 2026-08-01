@@ -5,6 +5,7 @@ Usage:
     python scripts/bench_beir_rtmdk.py --datasets scifact nfcorpus --model sentence-transformers/all-MiniLM-L6-v2
     python scripts/bench_beir_rtmdk.py --dataset fiqa --model BAAI/bge-small-en-v1.5 --rtmdk-bandwidth 0.8 --rtmdk-phase-coupling 0.2
 """
+
 from __future__ import annotations
 
 import argparse
@@ -40,6 +41,7 @@ def load_beir_dataset(name: str):
 def embed_corpus_and_queries(corpus, queries, model_name: str, batch_size: int = 32):
     """Embed all passages and queries with sentence-transformers."""
     from sentence_transformers import SentenceTransformer
+
     model = SentenceTransformer(model_name)
 
     corpus_ids = list(corpus.keys())
@@ -55,9 +57,14 @@ def embed_corpus_and_queries(corpus, queries, model_name: str, batch_size: int =
     return corpus_ids, corpus_embs.astype(np.float32), query_ids, query_embs.astype(np.float32)
 
 
-def build_rtmdk(corpus_ids: List[str], corpus_embs: np.ndarray,
-                bandwidth: float = 1.0, phase_coupling: float = 0.0,
-                hyperbolic: bool = False, hnsw_min_nodes: int = 50) -> RTMDKMemory:
+def build_rtmdk(
+    corpus_ids: List[str],
+    corpus_embs: np.ndarray,
+    bandwidth: float = 1.0,
+    phase_coupling: float = 0.0,
+    hyperbolic: bool = False,
+    hnsw_min_nodes: int = 50,
+) -> RTMDKMemory:
     """Build RTMDK memory from pre-computed embeddings (batched insert)."""
     dim = corpus_embs.shape[1]
     cfg = RTMDKConfig(
@@ -83,8 +90,8 @@ def build_rtmdk(corpus_ids: List[str], corpus_embs: np.ndarray,
     t0 = time.perf_counter()
     batch_size = 1000
     for i in range(0, len(corpus_ids), batch_size):
-        batch_ids = corpus_ids[i:i+batch_size]
-        batch_embs = corpus_embs[i:i+batch_size]
+        batch_ids = corpus_ids[i : i + batch_size]
+        batch_embs = corpus_embs[i : i + batch_size]
         mem.add_nodes_batch(
             embeddings=batch_embs,
             contents=[{"text": cid} for cid in batch_ids],
@@ -99,15 +106,16 @@ def _ndcg_at_k(result_ids: List[str], qrels_dict: Dict[str, str], k: int) -> flo
     dcg = 0.0
     for i, rid in enumerate(result_ids[:k], 1):
         rel = float(qrels_dict.get(rid, 0))
-        dcg += (2 ** rel - 1) / np.log2(i + 1)
+        dcg += (2**rel - 1) / np.log2(i + 1)
     # Ideal DCG
     ideal_rels = sorted([float(v) for v in qrels_dict.values()], reverse=True)
-    idcg = sum((2 ** r - 1) / np.log2(i + 1) for i, r in enumerate(ideal_rels[:k], 1))
+    idcg = sum((2**r - 1) / np.log2(i + 1) for i, r in enumerate(ideal_rels[:k], 1))
     return dcg / idcg if idcg > 0 else 0.0
 
 
-def evaluate_rtmdk(mem: RTMDKMemory, query_ids: List[str], query_embs: np.ndarray,
-                   qrels: Dict, corpus_ids: List[str], top_k: int = 10) -> Dict[str, float]:
+def evaluate_rtmdk(
+    mem: RTMDKMemory, query_ids: List[str], query_embs: np.ndarray, qrels: Dict, corpus_ids: List[str], top_k: int = 10
+) -> Dict[str, float]:
     """Run queries and compute recall@k, MRR, nDCG."""
     recalls = {1: 0.0, 5: 0.0, 10: 0.0}
     mrr_sum = 0.0
@@ -156,9 +164,14 @@ def evaluate_rtmdk(mem: RTMDKMemory, query_ids: List[str], query_embs: np.ndarra
     }
 
 
-def evaluate_cosine(corpus_embs: np.ndarray, query_embs: np.ndarray,
-                    query_ids: List[str], qrels: Dict, corpus_ids: List[str],
-                    top_k: int = 10) -> Dict[str, float]:
+def evaluate_cosine(
+    corpus_embs: np.ndarray,
+    query_embs: np.ndarray,
+    query_ids: List[str],
+    qrels: Dict,
+    corpus_ids: List[str],
+    top_k: int = 10,
+) -> Dict[str, float]:
     """Pure cosine similarity baseline."""
     corpus_norm = corpus_embs / (np.linalg.norm(corpus_embs, axis=1, keepdims=True) + 1e-8)
     query_norm = query_embs / (np.linalg.norm(query_embs, axis=1, keepdims=True) + 1e-8)
@@ -211,9 +224,14 @@ def evaluate_cosine(corpus_embs: np.ndarray, query_embs: np.ndarray,
     }
 
 
-def evaluate_faiss(corpus_embs: np.ndarray, query_embs: np.ndarray,
-                   query_ids: List[str], qrels: Dict, corpus_ids: List[str],
-                   top_k: int = 10) -> Optional[Dict[str, float]]:
+def evaluate_faiss(
+    corpus_embs: np.ndarray,
+    query_embs: np.ndarray,
+    query_ids: List[str],
+    qrels: Dict,
+    corpus_ids: List[str],
+    top_k: int = 10,
+) -> Optional[Dict[str, float]]:
     """FAISS IVF/Flat baseline (if available)."""
     try:
         import faiss
@@ -272,11 +290,11 @@ def evaluate_faiss(corpus_embs: np.ndarray, query_embs: np.ndarray,
     }
 
 
-def run_single_dataset(dataset_name: str, model_name: str, batch_size: int,
-                       rtmdk_cfg: Dict, top_k: int) -> Dict[str, Dict]:
+def run_single_dataset(
+    dataset_name: str, model_name: str, batch_size: int, rtmdk_cfg: Dict, top_k: int
+) -> Dict[str, Dict]:
     corpus, queries, qrels = load_beir_dataset(dataset_name)
-    corpus_ids, corpus_embs, query_ids, query_embs = embed_corpus_and_queries(
-        corpus, queries, model_name, batch_size)
+    corpus_ids, corpus_embs, query_ids, query_embs = embed_corpus_and_queries(corpus, queries, model_name, batch_size)
 
     results = {}
 
@@ -328,8 +346,7 @@ def main():
         print(f"\n{'='*70}")
         print(f"DATASET: {dataset}")
         print(f"{'='*70}")
-        all_results[dataset] = run_single_dataset(
-            dataset, args.model, args.batch_size, rtmdk_cfg, args.top_k)
+        all_results[dataset] = run_single_dataset(dataset, args.model, args.batch_size, rtmdk_cfg, args.top_k)
 
     # Summary table
     print(f"\n{'='*70}")

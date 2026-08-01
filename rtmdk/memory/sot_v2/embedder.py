@@ -85,8 +85,8 @@ class SpectralEmbedder:
         )
 
         # 1. Count unigrams and co-occurrences
-        unigram_counts = np.zeros(vocab_size, dtype=np.float64)
-        cooc_counts = np.zeros((vocab_size, vocab_size), dtype=np.float64)
+        unigram_counts: np.ndarray = np.zeros(vocab_size, dtype=np.float64)
+        cooc_counts: np.ndarray = np.zeros((vocab_size, vocab_size), dtype=np.float64)
         total_windows = 0
 
         for doc in tokenized_docs:
@@ -164,7 +164,7 @@ class SpectralEmbedder:
             emb = raw_emb[sub_i]
             # Pad if k < latent_dim
             if k < self.latent_dim:
-                pad = np.zeros(self.latent_dim - k, dtype=np.float32)
+                pad: np.ndarray = np.zeros(self.latent_dim - k, dtype=np.float32)
                 emb = np.concatenate([emb, pad])
             self.embeddings[orig_t] = emb.astype(np.float32)
 

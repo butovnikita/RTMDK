@@ -139,17 +139,18 @@ class NodeCacheManager:
             field.node_index = []
             return
 
-        positions = np.zeros((n, field.cfg.latent_dim), dtype=cache_dtype)
-        scales = np.ones(n, dtype=np.float32) if is_int8 else None
-        phases = np.zeros(n, dtype=np.float32)
-        amplitudes = np.zeros(n, dtype=np.float32)
-        saliences = np.zeros(n, dtype=np.float32)
-        modal_weights = np.zeros(n, dtype=np.float32)
-        gates = np.ones(n, dtype=np.float32)
-        causal_boost = np.zeros(n, dtype=np.float32)
+        positions: NDArray = np.zeros((n, field.cfg.latent_dim), dtype=cache_dtype)
+        scales: Optional[NDArray] = np.ones(n, dtype=np.float32) if is_int8 else None
+        phases: NDArray = np.zeros(n, dtype=np.float32)
+        amplitudes: NDArray = np.zeros(n, dtype=np.float32)
+        saliences: NDArray = np.zeros(n, dtype=np.float32)
+        modal_weights: NDArray = np.zeros(n, dtype=np.float32)
+        gates: NDArray = np.ones(n, dtype=np.float32)
+        causal_boost: NDArray = np.zeros(n, dtype=np.float32)
 
         for i, (nid, node) in enumerate(valid_entries):
             if is_int8:
+                assert scales is not None  # scales array is created when is_int8
                 positions[i] = node.latent_pos
                 scales[i] = getattr(node, "latent_scale", 1.0)
             else:

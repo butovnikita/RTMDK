@@ -74,9 +74,8 @@ class TopologyHealer:
             valid = dists[dists < np.inf]
             diagnostics["avg_pairwise_dist"] = float(np.mean(valid))
             diagnostics["std_pairwise_dist"] = float(np.std(valid))
-            diagnostics["density_cv"] = float(
-                np.std(valid) / float(max(np.mean(valid), 1e-8))
-            )  # type: ignore[arg-type]
+            mean_dist = float(np.mean(valid))
+            diagnostics["density_cv"] = float(np.std(valid)) / max(mean_dist, 1e-8)
         else:
             diagnostics["avg_pairwise_dist"] = 0.0
             diagnostics["density_cv"] = 0.0

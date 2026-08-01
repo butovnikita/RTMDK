@@ -5,6 +5,7 @@ Usage:
 
 Requires: httpx, websockets (pip install httpx websockets)
 """
+
 import argparse
 import asyncio
 import json
@@ -74,12 +75,7 @@ def fmt(latencies: list) -> str:
     p50 = latencies[len(latencies) // 2]
     p95_idx = int(len(latencies) * 0.95)
     p95 = latencies[min(p95_idx, len(latencies) - 1)]
-    return (
-        f"min={min(latencies):.2f}ms, "
-        f"median={p50:.2f}ms, "
-        f"p95={p95:.2f}ms, "
-        f"max={max(latencies):.2f}ms"
-    )
+    return f"min={min(latencies):.2f}ms, " f"median={p50:.2f}ms, " f"p95={p95:.2f}ms, " f"max={max(latencies):.2f}ms"
 
 
 async def main():

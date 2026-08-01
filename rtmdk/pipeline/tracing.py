@@ -46,10 +46,11 @@ class PipelineTracer:
 
         Falls back to plain stage.run() if tracing is not available.
         """
-        if not self._is_available():
+        tracer = self._tracer
+        if tracer is None:
             return stage.run(ctx)
 
-        with self._tracer.start_as_current_span(
+        with tracer.start_as_current_span(
             f"pipeline.stage.{stage.name}",
             attributes={
                 "pipeline.stage.name": stage.name,
@@ -96,10 +97,11 @@ class PipelineTracer:
 
         Each stage becomes a child span automatically.
         """
-        if not self._is_available():
+        tracer = self._tracer
+        if tracer is None:
             return executor.run(query_text, top_k, session_id, embedding)
 
-        with self._tracer.start_as_current_span(
+        with tracer.start_as_current_span(
             "pipeline.run",
             attributes={
                 "pipeline.query": query_text[:100],

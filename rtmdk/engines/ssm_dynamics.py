@@ -82,7 +82,7 @@ class SSMDynamics:
     def _init_stable_matrix(self, dim: int) -> np.ndarray:
         """Initialize a dense stable A matrix (eigenvalues < 1)."""
         Q, _ = np.linalg.qr(np.random.randn(dim, dim).astype(np.float32))
-        eigenvalues = np.linspace(0.5, 0.95, dim).astype(np.float32)
+        eigenvalues: np.ndarray = np.linspace(0.5, 0.95, dim).astype(np.float32)
         return Q @ np.diag(eigenvalues) @ Q.T
 
     def _init_diagonal_stable(self, dim: int) -> np.ndarray:

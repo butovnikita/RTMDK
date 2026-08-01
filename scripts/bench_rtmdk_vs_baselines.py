@@ -1,4 +1,5 @@
 import os
+
 os.environ["RTMDK_ADD_RATE_LIMIT"] = "0"
 
 """End-to-end benchmark: RTMDK vs FAISS vs Pure Cosine on identical embeddings.
@@ -28,10 +29,12 @@ def load_dataset(path: str, language: str = None):
     return records
 
 
-def evaluate_faiss(doc_embs: np.ndarray, query_embs: np.ndarray,
-                   records: List[Dict], corpus_texts: List[str], top_k: int = 5):
+def evaluate_faiss(
+    doc_embs: np.ndarray, query_embs: np.ndarray, records: List[Dict], corpus_texts: List[str], top_k: int = 5
+):
     """Evaluate with FAISS flat index (exact inner product on normalized vectors)."""
     import faiss
+
     d = doc_embs.shape[1]
     index = faiss.IndexFlatIP(d)
     index.add(doc_embs.astype(np.float32))
@@ -63,8 +66,7 @@ def evaluate_faiss(doc_embs: np.ndarray, query_embs: np.ndarray,
     }
 
 
-def evaluate_rtmdk(memory, records: List[Dict], corpus_texts: List[str],
-                   embedder, top_k: int = 5):
+def evaluate_rtmdk(memory, records: List[Dict], corpus_texts: List[str], embedder, top_k: int = 5):
     """Evaluate with RTMDKMemory.retrieve_nodes."""
     hits = 0
     hits1 = 0
@@ -99,8 +101,7 @@ def evaluate_rtmdk(memory, records: List[Dict], corpus_texts: List[str],
     }
 
 
-def evaluate_pure_cosine(doc_embs: np.ndarray, records: List[Dict],
-                         embedder, corpus_texts: List[str], top_k: int = 5):
+def evaluate_pure_cosine(doc_embs: np.ndarray, records: List[Dict], embedder, corpus_texts: List[str], top_k: int = 5):
     """Pure cosine similarity without any index."""
     query_times = []
     hits = 0
@@ -136,7 +137,9 @@ def evaluate_pure_cosine(doc_embs: np.ndarray, records: List[Dict],
     }
 
 
-def benchmark_dataset(name: str, records: List[Dict], embedder, use_faiss: bool = True, sot_v2=False, sot_align=False, teacher=None):
+def benchmark_dataset(
+    name: str, records: List[Dict], embedder, use_faiss: bool = True, sot_v2=False, sot_align=False, teacher=None
+):
     corpus_texts = list({r["context"] for r in records})
     print(f"\n{'='*60}")
     print(f"Dataset: {name} | Records: {len(records)} | Contexts: {len(corpus_texts)}")
@@ -145,6 +148,7 @@ def benchmark_dataset(name: str, records: List[Dict], embedder, use_faiss: bool 
     # Build SOT v2 embedder if needed
     if sot_v2:
         from rtmdk.memory.sot_v2.integration import SOTv2Embedder
+
         all_texts = list(corpus_texts) + [r["query"] for r in records]
         sot = SOTv2Embedder(latent_dim=384, window_size=5, a=0.01, remove_pc=True)
         sot.train(all_texts)
@@ -162,12 +166,16 @@ def benchmark_dataset(name: str, records: List[Dict], embedder, use_faiss: bool 
 
     # --- Pure Cosine ---
     res_cos = evaluate_pure_cosine(doc_embs, records, embedder, corpus_texts)
-    print(f"  Pure Cosine:     recall@5={res_cos['recall@5']:.3f}  recall@1={res_cos.get('recall@1',0):.3f}  MRR={res_cos['mrr']:.3f}  p50={res_cos['latency_p50_ms']:.2f}ms")
+    print(
+        f"  Pure Cosine:     recall@5={res_cos['recall@5']:.3f}  recall@1={res_cos.get('recall@1',0):.3f}  MRR={res_cos['mrr']:.3f}  p50={res_cos['latency_p50_ms']:.2f}ms"
+    )
 
     # --- FAISS ---
     if use_faiss:
         res_faiss = evaluate_faiss(doc_embs, query_embs, records, corpus_texts)
-        print(f"  FAISS FlatIP:    recall@5={res_faiss['recall@5']:.3f}  recall@1={res_faiss.get('recall@1',0):.3f}  MRR={res_faiss['mrr']:.3f}  total={res_faiss['search_time_ms']:.2f}ms")
+        print(
+            f"  FAISS FlatIP:    recall@5={res_faiss['recall@5']:.3f}  recall@1={res_faiss.get('recall@1',0):.3f}  MRR={res_faiss['mrr']:.3f}  total={res_faiss['search_time_ms']:.2f}ms"
+        )
 
     # --- RTMDK (SBERT embeddings, no SOT v2) ---
     from rtmdk.memory.config import RTMDKConfig
@@ -198,7 +206,9 @@ def benchmark_dataset(name: str, records: List[Dict], embedder, use_faiss: bool 
 
     res_rtmdk = evaluate_rtmdk(mem, records, corpus_texts, embedder)
     label = "RTMDK+SOTv2" if sot_v2 else "RTMDK (SBERT)"
-    print(f"  {label:16s} recall@5={res_rtmdk['recall@5']:.3f}  recall@1={res_rtmdk.get('recall@1',0):.3f}  MRR={res_rtmdk['mrr']:.3f}  p50={res_rtmdk['latency_p50_ms']:.2f}ms")
+    print(
+        f"  {label:16s} recall@5={res_rtmdk['recall@5']:.3f}  recall@1={res_rtmdk.get('recall@1',0):.3f}  MRR={res_rtmdk['mrr']:.3f}  p50={res_rtmdk['latency_p50_ms']:.2f}ms"
+    )
 
     return {
         "cosine": res_cos,
@@ -217,12 +227,14 @@ def main():
     args = parser.parse_args()
 
     from sentence_transformers import SentenceTransformer
+
     print(f"Loading teacher: {args.teacher}")
     teacher = SentenceTransformer(args.teacher)
     print(f"Teacher dim: {teacher.get_embedding_dimension()}")
 
     def make_sot_embedder(corpus_texts, query_texts, teacher_model=None):
         from rtmdk.memory.sot_v2.integration import SOTv2Embedder
+
         all_texts = list(corpus_texts) + list(query_texts)
         sot = SOTv2Embedder(latent_dim=384, window_size=5, a=0.01, remove_pc=True)
         sot.train(all_texts)
@@ -236,6 +248,7 @@ def main():
         # Embedder will be created per-dataset after we know the corpus
         embedder = None
     else:
+
         def embedder(text: str) -> np.ndarray:
             emb = teacher.encode(text)
             norm = np.linalg.norm(emb)
@@ -247,7 +260,9 @@ def main():
 
     if args.dataset in ("all", "en"):
         records = load_dataset("datasets/qa_1000_en.json", language="en")[:200]
-        results["qa_1000_en"] = benchmark_dataset("qa_1000_en (200)", records, embedder, not args.no_faiss, args.sot_v2, args.sot_align, teacher)
+        results["qa_1000_en"] = benchmark_dataset(
+            "qa_1000_en (200)", records, embedder, not args.no_faiss, args.sot_v2, args.sot_align, teacher
+        )
 
     if args.dataset in ("all", "ru"):
         records = load_dataset("datasets/comprehensive_500.json", language="ru")
@@ -258,17 +273,35 @@ def main():
             else:
                 print("\nLoading multilingual teacher for Russian...")
                 teacher_ru = SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+
                 def embedder_ru(text: str) -> np.ndarray:
                     emb = teacher_ru.encode(text)
                     norm = np.linalg.norm(emb)
                     if norm > 1e-8:
                         emb = emb / norm
                     return emb
-            results["comprehensive_500_ru"] = benchmark_dataset(f"comprehensive_500_ru ({len(records)})", records, embedder_ru, not args.no_faiss, args.sot_v2, args.sot_align, teacher_ru)
+
+            results["comprehensive_500_ru"] = benchmark_dataset(
+                f"comprehensive_500_ru ({len(records)})",
+                records,
+                embedder_ru,
+                not args.no_faiss,
+                args.sot_v2,
+                args.sot_align,
+                teacher_ru,
+            )
 
     if args.dataset in ("all", "hard"):
         records = load_dataset("datasets/comprehensive_500.json", language="en")
-        results["comprehensive_500"] = benchmark_dataset(f"comprehensive_500 ({len(records)})", records, embedder, not args.no_faiss, args.sot_v2, args.sot_align, teacher)
+        results["comprehensive_500"] = benchmark_dataset(
+            f"comprehensive_500 ({len(records)})",
+            records,
+            embedder,
+            not args.no_faiss,
+            args.sot_v2,
+            args.sot_align,
+            teacher,
+        )
 
     # Summary
     print("\n" + "=" * 60)

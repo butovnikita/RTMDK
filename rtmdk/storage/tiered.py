@@ -67,7 +67,8 @@ class TieredNodeStore:
         # Warm tier: memmap file for embeddings + metadata dict
         self._warm_meta: Dict[str, Dict[str, Any]] = {}
         self._warm_path = self.cold_dir / "warm_embeddings.mmap"
-        self._warm_mmap: Optional[np.memmap] = None
+        # Invariant: always initialized by _init_warm_mmap() below
+        self._warm_mmap: np.memmap
         self._warm_capacity = max_warm
         self._warm_index: Dict[str, int] = {}  # key -> row index
         self._warm_next_idx = 0
@@ -88,8 +89,7 @@ class TieredNodeStore:
         """Initialize or resize warm-tier memmap."""
         shape = (self._warm_capacity, self.latent_dim)
         if self._warm_path.exists():
-            existing = np.memmap(str(self._warm_path), dtype=np.float32, mode="r+", shape=shape)
-            self._warm_mmap = existing
+            self._warm_mmap = np.memmap(str(self._warm_path), dtype=np.float32, mode="r+", shape=shape)
         else:
             self._warm_mmap = np.memmap(str(self._warm_path), dtype=np.float32, mode="w+", shape=shape)
 
@@ -241,16 +241,16 @@ class TieredNodeStore:
                 return data
 
             # Check cold
-            data = self._read_cold(key)
-            if data is not None:
+            cold_data = self._read_cold(key)
+            if cold_data is not None:
                 self._delete_cold(key)
-                entry = _TieredEntry(key=key, data=data, tier="hot")
+                entry = _TieredEntry(key=key, data=cold_data, tier="hot")
                 entry.access_count = 1
                 if len(self._hot) >= self.max_hot:
                     lfu_key = min(self._hot.keys(), key=lambda k: self._hot[k].access_count)
                     self._demote_to_warm(self._hot.pop(lfu_key))
                 self._hot[key] = entry
-                return data
+                return cold_data
 
             return None
 
@@ -327,9 +327,9 @@ class TieredNodeStore:
                 data["latent_pos"] = np.array(self._warm_mmap[idx])
                 result.append(data)
             for key in list(self._cold_manifest.keys()):
-                data = self._read_cold(key)
-                if data is not None:
-                    result.append(data)
+                cold_data = self._read_cold(key)
+                if cold_data is not None:
+                    result.append(cold_data)
             return result
 
     def items(self) -> List[Tuple[str, Dict[str, Any]]]:
@@ -342,9 +342,9 @@ class TieredNodeStore:
                 data["latent_pos"] = np.array(self._warm_mmap[idx])
                 result.append((key, data))
             for key in list(self._cold_manifest.keys()):
-                data = self._read_cold(key)
-                if data is not None:
-                    result.append((key, data))
+                cold_data = self._read_cold(key)
+                if cold_data is not None:
+                    result.append((key, cold_data))
             return result
 
     def __iter__(self):

@@ -2,6 +2,7 @@
 
 Compares baseline retrieval vs retrieval with all new backlog modules enabled.
 """
+
 import time
 import numpy as np
 from rtmdk.memory.core import RTMDKMemory, RTMDKConfig

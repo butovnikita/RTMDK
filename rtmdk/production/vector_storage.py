@@ -246,7 +246,7 @@ class SQLiteVectorStorage(VectorStorage):
             return []
 
         ids = []
-        mat = np.empty((len(rows), self.dim), dtype=np.float32)
+        mat: NDArray = np.empty((len(rows), self.dim), dtype=np.float32)
         for i, (nid, blob) in enumerate(rows):
             ids.append(nid)
             mat[i] = _decode_vector(blob, self.dim)

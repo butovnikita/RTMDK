@@ -8,6 +8,7 @@ Usage:
     python scripts/check_regression.py --baseline baseline.json --current current.json
     python scripts/check_regression.py --run-benchmark --baseline baseline.json
 """
+
 from __future__ import annotations
 
 import argparse
@@ -53,12 +54,16 @@ def check_regression(
         if base_latency > 0:
             latency_change = ((curr_latency - base_latency) / base_latency) * 100
             if latency_change > latency_threshold_pct:
-                print(f"  [FAIL] {dataset}/{method}: latency regressed "
-                      f"{latency_change:.1f}% (p95: {base_latency:.1f}ms -> {curr_latency:.1f}ms)")
+                print(
+                    f"  [FAIL] {dataset}/{method}: latency regressed "
+                    f"{latency_change:.1f}% (p95: {base_latency:.1f}ms -> {curr_latency:.1f}ms)"
+                )
                 passed = False
             else:
-                print(f"  [OK] {dataset}/{method}: latency {latency_change:+.1f}% "
-                      f"(p95: {base_latency:.1f}ms -> {curr_latency:.1f}ms)")
+                print(
+                    f"  [OK] {dataset}/{method}: latency {latency_change:+.1f}% "
+                    f"(p95: {base_latency:.1f}ms -> {curr_latency:.1f}ms)"
+                )
 
         # Check recall regression
         base_recall = base.get("recall_at_k", 0)
@@ -66,12 +71,16 @@ def check_regression(
         if base_recall > 0:
             recall_change = ((curr_recall - base_recall) / base_recall) * 100
             if recall_change < recall_threshold_pct:
-                print(f"  [FAIL] {dataset}/{method}: recall regressed "
-                      f"{recall_change:.1f}% ({base_recall:.3f} -> {curr_recall:.3f})")
+                print(
+                    f"  [FAIL] {dataset}/{method}: recall regressed "
+                    f"{recall_change:.1f}% ({base_recall:.3f} -> {curr_recall:.3f})"
+                )
                 passed = False
             else:
-                print(f"  [OK] {dataset}/{method}: recall {recall_change:+.1f}% "
-                      f"({base_recall:.3f} -> {curr_recall:.3f})")
+                print(
+                    f"  [OK] {dataset}/{method}: recall {recall_change:+.1f}% "
+                    f"({base_recall:.3f} -> {curr_recall:.3f})"
+                )
 
     return passed
 
@@ -79,12 +88,15 @@ def check_regression(
 def run_benchmark() -> str:
     """Run production benchmark and return output path."""
     import subprocess
+
     output = "/tmp/rtmdk_regression_current.json"
     cmd = [
         sys.executable,
         "scripts/bench_pipeline_production.py",
-        "--dataset", "datasets/qa_1000_en.json",
-        "--output", output,
+        "--dataset",
+        "datasets/qa_1000_en.json",
+        "--output",
+        output,
     ]
     print(f"Running benchmark: {' '.join(cmd)}")
     subprocess.run(cmd, check=True)
@@ -93,16 +105,11 @@ def run_benchmark() -> str:
 
 def main():
     parser = argparse.ArgumentParser(description="Performance regression test")
-    parser.add_argument("--baseline", "-b", type=str, required=True,
-                        help="Path to baseline JSON")
-    parser.add_argument("--current", "-c", type=str, default="",
-                        help="Path to current results JSON")
-    parser.add_argument("--run-benchmark", action="store_true",
-                        help="Run benchmark before comparison")
-    parser.add_argument("--latency-threshold", type=float, default=20.0,
-                        help="Max acceptable latency regression %")
-    parser.add_argument("--recall-threshold", type=float, default=-5.0,
-                        help="Max acceptable recall regression %")
+    parser.add_argument("--baseline", "-b", type=str, required=True, help="Path to baseline JSON")
+    parser.add_argument("--current", "-c", type=str, default="", help="Path to current results JSON")
+    parser.add_argument("--run-benchmark", action="store_true", help="Run benchmark before comparison")
+    parser.add_argument("--latency-threshold", type=float, default=20.0, help="Max acceptable latency regression %")
+    parser.add_argument("--recall-threshold", type=float, default=-5.0, help="Max acceptable recall regression %")
 
     args = parser.parse_args()
 
@@ -120,8 +127,10 @@ def main():
     print(f"Loading current: {current_path}")
     current = load_results(current_path)
 
-    print(f"\nChecking regression (latency threshold: +{args.latency_threshold}%, "
-          f"recall threshold: {args.recall_threshold}%)")
+    print(
+        f"\nChecking regression (latency threshold: +{args.latency_threshold}%, "
+        f"recall threshold: {args.recall_threshold}%)"
+    )
     print("=" * 60)
 
     passed = check_regression(

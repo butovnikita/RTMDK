@@ -34,7 +34,7 @@ class KalmanFilter:
         self.diagonal_approx = diagonal_approx
         self.hyperbolic = hyperbolic
         self.ball_radius = ball_radius
-        self._I = np.eye(latent_dim, dtype=np.float32)
+        self._I: np.ndarray = np.eye(latent_dim, dtype=np.float32)
         self._Q = np.eye(latent_dim, dtype=np.float32) * process_noise
         self._R = np.eye(latent_dim, dtype=np.float32) * measurement_noise
 

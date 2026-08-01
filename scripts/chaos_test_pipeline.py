@@ -12,6 +12,7 @@ Usage:
     python scripts/chaos_test_pipeline.py --mode stage_failure --stage rerank
     python scripts/chaos_test_pipeline.py --mode latency_spike --stage embed --latency 5000
 """
+
 from __future__ import annotations
 
 import argparse
@@ -66,9 +67,7 @@ def make_test_pipeline(
     failure_config: Optional[Dict[str, dict]] = None,
 ) -> PipelineExecutor:
     """Build a pipeline with chaos injection."""
-    from rtmdk.pipeline.stages import (
-        EmbedStage, RouteStage, RetrieveStage, RerankStage, CalibrateStage, ExplainStage
-    )
+    from rtmdk.pipeline.stages import EmbedStage, RouteStage, RetrieveStage, RerankStage, CalibrateStage, ExplainStage
 
     # Dummy embedder
     def dummy_embed(text: str) -> np.ndarray:
@@ -90,6 +89,7 @@ def make_test_pipeline(
 
     # Attach circuit breakers
     from rtmdk.pipeline.health import PipelineHealthMonitor
+
     monitor = PipelineHealthMonitor()
     for s in stages:
         s.circuit_breaker = monitor.get_breaker(s.name)
@@ -145,6 +145,7 @@ def test_latency_spike_degradation(stage_name: str, spike_ms: float = 2000) -> b
     total_latency = sum(m.latency_ms for m in ctx.metrics)
 
     from rtmdk.pipeline.health import PipelineHealthMonitor
+
     monitor = PipelineHealthMonitor()
     alerts = monitor.check_alerts(ctx, latency_threshold_ms=1000.0)
 
@@ -199,15 +200,12 @@ def run_all_tests() -> Dict[str, bool]:
 
 def main():
     parser = argparse.ArgumentParser(description="Chaos engineering tests for RTMDK pipeline")
-    parser.add_argument("--mode", default="all",
-                        choices=["all", "stage_failure", "breaker", "latency", "mixed"],
-                        help="Test mode")
-    parser.add_argument("--stage", default="rerank",
-                        help="Target stage for single-stage tests")
-    parser.add_argument("--latency", type=float, default=2000,
-                        help="Latency spike in ms")
-    parser.add_argument("--seed", type=int, default=42,
-                        help="Random seed for reproducibility")
+    parser.add_argument(
+        "--mode", default="all", choices=["all", "stage_failure", "breaker", "latency", "mixed"], help="Test mode"
+    )
+    parser.add_argument("--stage", default="rerank", help="Target stage for single-stage tests")
+    parser.add_argument("--latency", type=float, default=2000, help="Latency spike in ms")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
 
     args = parser.parse_args()
     random.seed(args.seed)

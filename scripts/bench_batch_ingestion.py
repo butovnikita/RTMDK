@@ -20,7 +20,9 @@ def main():
     parser.add_argument("--batch", type=int, default=10_000, help="Batch size per add_nodes_batch call")
     parser.add_argument("--dim", type=int, default=64, help="Latent dimension")
     parser.add_argument("--async-hnsw", action="store_true", help="Enable async HNSW build")
-    parser.add_argument("--wal-batch", type=int, default=100, help="WAL fsync interval in ms (0 = sync, 100 = async flush)")
+    parser.add_argument(
+        "--wal-batch", type=int, default=100, help="WAL fsync interval in ms (0 = sync, 100 = async flush)"
+    )
     args = parser.parse_args()
 
     cfg = RTMDKConfig(

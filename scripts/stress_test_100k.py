@@ -13,6 +13,7 @@ Usage:
     python scripts/stress_test_100k.py --nodes 50000 --queries 200 --tiered-v2
     python scripts/stress_test_100k.py --nodes 100000 --queries 500 --planner
 """
+
 from __future__ import annotations
 
 import argparse
@@ -35,17 +36,19 @@ from rtmdk.memory.core import RTMDKMemory
 
 def _make_embedder(dim: int = 384):
     def embed(text: str) -> np.ndarray:
-        h = hash(text) % (2 ** 32)
+        h = hash(text) % (2**32)
         rng = np.random.default_rng(h)
         vec = rng.standard_normal(dim, dtype=np.float32)
         norm = np.linalg.norm(vec)
         return vec / norm if norm > 1e-8 else vec
+
     return embed
 
 
 def get_memory_mb() -> float:
     try:
         import psutil
+
         return psutil.Process().memory_info().rss / (1024 * 1024)
     except ImportError:
         return 0.0
@@ -148,8 +151,8 @@ def run_stress_test(
 
     if tiered_v2:
         cfg.tiered_storage_v2_enabled = True
-        cfg.tiered_hot_pct = 0.01    # 1% hot = 1K nodes for 100K
-        cfg.tiered_warm_pct = 0.09   # 9% warm = 9K nodes for 100K
+        cfg.tiered_hot_pct = 0.01  # 1% hot = 1K nodes for 100K
+        cfg.tiered_warm_pct = 0.09  # 9% warm = 9K nodes for 100K
 
     embedder = _make_embedder(latent_dim)
     memory = RTMDKMemory(config=cfg, embedder=embedder)

@@ -32,6 +32,7 @@ def main():
     print(f"Records: {len(records)}, contexts: {len(corpus_texts)}")
 
     from rtmdk.memory.sot_v2.integration import SOTv2Embedder
+
     sot = SOTv2Embedder(latent_dim=384, a=0.01, window_size=5)
     sot.train(corpus_texts)
 

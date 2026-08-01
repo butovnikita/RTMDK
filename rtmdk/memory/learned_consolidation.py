@@ -64,11 +64,11 @@ class LearnedConsolidator:
 
         scale1 = math.sqrt(2.0 / d_in)
         self.W1 = self._rng.normal(0, scale1, (d_h, d_in)).astype(np.float32)
-        self.b1 = np.zeros(d_h, dtype=np.float32)
+        self.b1: np.ndarray = np.zeros(d_h, dtype=np.float32)
 
         scale2 = math.sqrt(2.0 / d_h)
         self.W2 = self._rng.normal(0, scale2, (d_out, d_h)).astype(np.float32)
-        self.b2 = np.zeros(d_out, dtype=np.float32)
+        self.b2: np.ndarray = np.zeros(d_out, dtype=np.float32)
 
         # Replay buffer
         self._buffer: List[Dict] = []

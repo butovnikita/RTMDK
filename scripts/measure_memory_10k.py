@@ -28,11 +28,13 @@ N_NODES = 10_000
 
 def get_ram_mb():
     import psutil
+
     return psutil.Process().memory_info().rss / (1024 * 1024)
 
 
 def build_field(cfg_name, cfg):
     import gc
+
     print(f"\n{'='*60}")
     print(f"Config: {cfg_name}")
     print(f"{'='*60}")
@@ -75,8 +77,7 @@ def build_field(cfg_name, cfg):
     latencies = np.array(latencies)
 
     # Token economics
-    avg_chars_per_node = sum(len(field.nodes[f"n{i}"].content.get(
-        "text", "")) for i in range(N_NODES)) / N_NODES
+    avg_chars_per_node = sum(len(field.nodes[f"n{i}"].content.get("text", "")) for i in range(N_NODES)) / N_NODES
     avg_tokens_per_node = avg_chars_per_node / 4  # ~4 chars per token (rough)
     tokens_naive = N_NODES * avg_tokens_per_node
     tokens_rtmdk = 5 * avg_tokens_per_node
@@ -85,14 +86,13 @@ def build_field(cfg_name, cfg):
     print(f"  Build time: {build_time:.1f}s")
     print(f"  RAM total: {ram_total:.1f} MB")
     print(f"  RAM per node: {ram_per_node:.2f} KB")
-    print(
-        f"  Query latency: p50={np.percentile(latencies, 50):.2f}ms p99={np.percentile(latencies, 99):.2f}ms")
+    print(f"  Query latency: p50={np.percentile(latencies, 50):.2f}ms p99={np.percentile(latencies, 99):.2f}ms")
     print(f"  Avg tokens/node: {avg_tokens_per_node:.0f}")
-    print(
-        f"  Token savings vs naive: {savings_ratio:.0f}x (naive={tokens_naive:.0f} -> RTMDK={tokens_rtmdk:.0f})")
+    print(f"  Token savings vs naive: {savings_ratio:.0f}x (naive={tokens_naive:.0f} -> RTMDK={tokens_rtmdk:.0f})")
 
     del field
     import gc
+
     gc.collect()
 
     return {
@@ -117,32 +117,61 @@ def main():
     results = {}
 
     # 1. Exact (no HNSW, no SOT)
-    results["exact"] = build_field("Exact (no HNSW)", RTMDKConfig(
-        latent_dim=DIM, top_k=5, min_response=0.001,
-        decay_rate=0.999, use_hnsw=False, learn_projection=False,
-        bm25_fallback=False, enable_async=False,
-        resonance_kernel="cosine", phase_coupling=0.0,
-    ))
+    results["exact"] = build_field(
+        "Exact (no HNSW)",
+        RTMDKConfig(
+            latent_dim=DIM,
+            top_k=5,
+            min_response=0.001,
+            decay_rate=0.999,
+            use_hnsw=False,
+            learn_projection=False,
+            bm25_fallback=False,
+            enable_async=False,
+            resonance_kernel="cosine",
+            phase_coupling=0.0,
+        ),
+    )
 
     # 2. HNSW
-    results["hnsw"] = build_field("HNSW", RTMDKConfig(
-        latent_dim=DIM, top_k=5, min_response=0.001,
-        decay_rate=0.999, use_hnsw=True, learn_projection=False,
-        bm25_fallback=False, enable_async=False,
-        resonance_kernel="cosine", phase_coupling=0.0,
-        hnsw_m=32, hnsw_ef_construction=400,
-    ))
+    results["hnsw"] = build_field(
+        "HNSW",
+        RTMDKConfig(
+            latent_dim=DIM,
+            top_k=5,
+            min_response=0.001,
+            decay_rate=0.999,
+            use_hnsw=True,
+            learn_projection=False,
+            bm25_fallback=False,
+            enable_async=False,
+            resonance_kernel="cosine",
+            phase_coupling=0.0,
+            hnsw_m=32,
+            hnsw_ef_construction=400,
+        ),
+    )
 
     # 3. SOT (word-level, no external embedder)
-    results["sot"] = build_field("SOT word-level", RTMDKConfig(
-        latent_dim=DIM, top_k=5, min_response=0.001,
-        decay_rate=0.999, use_hnsw=False, learn_projection=False,
-        bm25_fallback=False, enable_async=False,
-        resonance_kernel="cosine", phase_coupling=0.0,
-        sot_enabled=True, sot_use_for_query=True,
-        sot_tokenization_mode="word",
-        sot_max_vocab=5000,
-    ))
+    results["sot"] = build_field(
+        "SOT word-level",
+        RTMDKConfig(
+            latent_dim=DIM,
+            top_k=5,
+            min_response=0.001,
+            decay_rate=0.999,
+            use_hnsw=False,
+            learn_projection=False,
+            bm25_fallback=False,
+            enable_async=False,
+            resonance_kernel="cosine",
+            phase_coupling=0.0,
+            sot_enabled=True,
+            sot_use_for_query=True,
+            sot_tokenization_mode="word",
+            sot_max_vocab=5000,
+        ),
+    )
 
     print("\n" + "=" * 60)
     print("SUMMARY")
@@ -150,12 +179,12 @@ def main():
     for name, r in results.items():
         print(
             f"  {name:15s}: RAM={r['ram_total_mb']:5.1f}MB  per_node={r['ram_per_node_kb']:5.2f}KB  "
-            f"p50={r['query_p50_ms']:5.2f}ms  savings={r['token_savings_ratio']:4.0f}x")
+            f"p50={r['query_p50_ms']:5.2f}ms  savings={r['token_savings_ratio']:4.0f}x"
+        )
 
     # Write JSON
     with open("archive/benchmarks/memory_10k_report.json", "w", encoding="utf-8") as f:
-        json.dump({"N_NODES": N_NODES, "DIM": DIM, "results": results},
-                  f, indent=2, ensure_ascii=False)
+        json.dump({"N_NODES": N_NODES, "DIM": DIM, "results": results}, f, indent=2, ensure_ascii=False)
     print("\nReport saved to archive/benchmarks/memory_10k_report.json")
 
 

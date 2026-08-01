@@ -14,7 +14,7 @@ for i, ch in enumerate(text[start:]):
             end = start + i
             break
 
-block = text[start:end+1]
+block = text[start : end + 1]
 keys = re.findall(r'"([A-Za-z_][A-Za-z0-9_]*)"\s*:', block)
 seen = set()
 unique_keys = [k for k in keys if not (k in seen or seen.add(k))]

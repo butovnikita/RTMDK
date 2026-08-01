@@ -8,6 +8,7 @@ Usage:
     python scripts/bench_pipeline_production.py --dataset datasets/qa_1000_en.json
     python scripts/bench_pipeline_production.py --all-datasets --output benchmarks/
 """
+
 from __future__ import annotations
 
 import argparse
@@ -27,7 +28,7 @@ from rtmdk.memory.core import RTMDKMemory
 
 
 def _hash_embed(text: str, dim: int = 64) -> np.ndarray:
-    h = hash(text) % (2 ** 32)
+    h = hash(text) % (2**32)
     rng = np.random.default_rng(h)
     return rng.standard_normal(dim, dtype=np.float32)
 
@@ -49,7 +50,11 @@ class BenchmarkResult:
     def compute_stats(self):
         if self.latencies:
             self.mean_latency_ms = statistics.mean(self.latencies)
-            self.p95_latency_ms = sorted(self.latencies)[int(len(self.latencies) * 0.95)] if len(self.latencies) > 1 else self.latencies[0]
+            self.p95_latency_ms = (
+                sorted(self.latencies)[int(len(self.latencies) * 0.95)]
+                if len(self.latencies) > 1
+                else self.latencies[0]
+            )
 
 
 def _load_dataset(path: str) -> List[Dict]:
@@ -121,16 +126,13 @@ def _run_benchmark(
 
 def main():
     parser = argparse.ArgumentParser(description="Production benchmark: pipeline vs legacy")
-    parser.add_argument("--dataset", "-d", type=str, default="",
-                        help="Path to dataset JSON")
-    parser.add_argument("--all-datasets", action="store_true",
-                        help="Run on all datasets in datasets/")
-    parser.add_argument("--output", "-o", type=str, default="benchmark_results.json",
-                        help="Output JSON file for results")
-    parser.add_argument("--top-k", "-k", type=int, default=5,
-                        help="top_k for retrieval")
-    parser.add_argument("--queries", "-q", type=int, default=100,
-                        help="Number of queries to run")
+    parser.add_argument("--dataset", "-d", type=str, default="", help="Path to dataset JSON")
+    parser.add_argument("--all-datasets", action="store_true", help="Run on all datasets in datasets/")
+    parser.add_argument(
+        "--output", "-o", type=str, default="benchmark_results.json", help="Output JSON file for results"
+    )
+    parser.add_argument("--top-k", "-k", type=int, default=5, help="top_k for retrieval")
+    parser.add_argument("--queries", "-q", type=int, default=100, help="Number of queries to run")
 
     args = parser.parse_args()
 
@@ -153,8 +155,8 @@ def main():
         try:
             data = _load_dataset(ds_path)
             # Use first N items as nodes, next M as queries
-            nodes_data = data[:min(len(data), 500)]
-            queries_data = data[500:500 + args.queries] if len(data) > 500 else data[:args.queries]
+            nodes_data = data[: min(len(data), 500)]
+            queries_data = data[500 : 500 + args.queries] if len(data) > 500 else data[: args.queries]
             queries = [q.get("text", q.get("query", "")) for q in queries_data]
 
             mem = _build_memory(nodes_data)
@@ -175,10 +177,14 @@ def main():
             legacy_result = _run_benchmark(mem, queries, ground_truth, args.top_k, use_pipeline=False)
             legacy_result.dataset = ds_path
 
-            print(f"  Pipeline:  recall@{args.top_k}={pipe_result.recall_at_k:.3f} "
-                  f"p95={pipe_result.p95_latency_ms:.2f}ms")
-            print(f"  Legacy:    recall@{args.top_k}={legacy_result.recall_at_k:.3f} "
-                  f"p95={legacy_result.p95_latency_ms:.2f}ms")
+            print(
+                f"  Pipeline:  recall@{args.top_k}={pipe_result.recall_at_k:.3f} "
+                f"p95={pipe_result.p95_latency_ms:.2f}ms"
+            )
+            print(
+                f"  Legacy:    recall@{args.top_k}={legacy_result.recall_at_k:.3f} "
+                f"p95={legacy_result.p95_latency_ms:.2f}ms"
+            )
 
             all_results.append(asdict(pipe_result))
             all_results.append(asdict(legacy_result))
@@ -186,6 +192,7 @@ def main():
         except Exception as exc:
             print(f"  ERROR: {exc}")
             import traceback
+
             traceback.print_exc()
 
     # Save results

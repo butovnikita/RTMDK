@@ -1,4 +1,5 @@
 """Ingest comprehensive RTMDK project information into memory."""
+
 import os
 import sys
 import json
@@ -22,8 +23,10 @@ MEMORY_JSON = MEMORY_DIR / "memory.json"
 print("Loading embedder...")
 model = SentenceTransformer("all-MiniLM-L6-v2")
 
+
 def embedder(text: str) -> np.ndarray:
     return model.encode(text, convert_to_numpy=True, normalize_embeddings=True).astype(np.float32)
+
 
 # ------------------------------------------------------------------
 # Project knowledge nodes

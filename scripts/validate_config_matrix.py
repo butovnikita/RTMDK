@@ -4,6 +4,7 @@ Config validation matrix: test key parameter combinations.
 Usage:
     python scripts/validate_config_matrix.py
 """
+
 from rtmdk.memory.core import RTMDKField
 from rtmdk.memory.config import RTMDKConfig
 import sys
@@ -40,60 +41,26 @@ def main():
 
     # SOT variants
     results.append(test_case("SOT byte default", sot_enabled=True))
+    results.append(test_case("SOT word mode", sot_enabled=True, sot_tokenization_mode="word"))
+    results.append(
+        test_case("SOT word + warm-start", sot_enabled=True, sot_tokenization_mode="word", sot_warm_start_corpus=None)
+    )
     results.append(
         test_case(
-            "SOT word mode",
-            sot_enabled=True,
-            sot_tokenization_mode="word"))
-    results.append(
-        test_case(
-            "SOT word + warm-start",
-            sot_enabled=True,
-            sot_tokenization_mode="word",
-            sot_warm_start_corpus=None))
-    results.append(
-        test_case(
-            "SOT word + cooccurrence limit",
-            sot_enabled=True,
-            sot_tokenization_mode="word",
-            sot_max_cooccurrence=100))
-    results.append(
-        test_case(
-            "SOT byte + subword seed",
-            sot_enabled=True,
-            sot_subword_seed=True))
-    results.append(
-        test_case(
-            "SOT byte + attention",
-            sot_enabled=True,
-            sot_attention_pooling=True))
-    results.append(
-        test_case(
-            "SOT byte + skipgram",
-            sot_enabled=True,
-            sot_skipgram_window=5))
-    results.append(
-        test_case(
-            "SOT byte + hard negatives",
-            sot_enabled=True,
-            sot_hard_negatives=True))
-    results.append(
-        test_case(
-            "SOT byte + retrieval feedback",
-            sot_enabled=True,
-            sot_retrieval_feedback=True))
+            "SOT word + cooccurrence limit", sot_enabled=True, sot_tokenization_mode="word", sot_max_cooccurrence=100
+        )
+    )
+    results.append(test_case("SOT byte + subword seed", sot_enabled=True, sot_subword_seed=True))
+    results.append(test_case("SOT byte + attention", sot_enabled=True, sot_attention_pooling=True))
+    results.append(test_case("SOT byte + skipgram", sot_enabled=True, sot_skipgram_window=5))
+    results.append(test_case("SOT byte + hard negatives", sot_enabled=True, sot_hard_negatives=True))
+    results.append(test_case("SOT byte + retrieval feedback", sot_enabled=True, sot_retrieval_feedback=True))
 
     # Mathematical features
     results.append(test_case("Hyperbolic", hyperbolic=True))
-    results.append(
-        test_case(
-            "Conformal prediction",
-            conformal_prediction=True))
+    results.append(test_case("Conformal prediction", conformal_prediction=True))
     results.append(test_case("Local bandwidth", adaptive_bandwidth=True))
-    results.append(
-        test_case(
-            "Spectral consolidation",
-            spectral_consolidation=True))
+    results.append(test_case("Spectral consolidation", spectral_consolidation=True))
     results.append(test_case("Kalman filter", enable_kalman_filter=True))
 
     # Production features
@@ -102,25 +69,27 @@ def main():
     results.append(test_case("Version control", version_control=True))
 
     # Combined stress test
-    results.append(test_case(
-        "Full stress test",
-        latent_dim=64,
-        sot_enabled=True,
-        sot_tokenization_mode="word",
-        sot_subword_seed=True,
-        sot_attention_pooling=True,
-        sot_hard_negatives=True,
-        sot_retrieval_feedback=True,
-        sot_skipgram_window=3,
-        sot_max_cooccurrence=50,
-        hyperbolic=True,
-        conformal_prediction=True,
-        adaptive_bandwidth=True,
-        spectral_consolidation=True,
-        enable_kalman_filter=True,
-        enable_engrams=True,
-        security_enabled=True,
-    ))
+    results.append(
+        test_case(
+            "Full stress test",
+            latent_dim=64,
+            sot_enabled=True,
+            sot_tokenization_mode="word",
+            sot_subword_seed=True,
+            sot_attention_pooling=True,
+            sot_hard_negatives=True,
+            sot_retrieval_feedback=True,
+            sot_skipgram_window=3,
+            sot_max_cooccurrence=50,
+            hyperbolic=True,
+            conformal_prediction=True,
+            adaptive_bandwidth=True,
+            spectral_consolidation=True,
+            enable_kalman_filter=True,
+            enable_engrams=True,
+            security_enabled=True,
+        )
+    )
 
     print()
     print("=" * 60)

@@ -24,7 +24,7 @@ class IdentityProjection:
         if embedding.shape[0] > self.latent_dim:
             return embedding[: self.latent_dim].astype(np.float32)
         # Pad with zeros if smaller (should not happen in normal use)
-        padded = np.zeros(self.latent_dim, dtype=np.float32)
+        padded: NDArray = np.zeros(self.latent_dim, dtype=np.float32)
         padded[: embedding.shape[0]] = embedding
         return padded
 

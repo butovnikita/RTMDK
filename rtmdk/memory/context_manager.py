@@ -33,6 +33,8 @@ class ContextManager:
         """Core retrieval pipeline shared by load_memory_variables and with_embedding."""
         mem = self._memory
         field = mem.field
+        # Invariant: field is created in model_post_init before any retrieval
+        assert field is not None, "RTMDKMemory.field must be initialized before retrieval"
         cfg = mem.config
 
         # Query decomposition for multi-hop retrieval
@@ -161,8 +163,12 @@ class ContextManager:
                 if symbolic_ctx:
                     context += "\n\n" + symbolic_ctx
                     field.stats["n_symbolic_inferences"] = field.stats.get("n_symbolic_inferences", 0) + 1
-                    n_conflicts = sum(
-                        1 for r in field.symbolic_overlay.rules.values() if getattr(r, "is_contextual_exception", False)
+                    n_conflicts = len(
+                        [
+                            r
+                            for r in field.symbolic_overlay.rules.values()
+                            if getattr(r, "is_contextual_exception", False)
+                        ]
                     )
                     field.stats["n_symbolic_conflicts"] = n_conflicts
 
@@ -175,6 +181,8 @@ class ContextManager:
         """Save a conversation turn to memory with structured node format."""
         mem = self._memory
         field = mem.field
+        # Invariant: field is created in model_post_init before any save
+        assert field is not None, "RTMDKMemory.field must be initialized before save_context"
         cfg = mem.config
 
         input_text = inputs.get("input", "")
@@ -292,7 +300,9 @@ class ContextManager:
 
     async def _evolve_field_async(self) -> None:
         await asyncio.sleep(0.01)
-        self._memory.field.step()
+        field = self._memory.field
+        if field is not None:
+            field.step()
 
     # ------------------------------------------------------------------
     # Helpers

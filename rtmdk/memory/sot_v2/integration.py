@@ -23,7 +23,7 @@ def _word_tokenize(text: str) -> List[str]:
     """Unicode-aware word tokenization."""
     text = text.lower()
     tokens = []
-    current = []
+    current: List[str] = []
     for ch in text:
         is_cjk = (
             "\u4e00" <= ch <= "\u9fff"
@@ -193,7 +193,7 @@ class SOTv2Embedder:
             expand_query: If True, expand query with PMI-based synonyms
                 (useful for short queries, no effect on long documents).
         """
-        if not self._trained:
+        if not self._trained or self._embedder is None:
             raise RuntimeError("SOTv2Embedder has not been trained yet. Call .train() first.")
         tokens = [self._vocab[w] for w in _word_tokenize(text) if w in self._vocab]
         if expand_query and self._embedder is not None:
@@ -271,6 +271,8 @@ class SOTv2Embedder:
         vocab_words = sorted(self._vocab.keys())
         vocab_ids = np.array([self._vocab[w] for w in vocab_words], dtype=np.int32)
 
+        if self._embedder is None:
+            raise RuntimeError("SOTv2Embedder has not been trained yet. Call .train() first.")
         embedder_path = path.replace(".npz", "_embedder.npz")
         self._embedder.save_npz(embedder_path)
 

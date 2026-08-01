@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -31,6 +31,8 @@ class MemoryPostInitializer:
             from rtmdk.memory.field import RTMDKField
 
             object.__setattr__(mem, "field", RTMDKField(mem.config, wal_path=mem.wal_path))
+        # Invariant: field was just created above if it was missing
+        assert mem.field is not None, "field must exist after initialization"
         # Track 5: Replay WAL mutations for durability
         mem._replay_wal()
         # Fix 4: Auto-start async workers if async_pipeline is enabled
@@ -141,10 +143,10 @@ class MemoryPostInitializer:
     def _init_sot_v2(self) -> None:
         mem = self._mem
         mem._sot_v2 = None
-        mem._sot_v2_corpus: List[str] = []
-        mem._sot_v2_corpus_maxlen: int = getattr(mem.config, "sot_max_corpus", 10000)
-        mem._sot_v2_online_buffer: List[List[int]] = []
-        mem._sot_v2_online_threshold: int = getattr(mem.config, "sot_online_update_threshold", 10)
+        mem._sot_v2_corpus = []
+        mem._sot_v2_corpus_maxlen = getattr(mem.config, "sot_max_corpus", 10000)
+        mem._sot_v2_online_buffer = []
+        mem._sot_v2_online_threshold = getattr(mem.config, "sot_online_update_threshold", 10)
         mem._sot_v2_online_lock = threading.Lock()
         sot_cfg = getattr(mem.config, "sot", None)
         if sot_cfg and getattr(sot_cfg, "sot_v2_enabled", False):

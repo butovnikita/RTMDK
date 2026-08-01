@@ -60,7 +60,7 @@ class SIFEmbedder:
         self.word_embeddings: Dict[int, np.ndarray] = {}
         self.word_probs: Dict[int, float] = {}
         self._pc: Optional[np.ndarray] = None  # First principal component
-        self._aligner = None  # Optional ProcrustesAligner
+        self._aligner: Optional[Any] = None  # Optional ProcrustesAligner
         self._pmi_matrix: Optional[Any] = None  # Valid-token PMI (dense np.ndarray or scipy.sparse matrix)
         self._pmi_idx_map: Optional[Dict[int, int]] = None  # token_id -> pmi row
         self._pmi_valid_idx: Optional[List[int]] = None  # List of valid token IDs
@@ -113,10 +113,10 @@ class SIFEmbedder:
         )
 
         # 1. Count unigrams and co-occurrences (sparse to avoid OOM)
-        unigram_counts = np.zeros(vocab_size, dtype=np.float64)
+        unigram_counts: np.ndarray = np.zeros(vocab_size, dtype=np.float64)
         from collections import defaultdict
 
-        cooc_sparse = defaultdict(lambda: defaultdict(float))
+        cooc_sparse: Dict[int, Dict[int, float]] = defaultdict(lambda: defaultdict(float))
         total_tokens = 0
 
         for doc in tokenized_docs:
@@ -218,7 +218,7 @@ class SIFEmbedder:
         else:
             # Dense PMI path for small vocabularies — faster for small matrices
             u_counts = unigram_counts[valid_idx] + 1e-8
-            c_counts = np.zeros((n_valid, n_valid), dtype=np.float64)
+            c_counts: np.ndarray = np.zeros((n_valid, n_valid), dtype=np.float64)
             for a, neighbors in cooc_sparse.items():
                 if a not in idx_map:
                     continue
@@ -266,7 +266,7 @@ class SIFEmbedder:
         for orig_t, sub_i in idx_map.items():
             emb = raw_emb[sub_i]
             if k < self.latent_dim:
-                pad = np.zeros(self.latent_dim - k, dtype=np.float32)
+                pad: np.ndarray = np.zeros(self.latent_dim - k, dtype=np.float32)
                 emb = np.concatenate([emb, pad])
             self.word_embeddings[orig_t] = emb
 
@@ -415,7 +415,7 @@ class SIFEmbedder:
         Reference: Church & Hanks (1990) "Word Association Norms, Mutual
         Information, and Lexicography."
         """
-        if self._pmi_matrix is None or self._pmi_idx_map is None:
+        if self._pmi_matrix is None or self._pmi_idx_map is None or self._pmi_valid_idx is None:
             return []
         scores: Dict[int, float] = {}
         # Support both dense (np.ndarray) and sparse (scipy.sparse) PMI matrices
@@ -532,9 +532,9 @@ class SIFEmbedder:
         rng = np.random.default_rng(42)
         h = hidden_dim or self.latent_dim
         self._proj_W = rng.standard_normal((self.latent_dim, h)).astype(np.float32) * 0.01
-        self._proj_b = np.zeros(h, dtype=np.float32)
+        self._proj_b: np.ndarray = np.zeros(h, dtype=np.float32)
         self._proj_out = rng.standard_normal((h, self.latent_dim)).astype(np.float32) * 0.01
-        self._proj_out_b = np.zeros(self.latent_dim, dtype=np.float32)
+        self._proj_out_b: np.ndarray = np.zeros(self.latent_dim, dtype=np.float32)
         # Near-identity shortcut
         self._proj_W[: min(self.latent_dim, h), : min(self.latent_dim, h)] += np.eye(
             min(self.latent_dim, h), dtype=np.float32
@@ -803,7 +803,7 @@ class SIFEmbedder:
         teacher_nn = np.argmax(teacher_sims, axis=1)
 
         # Initialize W as identity
-        W = np.eye(d, dtype=np.float32)
+        W: np.ndarray = np.eye(d, dtype=np.float32)
 
         logger.info("SIFEmbedder: contrastive distillation on %d samples...", n)
         for epoch in range(n_epochs):

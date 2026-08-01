@@ -70,7 +70,7 @@ class ResonanceEngine:
         if self.cfg.hyperbolic:
             dist = poincare_dist(query_latent, node.latent_pos, self.cfg.ball_radius)
         else:
-            dist = np.linalg.norm(query_latent - node.latent_pos)
+            dist = float(np.linalg.norm(query_latent - node.latent_pos))
 
         phase_diff = node.phase - query_phase
         bw = self.meta_kernel.get_bandwidth() if self.meta_kernel else self._effective_bandwidth
@@ -139,7 +139,8 @@ class ResonanceEngine:
         if np.ndim(bw) == 0:
             spatial = np.exp(-(dists**2) / (2 * bw**2))
         else:
-            spatial = np.exp(-(dists**2) / (2 * bw[np.newaxis, :] ** 2))
+            bw_arr = np.asarray(bw, dtype=np.float32)
+            spatial = np.exp(-(dists**2) / (2 * bw_arr[np.newaxis, :] ** 2))
 
         phase_diff = query_phases[:, np.newaxis] - node_phases[np.newaxis, :]
         phase_align = 0.5 + 0.5 * np.cos(phase_diff)
@@ -185,7 +186,8 @@ class ResonanceEngine:
         if np.ndim(bw) == 0:
             spatial = np.exp(-(dists**2) / (2 * bw**2))
         else:
-            spatial = np.exp(-(dists**2) / (2 * bw[np.newaxis, :] ** 2))
+            bw_arr = np.asarray(bw, dtype=np.float32)
+            spatial = np.exp(-(dists**2) / (2 * bw_arr[np.newaxis, :] ** 2))
 
         phase_diff = query_phases[:, np.newaxis] - node_phases[np.newaxis, :]
         phase_align = 0.5 + 0.5 * np.cos(phase_diff)

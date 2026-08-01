@@ -1,12 +1,7 @@
 """RTMDK capacity calculator."""
 
 
-def calc_capacity(
-        ram_gb,
-        dim,
-        bytes_per_float,
-        avg_tokens_per_doc,
-        avg_doc_chars):
+def calc_capacity(ram_gb, dim, bytes_per_float, avg_tokens_per_doc, avg_doc_chars):
     ram_bytes = ram_gb * 1024**3
     emb_per_node = dim * bytes_per_float
     overhead = 500

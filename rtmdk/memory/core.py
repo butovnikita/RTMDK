@@ -35,7 +35,7 @@ import os
 from typing import List, Dict, Optional, Tuple, Callable, Any
 import numpy as np
 from numpy.typing import NDArray
-from pydantic import BaseModel, Field, ConfigDict, model_validator
+from pydantic import BaseModel, Field, ConfigDict, PrivateAttr, model_validator
 import logging
 
 # Extracted engine classes (kept in sync with rtmdk/support/ modules)
@@ -133,6 +133,11 @@ class RTMDKMemory(BaseModel):
     field: Optional[RTMDKField] = Field(default=None, exclude=True)
     session_phases: Dict[str, float] = Field(default_factory=dict)
     wal_path: Optional[str] = Field(default=None, exclude=True)
+    # Observability metrics store (None unless sot.observability_enabled)
+    metrics: Optional[Any] = Field(default=None, exclude=True)
+
+    # SOT v2.0 online-learning state (managed by MemoryPostInitializer)
+    _sot_v2_online_buffer: List[List[int]] = PrivateAttr(default_factory=list)
 
     @model_validator(mode="before")
     @classmethod
@@ -1267,6 +1272,9 @@ class RTMDKMemory(BaseModel):
         pydantic_extra = object.__getattribute__(self, "__pydantic_extra__")
         if pydantic_extra is not None and name in pydantic_extra:
             return pydantic_extra[name]
+        pydantic_private = object.__getattribute__(self, "__pydantic_private__")
+        if pydantic_private is not None and name in pydantic_private:
+            return pydantic_private[name]
         # get_dashboard is a legacy alias for get_field_health
         if name == "get_dashboard":
             return self.field.get_field_health
