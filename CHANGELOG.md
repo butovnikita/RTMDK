@@ -4,7 +4,7 @@ All notable changes to RTMDK are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [8.3.2] — 2026-08-01
 
 ### Fixed
 - **Version sync**: `rtmdk/__init__.py` and `server/app.py` banners now report `8.3.1` (was `8.3.0`); AGENTS.md updated.

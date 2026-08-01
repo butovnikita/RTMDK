@@ -4,7 +4,7 @@
 
 ## Project
 - **Name:** RTMDK (Resonance-Topological Memory)
-- **Version:** 8.3.1
+- **Version:** 8.3.2
 - **Language:** Python 3.10
 - **OS:** Windows (primary dev), Linux (production Docker)
 - **GPU:** CUDA 12.8, torch 2.12.0.dev
