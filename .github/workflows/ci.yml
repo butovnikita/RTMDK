@@ -1,4 +1,4 @@
-name: RTMDK CI
+﻿name: RTMDK CI
 
 on:
   push:
@@ -29,6 +29,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-prod.txt -r requirements-sot.txt -r requirements-dev.txt
+          pip install -e .
 
       - name: Lint with flake8
         run: flake8 rtmdk tests --statistics
@@ -109,6 +110,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-prod.txt -r requirements-sot.txt -r requirements-dev.txt
+          pip install -e .
 
       - name: Run all pipeline tests
         run: pytest tests/test_pipeline_*.py -v --tb=short
@@ -132,6 +134,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-prod.txt -r requirements-sot.txt -r requirements-dev.txt
+          pip install -e .
 
       - name: Run planner A/B benchmark
         run: python scripts/bench_planner_savings.py --dataset datasets/comprehensive_500.json --n 200
