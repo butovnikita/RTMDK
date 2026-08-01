@@ -27,6 +27,8 @@ jobs:
 
       - name: Install dependencies
         run: |
+        env:
+          HNSWLIB_NO_NATIVE: '1'  # avoid -march=native wheels cached across heterogeneous runners
           python -m pip install --upgrade pip
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements-prod.txt -r requirements-sot.txt -r requirements-dev.txt
@@ -121,6 +123,8 @@ jobs:
 
       - name: Install dependencies
         run: |
+        env:
+          HNSWLIB_NO_NATIVE: '1'  # avoid -march=native wheels cached across heterogeneous runners
           python -m pip install --upgrade pip
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements-prod.txt -r requirements-sot.txt -r requirements-dev.txt
@@ -146,6 +150,8 @@ jobs:
 
       - name: Install dependencies
         run: |
+        env:
+          HNSWLIB_NO_NATIVE: '1'  # avoid -march=native wheels cached across heterogeneous runners
           python -m pip install --upgrade pip
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements-prod.txt -r requirements-sot.txt -r requirements-dev.txt
@@ -202,9 +208,10 @@ jobs:
 
       - name: Run load tests
         shell: bash
+        # 'run' not 'exec': the test service is one-shot and already exited
         run: |
           set +e
-          docker compose -f docker-compose.test.yml exec -T test python -m pytest tests/test_server_load.py -v > /tmp/loadtests.log 2>&1
+          docker compose -f docker-compose.test.yml run --rm test > /tmp/loadtests.log 2>&1
           status=$?
           tr '\r' '\n' < /tmp/loadtests.log > /tmp/loadtests_clean.log
           tail -30 /tmp/loadtests_clean.log
