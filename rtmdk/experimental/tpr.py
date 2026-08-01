@@ -1,4 +1,5 @@
 """rtmdk/production/tpr.py — Tensor Product Representations (Research Mode)."""
+
 import numpy as np
 from typing import Dict
 

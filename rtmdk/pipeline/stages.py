@@ -1,8 +1,8 @@
 """Concrete pipeline stages for RTMDK retrieval."""
+
 from __future__ import annotations
 from typing import Any, Callable, Optional
 import logging
-import numpy as np
 from numpy.typing import NDArray
 
 from rtmdk.pipeline.base import PipelineContext, PipelineStage
@@ -93,9 +93,7 @@ class RerankStage(PipelineStage):
     def process(self, ctx: PipelineContext) -> PipelineContext:
         self._last_input_count = len(ctx.results)
         if self.sentence_reranker is not None and ctx.results:
-            ctx.results = self.sentence_reranker.rerank(
-                ctx.query_text, ctx.results, top_k=ctx.top_k
-            )
+            ctx.results = self.sentence_reranker.rerank(ctx.query_text, ctx.results, top_k=ctx.top_k)
         if self.cross_encoder is not None and ctx.results:
             # Placeholder for cross-encoder reranking
             pass
@@ -120,11 +118,7 @@ class CalibrateStage(PipelineStage):
             scores = [score for _, score, _ in ctx.results]
             nids = [nid for nid, _, _ in ctx.results]
             pred_set, _, threshold = self.calibrator.predict(scores, nids)
-            ctx.results = [
-                (nid, score, node)
-                for nid, score, node in ctx.results
-                if nid in pred_set
-            ]
+            ctx.results = [(nid, score, node) for nid, score, node in ctx.results if nid in pred_set]
         return ctx
 
     def fallback(self, ctx: PipelineContext, exc: Exception) -> PipelineContext:

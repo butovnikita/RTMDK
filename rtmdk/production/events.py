@@ -56,6 +56,7 @@ class EventSystem:
             if event_name in webhook.get("events", []):
                 try:
                     import requests
+
                     requests.post(webhook["url"], json=event, timeout=10)
                 except Exception:
                     pass

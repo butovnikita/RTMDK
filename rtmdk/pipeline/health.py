@@ -1,4 +1,5 @@
 """Health monitoring and SLO enforcement for pipeline stages."""
+
 from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
@@ -67,39 +68,42 @@ class PipelineHealthMonitor:
         # Check degraded stages count
         degraded = [m for m in metrics if m.degraded]
         if len(degraded) >= degraded_threshold:
-            alerts.append({
-                "severity": "warning",
-                "type": "too_many_degraded_stages",
-                "message": f"{len(degraded)} stages degraded (threshold: {degraded_threshold})",
-                "stages": [m.name for m in degraded],
-            })
+            alerts.append(
+                {
+                    "severity": "warning",
+                    "type": "too_many_degraded_stages",
+                    "message": f"{len(degraded)} stages degraded (threshold: {degraded_threshold})",
+                    "stages": [m.name for m in degraded],
+                }
+            )
 
         # Check total latency
         if total_latency > latency_threshold_ms:
-            alerts.append({
-                "severity": "warning",
-                "type": "high_latency",
-                "message": f"Total latency {total_latency:.1f}ms exceeds {latency_threshold_ms}ms",
-                "latency_ms": total_latency,
-            })
+            alerts.append(
+                {
+                    "severity": "warning",
+                    "type": "high_latency",
+                    "message": f"Total latency {total_latency:.1f}ms exceeds {latency_threshold_ms}ms",
+                    "latency_ms": total_latency,
+                }
+            )
 
         # Check error rate
         if metrics:
             errors = [m for m in metrics if m.error]
             error_rate = len(errors) / len(metrics)
             if error_rate > error_rate_threshold:
-                alerts.append({
-                    "severity": "critical",
-                    "type": "high_error_rate",
-                    "message": f"Error rate {error_rate*100:.1f}% exceeds {error_rate_threshold*100:.1f}%",
-                    "error_rate": error_rate,
-                })
+                alerts.append(
+                    {
+                        "severity": "critical",
+                        "type": "high_error_rate",
+                        "message": f"Error rate {error_rate*100:.1f}% exceeds {error_rate_threshold*100:.1f}%",
+                        "error_rate": error_rate,
+                    }
+                )
 
         return alerts
 
     def to_dict(self) -> Dict[str, Any]:
         """Export all breaker states."""
-        return {
-            name: breaker.to_dict()
-            for name, breaker in self._breakers.items()
-        }
+        return {name: breaker.to_dict() for name, breaker in self._breakers.items()}

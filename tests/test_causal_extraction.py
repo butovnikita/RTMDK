@@ -1,5 +1,4 @@
 """Tests for causal edge extraction from LLM explanations."""
-import pytest
 
 from rtmdk.engines.causal_extraction import extract_causal_edges, extract_causal_edges_from_content
 

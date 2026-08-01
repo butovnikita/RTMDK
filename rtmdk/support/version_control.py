@@ -1,4 +1,5 @@
 """rtmdk/support/version_control.py — Delta-based version control for memory fields."""
+
 from __future__ import annotations
 import time
 from dataclasses import dataclass, field, asdict
@@ -10,6 +11,7 @@ import numpy as np
 @dataclass
 class NodeDelta:
     """Delta for a single node change."""
+
     node_id: str
     action: str  # "added", "modified", "deleted", "merged"
     old_state: Optional[Dict] = None
@@ -26,7 +28,8 @@ class NodeDelta:
                     "velocity",
                     "acceleration",
                     "gradient_cache",
-                        "modal_embedding"):
+                    "modal_embedding",
+                ):
                     if kk in v and isinstance(v[kk], np.ndarray):
                         v[kk] = v[kk].tolist()
                 d[k] = v
@@ -43,7 +46,8 @@ class NodeDelta:
                     "velocity",
                     "acceleration",
                     "gradient_cache",
-                        "modal_embedding"):
+                    "modal_embedding",
+                ):
                     if kk in v and isinstance(v[kk], list):
                         v[kk] = np.array(v[kk], dtype=np.float32)
         return cls(**data)
@@ -52,6 +56,7 @@ class NodeDelta:
 @dataclass
 class Version:
     """A single version (commit) of the memory field."""
+
     version_id: int
     timestamp: float = field(default_factory=time.time)
     deltas: List[NodeDelta] = field(default_factory=list)
@@ -84,6 +89,7 @@ class Version:
 @dataclass
 class DiffResult:
     """Result of diff between two versions."""
+
     from_version: int
     to_version: int
     added_nodes: List[str] = field(default_factory=list)
@@ -98,15 +104,15 @@ class DiffResult:
             lines.append(
                 f"  + {len(self.added_nodes)} added: "
                 f"{self.added_nodes[:5]}"
-                f"{'...' if len(self.added_nodes) > 5 else ''}")
+                f"{'...' if len(self.added_nodes) > 5 else ''}"
+            )
         if self.deleted_nodes:
             lines.append(f"  - {len(self.deleted_nodes)} deleted")
         if self.modified_nodes:
             lines.append(f"  ~ {len(self.modified_nodes)} modified")
         if self.merged_nodes:
             lines.append(f"  ⨝ {len(self.merged_nodes)} merged")
-        if not any([self.added_nodes, self.deleted_nodes,
-                   self.modified_nodes, self.merged_nodes]):
+        if not any([self.added_nodes, self.deleted_nodes, self.modified_nodes, self.merged_nodes]):
             lines.append("  (no changes)")
         return "\n".join(lines)
 
@@ -131,16 +137,14 @@ class VersionControl:
         # node_id → {version_id → state}
         self._node_states: Dict[str, Dict[int, Dict]] = {}
 
-    def create_version(self, deltas: List[NodeDelta], message: str = "",
-                       stats: Optional[Dict] = None) -> Version:
+    def create_version(self, deltas: List[NodeDelta], message: str = "", stats: Optional[Dict] = None) -> Version:
         """Create a new version from deltas."""
         self._current_version += 1
         version = Version(
             version_id=self._current_version,
             deltas=deltas,
             message=message or f"Auto v{self._current_version}",
-            parent_id=self._current_version -
-            1 if self._current_version > 1 else None,
+            parent_id=self._current_version - 1 if self._current_version > 1 else None,
             stats=stats or {},
         )
         self._versions[version.version_id] = version
@@ -159,10 +163,7 @@ class VersionControl:
 
         return version
 
-    def diff(
-            self,
-            from_version: int,
-            to_version: Optional[int] = None) -> DiffResult:
+    def diff(self, from_version: int, to_version: Optional[int] = None) -> DiffResult:
         """Compute diff between two versions."""
         if to_version is None:
             to_version = self._current_version
@@ -173,15 +174,13 @@ class VersionControl:
 
         # Collect all deltas between versions
         version_ids = list(self._versions.keys())
-        start_idx = version_ids.index(
-            from_version) if from_version in version_ids else -1
-        end_idx = version_ids.index(
-            to_version) if to_version in version_ids else -1
+        start_idx = version_ids.index(from_version) if from_version in version_ids else -1
+        end_idx = version_ids.index(to_version) if to_version in version_ids else -1
         if start_idx < 0 or end_idx < 0:
             return result
 
         seen_nodes: Dict[str, str] = {}  # node_id → last action
-        for vid in version_ids[start_idx + 1:end_idx + 1]:
+        for vid in version_ids[start_idx + 1 : end_idx + 1]:
             version = self._versions[vid]
             for delta in version.deltas:
                 prev_action = seen_nodes.get(delta.node_id)
@@ -197,10 +196,9 @@ class VersionControl:
                     result.merged_nodes.append(delta.node_id)
                 seen_nodes[delta.node_id] = delta.action
 
-        result.total_delta_size = len(set(
-            result.added_nodes + result.deleted_nodes +
-            result.modified_nodes + result.merged_nodes
-        ))
+        result.total_delta_size = len(
+            set(result.added_nodes + result.deleted_nodes + result.modified_nodes + result.merged_nodes)
+        )
         return result
 
     def rollback_to(self, version_id: int) -> List[NodeDelta]:
@@ -216,24 +214,15 @@ class VersionControl:
         for nid in result.deleted_nodes:
             state = self._get_node_state_at(nid, version_id)
             if state:
-                rollback_deltas.append(NodeDelta(
-                    node_id=nid, action="added", new_state=state
-                ))
+                rollback_deltas.append(NodeDelta(node_id=nid, action="added", new_state=state))
         # Reverse additions → delete
         for nid in result.added_nodes:
-            rollback_deltas.append(NodeDelta(
-                node_id=nid, action="deleted"
-            ))
+            rollback_deltas.append(NodeDelta(node_id=nid, action="deleted"))
         # Reverse modifications → restore old state
         for nid in result.modified_nodes:
             old_state = self._get_node_state_at(nid, version_id)
             if old_state:
-                rollback_deltas.append(
-                    NodeDelta(
-                        node_id=nid,
-                        action="modified",
-                        old_state=None,
-                        new_state=old_state))
+                rollback_deltas.append(NodeDelta(node_id=nid, action="modified", old_state=None, new_state=old_state))
 
         return rollback_deltas
 
@@ -270,8 +259,7 @@ class VersionControl:
             "max_versions": self.max_versions,
             "versions": {str(k): v.to_dict() for k, v in self._versions.items()},
             "node_states": {
-                nid: {str(vid): state for vid, state in states.items()}
-                for nid, states in self._node_states.items()
+                nid: {str(vid): state for vid, state in states.items()} for nid, states in self._node_states.items()
             },
         }
 
@@ -284,14 +272,9 @@ class VersionControl:
             self._versions[int(k)] = Version.from_dict(v)
         self._node_states = {}
         for nid, states in data.get("node_states", {}).items():
-            self._node_states[nid] = {
-                int(vid): state for vid,
-                state in states.items()}
+            self._node_states[nid] = {int(vid): state for vid, state in states.items()}
 
-    def _get_node_state_at(
-            self,
-            node_id: str,
-            version_id: int) -> Optional[Dict]:
+    def _get_node_state_at(self, node_id: str, version_id: int) -> Optional[Dict]:
         """Get node state at a specific version."""
         if node_id not in self._node_states:
             return None

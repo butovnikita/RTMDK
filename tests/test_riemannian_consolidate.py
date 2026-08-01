@@ -1,4 +1,5 @@
 """Tests for P0.1 — Riemannian SGD on Poincaré Ball."""
+
 import numpy as np
 import pytest
 
@@ -11,7 +12,6 @@ from rtmdk.memory.geometry import (
 )
 from rtmdk.memory.config import RTMDKConfig
 from rtmdk.memory.core import RTMDKField
-
 
 BALL_RADIUS = 0.85
 
@@ -88,12 +88,11 @@ class TestRiemannianConsolidation:
 
     def _add_random_nodes(self, field, n, seed=42, scale=0.01):
         import time
+
         rng = np.random.default_rng(seed)
         for i in range(n):
             # Small-amplitude embeddings project to interior of Poincaré ball
-            emb = rng.standard_normal(
-                field.cfg.embedding_dim).astype(
-                np.float32) * scale
+            emb = rng.standard_normal(field.cfg.embedding_dim).astype(np.float32) * scale
             field.add_node(
                 embedding=emb,
                 content={"text": f"node_{i}"},
@@ -108,8 +107,7 @@ class TestRiemannianConsolidation:
         hyperbolic_field.consolidate()
         clamped = 0
         for node in hyperbolic_field.nodes.values():
-            if np.linalg.norm(node.latent_pos) >= 0.99 * \
-                    hyperbolic_field.cfg.ball_radius:
+            if np.linalg.norm(node.latent_pos) >= 0.99 * hyperbolic_field.cfg.ball_radius:
                 clamped += 1
         ratio = clamped / max(len(hyperbolic_field.nodes), 1)
         assert ratio < 0.01, f"{ratio*100:.1f}% nodes boundary-clamped"
@@ -123,12 +121,10 @@ class TestRiemannianConsolidation:
             hyperbolic_field.nodes[ids[0]].tension = 1.0
             hyperbolic_field.nodes[ids[1]].tension = 1.0
             # Ensure they are close in space
-            hyperbolic_field.nodes[ids[1]
-                                   ].latent_pos = hyperbolic_field.nodes[ids[0]].latent_pos + 0.05
+            hyperbolic_field.nodes[ids[1]].latent_pos = hyperbolic_field.nodes[ids[0]].latent_pos + 0.05
         hyperbolic_field.consolidate()
         for node in hyperbolic_field.nodes.values():
-            assert np.linalg.norm(
-                node.latent_pos) < hyperbolic_field.cfg.ball_radius
+            assert np.linalg.norm(node.latent_pos) < hyperbolic_field.cfg.ball_radius
 
     def test_euclidean_mode_unchanged(self):
         """With hyperbolic=False, consolidate should still work (backward compat)."""
@@ -148,29 +144,30 @@ class TestRiemannianConsolidation:
     def test_attraction_update_stays_inside_ball(self, hyperbolic_field):
         """Riemannian attraction update in step() must keep node inside ball."""
         import time
+
         rng = np.random.default_rng(42)
         # Add an anchor node
-        emb = rng.standard_normal(
-            hyperbolic_field.cfg.embedding_dim).astype(
-            np.float32)
-        hyperbolic_field.add_node(
-            embedding=emb, content={
-                "text": "anchor"}, phase=0.0)
+        emb = rng.standard_normal(hyperbolic_field.cfg.embedding_dim).astype(np.float32)
+        hyperbolic_field.add_node(embedding=emb, content={"text": "anchor"}, phase=0.0)
         time.sleep(0.02)
         # Call step with a similar embedding to trigger attraction update
-        hyperbolic_field.step([{
-            "embedding": emb * 1.05,
-            "phase": 0.1,
-            "content": {"text": "similar"},
-            "modality": "text",
-        }])
+        hyperbolic_field.step(
+            [
+                {
+                    "embedding": emb * 1.05,
+                    "phase": 0.1,
+                    "content": {"text": "similar"},
+                    "modality": "text",
+                }
+            ]
+        )
         for node in hyperbolic_field.nodes.values():
-            assert np.linalg.norm(
-                node.latent_pos) < hyperbolic_field.cfg.ball_radius
+            assert np.linalg.norm(node.latent_pos) < hyperbolic_field.cfg.ball_radius
 
     def test_consolidate_performance_regression(self, hyperbolic_field):
         """Consolidate on 100 nodes should not be >20% slower than baseline."""
         import time
+
         self._add_random_nodes(hyperbolic_field, 100, seed=4)
         t0 = time.perf_counter()
         hyperbolic_field.consolidate()

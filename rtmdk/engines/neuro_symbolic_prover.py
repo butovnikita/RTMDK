@@ -24,13 +24,15 @@ logger = logging.getLogger(__name__)
 # TYPED RULE STRUCTURE
 # ============================================================================
 
+
 @dataclass
 class LogicalRule:
     """A typed logical rule — LLM/Embedder independent."""
-    premises: List[str]              # ["disk_is_full", "no_cleanup"]
-    conclusion: str                  # "system_crash"
+
+    premises: List[str]  # ["disk_is_full", "no_cleanup"]
+    conclusion: str  # "system_crash"
     negate_conclusion: bool = False  # True → NOT conclusion
-    rule_type: str = "implication"   # implication, fact, constraint
+    rule_type: str = "implication"  # implication, fact, constraint
 
     def __str__(self) -> str:
         premise_str = " AND ".join(self.premises)
@@ -42,6 +44,7 @@ class LogicalRule:
 # ============================================================================
 # MAIN PROVER CLASS
 # ============================================================================
+
 
 class NeuroSymbolicProver:
     """Neuro-Symbolic theorem prover for RTMDK (v2).
@@ -77,21 +80,21 @@ class NeuroSymbolicProver:
         if self.backend == "z3":
             try:
                 import z3
+
                 self._z3 = z3
                 self._solver = z3.Solver()
                 logger.info("NeuroSymbolicProver: Z3 backend initialized")
             except ImportError:
-                logger.warning("NeuroSymbolicProver: z3-solver not installed. "
-                               "Install with: pip install z3-solver")
+                logger.warning("NeuroSymbolicProver: z3-solver not installed. " "Install with: pip install z3-solver")
                 self.backend = "none"
         elif self.backend == "prolog":
             try:
                 from pyswip import Prolog
+
                 self._prolog = Prolog()
                 logger.info("NeuroSymbolicProver: Prolog backend initialized")
             except ImportError:
-                logger.warning("NeuroSymbolicProver: pyswip not installed. "
-                               "Install with: pip install pyswip")
+                logger.warning("NeuroSymbolicProver: pyswip not installed. " "Install with: pip install pyswip")
                 self.backend = "none"
 
     def _get_z3_var(self, name: str):
@@ -120,8 +123,7 @@ class NeuroSymbolicProver:
             return False
 
         # Clean name: spaces → underscores, remove special chars
-        clean_name = "".join(c if c.isalnum() or c ==
-                             '_' else '_' for c in fact_name.strip())
+        clean_name = "".join(c if c.isalnum() or c == "_" else "_" for c in fact_name.strip())
 
         self.facts[clean_name] = value
 
@@ -135,10 +137,7 @@ class NeuroSymbolicProver:
 
         return True
 
-    def add_implication(self,
-                        premise: Union[str, List[str]],
-                        conclusion: str,
-                        negate_conclusion: bool = False) -> bool:
+    def add_implication(self, premise: Union[str, List[str]], conclusion: str, negate_conclusion: bool = False) -> bool:
         """Add a logical implication rule.
 
         Args:
@@ -166,8 +165,7 @@ class NeuroSymbolicProver:
         premises = []
         for p in premise:
             if p and p.strip():
-                clean = "".join(c if c.isalnum() or c ==
-                                '_' else '_' for c in p.strip())
+                clean = "".join(c if c.isalnum() or c == "_" else "_" for c in p.strip())
                 premises.append(clean)
 
         if not premises:
@@ -178,8 +176,7 @@ class NeuroSymbolicProver:
             logger.warning("NeuroSymbolicProver: Empty conclusion ignored")
             return False
 
-        clean_conclusion = "".join(
-            c if c.isalnum() or c == '_' else '_' for c in conclusion.strip())
+        clean_conclusion = "".join(c if c.isalnum() or c == "_" else "_" for c in conclusion.strip())
 
         rule = LogicalRule(
             premises=premises,
@@ -192,8 +189,7 @@ class NeuroSymbolicProver:
             premise_vars = [self._get_z3_var(p) for p in premises]
             conclusion_var = self._get_z3_var(clean_conclusion)
 
-            if all(
-                    v is not None for v in premise_vars) and conclusion_var is not None:
+            if all(v is not None for v in premise_vars) and conclusion_var is not None:
                 if len(premise_vars) == 1:
                     premise_z3 = premise_vars[0]
                 else:
@@ -208,8 +204,7 @@ class NeuroSymbolicProver:
 
         return True
 
-    def add_constraint(self, propositions: List[str],
-                       at_least: int = 1) -> bool:
+    def add_constraint(self, propositions: List[str], at_least: int = 1) -> bool:
         """Add a constraint: at least N of the propositions must be true.
 
         Example:
@@ -219,8 +214,7 @@ class NeuroSymbolicProver:
         clean_props = []
         for p in propositions:
             if p and p.strip():
-                clean = "".join(c if c.isalnum() or c ==
-                                '_' else '_' for c in p.strip())
+                clean = "".join(c if c.isalnum() or c == "_" else "_" for c in p.strip())
                 clean_props.append(clean)
 
         if not clean_props or self.backend != "z3" or not self._solver:
@@ -263,12 +257,10 @@ class NeuroSymbolicProver:
                 self._solver.add(z3_formula)
                 return True
             else:
-                logger.warning(
-                    f"NeuroSymbolicProver: Failed to parse rule: '{rule_str}'")
+                logger.warning(f"NeuroSymbolicProver: Failed to parse rule: '{rule_str}'")
                 return False
         except Exception as e:
-            logger.warning(
-                f"NeuroSymbolicProver: Error parsing rule '{rule_str}': {e}")
+            logger.warning(f"NeuroSymbolicProver: Error parsing rule '{rule_str}': {e}")
             return False
 
     def _parse_rule(self, rule_str: str):
@@ -285,8 +277,7 @@ class NeuroSymbolicProver:
         elif "->" in rule_str:
             parts = rule_str.split("->", 1)
         else:
-            logger.warning(
-                f"NeuroSymbolicProver: No implication arrow in rule: '{rule_str}'")
+            logger.warning(f"NeuroSymbolicProver: No implication arrow in rule: '{rule_str}'")
             return None
 
         if len(parts) != 2:
@@ -355,13 +346,11 @@ class NeuroSymbolicProver:
                 return self._z3.Not(sub)
 
         # Atomic proposition — validate name
-        clean_name = "".join(c if c.isalnum() or c ==
-                             '_' else '_' for c in formula_str.strip())
+        clean_name = "".join(c if c.isalnum() or c == "_" else "_" for c in formula_str.strip())
         if clean_name and clean_name not in ("NOT", "AND", "OR"):
             return self._get_z3_var(clean_name)
 
-        logger.warning(
-            f"NeuroSymbolicProver: Unrecognized formula: '{formula_str}'")
+        logger.warning(f"NeuroSymbolicProver: Unrecognized formula: '{formula_str}'")
         return None
 
     # ─────────────────────────────────────────────────────────────────
@@ -408,26 +397,29 @@ class NeuroSymbolicProver:
         for fact, value in self.facts.items():
             neg_fact = f"NOT_{fact}"
             if neg_fact in self.facts and self.facts[neg_fact] == value:
-                contradictions.append({
-                    "type": "direct_contradiction",
-                    "facts": [fact, neg_fact],
-                })
+                contradictions.append(
+                    {
+                        "type": "direct_contradiction",
+                        "facts": [fact, neg_fact],
+                    }
+                )
 
         # Check rule-based contradictions
         for rule in self.rules:
             # If all premises are true and conclusion conflicts with a fact
-            premises_true = all(self.facts.get(p, False)
-                                for p in rule.premises)
+            premises_true = all(self.facts.get(p, False) for p in rule.premises)
             if premises_true:
                 expected = not rule.negate_conclusion
                 actual = self.facts.get(rule.conclusion, not expected)
                 if actual != expected:
-                    contradictions.append({
-                        "type": "rule_violation",
-                        "rule": str(rule),
-                        "expected": expected,
-                        "actual": actual,
-                    })
+                    contradictions.append(
+                        {
+                            "type": "rule_violation",
+                            "rule": str(rule),
+                            "expected": expected,
+                            "actual": actual,
+                        }
+                    )
 
         return contradictions
 
@@ -455,17 +447,11 @@ class NeuroSymbolicProver:
         sal_b = memory_field.nodes[node_b_id].salience
 
         if sal_a > sal_b * 1.2:
-            return {
-                "action": "keep_a",
-                "reason": f"Higher salience ({sal_a:.2f} vs {sal_b:.2f})"}
+            return {"action": "keep_a", "reason": f"Higher salience ({sal_a:.2f} vs {sal_b:.2f})"}
         elif sal_b > sal_a * 1.2:
-            return {
-                "action": "keep_b",
-                "reason": f"Higher salience ({sal_b:.2f} vs {sal_a:.2f})"}
+            return {"action": "keep_b", "reason": f"Higher salience ({sal_b:.2f} vs {sal_a:.2f})"}
         else:
-            return {
-                "action": "merge",
-                "reason": "Similar salience, recommend merging"}
+            return {"action": "merge", "reason": "Similar salience, recommend merging"}
 
     def extract_rules_from_symbolic(self, symbolic_overlay) -> int:
         """Extract logical rules from SymbolicOverlay.
@@ -477,21 +463,20 @@ class NeuroSymbolicProver:
             return 0
 
         # Try to get structured rules first
-        if hasattr(symbolic_overlay, 'rules'):
+        if hasattr(symbolic_overlay, "rules"):
             for rule in symbolic_overlay.rules:
-                if hasattr(rule, 'premise') and hasattr(rule, 'conclusion'):
+                if hasattr(rule, "premise") and hasattr(rule, "conclusion"):
                     premise = str(rule.premise).strip()
                     conclusion = str(rule.conclusion).strip()
                     if premise and conclusion:
                         negate = conclusion.startswith("NOT ")
                         if negate:
                             conclusion = conclusion[4:].strip()
-                        self.add_implication(
-                            premise, conclusion, negate_conclusion=negate)
+                        self.add_implication(premise, conclusion, negate_conclusion=negate)
                         n_added += 1
 
         # Fallback: try text rules
-        if hasattr(symbolic_overlay, 'raw_rules'):
+        if hasattr(symbolic_overlay, "raw_rules"):
             for rule_str in symbolic_overlay.raw_rules:
                 if self.add_rule(rule_str):
                     n_added += 1

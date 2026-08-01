@@ -9,9 +9,10 @@ from rtmdk.production.feedback_loop import FeedbackLoop
 
 def _make_embedder(dim: int = 64):
     def embed(text: str) -> np.ndarray:
-        h = hash(text) % (2 ** 32)
+        h = hash(text) % (2**32)
         rng = np.random.default_rng(h)
         return rng.standard_normal(dim, dtype=np.float32)
+
     return embed
 
 
@@ -78,6 +79,7 @@ class TestFeedbackLoop:
         data = fb.export_feedback(path)
         assert len(data) == 1
         import os
+
         assert os.path.exists(path)
 
     def test_avg_quality_property(self):

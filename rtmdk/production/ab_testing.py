@@ -28,8 +28,7 @@ class ABTesting:
     def __init__(self) -> None:
         self._variants: Dict[str, Dict] = {}
         self._assignments: Dict[str, str] = {}  # user_id → variant
-        self._metrics: Dict[str, Dict[str, List[float]]
-                            ] = defaultdict(lambda: defaultdict(list))
+        self._metrics: Dict[str, Dict[str, List[float]]] = defaultdict(lambda: defaultdict(list))
 
     def add_variant(self, name: str, config_overrides: Dict):
         """Add a test variant."""
@@ -42,10 +41,7 @@ class ABTesting:
             variant_names = list(self._variants.keys())
             if not variant_names:
                 return "control", {}
-            idx = int(
-                hashlib.md5(
-                    user_id.encode()).hexdigest(),
-                16) % len(variant_names)
+            idx = int(hashlib.md5(user_id.encode()).hexdigest(), 16) % len(variant_names)
             chosen = variant_names[idx]
             self._assignments[user_id] = chosen
 

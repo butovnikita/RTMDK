@@ -1,4 +1,5 @@
 """RTMDK support modules."""
+
 from __future__ import annotations
 
 from .meta_controller import MetaController
@@ -20,14 +21,17 @@ from .security import SecurityValidator
 from .swarm import SwarmConsensusProtocol
 from .agents import AgentPlanner, HypothesisVerifier, ToolRouter
 from .production import ShadowModeEvaluator, RAGASPlusEvaluator, AutoRollbackManager
+
 # Phase 15
 from .version_control import VersionControl, NodeDelta, Version, DiffResult
 from .entropy_controller import EntropyController
 from .triton_backend import GPUBackend, TRITON_AVAILABLE
+
 # Phase 16
 from .symbolic_overlay import SymbolicOverlay, SymbolicRule, SymbolicInference
 from .safety_certifier import SafetyCertifier, LyapunovFunction
 from .ump import UniversalMemoryProtocol, UMP_VERSION, UMP_SCHEMA
+
 # Phase 17
 from .role_shard_router import RoleShardRouter, RoleShard, RoleDetector, DEFAULT_ROLE
 
@@ -60,13 +64,25 @@ __all__ = [
     "RAGASPlusEvaluator",
     "AutoRollbackManager",
     # Phase 15
-    "VersionControl", "NodeDelta", "Version", "DiffResult",
+    "VersionControl",
+    "NodeDelta",
+    "Version",
+    "DiffResult",
     "EntropyController",
-    "GPUBackend", "TRITON_AVAILABLE",
+    "GPUBackend",
+    "TRITON_AVAILABLE",
     # Phase 16
-    "SymbolicOverlay", "SymbolicRule", "SymbolicInference",
-    "SafetyCertifier", "LyapunovFunction",
-    "UniversalMemoryProtocol", "UMP_VERSION", "UMP_SCHEMA",
+    "SymbolicOverlay",
+    "SymbolicRule",
+    "SymbolicInference",
+    "SafetyCertifier",
+    "LyapunovFunction",
+    "UniversalMemoryProtocol",
+    "UMP_VERSION",
+    "UMP_SCHEMA",
     # Phase 17
-    "RoleShardRouter", "RoleShard", "RoleDetector", "DEFAULT_ROLE",
+    "RoleShardRouter",
+    "RoleShard",
+    "RoleDetector",
+    "DEFAULT_ROLE",
 ]

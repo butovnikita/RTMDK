@@ -1,9 +1,10 @@
 """Tests for pipeline cost analyzer."""
+
 from __future__ import annotations
 
 import pytest
 
-from rtmdk.pipeline.cost import PipelineCostAnalyzer, CostBreakdown
+from rtmdk.pipeline.cost import PipelineCostAnalyzer
 
 
 class TestPipelineCostAnalyzer:

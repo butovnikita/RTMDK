@@ -2,6 +2,7 @@
 
 Extracted from RTMDKField to reduce monolithic field.py size.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -13,7 +14,6 @@ import numpy as np
 
 if TYPE_CHECKING:
     from rtmdk.memory.field import RTMDKField
-    from numpy.typing import NDArray
 
 logger = logging.getLogger(__name__)
 
@@ -55,9 +55,9 @@ class TopologyManager:
             return
         current_step = f._step_counter
         keys_to_remove = [
-            k for k, (tension, step) in f._tension_cache.items()
-            if current_step - step > f._tension_cache_max_age * 3
-            and k in f.nodes
+            k
+            for k, (tension, step) in f._tension_cache.items()
+            if current_step - step > f._tension_cache_max_age * 3 and k in f.nodes
         ]
         for k in keys_to_remove:
             f._tension_cache.pop(k, None)
@@ -65,9 +65,7 @@ class TopologyManager:
     # ------------------------------------------------------------------
     # Tension computation
     # ------------------------------------------------------------------
-    def compute_tension(
-        self, node_id: str, neighborhood_radius: float = 2.0
-    ) -> float:
+    def compute_tension(self, node_id: str, neighborhood_radius: float = 2.0) -> float:
         f = self.field
         if node_id in f._tension_cache:
             cached_tension, cached_step = f._tension_cache[node_id]
@@ -87,8 +85,7 @@ class TopologyManager:
             ids_to_check = f.node_index
             max_scan = 200
             if len(ids_to_check) > max_scan:
-                rng = np.random.RandomState(
-                    int(hashlib.md5(node_id.encode()).hexdigest(), 16) % 2**32)
+                rng = np.random.RandomState(int(hashlib.md5(node_id.encode()).hexdigest(), 16) % 2**32)
                 ids_to_check = list(rng.choice(ids_to_check, size=max_scan, replace=False))
 
             if len(ids_to_check) < 2:
@@ -142,9 +139,9 @@ class TopologyManager:
     def prune_dead_nodes(self) -> None:
         f = self.field
         to_remove = [
-            nid for nid in f.node_index
-            if f.nodes[nid].amplitude < f.cfg.min_amplitude
-            or f.nodes[nid].salience < f.cfg.min_amplitude * 0.5
+            nid
+            for nid in f.node_index
+            if f.nodes[nid].amplitude < f.cfg.min_amplitude or f.nodes[nid].salience < f.cfg.min_amplitude * 0.5
         ]
         if to_remove:
             f.wal.append_delete(to_remove)

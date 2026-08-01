@@ -1,13 +1,12 @@
 """Tests for rtmdk.production.replay."""
 
 import numpy as np
-import pytest
 from rtmdk.memory.core import RTMDKConfig, RTMDKMemory
 from rtmdk.production.replay import ConversationReplay
 
 
 def _embed(text: str) -> np.ndarray:
-    h = hash(text) % (2 ** 32)
+    h = hash(text) % (2**32)
     rng = np.random.default_rng(h)
     return rng.standard_normal(768, dtype=np.float32)
 

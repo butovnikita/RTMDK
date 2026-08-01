@@ -1,4 +1,5 @@
 """Tests for query_with_confidence API."""
+
 import numpy as np
 import pytest
 
@@ -7,7 +8,7 @@ from rtmdk.memory.core import RTMDKMemory
 
 
 def embedder(text: str) -> np.ndarray:
-    rng = np.random.default_rng(hash(text) % (2 ** 32))
+    rng = np.random.default_rng(hash(text) % (2**32))
     emb = rng.standard_normal(768).astype(np.float32)
     emb /= np.linalg.norm(emb) + 1e-8
     return emb

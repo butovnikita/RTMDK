@@ -3,6 +3,7 @@
 Wraps a synchronous embedder to provide async interface with
 automatic request coalescing for better throughput under load.
 """
+
 from __future__ import annotations
 import asyncio
 import logging
@@ -63,10 +64,10 @@ class AsyncEmbedder:
         async with self._lock:
             if not self._queue:
                 return
-            futures = self._queue[:self.batch_size]
-            texts = self._texts[:self.batch_size]
-            self._queue = self._queue[self.batch_size:]
-            self._texts = self._texts[self.batch_size:]
+            futures = self._queue[: self.batch_size]
+            texts = self._texts[: self.batch_size]
+            self._queue = self._queue[self.batch_size :]
+            self._texts = self._texts[self.batch_size :]
             self._task = None
 
         try:

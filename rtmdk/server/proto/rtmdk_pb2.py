@@ -4,63 +4,60 @@
 # source: rtmdk/server/proto/rtmdk.proto
 # Protobuf Python Version: 6.31.1
 """Generated protocol buffer code."""
+
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import descriptor_pool as _descriptor_pool
 from google.protobuf import runtime_version as _runtime_version
 from google.protobuf import symbol_database as _symbol_database
 from google.protobuf.internal import builder as _builder
+
 _runtime_version.ValidateProtobufRuntimeVersion(
-    _runtime_version.Domain.PUBLIC,
-    6,
-    31,
-    1,
-    '',
-    'rtmdk/server/proto/rtmdk.proto'
+    _runtime_version.Domain.PUBLIC, 6, 31, 1, "", "rtmdk/server/proto/rtmdk.proto"
 )
 # @@protoc_insertion_point(imports)
 
 _sym_db = _symbol_database.Default()
 
 
-
-
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1ertmdk/server/proto/rtmdk.proto\x12\x05rtmdk\"\x0f\n\rHealthRequest\"G\n\x0eHealthResponse\x12\x0e\n\x06status\x18\x01 \x01(\t\x12\x0f\n\x07version\x18\x02 \x01(\t\x12\x14\n\x0cmemory_nodes\x18\x03 \x01(\x03\"W\n\x12QueryMemoryRequest\x12\r\n\x05query\x18\x01 \x01(\t\x12\r\n\x05top_k\x18\x02 \x01(\x05\x12\x12\n\nsession_id\x18\x03 \x01(\t\x12\x0f\n\x07\x61pi_key\x18\x04 \x01(\t\"?\n\x0cMemoryResult\x12\x0f\n\x07node_id\x18\x01 \x01(\t\x12\r\n\x05score\x18\x02 \x01(\x02\x12\x0f\n\x07\x63ontent\x18\x03 \x01(\t\"J\n\x13QueryMemoryResponse\x12$\n\x07results\x18\x01 \x03(\x0b\x32\x13.rtmdk.MemoryResult\x12\r\n\x05total\x18\x02 \x01(\x05\"\xb1\x01\n\x11\x43reateNodeRequest\x12\x0f\n\x07\x63ontent\x18\x01 \x01(\t\x12\x0f\n\x07node_id\x18\x02 \x01(\t\x12\x38\n\x08metadata\x18\x03 \x03(\x0b\x32&.rtmdk.CreateNodeRequest.MetadataEntry\x12\x0f\n\x07\x61pi_key\x18\x04 \x01(\t\x1a/\n\rMetadataEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"5\n\x12\x43reateNodeResponse\x12\x0f\n\x07node_id\x18\x01 \x01(\t\x12\x0e\n\x06status\x18\x02 \x01(\t\"!\n\x0eGetNodeRequest\x12\x0f\n\x07node_id\x18\x01 \x01(\t\"W\n\x04Node\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0f\n\x07\x63ontent\x18\x02 \x01(\t\x12\x10\n\x08salience\x18\x03 \x01(\x02\x12\r\n\x05phase\x18\x04 \x01(\x02\x12\x11\n\tamplitude\x18\x05 \x01(\x02\"$\n\x11\x44\x65leteNodeRequest\x12\x0f\n\x07node_id\x18\x01 \x01(\t\"$\n\x12\x44\x65leteNodeResponse\x12\x0e\n\x06status\x18\x01 \x01(\t\"I\n\x12\x42\x61tchIngestRequest\x12\x10\n\x08\x63ontents\x18\x01 \x03(\t\x12\x10\n\x08node_ids\x18\x02 \x03(\t\x12\x0f\n\x07\x61pi_key\x18\x03 \x01(\t\"9\n\x13\x42\x61tchIngestResponse\x12\x10\n\x08ingested\x18\x01 \x01(\x05\x12\x10\n\x08node_ids\x18\x02 \x03(\t2\xff\x02\n\x05RTMDK\x12\x35\n\x06Health\x12\x14.rtmdk.HealthRequest\x1a\x15.rtmdk.HealthResponse\x12\x44\n\x0bQueryMemory\x12\x19.rtmdk.QueryMemoryRequest\x1a\x1a.rtmdk.QueryMemoryResponse\x12\x41\n\nCreateNode\x12\x18.rtmdk.CreateNodeRequest\x1a\x19.rtmdk.CreateNodeResponse\x12-\n\x07GetNode\x12\x15.rtmdk.GetNodeRequest\x1a\x0b.rtmdk.Node\x12\x41\n\nDeleteNode\x12\x18.rtmdk.DeleteNodeRequest\x1a\x19.rtmdk.DeleteNodeResponse\x12\x44\n\x0b\x42\x61tchIngest\x12\x19.rtmdk.BatchIngestRequest\x1a\x1a.rtmdk.BatchIngestResponseb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(
+    b'\n\x1ertmdk/server/proto/rtmdk.proto\x12\x05rtmdk"\x0f\n\rHealthRequest"G\n\x0eHealthResponse\x12\x0e\n\x06status\x18\x01 \x01(\t\x12\x0f\n\x07version\x18\x02 \x01(\t\x12\x14\n\x0cmemory_nodes\x18\x03 \x01(\x03"W\n\x12QueryMemoryRequest\x12\r\n\x05query\x18\x01 \x01(\t\x12\r\n\x05top_k\x18\x02 \x01(\x05\x12\x12\n\nsession_id\x18\x03 \x01(\t\x12\x0f\n\x07\x61pi_key\x18\x04 \x01(\t"?\n\x0cMemoryResult\x12\x0f\n\x07node_id\x18\x01 \x01(\t\x12\r\n\x05score\x18\x02 \x01(\x02\x12\x0f\n\x07\x63ontent\x18\x03 \x01(\t"J\n\x13QueryMemoryResponse\x12$\n\x07results\x18\x01 \x03(\x0b\x32\x13.rtmdk.MemoryResult\x12\r\n\x05total\x18\x02 \x01(\x05"\xb1\x01\n\x11\x43reateNodeRequest\x12\x0f\n\x07\x63ontent\x18\x01 \x01(\t\x12\x0f\n\x07node_id\x18\x02 \x01(\t\x12\x38\n\x08metadata\x18\x03 \x03(\x0b\x32&.rtmdk.CreateNodeRequest.MetadataEntry\x12\x0f\n\x07\x61pi_key\x18\x04 \x01(\t\x1a/\n\rMetadataEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01"5\n\x12\x43reateNodeResponse\x12\x0f\n\x07node_id\x18\x01 \x01(\t\x12\x0e\n\x06status\x18\x02 \x01(\t"!\n\x0eGetNodeRequest\x12\x0f\n\x07node_id\x18\x01 \x01(\t"W\n\x04Node\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0f\n\x07\x63ontent\x18\x02 \x01(\t\x12\x10\n\x08salience\x18\x03 \x01(\x02\x12\r\n\x05phase\x18\x04 \x01(\x02\x12\x11\n\tamplitude\x18\x05 \x01(\x02"$\n\x11\x44\x65leteNodeRequest\x12\x0f\n\x07node_id\x18\x01 \x01(\t"$\n\x12\x44\x65leteNodeResponse\x12\x0e\n\x06status\x18\x01 \x01(\t"I\n\x12\x42\x61tchIngestRequest\x12\x10\n\x08\x63ontents\x18\x01 \x03(\t\x12\x10\n\x08node_ids\x18\x02 \x03(\t\x12\x0f\n\x07\x61pi_key\x18\x03 \x01(\t"9\n\x13\x42\x61tchIngestResponse\x12\x10\n\x08ingested\x18\x01 \x01(\x05\x12\x10\n\x08node_ids\x18\x02 \x03(\t2\xff\x02\n\x05RTMDK\x12\x35\n\x06Health\x12\x14.rtmdk.HealthRequest\x1a\x15.rtmdk.HealthResponse\x12\x44\n\x0bQueryMemory\x12\x19.rtmdk.QueryMemoryRequest\x1a\x1a.rtmdk.QueryMemoryResponse\x12\x41\n\nCreateNode\x12\x18.rtmdk.CreateNodeRequest\x1a\x19.rtmdk.CreateNodeResponse\x12-\n\x07GetNode\x12\x15.rtmdk.GetNodeRequest\x1a\x0b.rtmdk.Node\x12\x41\n\nDeleteNode\x12\x18.rtmdk.DeleteNodeRequest\x1a\x19.rtmdk.DeleteNodeResponse\x12\x44\n\x0b\x42\x61tchIngest\x12\x19.rtmdk.BatchIngestRequest\x1a\x1a.rtmdk.BatchIngestResponseb\x06proto3'
+)
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
-_builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'rtmdk.server.proto.rtmdk_pb2', _globals)
+_builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, "rtmdk.server.proto.rtmdk_pb2", _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
-  DESCRIPTOR._loaded_options = None
-  _globals['_CREATENODEREQUEST_METADATAENTRY']._loaded_options = None
-  _globals['_CREATENODEREQUEST_METADATAENTRY']._serialized_options = b'8\001'
-  _globals['_HEALTHREQUEST']._serialized_start=41
-  _globals['_HEALTHREQUEST']._serialized_end=56
-  _globals['_HEALTHRESPONSE']._serialized_start=58
-  _globals['_HEALTHRESPONSE']._serialized_end=129
-  _globals['_QUERYMEMORYREQUEST']._serialized_start=131
-  _globals['_QUERYMEMORYREQUEST']._serialized_end=218
-  _globals['_MEMORYRESULT']._serialized_start=220
-  _globals['_MEMORYRESULT']._serialized_end=283
-  _globals['_QUERYMEMORYRESPONSE']._serialized_start=285
-  _globals['_QUERYMEMORYRESPONSE']._serialized_end=359
-  _globals['_CREATENODEREQUEST']._serialized_start=362
-  _globals['_CREATENODEREQUEST']._serialized_end=539
-  _globals['_CREATENODEREQUEST_METADATAENTRY']._serialized_start=492
-  _globals['_CREATENODEREQUEST_METADATAENTRY']._serialized_end=539
-  _globals['_CREATENODERESPONSE']._serialized_start=541
-  _globals['_CREATENODERESPONSE']._serialized_end=594
-  _globals['_GETNODEREQUEST']._serialized_start=596
-  _globals['_GETNODEREQUEST']._serialized_end=629
-  _globals['_NODE']._serialized_start=631
-  _globals['_NODE']._serialized_end=718
-  _globals['_DELETENODEREQUEST']._serialized_start=720
-  _globals['_DELETENODEREQUEST']._serialized_end=756
-  _globals['_DELETENODERESPONSE']._serialized_start=758
-  _globals['_DELETENODERESPONSE']._serialized_end=794
-  _globals['_BATCHINGESTREQUEST']._serialized_start=796
-  _globals['_BATCHINGESTREQUEST']._serialized_end=869
-  _globals['_BATCHINGESTRESPONSE']._serialized_start=871
-  _globals['_BATCHINGESTRESPONSE']._serialized_end=928
-  _globals['_RTMDK']._serialized_start=931
-  _globals['_RTMDK']._serialized_end=1314
+    DESCRIPTOR._loaded_options = None
+    _globals["_CREATENODEREQUEST_METADATAENTRY"]._loaded_options = None
+    _globals["_CREATENODEREQUEST_METADATAENTRY"]._serialized_options = b"8\001"
+    _globals["_HEALTHREQUEST"]._serialized_start = 41
+    _globals["_HEALTHREQUEST"]._serialized_end = 56
+    _globals["_HEALTHRESPONSE"]._serialized_start = 58
+    _globals["_HEALTHRESPONSE"]._serialized_end = 129
+    _globals["_QUERYMEMORYREQUEST"]._serialized_start = 131
+    _globals["_QUERYMEMORYREQUEST"]._serialized_end = 218
+    _globals["_MEMORYRESULT"]._serialized_start = 220
+    _globals["_MEMORYRESULT"]._serialized_end = 283
+    _globals["_QUERYMEMORYRESPONSE"]._serialized_start = 285
+    _globals["_QUERYMEMORYRESPONSE"]._serialized_end = 359
+    _globals["_CREATENODEREQUEST"]._serialized_start = 362
+    _globals["_CREATENODEREQUEST"]._serialized_end = 539
+    _globals["_CREATENODEREQUEST_METADATAENTRY"]._serialized_start = 492
+    _globals["_CREATENODEREQUEST_METADATAENTRY"]._serialized_end = 539
+    _globals["_CREATENODERESPONSE"]._serialized_start = 541
+    _globals["_CREATENODERESPONSE"]._serialized_end = 594
+    _globals["_GETNODEREQUEST"]._serialized_start = 596
+    _globals["_GETNODEREQUEST"]._serialized_end = 629
+    _globals["_NODE"]._serialized_start = 631
+    _globals["_NODE"]._serialized_end = 718
+    _globals["_DELETENODEREQUEST"]._serialized_start = 720
+    _globals["_DELETENODEREQUEST"]._serialized_end = 756
+    _globals["_DELETENODERESPONSE"]._serialized_start = 758
+    _globals["_DELETENODERESPONSE"]._serialized_end = 794
+    _globals["_BATCHINGESTREQUEST"]._serialized_start = 796
+    _globals["_BATCHINGESTREQUEST"]._serialized_end = 869
+    _globals["_BATCHINGESTRESPONSE"]._serialized_start = 871
+    _globals["_BATCHINGESTRESPONSE"]._serialized_end = 928
+    _globals["_RTMDK"]._serialized_start = 931
+    _globals["_RTMDK"]._serialized_end = 1314
 # @@protoc_insertion_point(module_scope)

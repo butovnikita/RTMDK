@@ -1,4 +1,5 @@
 """Test Phase 5 plugin architecture."""
+
 import numpy as np
 import pytest
 

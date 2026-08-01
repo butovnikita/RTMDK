@@ -55,10 +55,7 @@ def memory(embedder):
         ("I prefer tea in the evening, not coffee", "User prefers evening tea"),
     ]
     for input_text, output_text in test_messages:
-        mem.save_context(
-            {"input": input_text, "session_id": "real_test"},
-            {"output": output_text}
-        )
+        mem.save_context({"input": input_text, "session_id": "real_test"}, {"output": output_text})
     yield mem
 
 
@@ -103,22 +100,18 @@ def test_query_real_memory(memory):
     results = []
     for query, expected_keyword in test_queries:
         try:
-            ctx = memory.load_memory_variables(
-                {"input": query, "session_id": "real_test"})
+            ctx = memory.load_memory_variables({"input": query, "session_id": "real_test"})
             context = ctx.get("rtmdk_context", "")
 
             if context and context not in ("No relevant memory.", "[]"):
                 found = expected_keyword.lower() in context.lower()
                 status = "[OK]" if found else "[WARN]"
                 print(f"{status} Query: '{query}'")
-                print(
-                    f"   Keyword '{expected_keyword}': {'FOUND' if found else 'NOT FOUND'}")
-                results.append({"query": query, "found": found,
-                               "keyword": expected_keyword})
+                print(f"   Keyword '{expected_keyword}': {'FOUND' if found else 'NOT FOUND'}")
+                results.append({"query": query, "found": found, "keyword": expected_keyword})
             else:
                 print(f"[FAIL] Query: '{query}' - No context")
-                results.append({"query": query, "found": False,
-                               "keyword": expected_keyword})
+                results.append({"query": query, "found": False, "keyword": expected_keyword})
 
         except Exception as e:
             print(f"[FAIL] Query FAILED: '{query}' - {e}")
@@ -148,7 +141,7 @@ def test_sillytavern_endpoints(memory):
             {},
             lambda: True,  # lm_studio_available
             lambda: "test-model",  # chat_model
-            "http://127.0.0.1:12345/v1"  # lm_studio_url
+            "http://127.0.0.1:12345/v1",  # lm_studio_url
         )
 
         print("[OK] SillyTavern router created successfully")
@@ -156,10 +149,7 @@ def test_sillytavern_endpoints(memory):
 
         # Check all expected routes exist
         route_paths = [route.path for route in router.routes]
-        expected_paths = [
-            "/v1/generate",
-            "/api/v1/generate",
-            "/v1/completions"]
+        expected_paths = ["/v1/generate", "/api/v1/generate", "/v1/completions"]
 
         for path in expected_paths:
             if any(path in rp for rp in route_paths):
@@ -192,10 +182,7 @@ def test_health_endpoint():
         memory = RTMDKMemory(config=config, embedder=embedder)
 
         # Add a node to test node count
-        memory.save_context(
-            {"input": "test health", "session_id": "test"},
-            {"output": "test output"}
-        )
+        memory.save_context({"input": "test health", "session_id": "test"}, {"output": "test output"})
 
         router = create_ux_router(memory, {})
 
@@ -205,7 +192,7 @@ def test_health_endpoint():
         # Check health route exists
         health_route = None
         for route in router.routes:
-            if hasattr(route, 'path') and '/health' in route.path:
+            if hasattr(route, "path") and "/health" in route.path:
                 health_route = route
                 break
 
@@ -219,6 +206,7 @@ def test_health_endpoint():
     except Exception as e:
         print(f"[FAIL] Health endpoint FAILED: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -239,8 +227,7 @@ def test_backup_restore(memory):
         # Export
         node_count_before = len(memory.field.nodes)
         memory.export_field(save_path)
-        print(
-            f"[OK] Memory exported: {node_count_before} nodes, {os.path.getsize(save_path)} bytes")
+        print(f"[OK] Memory exported: {node_count_before} nodes, {os.path.getsize(save_path)} bytes")
 
         # Import
         embedder = LMStudioEmbedder()
@@ -249,8 +236,9 @@ def test_backup_restore(memory):
 
         print(f"[OK] Memory imported: {node_count_after} nodes")
 
-        assert node_count_before == node_count_after, \
-            f"Node count mismatch: {node_count_before} before, {node_count_after} after"
+        assert (
+            node_count_before == node_count_after
+        ), f"Node count mismatch: {node_count_before} before, {node_count_after} after"
 
         print("[OK] Node counts match")
 
@@ -259,8 +247,7 @@ def test_backup_restore(memory):
         node1 = memory.field.nodes[first_nid]
         node2 = memory2.field.nodes[first_nid]
 
-        assert node1.content.get("text") == node2.content.get(
-            "text"), "Content mismatch"
+        assert node1.content.get("text") == node2.content.get("text"), "Content mismatch"
         print("[OK] Node content verified")
 
         return True
@@ -270,6 +257,7 @@ def test_backup_restore(memory):
         return False
     finally:
         import shutil
+
         try:
             shutil.rmtree(temp_dir)
         except Exception:
@@ -317,6 +305,7 @@ def run_all_real_tests():
         print(f"[FAIL] TEST FAILED: {e}")
         print("=" * 70)
         import traceback
+
         traceback.print_exc()
         all_passed = False
 

@@ -5,6 +5,7 @@ It is a flat greedy graph index with O(N) insertion and O(N) search in the worst
 The class was historically named HNSWIndex but has been renamed to reflect its
 actual algorithm. HNSWIndex remains available as a backward-compatible alias.
 """
+
 from __future__ import annotations
 
 from typing import Dict, List
@@ -31,18 +32,17 @@ class NaiveGraphIndex:
         self.graph[node_id] = []
         if len(self.positions) <= 1:
             return
-        candidates = [c for c in list(
-            self.positions.keys()) if c != node_id][:self.ef_construction]
+        candidates = [c for c in list(self.positions.keys()) if c != node_id][: self.ef_construction]
         if candidates:
             cand_pos = np.array([self.positions[c] for c in candidates])
             dists = np.linalg.norm(cand_pos - pos, axis=1)
-            nearest = [candidates[i] for i in np.argsort(dists)[:self.m]]
+            nearest = [candidates[i] for i in np.argsort(dists)[: self.m]]
             self.graph[node_id] = nearest
             for nb in nearest:
                 if nb in self.graph:
                     self.graph[nb].append(node_id)
                     if len(self.graph[nb]) > self.m * 2:
-                        self.graph[nb] = self.graph[nb][-self.m:]
+                        self.graph[nb] = self.graph[nb][-self.m :]
 
     def insert_batch(self, node_ids: List[str], positions: NDArray):
         for nid, pos in zip(node_ids, positions):
@@ -63,19 +63,14 @@ class NaiveGraphIndex:
         for _ in range(min(self.ef_construction, len(self.positions))):
             best = min(
                 (c for c in candidates - visited),
-                key=lambda c: np.linalg.norm(
-                    self.positions[c] - query_pos),
-                default=None)
+                key=lambda c: np.linalg.norm(self.positions[c] - query_pos),
+                default=None,
+            )
             if best is None:
                 break
             visited.add(best)
             candidates.update(self.graph.get(best, []))
-        return sorted(
-            candidates,
-            key=lambda nid: np.linalg.norm(
-                self.positions[nid] -
-                query_pos))[
-            :top_k]
+        return sorted(candidates, key=lambda nid: np.linalg.norm(self.positions[nid] - query_pos))[:top_k]
 
 
 # Backward-compatible alias

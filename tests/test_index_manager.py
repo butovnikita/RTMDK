@@ -1,6 +1,6 @@
 """Unit tests for IndexManager (HNSW + BM25 + shard routing)."""
+
 import numpy as np
-import pytest
 
 from rtmdk.memory.config import RTMDKConfig
 from rtmdk.memory.index_manager import IndexManager

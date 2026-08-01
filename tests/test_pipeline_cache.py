@@ -1,7 +1,6 @@
 """Tests for query cache pipeline stages."""
 
 import numpy as np
-import pytest
 
 from rtmdk.memory.core import RTMDKMemory
 from rtmdk.memory.config import RTMDKConfig
@@ -11,15 +10,18 @@ from rtmdk.pipeline.base import PipelineContext
 
 def _make_embedder(dim: int = 64):
     def embed(text: str) -> np.ndarray:
-        h = hash(text) % (2 ** 32)
+        h = hash(text) % (2**32)
         rng = np.random.default_rng(h)
         return rng.standard_normal(dim, dtype=np.float32)
+
     return embed
 
 
 def _make_memory(dim: int = 64, num_docs: int = 10, cache_enabled: bool = True):
     cfg = RTMDKConfig(
-        latent_dim=dim, embedding_dim=dim, top_k=5,
+        latent_dim=dim,
+        embedding_dim=dim,
+        top_k=5,
         query_cache_size=100 if cache_enabled else 0,
         query_cache_ttl=3600,
     )
@@ -70,7 +72,6 @@ class TestQueryCachePipelineStages:
         # But we need to check metrics to see if stages were skipped
         stage_names = [m.name for m in ctx2.metrics]
         if "query_cache_check" in stage_names:
-            cache_metric = next(m for m in ctx2.metrics if m.name == "query_cache_check")
             # If hit, there should be few stages after cache check
             if ctx2.skip_remaining:
                 assert len(ctx2.metrics) <= 2  # cache_check + maybe cache_save

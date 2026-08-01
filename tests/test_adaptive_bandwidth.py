@@ -1,6 +1,6 @@
 """Tests for AdaptiveBandwidthOptimizer."""
+
 import numpy as np
-import pytest
 
 from rtmdk.support.adaptive_bandwidth import AdaptiveBandwidthOptimizer
 
@@ -16,7 +16,7 @@ class TestAdaptiveBandwidthOptimizer:
         assert not opt.should_optimize()  # 2
         assert not opt.should_optimize()  # 3
         assert not opt.should_optimize()  # 4
-        assert opt.should_optimize()      # 5
+        assert opt.should_optimize()  # 5
 
     def test_optimize_returns_bandwidth(self):
         opt = AdaptiveBandwidthOptimizer(latent_dim=64, n_candidates=4)

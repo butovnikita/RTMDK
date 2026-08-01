@@ -11,14 +11,16 @@ Usage:
 
 Optional dependency: opentelemetry-api
 """
+
 from __future__ import annotations
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from rtmdk.pipeline.base import PipelineContext, PipelineStage
 
 try:
     from opentelemetry import trace
     from opentelemetry.trace import Status, StatusCode
+
     _TRACING_AVAILABLE = True
 except ImportError:
     _TRACING_AVAILABLE = False
@@ -64,9 +66,7 @@ class PipelineTracer:
 
                 # Add breaker state if present
                 if stage.circuit_breaker is not None:
-                    span.set_attribute(
-                        "pipeline.breaker_state", stage.circuit_breaker.state.value
-                    )
+                    span.set_attribute("pipeline.breaker_state", stage.circuit_breaker.state.value)
 
                 # Check if stage degraded
                 latest = ctx.metrics[-1] if ctx.metrics else None
@@ -123,7 +123,5 @@ class PipelineTracer:
                 "pipeline.total_latency_ms",
                 round(sum(m.latency_ms for m in ctx.metrics), 3),
             )
-            parent_span.set_attribute(
-                "pipeline.degraded_stages", ",".join(ctx.degraded_stages)
-            )
+            parent_span.set_attribute("pipeline.degraded_stages", ",".join(ctx.degraded_stages))
             return ctx

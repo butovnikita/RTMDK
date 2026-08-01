@@ -1,4 +1,5 @@
 """Unit tests for ResonanceEngine."""
+
 import numpy as np
 import pytest
 
@@ -60,8 +61,7 @@ def test_batch_response_numpy():
     amps = np.ones(3, dtype=np.float32)
     sals = np.ones(3, dtype=np.float32)
 
-    out = engine.batch_response_numpy(
-        query_latents, query_phases, positions, phases, amps, sals)
+    out = engine.batch_response_numpy(query_latents, query_phases, positions, phases, amps, sals)
     assert out.shape == (1, 3)
     assert np.allclose(out, 1.0)
 
@@ -78,7 +78,7 @@ def test_chunk_response():
     query = np.random.randn(8).astype(np.float32)
 
     out = engine.chunk_response(
-        positions, phases, amps, sals, mw, gates, cboost,
-        query, 0.0, bw=1.0, use_gates=False, use_causal=False)
+        positions, phases, amps, sals, mw, gates, cboost, query, 0.0, bw=1.0, use_gates=False, use_causal=False
+    )
     assert out.shape == (100,)
     assert out.dtype == np.float32

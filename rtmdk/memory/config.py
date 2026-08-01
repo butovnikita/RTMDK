@@ -1114,7 +1114,8 @@ class RTMDKConfig:
             and getattr(self, "matryoshka_hnsw_dim", self.core.latent_dim) >= self.core.embedding_dim
         ):
             warnings.append(
-                f"matryoshka_hnsw_dim ({getattr(self, 'matryoshka_hnsw_dim', self.core.latent_dim)}) >= embedding_dim ({self.core.embedding_dim}). "
+                f"matryoshka_hnsw_dim ({getattr(self, 'matryoshka_hnsw_dim', self.core.latent_dim)})"
+                f" >= embedding_dim ({self.core.embedding_dim}). "
                 "No actual truncation will occur."
             )
         # Check conformal without calibration data source
@@ -1138,7 +1139,8 @@ class RTMDKConfig:
             )
         if prod.pipeline_breaker_latency_violation_threshold < 1:
             warnings.append(
-                f"pipeline_breaker_latency_violation_threshold={prod.pipeline_breaker_latency_violation_threshold} but must be >= 1. "
+                f"pipeline_breaker_latency_violation_threshold="
+                f"{prod.pipeline_breaker_latency_violation_threshold} but must be >= 1. "
                 "Latency-based breaker will not trip."
             )
         if prod.pipeline_breaker_recovery_timeout_ms < 1000:

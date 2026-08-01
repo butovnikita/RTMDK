@@ -1,6 +1,7 @@
 """Prometheus-compatible metrics export for RTMDK pipeline."""
+
 from __future__ import annotations
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 
 def to_prometheus_format(ctx_dict: Dict[str, Any]) -> str:
@@ -40,8 +41,6 @@ def to_prometheus_format(ctx_dict: Dict[str, Any]) -> str:
         latency = stage.get("latency_ms", 0.0)
         error = "1" if stage.get("error") else "0"
         degraded = "1" if stage.get("degraded") else "0"
-        lines.append(
-            f'rtmdk_stage_latency_ms{{stage="{name}",error="{error}",degraded="{degraded}"}} {latency}'
-        )
+        lines.append(f'rtmdk_stage_latency_ms{{stage="{name}",error="{error}",degraded="{degraded}"}} {latency}')
 
     return "\n".join(lines) + "\n"

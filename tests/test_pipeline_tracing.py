@@ -1,7 +1,5 @@
 """Tests for pipeline OpenTelemetry tracing."""
 
-import pytest
-
 from rtmdk.pipeline.base import PipelineStage, PipelineContext
 from rtmdk.pipeline.executor import PipelineExecutor
 from rtmdk.pipeline.tracing import PipelineTracer, _TRACING_AVAILABLE

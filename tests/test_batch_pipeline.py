@@ -1,4 +1,5 @@
 """Tests for batch pipeline execution."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -24,7 +25,7 @@ def memory():
     )
 
     def embed(text: str) -> np.ndarray:
-        h = hash(text) % (2 ** 32)
+        h = hash(text) % (2**32)
         r = np.random.default_rng(h)
         return r.standard_normal(64).astype(np.float32)
 

@@ -11,10 +11,10 @@ Useful for:
 - Rate-limiting by cost, not just RPS
 - Showback / chargeback in multi-tenant deployments
 """
+
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
-import time
 import logging
 
 logger = logging.getLogger(__name__)
@@ -56,12 +56,12 @@ class PipelineCostAnalyzer:
     # Default cost model: cost units per stage
     # 1 unit ≈ $0.0001 (roughly 1 SBERT inference on CPU)
     DEFAULT_COST_RATES: Dict[str, float] = {
-        "embed": 0.50,      # GPU/CPU intensive
-        "route": 0.01,      # Negligible
-        "retrieve": 0.02,   # Vector search
-        "rerank": 0.30,     # Cross-encoder or sentence model
+        "embed": 0.50,  # GPU/CPU intensive
+        "route": 0.01,  # Negligible
+        "retrieve": 0.02,  # Vector search
+        "rerank": 0.30,  # Cross-encoder or sentence model
         "calibrate": 0.01,  # Simple arithmetic
-        "explain": 0.15,    # Template or small LLM call
+        "explain": 0.15,  # Template or small LLM call
     }
 
     def __init__(self, cost_rates: Optional[Dict[str, float]] = None):
@@ -117,8 +117,7 @@ class PipelineCostAnalyzer:
             "total_latency_ms": round(total_latency, 3),
             "avg_latency_ms": round(total_latency / len(history), 3),
             "cost_by_stage": {
-                stage: round(sum(h.stage_costs.get(stage, 0.0) for h in history), 6)
-                for stage in self.cost_rates.keys()
+                stage: round(sum(h.stage_costs.get(stage, 0.0) for h in history), 6) for stage in self.cost_rates.keys()
             },
         }
 

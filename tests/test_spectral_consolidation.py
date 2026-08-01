@@ -13,16 +13,18 @@ Covers:
 import numpy as np
 
 from rtmdk.memory.spectral import (
-    _build_affinity, _normalized_laplacian, _eigengap_k,
-    _kmeans_1d, spectral_cluster_nodes,
+    _build_affinity,
+    _normalized_laplacian,
+    _eigengap_k,
+    _kmeans_1d,
+    spectral_cluster_nodes,
 )
 from rtmdk import RTMDKConfig, RTMDKField
 
 
 class TestSpectralUtilities:
     def test_affinity_symmetric_and_diagonal_zero(self):
-        positions = np.array(
-            [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]], dtype=np.float32)
+        positions = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]], dtype=np.float32)
         phases = np.array([0.0, 0.5, 1.0], dtype=np.float32)
         W = _build_affinity(positions, phases, sigma=1.0)
         assert W.shape == (3, 3)
@@ -75,13 +77,19 @@ class TestSpectralUtilities:
 
     def test_spectral_cluster_nodes_produces_clusters(self):
         # Two clear clusters
-        positions = np.array([
-            [0.0, 0.0], [0.1, 0.0], [0.0, 0.1],
-            [5.0, 0.0], [5.1, 0.0], [5.0, 0.1],
-        ], dtype=np.float32)
+        positions = np.array(
+            [
+                [0.0, 0.0],
+                [0.1, 0.0],
+                [0.0, 0.1],
+                [5.0, 0.0],
+                [5.1, 0.0],
+                [5.0, 0.1],
+            ],
+            dtype=np.float32,
+        )
         phases = np.array([0.0, 0.1, 0.2, 3.0, 3.1, 3.2], dtype=np.float32)
-        result = spectral_cluster_nodes(
-            positions, phases, max_clusters=3, sigma=1.0)
+        result = spectral_cluster_nodes(positions, phases, max_clusters=3, sigma=1.0)
         assert result is not None
         # Should discover 2 clusters
         assert len(result) >= 2
@@ -104,22 +112,12 @@ class TestSpectralConsolidationIntegration:
         # Two dense clusters to ensure spectral clustering finds structure
         for i in range(n_nodes // 2):
             pos = rng.normal(0, 0.1, dim).astype(np.float32)
-            nid = field.add_node(
-                pos,
-                content={
-                    "text": f"a{i}"},
-                phase=0.0,
-                skip_projection=True)
+            nid = field.add_node(pos, content={"text": f"a{i}"}, phase=0.0, skip_projection=True)
             field.nodes[nid].amplitude = 1.0
             field.nodes[nid].salience = 1.0
         for i in range(n_nodes // 2):
             pos = rng.normal(3.0, 0.1, dim).astype(np.float32)
-            nid = field.add_node(
-                pos,
-                content={
-                    "text": f"b{i}"},
-                phase=1.0,
-                skip_projection=True)
+            nid = field.add_node(pos, content={"text": f"b{i}"}, phase=1.0, skip_projection=True)
             field.nodes[nid].amplitude = 1.0
             field.nodes[nid].salience = 1.0
         field._build_node_cache()
@@ -171,12 +169,7 @@ class TestSpectralConsolidationIntegration:
         for i in range(12):
             pos = rng.normal(0, 0.1, 4).astype(np.float32)
             pos = pos / (np.linalg.norm(pos) + 1e-8) * 0.3  # inside ball
-            nid = field.add_node(
-                pos,
-                content={
-                    "text": f"n{i}"},
-                phase=0.0,
-                skip_projection=True)
+            nid = field.add_node(pos, content={"text": f"n{i}"}, phase=0.0, skip_projection=True)
             field.nodes[nid].amplitude = 1.0
             field.nodes[nid].salience = 1.0
         field._build_node_cache()

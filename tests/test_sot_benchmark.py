@@ -66,8 +66,10 @@ def test_sot_vs_sbert_baseline():
 
     texts = [r["query"] + " " + r["answer"] for r in data]
     field_sot.sot_bootstrap(
-        texts, teacher_model="all-MiniLM-L6-v2",
-        fit_projection_only=False, n_epochs=5,
+        texts,
+        teacher_model="all-MiniLM-L6-v2",
+        fit_projection_only=False,
+        n_epochs=5,
     )
 
     for rec in data:

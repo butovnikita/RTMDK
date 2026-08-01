@@ -1,4 +1,5 @@
 """Result explainability: why was this memory retrieved?"""
+
 from __future__ import annotations
 from typing import Dict, List, Tuple, Any
 
@@ -134,8 +135,7 @@ class QueryIntentClassifier:
             r"\b(compare|difference between|versus|vs\.|pros and cons)\b",
         ],
         "conversational": [
-            r"\b(how are you|hello|hi |hey |good morning|good evening|"
-            r"thanks|thank you|bye|goodbye|see you)\b",
+            r"\b(how are you|hello|hi |hey |good morning|good evening|" r"thanks|thank you|bye|goodbye|see you)\b",
         ],
         "factual": [
             r"\b(what is|what are|what was|who is|who was|who wrote|who invented|"
@@ -147,9 +147,9 @@ class QueryIntentClassifier:
     def __init__(self, llm_client=None):
         self.llm_client = llm_client
         import re
+
         self._compiled = {
-            intent: [re.compile(p, re.IGNORECASE) for p in patterns]
-            for intent, patterns in self.PATTERNS.items()
+            intent: [re.compile(p, re.IGNORECASE) for p in patterns] for intent, patterns in self.PATTERNS.items()
         }
 
     def classify(self, query: str) -> str:

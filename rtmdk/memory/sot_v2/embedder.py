@@ -32,7 +32,6 @@ from __future__ import annotations
 
 import logging
 import math
-from collections import defaultdict
 from typing import Dict, List, Optional
 
 import numpy as np
@@ -211,8 +210,5 @@ class SpectralEmbedder:
         self.window_size = state["window_size"]
         self.pmi_shift = state["pmi_shift"]
         self.min_count = state["min_count"]
-        self.embeddings = {
-            int(k): np.array(v, dtype=np.float32)
-            for k, v in state["embeddings"].items()
-        }
+        self.embeddings = {int(k): np.array(v, dtype=np.float32) for k, v in state["embeddings"].items()}
         return self

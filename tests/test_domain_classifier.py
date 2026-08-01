@@ -1,6 +1,5 @@
 """Tests for rtmdk.utils.domain_classifier."""
 
-import pytest
 from rtmdk.utils.domain_classifier import detect_domain, detect_domain_batch, get_domain_stats
 
 
@@ -23,6 +22,7 @@ class TestDomainClassifier:
     def test_get_domain_stats(self):
         from rtmdk.memory.core import RTMDKConfig, RTMDKMemory
         import numpy as np
+
         cfg = RTMDKConfig(latent_dim=64)
         mem = RTMDKMemory(config=cfg, embedder=lambda t: np.random.randn(768).astype(np.float32))
         mem.save_context({"input": "contract law", "session_id": "s1"}, {"output": ""})

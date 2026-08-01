@@ -77,9 +77,7 @@ class ResonanceRetriever:
             phases: Optional array of shape (n_tokens,) — token phases in radians.
         """
         if token_embs.ndim != 2 or token_embs.shape[1] != self.latent_dim:
-            raise ValueError(
-                f"token_embs must be (n_tokens, {self.latent_dim}), got {token_embs.shape}"
-            )
+            raise ValueError(f"token_embs must be (n_tokens, {self.latent_dim}), got {token_embs.shape}")
         n = token_embs.shape[0]
         if amplitudes is None:
             amplitudes = np.ones(n, dtype=np.float32)

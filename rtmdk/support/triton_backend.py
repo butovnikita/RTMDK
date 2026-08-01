@@ -5,6 +5,7 @@ GPU acceleration with a placeholder for future Triton kernel integration.
 The class has been renamed to GPUBackend to reflect its actual implementation.
 TritonBackend remains available as a backward-compatible alias.
 """
+
 from __future__ import annotations
 from typing import Optional
 import numpy as np
@@ -19,15 +20,16 @@ except ImportError:
 
 
 def sparse_resonance_kernel(
-        query_latents: NDArray,
-        query_phases: NDArray,
-        node_positions: NDArray,
-        node_phases: NDArray,
-        node_amplitudes: NDArray,
-        node_saliences: NDArray,
-        bandwidth: float,
-        phase_coupling: float,
-        candidate_mask: Optional[NDArray] = None) -> NDArray:
+    query_latents: NDArray,
+    query_phases: NDArray,
+    node_positions: NDArray,
+    node_phases: NDArray,
+    node_amplitudes: NDArray,
+    node_saliences: NDArray,
+    bandwidth: float,
+    phase_coupling: float,
+    candidate_mask: Optional[NDArray] = None,
+) -> NDArray:
     """Compute sparse resonance responses.
 
     If candidate_mask is provided, only compute for masked entries.
@@ -49,18 +51,17 @@ def sparse_resonance_kernel(
     """
     if TRITON_AVAILABLE:
         return _triton_resonance(
-            query_latents, query_phases, node_positions, node_phases,
-            node_amplitudes, node_saliences, bandwidth, phase_coupling,
-            candidate_mask
+            query_latents,
+            query_phases,
+            node_positions,
+            node_phases,
+            node_amplitudes,
+            node_saliences,
+            bandwidth,
+            phase_coupling,
+            candidate_mask,
         )
     return _numpy_resonance(
-        query_latents, query_phases, node_positions, node_phases,
-        node_amplitudes, node_saliences, bandwidth, phase_coupling,
-        candidate_mask
-    )
-
-
-def _numpy_resonance(
         query_latents,
         query_phases,
         node_positions,
@@ -69,7 +70,21 @@ def _numpy_resonance(
         node_saliences,
         bandwidth,
         phase_coupling,
-        candidate_mask=None):
+        candidate_mask,
+    )
+
+
+def _numpy_resonance(
+    query_latents,
+    query_phases,
+    node_positions,
+    node_phases,
+    node_amplitudes,
+    node_saliences,
+    bandwidth,
+    phase_coupling,
+    candidate_mask=None,
+):
     """Numpy fallback — dense or sparse via mask."""
     from scipy.spatial.distance import cdist
 
@@ -81,14 +96,12 @@ def _numpy_resonance(
     spatial = np.exp(-dists / bandwidth)  # (Q, N)
 
     # Phase alignment
-    phase_diff = query_phases[:, np.newaxis] - \
-        node_phases[np.newaxis, :]  # (Q, N)
+    phase_diff = query_phases[:, np.newaxis] - node_phases[np.newaxis, :]  # (Q, N)
     phase_align = 0.5 + 0.5 * np.cos(phase_diff)
 
     # Full resonance
     response = spatial * ((1 - phase_coupling) + phase_coupling * phase_align)
-    response = response * \
-        node_amplitudes[np.newaxis, :] * node_saliences[np.newaxis, :]
+    response = response * node_amplitudes[np.newaxis, :] * node_saliences[np.newaxis, :]
 
     # Apply mask if provided
     if candidate_mask is not None:
@@ -98,15 +111,16 @@ def _numpy_resonance(
 
 
 def _triton_resonance(
-        query_latents,
-        query_phases,
-        node_positions,
-        node_phases,
-        node_amplitudes,
-        node_saliences,
-        bandwidth,
-        phase_coupling,
-        candidate_mask=None):
+    query_latents,
+    query_phases,
+    node_positions,
+    node_phases,
+    node_amplitudes,
+    node_saliences,
+    bandwidth,
+    phase_coupling,
+    candidate_mask=None,
+):
     """Triton kernel for sparse resonance computation."""
     # Note: This is a simplified Triton kernel. For production use,
     # a more sophisticated implementation with proper block tiling
@@ -163,11 +177,18 @@ class GPUBackend:
         total_ops = n_nodes * n_queries
         return total_ops > self.min_nodes_for_gpu * n_queries
 
-    def batch_resonance(self, query_latents: NDArray, query_phases: NDArray,
-                        node_positions: NDArray, node_phases: NDArray,
-                        node_amplitudes: NDArray, node_saliences: NDArray,
-                        bandwidth: float, phase_coupling: float,
-                        candidate_mask: Optional[NDArray] = None) -> NDArray:
+    def batch_resonance(
+        self,
+        query_latents: NDArray,
+        query_phases: NDArray,
+        node_positions: NDArray,
+        node_phases: NDArray,
+        node_amplitudes: NDArray,
+        node_saliences: NDArray,
+        bandwidth: float,
+        phase_coupling: float,
+        candidate_mask: Optional[NDArray] = None,
+    ) -> NDArray:
         """Compute batch resonance with auto-backend selection."""
         n_nodes = len(node_positions)
         n_queries = len(query_latents)
@@ -175,9 +196,15 @@ class GPUBackend:
         if self.should_use_gpu(n_nodes, n_queries):
             try:
                 return _triton_resonance(
-                    query_latents, query_phases, node_positions, node_phases,
-                    node_amplitudes, node_saliences, bandwidth, phase_coupling,
-                    candidate_mask
+                    query_latents,
+                    query_phases,
+                    node_positions,
+                    node_phases,
+                    node_amplitudes,
+                    node_saliences,
+                    bandwidth,
+                    phase_coupling,
+                    candidate_mask,
                 )
             except Exception as e:
                 self._fallback_reason = f"gpu error: {e}"
@@ -185,9 +212,15 @@ class GPUBackend:
 
         # Fallback to numpy
         return _numpy_resonance(
-            query_latents, query_phases, node_positions, node_phases,
-            node_amplitudes, node_saliences, bandwidth, phase_coupling,
-            candidate_mask
+            query_latents,
+            query_phases,
+            node_positions,
+            node_phases,
+            node_amplitudes,
+            node_saliences,
+            bandwidth,
+            phase_coupling,
+            candidate_mask,
         )
 
     @property

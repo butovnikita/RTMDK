@@ -2,6 +2,7 @@
 
 Learned and heuristic latent merge logic for RTMDKField consolidation.
 """
+
 from __future__ import annotations
 from typing import TYPE_CHECKING
 import numpy as np
@@ -22,15 +23,17 @@ class MergeManager:
         field = self._field
         if field.learned_consolidator is not None and field.learned_consolidator._trained:
             # Undo quantization for learned merge (needs float32 latent)
-            latent_a = field._quant.dequantize(
-                node.latent_pos, node.latent_scale, node.latent_zero_point)
-            latent_b = field._quant.dequantize(
-                partner.latent_pos, partner.latent_scale, partner.latent_zero_point)
+            latent_a = field._quant.dequantize(node.latent_pos, node.latent_scale, node.latent_zero_point)
+            latent_b = field._quant.dequantize(partner.latent_pos, partner.latent_scale, partner.latent_zero_point)
             merged = field.learned_consolidator.predict(
-                latent_a, latent_b,
-                node.phase, partner.phase,
-                node.amplitude, partner.amplitude,
-                node.salience, partner.salience,
+                latent_a,
+                latent_b,
+                node.phase,
+                partner.phase,
+                node.amplitude,
+                partner.amplitude,
+                node.salience,
+                partner.salience,
             )
             # Re-quantize
             merged_q, scale, zp = field._quant.quantize_with_meta(merged)
@@ -59,10 +62,14 @@ class MergeManager:
             lb = field._quant.dequantize(b.latent_pos, b.latent_scale, b.latent_zero_point)
             # Queries = the parent latents themselves (proxy)
             field.learned_consolidator.add_example(
-                la, lb,
+                la,
+                lb,
                 queries=[la, lb],
-                phase_a=a.phase, phase_b=b.phase,
-                amp_a=a.amplitude, amp_b=b.amplitude,
-                sal_a=a.salience, sal_b=b.salience,
+                phase_a=a.phase,
+                phase_b=b.phase,
+                amp_a=a.amplitude,
+                amp_b=b.amplitude,
+                sal_a=a.salience,
+                sal_b=b.salience,
             )
         field.learned_consolidator.train(epochs=10, lr=0.005)

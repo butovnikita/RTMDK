@@ -60,6 +60,7 @@ class Query:
     @strawberry.field
     def health(self) -> Health:
         import rtmdk.server.app as app_mod
+
         memory = getattr(app_mod, "memory", None)
         node_count = 0
         if memory and memory.field is not None:
@@ -69,6 +70,7 @@ class Query:
     @strawberry.field
     def node(self, id: str) -> Optional[MemoryNode]:
         import rtmdk.server.app as app_mod
+
         memory = getattr(app_mod, "memory", None)
         if memory is None or memory.field is None:
             return None
@@ -81,12 +83,13 @@ class Query:
         else:
             content = str(n.content)
         return MemoryNode(
-            id=n.id, content=content, salience=float(n.salience),
-            phase=float(n.phase), amplitude=float(n.amplitude))
+            id=n.id, content=content, salience=float(n.salience), phase=float(n.phase), amplitude=float(n.amplitude)
+        )
 
     @strawberry.field
     def query_pipeline(self, query: str, top_k: int = 5, session_id: Optional[str] = None) -> Optional[PipelineResult]:
         import rtmdk.server.app as app_mod
+
         memory = getattr(app_mod, "memory", None)
         if memory is None:
             return None
@@ -113,7 +116,9 @@ class Query:
             metrics = PipelineMetrics(
                 stages=stages,
                 total_latency_ms=metrics_data.get("total_latency_ms", 0.0),
-                breaker_states=str(metrics_data.get("breaker_states", {})) if metrics_data.get("breaker_states") else None,
+                breaker_states=(
+                    str(metrics_data.get("breaker_states", {})) if metrics_data.get("breaker_states") else None
+                ),
             )
             return PipelineResult(
                 query=query,
@@ -128,20 +133,27 @@ class Query:
     @strawberry.field
     def nodes(self, limit: int = 10, offset: int = 0) -> List[MemoryNode]:
         import rtmdk.server.app as app_mod
+
         memory = getattr(app_mod, "memory", None)
         if memory is None or memory.field is None:
             return []
         results = []
-        for nid in list(memory.field.nodes.keys())[offset:offset + limit]:
+        for nid in list(memory.field.nodes.keys())[offset : offset + limit]:
             n = memory.field.nodes[nid]
             content = ""
             if isinstance(n.content, dict):
                 content = n.content.get("text", str(n.content))
             else:
                 content = str(n.content)
-            results.append(MemoryNode(
-                id=n.id, content=content, salience=float(n.salience),
-                phase=float(n.phase), amplitude=float(n.amplitude)))
+            results.append(
+                MemoryNode(
+                    id=n.id,
+                    content=content,
+                    salience=float(n.salience),
+                    phase=float(n.phase),
+                    amplitude=float(n.amplitude),
+                )
+            )
         return results
 
 
@@ -162,10 +174,12 @@ class Mutation:
     @strawberry.mutation
     def create_node(self, content: str, salience: Optional[float] = None) -> MemoryNode:
         import rtmdk.server.app as app_mod
+
         memory = getattr(app_mod, "memory", None)
         if memory is None or memory.field is None:
             raise Exception("Memory not initialized")
         import numpy as np
+
         nid = memory.add_node(
             embedding=np.zeros(memory.field.cfg.latent_dim, dtype=np.float32),
             content={"text": content},
@@ -174,12 +188,13 @@ class Mutation:
         if salience is not None:
             n.salience = salience
         return MemoryNode(
-            id=n.id, content=content, salience=float(n.salience),
-            phase=float(n.phase), amplitude=float(n.amplitude))
+            id=n.id, content=content, salience=float(n.salience), phase=float(n.phase), amplitude=float(n.amplitude)
+        )
 
     @strawberry.mutation
     def delete_node(self, id: str) -> bool:
         import rtmdk.server.app as app_mod
+
         memory = getattr(app_mod, "memory", None)
         if memory is None or memory.field is None:
             raise Exception("Memory not initialized")
@@ -194,9 +209,12 @@ class Mutation:
 @strawberry.type
 class Subscription:
     @strawberry.subscription
-    async def pipeline_stream(self, query: str, top_k: int = 5, session_id: Optional[str] = None) -> AsyncGenerator[PipelineStreamEvent, None]:
+    async def pipeline_stream(
+        self, query: str, top_k: int = 5, session_id: Optional[str] = None
+    ) -> AsyncGenerator[PipelineStreamEvent, None]:
         """Stream pipeline stage events via GraphQL subscription."""
         import rtmdk.server.app as app_mod
+
         memory = getattr(app_mod, "memory", None)
         if memory is None or memory.field is None:
             raise Exception("Memory not initialized")

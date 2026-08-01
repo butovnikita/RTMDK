@@ -2,6 +2,7 @@
 
 Enables offline analysis of retrieval performance per stage.
 """
+
 from __future__ import annotations
 import json
 import os
@@ -87,10 +88,10 @@ class PipelineMetricsStore:
 
         # Filter by time
         if since is not None:
-            from datetime import datetime, timezone
+            from datetime import datetime
+
             records = [
-                r for r in records
-                if datetime.fromisoformat(r.get("ts", "1970-01-01T00:00:00")).timestamp() >= since
+                r for r in records if datetime.fromisoformat(r.get("ts", "1970-01-01T00:00:00")).timestamp() >= since
             ]
 
         total_latency = [r.get("total_latency_ms", 0) for r in records]

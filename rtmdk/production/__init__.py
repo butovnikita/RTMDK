@@ -47,9 +47,7 @@ def __getattr__(name):
         "LLMEvaluator": "llm_eval",
     }
     if name in _lazy_map:
-        module = __import__(
-            f"rtmdk.production.{_lazy_map[name]}",
-            fromlist=[name])
+        module = __import__(f"rtmdk.production.{_lazy_map[name]}", fromlist=[name])
         return getattr(module, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
@@ -60,7 +58,8 @@ __all__ = [
     "BackupManager",
     "MemoryExporter",
     "MemoryAnalytics",
-    "AnalyticsStore", "EventType",
+    "AnalyticsStore",
+    "EventType",
     "HealthMonitor",
     "EventSystem",
     "TaggingSystem",
@@ -73,12 +72,25 @@ __all__ = [
     "MemoryRefresh",
     "EmbeddingCache",
     # Lazy
-    "HybridRetriever", "ConfidenceAwareFallback", "QueryExpander",
-    "AdaptiveDepthRetriever", "TemporalDecayLearner", "CausalAugmentedRetriever",
-    "MetaRetrievalController", "AdvancedRTMDKRetriever",
-    "OfflineDreamer", "MultiTenantRouter", "ABTesting",
-    "CircuitBreaker", "OnboardingWizard", "ConversationReplay",
-    "MemoryDif", "LLMEvaluator",
+    "HybridRetriever",
+    "ConfidenceAwareFallback",
+    "QueryExpander",
+    "AdaptiveDepthRetriever",
+    "TemporalDecayLearner",
+    "CausalAugmentedRetriever",
+    "MetaRetrievalController",
+    "AdvancedRTMDKRetriever",
+    "OfflineDreamer",
+    "MultiTenantRouter",
+    "ABTesting",
+    "CircuitBreaker",
+    "OnboardingWizard",
+    "ConversationReplay",
+    "MemoryDif",
+    "LLMEvaluator",
     # LangChain integration (lazy to avoid hard dependency)
-    "RTMDKRetriever", "RTMDKChatMessageHistory", "RTMDKVectorStore", "RTMDKDocument",
+    "RTMDKRetriever",
+    "RTMDKChatMessageHistory",
+    "RTMDKVectorStore",
+    "RTMDKDocument",
 ]

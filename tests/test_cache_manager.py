@@ -1,6 +1,6 @@
 """Unit tests for NodeCacheManager."""
+
 import numpy as np
-import pytest
 
 from rtmdk.memory.cache_manager import NodeCacheManager
 from rtmdk.memory.config import RTMDKConfig

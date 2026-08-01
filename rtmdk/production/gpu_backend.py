@@ -68,13 +68,25 @@ class GPUBackend:
         """Compute batch resonance with auto-backend selection."""
         if self._inner is not None:
             return self._inner.batch_resonance(
-                query_latents, query_phases, node_positions, node_phases,
-                node_amplitudes, node_saliences, bandwidth, phase_coupling,
+                query_latents,
+                query_phases,
+                node_positions,
+                node_phases,
+                node_amplitudes,
+                node_saliences,
+                bandwidth,
+                phase_coupling,
                 candidate_mask,
             )
         return _numpy_resonance(
-            query_latents, query_phases, node_positions, node_phases,
-            node_amplitudes, node_saliences, bandwidth, phase_coupling,
+            query_latents,
+            query_phases,
+            node_positions,
+            node_phases,
+            node_amplitudes,
+            node_saliences,
+            bandwidth,
+            phase_coupling,
             candidate_mask,
         )
 
@@ -83,6 +95,7 @@ class GPUBackend:
         if not self.available:
             return np.linalg.norm(positions - query, axis=1)
         import torch
+
         t_query = torch.from_numpy(query).cuda()
         t_positions = torch.from_numpy(positions).cuda()
         return torch.norm(t_positions - t_query, dim=1).cpu().numpy()
@@ -92,6 +105,7 @@ class GPUBackend:
         n = vectors.shape[0]
         if self.should_use_gpu(n):
             import torch
+
             t_v = torch.from_numpy(vectors).cuda()
             t_m = torch.from_numpy(matrix).cuda()
             return (t_v @ t_m.T).cpu().numpy()

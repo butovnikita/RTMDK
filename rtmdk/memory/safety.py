@@ -1,10 +1,9 @@
 """Safety features: rollback, poisoned memory detection, audit trail."""
+
 from __future__ import annotations
 import copy
-import json
 import time
 from typing import Dict, List, Optional, Any
-import numpy as np
 
 
 class MemorySnapshot:
@@ -66,6 +65,7 @@ class RollbackManager:
         # Restore nodes
         for nid, content in snapshot.nodes.items():
             from rtmdk.nodes import MemoryNode
+
             node = MemoryNode(id=nid, content=content)
             if nid in snapshot.embeddings:
                 node._embedding = snapshot.embeddings[nid]
@@ -77,10 +77,7 @@ class RollbackManager:
 
     def list_snapshots(self) -> List[Dict[str, Any]]:
         """Return list of available snapshots."""
-        return [
-            {"timestamp": s.timestamp, "node_count": len(s.nodes)}
-            for s in self._snapshots
-        ]
+        return [{"timestamp": s.timestamp, "node_count": len(s.nodes)} for s in self._snapshots]
 
 
 class PoisonedMemoryDetector:
@@ -118,11 +115,13 @@ class PoisonedMemoryDetector:
                 texts.append(text)
 
             if flags:
-                suspicious.append({
-                    "node_id": nid,
-                    "flags": flags,
-                    "content_preview": text[:100],
-                })
+                suspicious.append(
+                    {
+                        "node_id": nid,
+                        "flags": flags,
+                        "content_preview": text[:100],
+                    }
+                )
 
         return suspicious
 

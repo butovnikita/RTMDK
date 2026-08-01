@@ -8,16 +8,19 @@ from rtmdk.memory.config import RTMDKConfig
 
 def _make_embedder(dim: int = 64):
     def embed(text: str) -> np.ndarray:
-        h = hash(text) % (2 ** 32)
+        h = hash(text) % (2**32)
         rng = np.random.default_rng(h)
         return rng.standard_normal(dim, dtype=np.float32)
+
     return embed
 
 
 class TestRetrieveNodesPipelineMigration:
     def test_retrieve_nodes_uses_pipeline_when_enabled(self):
         cfg = RTMDKConfig(
-            latent_dim=64, embedding_dim=64, top_k=5,
+            latent_dim=64,
+            embedding_dim=64,
+            top_k=5,
             pipeline_enabled=True,
             pipeline_breaker_enabled=False,
         )
@@ -33,7 +36,9 @@ class TestRetrieveNodesPipelineMigration:
 
     def test_retrieve_nodes_legacy_when_disabled(self):
         cfg = RTMDKConfig(
-            latent_dim=64, embedding_dim=64, top_k=5,
+            latent_dim=64,
+            embedding_dim=64,
+            top_k=5,
             pipeline_enabled=False,
         )
         mem = RTMDKMemory(config=cfg, embedder=_make_embedder(64))
@@ -48,7 +53,9 @@ class TestRetrieveNodesPipelineMigration:
 
     def test_retrieve_nodes_fallback_to_legacy_with_sparse_vec(self):
         cfg = RTMDKConfig(
-            latent_dim=64, embedding_dim=64, top_k=5,
+            latent_dim=64,
+            embedding_dim=64,
+            top_k=5,
             pipeline_enabled=True,
             pipeline_breaker_enabled=False,
         )
@@ -65,7 +72,9 @@ class TestRetrieveNodesPipelineMigration:
 
     def test_retrieve_nodes_pipeline_metrics_available(self):
         cfg = RTMDKConfig(
-            latent_dim=64, embedding_dim=64, top_k=5,
+            latent_dim=64,
+            embedding_dim=64,
+            top_k=5,
             pipeline_enabled=True,
             pipeline_breaker_enabled=False,
         )

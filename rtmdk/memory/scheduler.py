@@ -3,6 +3,7 @@
 Extracted from RTMDKField to reduce monolithic field.py size.
 Delegates all actual work back to the parent field or its sub-managers.
 """
+
 from __future__ import annotations
 
 import logging
@@ -54,7 +55,7 @@ class StepScheduler:
         tier_counts: Dict[str, int] = {}
         tier_amplitudes: Dict[str, List[float]] = {}
         for node in field.nodes.values():
-            tier = getattr(node, 'tier', 'semantic')
+            tier = getattr(node, "tier", "semantic")
             tier_counts[tier] = tier_counts.get(tier, 0) + 1
             dk = cfg.tier_decay.get(tier, cfg.decay_rate)
             if field.learnable_kernel:
@@ -77,25 +78,25 @@ class StepScheduler:
             field._state_history.append(state)
             if len(field._state_history) >= 2:
                 fe = field._circuit_breakers["PredictorFreeEnergy"].call(
-                    field.predictor.compute_free_energy,
-                    field._state_history[-2], field._state_history[-1])
+                    field.predictor.compute_free_energy, field._state_history[-2], field._state_history[-1]
+                )
                 field.stats["free_energy"] = fe
-                field.stats["prediction_error"] = float(np.mean(
-                    (field.predictor.predict(field._state_history[-2]) - field._state_history[-1]) ** 2))
+                field.stats["prediction_error"] = float(
+                    np.mean((field.predictor.predict(field._state_history[-2]) - field._state_history[-1]) ** 2)
+                )
                 field.stats["surprise_level"] = float(np.clip(fe, 0, 1))
                 if fe > 0.3 and n_nodes > 10:
                     field._circuit_breakers["Consolidate"].call(field.consolidate)
                 if fe > 0.01:
                     field._circuit_breakers["PredictorUpdate"].call(
-                        field.predictor.update,
-                        field._state_history[-2], field._state_history[-1],
-                        lr=cfg.pc_lr)
+                        field.predictor.update, field._state_history[-2], field._state_history[-1], lr=cfg.pc_lr
+                    )
 
         # Max-nodes pruning
         if cfg.max_nodes and n_nodes > cfg.max_nodes and step % 10 == 0:
             sorted_nodes = sorted(
-                field.node_index,
-                key=lambda nid: field.nodes[nid].salience * field.nodes[nid].amplitude)
+                field.node_index, key=lambda nid: field.nodes[nid].salience * field.nodes[nid].amplitude
+            )
             n_pruned = n_nodes - cfg.max_nodes
             pruned_ids = set(sorted_nodes[:n_pruned])
             if pruned_ids:
@@ -126,13 +127,17 @@ class StepScheduler:
             field.stats["meta_phase_coupling"] = field.meta_kernel.get_phase_coupling()
 
         # Meta-controller
-        if backpressure_ok and field.meta_controller and field.meta_controller.should_optimize() \
-                and step % cfg.meta_opt_freq == 0:
-            best_params = field._circuit_breakers["MetaControllerOptimize"].call(
-                field.meta_controller.optimize, field)
+        if (
+            backpressure_ok
+            and field.meta_controller
+            and field.meta_controller.should_optimize()
+            and step % cfg.meta_opt_freq == 0
+        ):
+            best_params = field._circuit_breakers["MetaControllerOptimize"].call(field.meta_controller.optimize, field)
             if best_params:
                 field._circuit_breakers["MetaControllerApply"].call(
-                    field.meta_controller.apply_params, field, best_params)
+                    field.meta_controller.apply_params, field, best_params
+                )
                 field.stats["meta_optimizations"] += 1
                 field.stats["meta_best_params"] = best_params
 
@@ -145,8 +150,7 @@ class StepScheduler:
                 "phase_coupling": cfg.phase_coupling,
                 "bandwidth": cfg.bandwidth,
             }
-            field._circuit_breakers["FederatedSync"].call(
-                field.federated.sync_with_peers, local_phases, local_params)
+            field._circuit_breakers["FederatedSync"].call(field.federated.sync_with_peers, local_phases, local_params)
 
         # Shard updates
         if cfg.sparse_routing and step % 100 == 0 and n_nodes > cfg.num_shards * 2:
@@ -212,23 +216,20 @@ class StepScheduler:
         if field.role_router and step % 5 == 0:
             field.role_router.update_kuramoto_phases(field.nodes)
             field.stats["n_shards"] = len(field.role_router.shards)
-            field.stats["shard_distribution"] = {
-                r: len(s.node_ids) for r, s in field.role_router.shards.items()
-            }
+            field.stats["shard_distribution"] = {r: len(s.node_ids) for r, s in field.role_router.shards.items()}
             field.stats["role_router_enabled"] = True
             field.stats["cross_shard_exchanges"] = sum(
-                s.n_cross_shard_exchanges for s in field.role_router.shards.values())
+                s.n_cross_shard_exchanges for s in field.role_router.shards.values()
+            )
 
         if step % 100 == 0:
             integrity = field._check_field_integrity()
             if integrity["n_issues"] > 0:
-                logger.warning(
-                    f"Field integrity issues at step {step}: {integrity['n_issues']} issues")
+                logger.warning(f"Field integrity issues at step {step}: {integrity['n_issues']} issues")
                 field.stats["field_integrity_issues"] = integrity["n_issues"]
 
         if step % 50 == 0:
             total = field._tension_cache_hits + field._tension_cache_misses
             field.stats["tension_cache_hits"] = field._tension_cache_hits
             field.stats["tension_cache_misses"] = field._tension_cache_misses
-            field.stats["tension_cache_hit_rate"] = (
-                field._tension_cache_hits / total) if total > 0 else 0.0
+            field.stats["tension_cache_hit_rate"] = (field._tension_cache_hits / total) if total > 0 else 0.0

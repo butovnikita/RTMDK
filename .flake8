@@ -1,3 +1,23 @@
 [flake8]
 max-line-length = 120
-exclude = .git,__pycache__,myenv,archive,dist,rtmdk/server/proto
+# E203/W503 conflict with black formatting style (slices / line breaks around operators)
+extend-ignore = E203,W503
+exclude =
+    .git,
+    __pycache__,
+    myenv,
+    .venv*,
+    archive,
+    legacy,
+    rtmdk_github,
+    node_modules,
+    # generated protobuf code
+    rtmdk/server/proto,
+per-file-ignores =
+    # core.py re-exports public API (ContextFormat, MemoryNode, ... import from here)
+    # and uses lazy in-function imports (F811 pattern)
+    rtmdk/memory/core.py: F401,F811
+    # late imports by design (helpers defined before heavy/circular imports)
+    rtmdk/memory/serialization.py: E402
+    tests/test_export.py: E402
+    tests/test_feedback_loop.py: E402

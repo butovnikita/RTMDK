@@ -7,7 +7,6 @@ Covers:
 3. State serialization
 """
 
-
 from rtmdk.support.swarm import SwarmConsensusProtocol
 
 

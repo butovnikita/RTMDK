@@ -11,12 +11,20 @@ Covers:
 - Unknown field AttributeError
 - Serialization round-trip preserves flat dict
 """
+
 import pytest
 import numpy as np
 from rtmdk.memory.config import (
-    RTMDKConfig, CoreConfig, RetrievalConfig, LearningConfig,
-    DynamicsConfig, InferenceConfig, MemorySystemConfig,
-    ProductionConfig, RoutingConfig, SOTConfig,
+    RTMDKConfig,
+    CoreConfig,
+    RetrievalConfig,
+    LearningConfig,
+    DynamicsConfig,
+    InferenceConfig,
+    MemorySystemConfig,
+    ProductionConfig,
+    RoutingConfig,
+    SOTConfig,
 )
 from rtmdk.memory.core import RTMDKField
 from rtmdk.memory.serialization import FieldSerializer
@@ -115,6 +123,7 @@ class TestHierarchicalConfig:
     def test_env_override_invalid_warns(self, monkeypatch, caplog):
         monkeypatch.setenv("RTMDK_LATENT_DIM", "not_an_int")
         import logging
+
         with caplog.at_level(logging.WARNING, logger="rtmdk"):
             cfg = RTMDKConfig()
         assert "Invalid env var RTMDK_LATENT_DIM" in caplog.text
@@ -131,6 +140,7 @@ class TestHierarchicalConfig:
 
     def test_pipeline_breaker_validation(self):
         from rtmdk.memory.config import ProductionConfig
+
         prod = ProductionConfig(
             pipeline_breaker_failure_threshold=0,
             pipeline_breaker_latency_violation_threshold=0,

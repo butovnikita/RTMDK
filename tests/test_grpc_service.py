@@ -48,8 +48,7 @@ class TestGRPCHelath:
 
     def test_create_node_unavailable(self, grpc_stub):
         with pytest.raises(grpc.RpcError) as exc_info:
-            grpc_stub.CreateNode(
-                rtmdk_pb2.CreateNodeRequest(content="hello"))
+            grpc_stub.CreateNode(rtmdk_pb2.CreateNodeRequest(content="hello"))
         assert exc_info.value.code() == grpc.StatusCode.UNAVAILABLE
 
     def test_get_node_unavailable(self, grpc_stub):

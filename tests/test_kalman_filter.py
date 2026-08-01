@@ -21,47 +21,32 @@ from rtmdk import RTMDKConfig, RTMDKField
 
 class TestKalmanFilterUnit:
     def test_init_covariance_diagonal(self):
-        kf = KalmanFilter(
-            latent_dim=8,
-            init_variance=2.0,
-            diagonal_approx=True)
+        kf = KalmanFilter(latent_dim=8, init_variance=2.0, diagonal_approx=True)
         cov = kf.init_covariance()
         assert cov.shape == (8,)
         assert np.allclose(cov, 2.0)
 
     def test_init_covariance_full(self):
-        kf = KalmanFilter(
-            latent_dim=4,
-            init_variance=0.5,
-            diagonal_approx=False)
+        kf = KalmanFilter(latent_dim=4, init_variance=0.5, diagonal_approx=False)
         cov = kf.init_covariance()
         assert cov.shape == (4, 4)
         assert np.allclose(np.diag(cov), 0.5)
         assert np.allclose(cov - np.diag(np.diag(cov)), 0)
 
     def test_predict_increases_uncertainty_diagonal(self):
-        kf = KalmanFilter(
-            latent_dim=4,
-            process_noise=0.1,
-            diagonal_approx=True)
+        kf = KalmanFilter(latent_dim=4, process_noise=0.1, diagonal_approx=True)
         cov = np.ones(4, dtype=np.float32)
         cov_new = kf.predict(cov)
         assert np.all(cov_new > cov)
 
     def test_predict_increases_uncertainty_full(self):
-        kf = KalmanFilter(
-            latent_dim=4,
-            process_noise=0.1,
-            diagonal_approx=False)
+        kf = KalmanFilter(latent_dim=4, process_noise=0.1, diagonal_approx=False)
         cov = np.eye(4, dtype=np.float32)
         cov_new = kf.predict(cov)
         assert np.all(np.diag(cov_new) > np.diag(cov))
 
     def test_update_decreases_uncertainty_diagonal(self):
-        kf = KalmanFilter(
-            latent_dim=4,
-            measurement_noise=0.1,
-            diagonal_approx=True)
+        kf = KalmanFilter(latent_dim=4, measurement_noise=0.1, diagonal_approx=True)
         x = np.zeros(4, dtype=np.float32)
         z = np.zeros(4, dtype=np.float32)
         cov = np.ones(4, dtype=np.float32)
@@ -70,10 +55,7 @@ class TestKalmanFilterUnit:
         np.testing.assert_allclose(x_new, x, atol=1e-5)
 
     def test_update_shifts_position(self):
-        kf = KalmanFilter(
-            latent_dim=2,
-            measurement_noise=0.1,
-            diagonal_approx=True)
+        kf = KalmanFilter(latent_dim=2, measurement_noise=0.1, diagonal_approx=True)
         x = np.array([0.0, 0.0], dtype=np.float32)
         z = np.array([1.0, 0.0], dtype=np.float32)
         cov = np.ones(2, dtype=np.float32)
@@ -98,10 +80,7 @@ class TestKalmanFilterUnit:
         assert kf.uncertainty_weight(cov_low) > kf.uncertainty_weight(cov_high)
 
     def test_hyperbolic_update_stays_inside_ball(self):
-        kf = KalmanFilter(
-            latent_dim=4, measurement_noise=0.1,
-            diagonal_approx=True, hyperbolic=True, ball_radius=0.85
-        )
+        kf = KalmanFilter(latent_dim=4, measurement_noise=0.1, diagonal_approx=True, hyperbolic=True, ball_radius=0.85)
         x = np.array([0.1, 0.0, 0.0, 0.0], dtype=np.float32)
         z = np.array([0.3, 0.0, 0.0, 0.0], dtype=np.float32)
         cov = np.ones(4, dtype=np.float32)
@@ -123,12 +102,7 @@ class TestKalmanFieldIntegration:
         rng = np.random.default_rng(42)
         for i in range(n_nodes):
             pos = rng.standard_normal(dim).astype(np.float32) * 0.3
-            nid = field.add_node(
-                pos,
-                content={
-                    "text": f"n{i}"},
-                phase=0.0,
-                skip_projection=True)
+            nid = field.add_node(pos, content={"text": f"n{i}"}, phase=0.0, skip_projection=True)
             field.nodes[nid].amplitude = 1.0
             field.nodes[nid].salience = 1.0
         field._build_node_cache()
@@ -155,8 +129,7 @@ class TestKalmanFieldIntegration:
 
     def test_consolidation_updates_covariance(self):
         field = self._make_field(n_nodes=20, kalman=True, diagonal=True)
-        cov_before = {nid: node.covariance.copy()
-                      for nid, node in field.nodes.items()}
+        cov_before = {nid: node.covariance.copy() for nid, node in field.nodes.items()}
         field.consolidate()
         # Survivor nodes should have updated covariance
         for nid, node in field.nodes.items():
@@ -171,8 +144,7 @@ class TestKalmanFieldIntegration:
         field = self._make_field(n_nodes=20, kalman=True, diagonal=True)
         # Artificially inflate covariance of one node
         target_nid = list(field.nodes.keys())[0]
-        field.nodes[target_nid].covariance = np.full(
-            4, 100.0, dtype=np.float32)
+        field.nodes[target_nid].covariance = np.full(4, 100.0, dtype=np.float32)
         # Inflate another node less
         other_nid = list(field.nodes.keys())[1]
         field.nodes[other_nid].covariance = np.full(4, 0.1, dtype=np.float32)
@@ -198,12 +170,7 @@ class TestKalmanFieldIntegration:
         for i in range(10):
             pos = rng.normal(0, 0.1, 4).astype(np.float32)
             pos = pos / (np.linalg.norm(pos) + 1e-8) * 0.3
-            nid = field.add_node(
-                pos,
-                content={
-                    "text": f"n{i}"},
-                phase=0.0,
-                skip_projection=True)
+            nid = field.add_node(pos, content={"text": f"n{i}"}, phase=0.0, skip_projection=True)
             field.nodes[nid].amplitude = 1.0
             field.nodes[nid].salience = 1.0
         field._build_node_cache()

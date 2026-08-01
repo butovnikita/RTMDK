@@ -30,8 +30,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 class BatchEmbedder:
-    def __init__(self, url="http://127.0.0.1:12345",
-                 model="text-embedding-nomic-embed-text-v1.5"):
+    def __init__(self, url="http://127.0.0.1:12345", model="text-embedding-nomic-embed-text-v1.5"):
         self.url = url
         self.model = model
         self.cache = {}
@@ -40,9 +39,7 @@ class BatchEmbedder:
 
     def _check(self):
         try:
-            return requests.get(
-                f"{self.url}/v1/models",
-                timeout=3).status_code == 200
+            return requests.get(f"{self.url}/v1/models", timeout=3).status_code == 200
         except BaseException:
             return False
 
@@ -60,14 +57,11 @@ class BatchEmbedder:
             return results
         all_embs = []
         for start in range(0, len(uncached), 50):
-            batch = uncached[start:start + 50]
+            batch = uncached[start : start + 50]
             try:
                 resp = requests.post(
-                    f"{self.url}/v1/embeddings",
-                    json={
-                        "model": self.model,
-                        "input": batch},
-                    timeout=60)
+                    f"{self.url}/v1/embeddings", json={"model": self.model, "input": batch}, timeout=60
+                )
                 for item in resp.json().get("data", []):
                     idx = item.get("index", 0)
                     emb = np.array(item["embedding"], dtype=np.float32)
@@ -111,17 +105,25 @@ def load_and_scale(path, target):
         for rec in records:
             if len(scaled) >= target:
                 break
-            scaled.append({"query": rec["query"], "answer": rec["answer"], "context": "[v%d] %s" % (
-                p + 1, rec["context"]), "topic": rec.get("topic", "general")})
+            scaled.append(
+                {
+                    "query": rec["query"],
+                    "answer": rec["answer"],
+                    "context": "[v%d] %s" % (p + 1, rec["context"]),
+                    "topic": rec.get("topic", "general"),
+                }
+            )
     topics = list(set(r.get("topic", "general") for r in records))
     while len(scaled) < target:
         i = len(scaled) - len(records)
-        scaled.append({"query": "Noise %d" %
-                       i, "answer": "noise%d" %
-                       i, "context": "Noise doc #%d for topic '%s'." %
-                       (i, topics[i %
-                                  len(topics)]), "topic": topics[i %
-                                                                 len(topics)]})
+        scaled.append(
+            {
+                "query": "Noise %d" % i,
+                "answer": "noise%d" % i,
+                "context": "Noise doc #%d for topic '%s'." % (i, topics[i % len(topics)]),
+                "topic": topics[i % len(topics)],
+            }
+        )
     return scaled[:target]
 
 
@@ -143,18 +145,17 @@ class FAISSRAG:
 class BM25RAG:
     def __init__(self, texts, k1=1.5, b=0.75):
         self.k1, self.b, self.texts = k1, b, texts
-        self.doc_tokens = [re.findall(r'\b\w{2,}\b', t.lower()) for t in texts]
+        self.doc_tokens = [re.findall(r"\b\w{2,}\b", t.lower()) for t in texts]
         n = len(self.doc_tokens)
         self.avg_dl = np.mean([len(d) for d in self.doc_tokens]) if n else 1
         df = Counter()
         for toks in self.doc_tokens:
             for t in set(toks):
                 df[t] += 1
-        self.idf = {t: math.log((n - f + 0.5) / (f + 0.5) + 1.0)
-                    for t, f in df.items()}
+        self.idf = {t: math.log((n - f + 0.5) / (f + 0.5) + 1.0) for t, f in df.items()}
 
     def retrieve(self, query, top_k=10):
-        qt = re.findall(r'\b\w{2,}\b', query.lower())
+        qt = re.findall(r"\b\w{2,}\b", query.lower())
         if not qt or not self.doc_tokens:
             return []
         scores = []
@@ -164,18 +165,14 @@ class BM25RAG:
             for t in qt:
                 if t in self.idf:
                     tf = dt.count(t)
-                    s += self.idf[t] * tf * (self.k1 + 1) / (
-                        tf + self.k1 * (1 - self.b + self.b * dl / self.avg_dl))
+                    s += self.idf[t] * tf * (self.k1 + 1) / (tf + self.k1 * (1 - self.b + self.b * dl / self.avg_dl))
             scores.append(("doc_%d" % i, s, self.texts[i]))
         scores.sort(key=lambda x: x[1], reverse=True)
         return scores[:top_k]
 
 
 def compute_recall(results, answer):
-    words = [
-        w.lower() for w in re.findall(
-            r'\b\w{2,}\b',
-            answer) if len(w) > 2]
+    words = [w.lower() for w in re.findall(r"\b\w{2,}\b", answer) if len(w) > 2]
     if not words:
         return {"r1": True, "r3": True, "r5": True, "r10": True}
     found = {}
@@ -183,16 +180,14 @@ def compute_recall(results, answer):
         if any(w in text.lower() for w in words):
             found[rank] = True
     return {
-        "r1": 1 in found, "r3": any(
-            r <= 3 for r in found), "r5": any(
-            r <= 5 for r in found), "r10": any(
-                r <= 10 for r in found)}
+        "r1": 1 in found,
+        "r3": any(r <= 3 for r in found),
+        "r5": any(r <= 5 for r in found),
+        "r10": any(r <= 10 for r in found),
+    }
 
 
-def run_benchmark(
-        scale="small",
-        dataset_path="datasets/qa_1000_en.json",
-        results_dir="tests/results"):
+def run_benchmark(scale="small", dataset_path="datasets/qa_1000_en.json", results_dir="tests/results"):
     scale_map = {"small": 1000, "medium": 5000, "large": 10000}
     target = scale_map.get(scale, 1000)
     print("=" * 70)
@@ -210,26 +205,21 @@ def run_benchmark(
     ctx_embs = embedder.embed_many([r["context"] for r in records])
     q_embs = embedder.embed_many([r["query"] for r in records])
     emb_time = time.perf_counter() - t0_emb
-    print("  Embedding done: %.1fs (%d vectors)" %
-          (emb_time, len(ctx_embs) + len(q_embs)))
+    print("  Embedding done: %.1fs (%d vectors)" % (emb_time, len(ctx_embs) + len(q_embs)))
 
     print("\n[3] Initializing retrieval...")
     # Production preset benchmark
     # Use production preset with benchmark-specific overrides
     cfg = RTMDKConfig.production()
     cfg.top_k = 15
-    cfg.use_hnsw = (target > 5000)
+    cfg.use_hnsw = target > 5000
     cfg.enable_async = False
     cfg.phase_coupling = 0.0  # Disable phase noise for pure retrieval benchmarks
     cfg.consolidation_async = True
     memory = RTMDKMemory(config=cfg, embedder=embedder)
     print("  Populating RTMDK...")
-    for i, (ctx, emb) in enumerate(
-            zip([r["context"] for r in records], ctx_embs)):
-        memory.field.add_node(
-            emb, {
-                "text": ctx, "topic": records[i].get(
-                    "topic", "")})
+    for i, (ctx, emb) in enumerate(zip([r["context"] for r in records], ctx_embs)):
+        memory.field.add_node(emb, {"text": ctx, "topic": records[i].get("topic", "")})
     print("  RTMDK: %d nodes" % len(memory.field.nodes))
     faiss = FAISSRAG(np.array(ctx_embs), [r["context"] for r in records])
     bm25 = BM25RAG([r["context"] for r in records])
@@ -243,14 +233,7 @@ def run_benchmark(
 
     print("\n[5] Running %d queries..." % len(records))
     methods = {"RTMDK v8.0": memory, "FAISS RAG": faiss, "BM25 RAG": bm25}
-    all_results = {
-        name: {
-            "r1": 0,
-            "r3": 0,
-            "r5": 0,
-            "r10": 0,
-            "latencies": [],
-            "exact": 0} for name in methods}
+    all_results = {name: {"r1": 0, "r3": 0, "r5": 0, "r10": 0, "latencies": [], "exact": 0} for name in methods}
     t0_q = time.perf_counter()
 
     for qi, rec in enumerate(records):
@@ -258,26 +241,21 @@ def run_benchmark(
 
         # RTMDK
         t0 = time.perf_counter()
-        ctx = memory.load_memory_variables_with_embedding(
-            {"input": query, "session_id": "default"}, q_emb)
+        ctx = memory.load_memory_variables_with_embedding({"input": query, "session_id": "default"}, q_emb)
         latency = (time.perf_counter() - t0) * 1000
         rtmdk_results = []
         for line in ctx.get("rtmdk_context", "").split("\n"):
             if line.startswith("[ATTN:"):
-                m = re.match(
-                    r'\[ATTN:([\d.]+)\]\[SAL:([\d.]+)\]\[TIER:(\w)\]\s*(.*)', line)
+                m = re.match(r"\[ATTN:([\d.]+)\]\[SAL:([\d.]+)\]\[TIER:(\w)\]\s*(.*)", line)
                 if m:
-                    rtmdk_results.append(
-                        ("attn", float(m.group(1)) * float(m.group(2)), m.group(4)))
+                    rtmdk_results.append(("attn", float(m.group(1)) * float(m.group(2)), m.group(4)))
         recall = compute_recall(rtmdk_results, answer)
         for k in ["r1", "r3", "r5", "r10"]:
             all_results["RTMDK v8.0"][k] += recall[k]
         all_results["RTMDK v8.0"]["latencies"].append(latency)
         if rtmdk_results and any(
-            w.lower() in " ".join(
-                t for _,
-                _,
-                t in rtmdk_results).lower() for w in answer.split() if len(w) > 2):
+            w.lower() in " ".join(t for _, _, t in rtmdk_results).lower() for w in answer.split() if len(w) > 2
+        ):
             all_results["RTMDK v8.0"]["exact"] += 1
 
         # FAISS
@@ -289,10 +267,8 @@ def run_benchmark(
             all_results["FAISS RAG"][k] += recall[k]
         all_results["FAISS RAG"]["latencies"].append(latency)
         if faiss_results and any(
-            w.lower() in " ".join(
-                t for _,
-                _,
-                t in faiss_results).lower() for w in answer.split() if len(w) > 2):
+            w.lower() in " ".join(t for _, _, t in faiss_results).lower() for w in answer.split() if len(w) > 2
+        ):
             all_results["FAISS RAG"]["exact"] += 1
 
         # BM25
@@ -304,91 +280,48 @@ def run_benchmark(
             all_results["BM25 RAG"][k] += recall[k]
         all_results["BM25 RAG"]["latencies"].append(latency)
         if bm25_results and any(
-            w.lower() in " ".join(
-                t for _,
-                _,
-                t in bm25_results).lower() for w in answer.split() if len(w) > 2):
+            w.lower() in " ".join(t for _, _, t in bm25_results).lower() for w in answer.split() if len(w) > 2
+        ):
             all_results["BM25 RAG"]["exact"] += 1
 
         if (qi + 1) % 200 == 0:
             n = qi + 1
-            print("  Query %d/%d (%.0fs):" %
-                  (n, len(records), time.perf_counter() - t0_q))
+            print("  Query %d/%d (%.0fs):" % (n, len(records), time.perf_counter() - t0_q))
             for name in methods:
                 r = all_results[name]
                 print(
-                    "    %s: R@1=%.0f%% R@5=%.0f%% P95=%.0fms" %
-                    (name,
-                     r['r1'] /
-                        n *
-                        100,
-                        r['r5'] /
-                        n *
-                        100,
-                        np.percentile(
-                         r['latencies'],
-                         95)))
+                    "    %s: R@1=%.0f%% R@5=%.0f%% P95=%.0fms"
+                    % (name, r["r1"] / n * 100, r["r5"] / n * 100, np.percentile(r["latencies"], 95))
+                )
 
     # Save report
     n = len(records)
     os.makedirs(results_dir, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    report_path = os.path.join(
-        results_dir, "v8_benchmark_%s_%s.json" %
-        (scale, ts))
+    report_path = os.path.join(results_dir, "v8_benchmark_%s_%s.json" % (scale, ts))
     report = {
         "scale": scale,
         "target_nodes": target,
         "n_queries": n,
-        "embedding_time_s": round(
-            emb_time,
-            1),
-        "consolidation_time_s": round(
-            cons_time,
-            1),
+        "embedding_time_s": round(emb_time, 1),
+        "consolidation_time_s": round(cons_time, 1),
         "embedder": "LM Studio (real)" if embedder._available else "fallback",
         "timestamp": ts,
         "results": {
             name: {
-                    "recall_at_1": round(
-                        r["r1"] / n,
-                        4),
-                    "recall_at_3": round(
-                        r["r3"] / n,
-                        4),
-                    "recall_at_5": round(
-                        r["r5"] / n,
-                        4),
-                    "recall_at_10": round(
-                        r["r10"] / n,
-                        4),
-                    "latency_p50_ms": round(
-                        float(
-                            np.percentile(
-                                r["latencies"],
-                                50)),
-                        2),
-                    "latency_p95_ms": round(
-                        float(
-                            np.percentile(
-                                r["latencies"],
-                                95)),
-                        2),
-                    "latency_p99_ms": round(
-                        float(
-                            np.percentile(
-                                r["latencies"],
-                                99)),
-                        2),
-                    "latency_mean_ms": round(
-                        float(
-                            np.mean(
-                                r["latencies"])),
-                        2),
-                    "exact_match_rate": round(
-                        r["exact"] / n,
-                        4)} for name,
-            r in all_results.items()}}
+                "recall_at_1": round(r["r1"] / n, 4),
+                "recall_at_3": round(r["r3"] / n, 4),
+                "recall_at_5": round(r["r5"] / n, 4),
+                "recall_at_10": round(r["r10"] / n, 4),
+                "latency_p50_ms": round(float(np.percentile(r["latencies"], 50)), 2),
+                "latency_p95_ms": round(float(np.percentile(r["latencies"], 95)), 2),
+                "latency_p99_ms": round(float(np.percentile(r["latencies"], 99)), 2),
+                "latency_mean_ms": round(float(np.mean(r["latencies"])), 2),
+                "exact_match_rate": round(r["exact"] / n, 4),
+            }
+            for name, r in all_results.items()
+        },
+    }
     with open(report_path, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2, ensure_ascii=False)
 
@@ -396,16 +329,16 @@ def run_benchmark(
     for name in methods:
         r = report["results"][name]
         print(
-            "  %s: R@1=%.1f%% R@5=%.1f%% P50=%.0fms P95=%.0fms Exact=%.1f%%" %
-            (name,
-             r["recall_at_1"] *
-                100,
-                r["recall_at_5"] *
-                100,
+            "  %s: R@1=%.1f%% R@5=%.1f%% P50=%.0fms P95=%.0fms Exact=%.1f%%"
+            % (
+                name,
+                r["recall_at_1"] * 100,
+                r["recall_at_5"] * 100,
                 r["latency_p50_ms"],
                 r["latency_p95_ms"],
-                r["exact_match_rate"] *
-                100))
+                r["exact_match_rate"] * 100,
+            )
+        )
     best = max(methods, key=lambda n: all_results[n]["r1"])
     print("  Best R@1: %s %.1f%%" % (best, all_results[best]["r1"] / n * 100))
     print("  Report:", report_path)
@@ -414,13 +347,7 @@ def run_benchmark(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--scale",
-        default="small",
-        choices=[
-            "small",
-            "medium",
-            "large"])
+    parser.add_argument("--scale", default="small", choices=["small", "medium", "large"])
     parser.add_argument("--dataset", default="datasets/qa_1000_en.json")
     args = parser.parse_args()
     run_benchmark(scale=args.scale, dataset_path=args.dataset)

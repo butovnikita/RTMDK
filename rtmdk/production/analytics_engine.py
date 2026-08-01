@@ -16,17 +16,17 @@ from contextlib import contextmanager
 from collections import defaultdict
 import threading
 
-
 # ============================================================================
 # EVENT TAXONOMY
 # ============================================================================
 # Every event follows: object_action[_context]
 # Properties carry context, never PII or free-text.
 
+
 class EventType:
     # Navigation / Exposure
-    QUERY_RECEIVED = "query_received"           # API query entered system
-    MEMORY_ACCESSED = "memory_accessed"         # Memory field was accessed
+    QUERY_RECEIVED = "query_received"  # API query entered system
+    MEMORY_ACCESSED = "memory_accessed"  # Memory field was accessed
 
     # Intent Signals
     # Memory context injected into response
@@ -36,17 +36,18 @@ class EventType:
 
     # Completion Signals
     CONSOLIDATION_COMPLETED = "consolidation_completed"  # Memory consolidation finished
-    NODE_CREATED = "node_created"               # New memory node created
-    NODE_PRUNED = "node_pruned"                 # Memory node removed
+    NODE_CREATED = "node_created"  # New memory node created
+    NODE_PRUNED = "node_pruned"  # Memory node removed
 
     # System / State Changes
     FIELD_HEALTH_CHANGED = "field_health_changed"  # Field health state transition
-    ERROR_OCCURRED = "error_occurred"           # System error intercepted
+    ERROR_OCCURRED = "error_occurred"  # System error intercepted
 
 
 # ============================================================================
 # ANALYTICS STORE (SQLite-backed)
 # ============================================================================
+
 
 class AnalyticsStore:
     """
@@ -113,8 +114,7 @@ class AnalyticsStore:
             finally:
                 conn.close()
 
-    def track(self, event_type: str, properties: Dict = None,
-              user_id: str = None, session_id: str = None):
+    def track(self, event_type: str, properties: Dict = None, user_id: str = None, session_id: str = None):
         """Persist an event."""
         event = {
             "id": str(uuid.uuid4()),
@@ -129,11 +129,13 @@ class AnalyticsStore:
             conn.execute(
                 """INSERT INTO events(id, event_type, user_id, session_id, properties, timestamp, received_at)
                    VALUES(:id, :event_type, :user_id, :session_id, :properties, :timestamp, :received_at)""",
-                event)
+                event,
+            )
             conn.commit()
 
-    def query(self, event_type: str = None, session_id: str = None,
-              since: float = None, limit: int = 1000) -> List[Dict]:
+    def query(
+        self, event_type: str = None, session_id: str = None, since: float = None, limit: int = 1000
+    ) -> List[Dict]:
         """Query events with filters."""
         q = "SELECT * FROM events WHERE 1=1"
         params: List[Any] = []
@@ -162,55 +164,50 @@ class AnalyticsStore:
             results.append(row)
         return results
 
-    def register_conversion(self, name: str, event_type: str,
-                            counting: str = "once_per_session"):
+    def register_conversion(self, name: str, event_type: str, counting: str = "once_per_session"):
         """Register a conversion."""
         with self._conn() as conn:
             conn.execute(
                 """INSERT OR IGNORE INTO conversions(name, event_type, counting, created_at)
-                   VALUES(?, ?, ?, ?)""", (name, event_type, counting, time.time()))
+                   VALUES(?, ?, ?, ?)""",
+                (name, event_type, counting, time.time()),
+            )
             conn.commit()
 
-    def fire_conversion(self, name: str, session_id: str,
-                        properties: Dict = None):
+    def fire_conversion(self, name: str, session_id: str, properties: Dict = None):
         """Fire a conversion, respecting counting rules."""
         with self._conn() as conn:
-            row = conn.execute(
-                "SELECT event_type, counting FROM conversions WHERE name = ?",
-                (name,)
-            ).fetchone()
+            row = conn.execute("SELECT event_type, counting FROM conversions WHERE name = ?", (name,)).fetchone()
             if not row:
                 return False
 
             if row["counting"] == "once_per_session":
                 exists = conn.execute(
-                    "SELECT 1 FROM conversion_fires WHERE conversion_name = ? AND session_id = ?",
-                    (name, session_id)
+                    "SELECT 1 FROM conversion_fires WHERE conversion_name = ? AND session_id = ?", (name, session_id)
                 ).fetchone()
                 if exists:
                     return False  # Already fired
 
             conn.execute(
                 """INSERT INTO conversion_fires(id, conversion_name, session_id, timestamp, properties)
-                   VALUES(?, ?, ?, ?, ?)""", (str(
-                    uuid.uuid4()), name, session_id, time.time(), json.dumps(
-                    properties or {})))
+                   VALUES(?, ?, ?, ?, ?)""",
+                (str(uuid.uuid4()), name, session_id, time.time(), json.dumps(properties or {})),
+            )
             conn.commit()
             return True
 
     def get_conversion_stats(self) -> Dict[str, Dict]:
         """Get conversion counts."""
         with self._conn() as conn:
-            rows = conn.execute(
-                """SELECT conversion_name, COUNT(*) as count
-                   FROM conversion_fires GROUP BY conversion_name"""
-            ).fetchall()
+            rows = conn.execute("""SELECT conversion_name, COUNT(*) as count
+                   FROM conversion_fires GROUP BY conversion_name""").fetchall()
         return {r["conversion_name"]: {"count": r["count"]} for r in rows}
 
 
 # ============================================================================
 # ANALYTICS ENGINE
 # ============================================================================
+
 
 class AnalyticsEngine:
     """
@@ -238,8 +235,7 @@ class AnalyticsEngine:
         self._handlers: Dict[str, List[Callable]] = defaultdict(list)
         self._session_context: Dict[str, Dict] = {}
 
-    def track(self, event_type: str, properties: Dict = None,
-              user_id: str = None, session_id: str = None):
+    def track(self, event_type: str, properties: Dict = None, user_id: str = None, session_id: str = None):
         """Track an event and fire any matching conversions."""
         # Inject session context
         if session_id and session_id in self._session_context:
@@ -251,18 +247,14 @@ class AnalyticsEngine:
 
         # Fire registered conversions for this event type
         with self.store._conn() as conn:
-            rows = conn.execute(
-                "SELECT name FROM conversions WHERE event_type = ?",
-                (event_type,)
-            ).fetchall()
+            rows = conn.execute("SELECT name FROM conversions WHERE event_type = ?", (event_type,)).fetchall()
         for row in rows:
             self.fire_conversion(row["name"], session_id, properties)
 
         # Call handlers
         for handler in self._handlers.get(event_type, []):
             try:
-                handler({"type": event_type, "properties": properties,
-                         "user_id": user_id, "session_id": session_id})
+                handler({"type": event_type, "properties": properties, "user_id": user_id, "session_id": session_id})
             except Exception:
                 pass
 
@@ -270,18 +262,15 @@ class AnalyticsEngine:
         """Register a handler for an event type."""
         self._handlers[event_type].append(handler)
 
-    def define_conversion(self, name: str, event_type: str,
-                          counting: str = "once_per_session"):
+    def define_conversion(self, name: str, event_type: str, counting: str = "once_per_session"):
         """Define a conversion tied to an event type."""
         self.store.register_conversion(name, event_type, counting)
 
-    def fire_conversion(self, name: str, session_id: str = None,
-                        properties: Dict = None):
+    def fire_conversion(self, name: str, session_id: str = None, properties: Dict = None):
         """Fire a named conversion."""
         self.store.fire_conversion(name, session_id or "unknown", properties)
 
-    def set_session_context(self, session_id: str, user_id: str = None,
-                            metadata: Dict = None):
+    def set_session_context(self, session_id: str, user_id: str = None, metadata: Dict = None):
         """Set context for a session (call at request start)."""
         self._session_context[session_id] = {
             "user_id": user_id,
@@ -298,7 +287,7 @@ class AnalyticsEngine:
                 """SELECT event_type, COUNT(*) as count
                    FROM events WHERE timestamp >= ?
                    GROUP BY event_type ORDER BY count DESC""",
-                (since_ts,)
+                (since_ts,),
             ).fetchall()
         event_counts = {r["event_type"]: r["count"] for r in rows}
 
@@ -310,15 +299,14 @@ class AnalyticsEngine:
                        COUNT(*) as count
                    FROM events WHERE timestamp >= ?
                    GROUP BY hour ORDER BY hour DESC LIMIT 24""",
-                (since_ts,)
+                (since_ts,),
             ).fetchall()
         time_series = [{"hour": r["hour"], "count": r["count"]} for r in rows]
 
         # Session count
         with self.store._conn() as conn:
             row = conn.execute(
-                "SELECT COUNT(DISTINCT session_id) as cnt FROM events WHERE timestamp >= ?",
-                (since_ts,)
+                "SELECT COUNT(DISTINCT session_id) as cnt FROM events WHERE timestamp >= ?", (since_ts,)
             ).fetchone()
         unique_sessions = row["cnt"] if row else 0
 
@@ -338,7 +326,6 @@ class AnalyticsEngine:
             "generated_at": time.time(),
         }
 
-    def get_event_log(self, event_type: str = None, limit: int = 100
-                      ) -> List[Dict]:
+    def get_event_log(self, event_type: str = None, limit: int = 100) -> List[Dict]:
         """Get recent event log."""
         return self.store.query(event_type=event_type, limit=limit)

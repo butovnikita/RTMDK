@@ -21,6 +21,7 @@ Usage:
     ])
     results = pipeline.run(query_text, top_k=5)
 """
+
 from __future__ import annotations
 
 from rtmdk.pipeline.base import PipelineStage, PipelineContext, StageMetrics

@@ -3,6 +3,7 @@
 Lightweight implementation without external deps (no OpenTelemetry agent
 required).  Metrics are stored in-memory and can be exported periodically.
 """
+
 from __future__ import annotations
 import json
 import time
@@ -10,7 +11,7 @@ import logging
 import threading
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Callable
+from typing import Dict, List, Optional
 import numpy as np
 
 logger = logging.getLogger(__name__)
@@ -19,6 +20,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class AlertRule:
     """Threshold-based alert rule."""
+
     name: str
     metric: str
     threshold: float
@@ -27,8 +29,9 @@ class AlertRule:
     last_fired: float = field(default=0.0)
 
     def check(self, value: float, now: float) -> bool:
-        triggered = (self.comparison == "gt" and value > self.threshold) or \
-                    (self.comparison == "lt" and value < self.threshold)
+        triggered = (self.comparison == "gt" and value > self.threshold) or (
+            self.comparison == "lt" and value < self.threshold
+        )
         if triggered and (now - self.last_fired) > self.cooldown:
             self.last_fired = now
             return True
@@ -81,11 +84,14 @@ class WebhookAlertHandler(AlertHandler):
     def __call__(self, alert_name: str, value: float) -> None:
         try:
             import urllib.request
-            payload = json.dumps({
-                "alert": alert_name,
-                "value": value,
-                "timestamp": time.time(),
-            }).encode("utf-8")
+
+            payload = json.dumps(
+                {
+                    "alert": alert_name,
+                    "value": value,
+                    "timestamp": time.time(),
+                }
+            ).encode("utf-8")
             req = urllib.request.Request(
                 self.url,
                 data=payload,
@@ -106,9 +112,12 @@ class SlackAlertHandler(AlertHandler):
     def __call__(self, alert_name: str, value: float) -> None:
         try:
             import urllib.request
-            payload = json.dumps({
-                "text": f"🚨 RTMDK Alert: *{alert_name}* | value={value:.2f}",
-            }).encode("utf-8")
+
+            payload = json.dumps(
+                {
+                    "text": f"🚨 RTMDK Alert: *{alert_name}* | value={value:.2f}",
+                }
+            ).encode("utf-8")
             req = urllib.request.Request(
                 self.webhook_url,
                 data=payload,
@@ -130,16 +139,19 @@ class PagerDutyAlertHandler(AlertHandler):
     def __call__(self, alert_name: str, value: float) -> None:
         try:
             import urllib.request
-            payload = json.dumps({
-                "routing_key": self.routing_key,
-                "event_action": "trigger",
-                "payload": {
-                    "summary": f"RTMDK alert: {alert_name}={value:.2f}",
-                    "severity": self.severity,
-                    "source": "rtmdk",
-                    "custom_details": {"value": value},
-                },
-            }).encode("utf-8")
+
+            payload = json.dumps(
+                {
+                    "routing_key": self.routing_key,
+                    "event_action": "trigger",
+                    "payload": {
+                        "summary": f"RTMDK alert: {alert_name}={value:.2f}",
+                        "severity": self.severity,
+                        "source": "rtmdk",
+                        "custom_details": {"value": value},
+                    },
+                }
+            ).encode("utf-8")
             req = urllib.request.Request(
                 "https://events.pagerduty.com/v2/enqueue",
                 data=payload,
@@ -234,8 +246,8 @@ class MemoryMetrics:
         lines.append(f'rtmdk_query_latency_p50 {p["p50"]:.3f}')
         lines.append(f'rtmdk_query_latency_p95 {p["p95"]:.3f}')
         lines.append(f'rtmdk_query_latency_p99 {p["p99"]:.3f}')
-        lines.append(f'rtmdk_cache_hit_ratio {self.cache_hit_ratio():.3f}')
-        lines.append(f'rtmdk_consolidation_count {self.consolidation_count}')
+        lines.append(f"rtmdk_cache_hit_ratio {self.cache_hit_ratio():.3f}")
+        lines.append(f"rtmdk_consolidation_count {self.consolidation_count}")
         return "\n".join(lines)
 
     def flush_to_file(self, path: str) -> None:

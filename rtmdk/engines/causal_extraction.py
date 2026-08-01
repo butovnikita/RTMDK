@@ -23,7 +23,6 @@ from __future__ import annotations
 import re
 from typing import List, Tuple, Dict
 
-
 _CAUSE_EFFECT_PATTERNS = [
     # "X because Y"
     (r"(.+?)\s+because\s+(.+)", 1, 2),

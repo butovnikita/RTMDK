@@ -11,6 +11,7 @@ Between shards:
 For single-user local chat: one `default` shard, ~zero overhead.
 For multi-tenant: shards by user/role with full isolation by default.
 """
+
 from __future__ import annotations
 import re
 import time
@@ -19,37 +20,127 @@ from typing import Dict, List, Optional, Any, Set
 from collections import defaultdict
 import numpy as np
 
-
 # Role keywords for auto-detection
 ROLE_KEYWORDS: Dict[str, List[str]] = {
     "coding": [
-        "def ", "class ", "function", "import ", "from ", "return ",
-        "code", "function", "variable", "algorithm", "debug", "compile",
-        "python", "javascript", "typescript", "rust", "go ", "java",
-        "api", "endpoint", "middleware", "docker", "kubernetes", "git",
-        "async", "await", "lambda", "yield", "try", "except",
+        "def ",
+        "class ",
+        "function",
+        "import ",
+        "from ",
+        "return ",
+        "code",
+        "function",
+        "variable",
+        "algorithm",
+        "debug",
+        "compile",
+        "python",
+        "javascript",
+        "typescript",
+        "rust",
+        "go ",
+        "java",
+        "api",
+        "endpoint",
+        "middleware",
+        "docker",
+        "kubernetes",
+        "git",
+        "async",
+        "await",
+        "lambda",
+        "yield",
+        "try",
+        "except",
     ],
     "work": [
-        "meeting", "deadline", "project", "task", "report", "presentation",
-        "client", "customer", "team", "manager", "office", "email",
-        "собрание", "дедлайн", "проект", "задача", "отчёт", "команда",
+        "meeting",
+        "deadline",
+        "project",
+        "task",
+        "report",
+        "presentation",
+        "client",
+        "customer",
+        "team",
+        "manager",
+        "office",
+        "email",
+        "собрание",
+        "дедлайн",
+        "проект",
+        "задача",
+        "отчёт",
+        "команда",
     ],
     "personal": [
-        "family", "friend", "hobby", "travel", "food", "health", "fitness",
-        "movie", "book", "music", "game", "weekend", "vacation",
-        "семья", "друг", "хобби", "путешеств", "еда", "здоровь", "фильм",
-        "книг", "музык", "игр", "выходн", "отпуск",
+        "family",
+        "friend",
+        "hobby",
+        "travel",
+        "food",
+        "health",
+        "fitness",
+        "movie",
+        "book",
+        "music",
+        "game",
+        "weekend",
+        "vacation",
+        "семья",
+        "друг",
+        "хобби",
+        "путешеств",
+        "еда",
+        "здоровь",
+        "фильм",
+        "книг",
+        "музык",
+        "игр",
+        "выходн",
+        "отпуск",
     ],
     "research": [
-        "research", "study", "paper", "experiment", "hypothesis", "theory",
-        "analysis", "data", "model", "train", "learn", "neural",
-        "исследован", "эксперимент", "гипотез", "теор", "анализ",
-        "данны", "модель", "обучен", "нейрон",
+        "research",
+        "study",
+        "paper",
+        "experiment",
+        "hypothesis",
+        "theory",
+        "analysis",
+        "data",
+        "model",
+        "train",
+        "learn",
+        "neural",
+        "исследован",
+        "эксперимент",
+        "гипотез",
+        "теор",
+        "анализ",
+        "данны",
+        "модель",
+        "обучен",
+        "нейрон",
     ],
     "learning": [
-        "learn", "study", "course", "tutorial", "how to", "explain",
-        "understand", "concept", "practice", "exercise",
-        "учить", "курс", "объясн", "понять", "концепц", "упражнен",
+        "learn",
+        "study",
+        "course",
+        "tutorial",
+        "how to",
+        "explain",
+        "understand",
+        "concept",
+        "practice",
+        "exercise",
+        "учить",
+        "курс",
+        "объясн",
+        "понять",
+        "концепц",
+        "упражнен",
     ],
 }
 
@@ -60,6 +151,7 @@ DEFAULT_ROLE = "default"
 @dataclass
 class RoleShard:
     """A single role-based shard."""
+
     role: str
     node_ids: Set[str] = field(default_factory=set)
     kuramoto_phases: Dict[str, float] = field(default_factory=dict)
@@ -131,9 +223,9 @@ class RoleShardRouter:
     Between shards: exchange only when cross_role_resonance > threshold.
     """
 
-    def __init__(self, shards: Optional[Set[str]] = None,
-                 cross_shard_threshold: float = 0.45,
-                 auto_role_detection: bool = True):
+    def __init__(
+        self, shards: Optional[Set[str]] = None, cross_shard_threshold: float = 0.45, auto_role_detection: bool = True
+    ):
         self.cross_shard_threshold = cross_shard_threshold
         self.auto_role_detection = auto_role_detection
         self.role_detector = RoleDetector()
@@ -141,14 +233,10 @@ class RoleShardRouter:
         self.node_role_map: Dict[str, str] = {}  # node_id → role
 
         # Initialize default shards
-        for role in (shards or {DEFAULT_ROLE}):
+        for role in shards or {DEFAULT_ROLE}:
             self.shards[role] = RoleShard(role=role)
 
-    def add_node(
-            self,
-            node_id: str,
-            text: str,
-            role: Optional[str] = None) -> str:
+    def add_node(self, node_id: str, text: str, role: Optional[str] = None) -> str:
         """Add a node to the appropriate shard.
 
         Args:
@@ -184,10 +272,7 @@ class RoleShardRouter:
         """Get the role of a node."""
         return self.node_role_map.get(node_id, DEFAULT_ROLE)
 
-    def get_relevant_shards(
-            self,
-            query_text: str,
-            top_n: int = 2) -> List[str]:
+    def get_relevant_shards(self, query_text: str, top_n: int = 2) -> List[str]:
         """Get the most relevant shards for a query.
 
         Returns top_n shard roles ordered by relevance.
@@ -214,8 +299,7 @@ class RoleShardRouter:
         sorted_roles = sorted(shard_scores, key=lambda k: shard_scores[k], reverse=True)
         return sorted_roles[:top_n]
 
-    def should_exchange(self, shard_a: str, shard_b: str,
-                        resonance_score: float) -> bool:
+    def should_exchange(self, shard_a: str, shard_b: str, resonance_score: float) -> bool:
         """Check if two shards should exchange information.
 
         Exchange happens only when cross_role_resonance > threshold.
@@ -238,7 +322,7 @@ class RoleShardRouter:
             for nid in shard.node_ids:
                 if nid in nodes:
                     node = nodes[nid]
-                    new_phases[nid] = getattr(node, 'phase', 0.0)
+                    new_phases[nid] = getattr(node, "phase", 0.0)
 
             if len(new_phases) < 2:
                 continue
@@ -252,8 +336,7 @@ class RoleShardRouter:
                 for other_id, other_phi in new_phases.items():
                     if other_id != nid:
                         coupling += np.sin(other_phi - phi)
-                updated_phases[nid] = (
-                    phi + 0.01 * K_over_N * coupling) % (2 * np.pi)
+                updated_phases[nid] = (phi + 0.01 * K_over_N * coupling) % (2 * np.pi)
 
             # Apply phase updates
             for nid, new_phi in updated_phases.items():
@@ -287,11 +370,8 @@ class RoleShardRouter:
     def get_state(self) -> Dict:
         """Export state for serialization."""
         return {
-            "shards": {
-                role: shard.to_dict() for role,
-                shard in self.shards.items()},
-            "node_role_map": dict(
-                self.node_role_map),
+            "shards": {role: shard.to_dict() for role, shard in self.shards.items()},
+            "node_role_map": dict(self.node_role_map),
             "cross_shard_threshold": self.cross_shard_threshold,
             "auto_role_detection": self.auto_role_detection,
         }

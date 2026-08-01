@@ -43,10 +43,7 @@ class TestWebSocketMemory:
     def test_websocket_query_with_memory(self, client):
         cfg = RTMDKConfig(latent_dim=16, use_hnsw=False)
         field = RTMDKField(cfg)
-        field.add_node(
-            embedding=np.array([0.0] * 16),
-            content={"content": "hello world"},
-            node_id="n0")
+        field.add_node(embedding=np.array([0.0] * 16), content={"content": "hello world"}, node_id="n0")
         mem = RTMDKMemory(config=cfg, embedder=lambda x: np.array([0.0] * 16))
         mem.field = field
         app_mod.memory = mem
@@ -72,10 +69,7 @@ class TestWebSocketMemory:
     def test_websocket_pipeline_query(self, client):
         cfg = RTMDKConfig(latent_dim=16, use_hnsw=False)
         field = RTMDKField(cfg)
-        field.add_node(
-            embedding=np.array([0.0] * 16),
-            content={"content": "hello world"},
-            node_id="n0")
+        field.add_node(embedding=np.array([0.0] * 16), content={"content": "hello world"}, node_id="n0")
         mem = RTMDKMemory(config=cfg, embedder=lambda x: np.array([0.0] * 16))
         mem.field = field
         app_mod.memory = mem
@@ -96,10 +90,7 @@ class TestWebSocketMemory:
     def test_websocket_pipeline_query_stream(self, client):
         cfg = RTMDKConfig(latent_dim=16, use_hnsw=False)
         field = RTMDKField(cfg)
-        field.add_node(
-            embedding=np.array([0.0] * 16),
-            content={"content": "hello world"},
-            node_id="n0")
+        field.add_node(embedding=np.array([0.0] * 16), content={"content": "hello world"}, node_id="n0")
         mem = RTMDKMemory(config=cfg, embedder=lambda x: np.array([0.0] * 16))
         mem.field = field
         app_mod.memory = mem

@@ -6,14 +6,15 @@ from rtmdk.memory.core import RTMDKMemory
 from rtmdk.memory.config import RTMDKConfig
 from rtmdk.pipeline.profiler import PipelineMemoryProfiler
 from rtmdk.pipeline.stages import EmbedStage
-from rtmdk.pipeline.base import PipelineContext, PipelineStage
+from rtmdk.pipeline.base import PipelineContext
 
 
 def _make_embedder(dim: int = 64):
     def embed(text: str) -> np.ndarray:
-        h = hash(text) % (2 ** 32)
+        h = hash(text) % (2**32)
         rng = np.random.default_rng(h)
         return rng.standard_normal(dim, dtype=np.float32)
+
     return embed
 
 
@@ -47,6 +48,7 @@ class TestPipelineMemoryProfiler:
 
     def test_profiler_start_stop(self):
         import tracemalloc
+
         if tracemalloc.is_tracing():
             tracemalloc.stop()
         profiler = PipelineMemoryProfiler()

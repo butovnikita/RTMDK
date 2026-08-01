@@ -14,9 +14,10 @@ from rtmdk.pipeline.registry import StageRegistry, GLOBAL_REGISTRY
 
 def _make_embedder(dim: int = 64):
     def embed(text: str) -> np.ndarray:
-        h = hash(text) % (2 ** 32)
+        h = hash(text) % (2**32)
         rng = np.random.default_rng(h)
         return rng.standard_normal(dim, dtype=np.float32)
+
     return embed
 
 
@@ -40,10 +41,12 @@ class TestBatchPipeline:
 
     def test_batch_pipeline_executor(self):
         mem = _make_memory()
-        batch = BatchPipelineExecutor([
-            BatchEmbedStage(mem.embedder),
-            RetrieveStage(mem.field),
-        ])
+        batch = BatchPipelineExecutor(
+            [
+                BatchEmbedStage(mem.embedder),
+                RetrieveStage(mem.field),
+            ]
+        )
         outputs = batch.run_batch(["q1", "q2"], top_k=3)
         assert len(outputs) == 2
         assert all(o["results_count"] <= 3 for o in outputs)
@@ -52,10 +55,12 @@ class TestBatchPipeline:
 
     def test_batch_metrics(self):
         mem = _make_memory()
-        batch = BatchPipelineExecutor([
-            BatchEmbedStage(mem.embedder),
-            RetrieveStage(mem.field),
-        ])
+        batch = BatchPipelineExecutor(
+            [
+                BatchEmbedStage(mem.embedder),
+                RetrieveStage(mem.field),
+            ]
+        )
         outputs = batch.run_batch(["q"], top_k=3)
         assert "stages" in outputs[0]
         assert isinstance(outputs[0]["stages"], list)
@@ -66,9 +71,11 @@ class TestStageRegistry:
     def test_register_and_create(self):
         class MyStage(PipelineStage):
             name = "my_stage"
+
             def process(self, ctx):
                 ctx.results = [("x", 1.0, None)]
                 return ctx
+
         reg = StageRegistry()
         reg.register("my_stage", MyStage)
         stage = reg.create("my_stage")

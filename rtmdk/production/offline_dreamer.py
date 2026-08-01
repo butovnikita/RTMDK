@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DreamTask:
     """A background task for the dreamer."""
+
     name: str
     func: Callable
     args: tuple = ()
@@ -48,8 +49,8 @@ class OfflineDreamer:
         self,
         field=None,
         engram_manager=None,
-        dream_freq: int = 50,       # Run dream cycle every N steps
-        max_workers: int = 2,        # Background threads
+        dream_freq: int = 50,  # Run dream cycle every N steps
+        max_workers: int = 2,  # Background threads
         enable_tda: bool = True,
         enable_crystallization: bool = True,
         enable_shard_recalc: bool = True,
@@ -86,10 +87,7 @@ class OfflineDreamer:
         if self._running:
             return
         self._running = True
-        self._thread = threading.Thread(
-            target=self._dream_loop,
-            daemon=True,
-            name="RTMDK-Dreamer")
+        self._thread = threading.Thread(target=self._dream_loop, daemon=True, name="RTMDK-Dreamer")
         self._thread.start()
         logger.info("OfflineDreamer started")
 
@@ -118,41 +116,20 @@ class OfflineDreamer:
 
             task = self._create_task(task_name)
             if task:
-                self._task_queue.put(
-                    (-task.priority, task))  # Negate for max-heap
+                self._task_queue.put((-task.priority, task))  # Negate for max-heap
 
     def _create_task(self, name: str) -> Optional[DreamTask]:
         """Create a dream task for the given operation."""
         if name == "tda_analysis" and self.field:
-            return DreamTask(
-                "tda_analysis",
-                self._run_tda_analysis,
-                priority=3,
-                cooldown_steps=200)
+            return DreamTask("tda_analysis", self._run_tda_analysis, priority=3, cooldown_steps=200)
         elif name == "crystallization" and self.field:
-            return DreamTask(
-                "crystallization",
-                self._run_crystallization,
-                priority=4,
-                cooldown_steps=150)
+            return DreamTask("crystallization", self._run_crystallization, priority=4, cooldown_steps=150)
         elif name == "shard_recalc" and self.field:
-            return DreamTask(
-                "shard_recalc",
-                self._run_shard_recalc,
-                priority=2,
-                cooldown_steps=300)
+            return DreamTask("shard_recalc", self._run_shard_recalc, priority=2, cooldown_steps=300)
         elif name == "engram_merge" and self.engram_manager:
-            return DreamTask(
-                "engram_merge",
-                self._run_engram_merge,
-                priority=5,
-                cooldown_steps=100)
+            return DreamTask("engram_merge", self._run_engram_merge, priority=5, cooldown_steps=100)
         elif name == "topology_repair" and self.field:
-            return DreamTask(
-                "topology_repair",
-                self._run_topology_repair,
-                priority=1,
-                cooldown_steps=250)
+            return DreamTask("topology_repair", self._run_topology_repair, priority=1, cooldown_steps=250)
         return None
 
     def _dream_loop(self):
@@ -172,8 +149,7 @@ class OfflineDreamer:
                     self._last_run[task.name] = self._step_counter
                     self._stats["tasks_executed"] += 1
                     elapsed = time.time() - t0
-                    logger.info(
-                        f"[Dream] Task '{task.name}' completed in {elapsed:.1f}s")
+                    logger.info(f"[Dream] Task '{task.name}' completed in {elapsed:.1f}s")
                 except Exception as e:
                     logger.warning(f"[Dream] Task '{task.name}' failed: {e}")
 
@@ -185,7 +161,7 @@ class OfflineDreamer:
 
     def _run_tda_analysis(self):
         """Run Topological Data Analysis on the field."""
-        if not self.field or not hasattr(self.field, 'tda_monitor'):
+        if not self.field or not hasattr(self.field, "tda_monitor"):
             return
 
         # Compute Betti numbers (H0, H1) — simplified
@@ -212,17 +188,15 @@ class OfflineDreamer:
             return
 
         # Placeholder: real implementation would use clustering
-        self.field.stats["crystallizations"] = self.field.stats.get(
-            "crystallizations", 0) + 1
+        self.field.stats["crystallizations"] = self.field.stats.get("crystallizations", 0) + 1
 
     def _run_shard_recalc(self):
         """Recalculate shard centers for federated nodes."""
-        if not self.field or not hasattr(self.field, 'shard_centers'):
+        if not self.field or not hasattr(self.field, "shard_centers"):
             return
 
         # Recompute shard centers from current node positions
-        self.field.stats["shard_recalcs"] = self.field.stats.get(
-            "shard_recalcs", 0) + 1
+        self.field.stats["shard_recalcs"] = self.field.stats.get("shard_recalcs", 0) + 1
 
     def _run_engram_merge(self):
         """Merge overlapping engrams."""
@@ -240,8 +214,7 @@ class OfflineDreamer:
         # Check for dead zones (isolated nodes with no neighbors)
         # Check for hyperconvergence (all nodes too close)
         # Check for fragmentation (disconnected components)
-        self.field.stats["topology_repairs"] = self.field.stats.get(
-            "topology_repairs", 0) + 1
+        self.field.stats["topology_repairs"] = self.field.stats.get("topology_repairs", 0) + 1
 
     def get_stats(self) -> Dict[str, Any]:
         """Get dreamer statistics."""

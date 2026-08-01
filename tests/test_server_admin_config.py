@@ -48,6 +48,7 @@ class TestAdminConfigReload:
             assert "top_k" in data["fields"]
             assert mem.config.top_k == 20
         finally:
+            mem.config.top_k = old_top_k
             app_mod.memory = None
 
     def test_config_reload_multiple_fields(self, client):

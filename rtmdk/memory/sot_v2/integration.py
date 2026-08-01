@@ -102,10 +102,7 @@ class SOTv2Embedder:
         self._vocab = _build_vocab(corpus_texts)
         logger.info("SOTv2Embedder: vocab size = %d", len(self._vocab))
 
-        tokenized = [
-            [self._vocab[w] for w in _word_tokenize(text)]
-            for text in corpus_texts
-        ]
+        tokenized = [[self._vocab[w] for w in _word_tokenize(text)] for text in corpus_texts]
 
         self._id2word = {v: k for k, v in self._vocab.items()}
 
@@ -182,6 +179,7 @@ class SOTv2Embedder:
     def load_aligner(self, path: str):
         """Load a previously saved Procrustes alignment matrix."""
         from .procrustes import ProcrustesAligner
+
         if self._embedder is None:
             raise RuntimeError("Train the embedder before loading aligner.")
         self._embedder._aligner = ProcrustesAligner.load(path)
@@ -244,6 +242,7 @@ class SOTv2Embedder:
     def save(self, path: str):
         """Save embedder state to a JSON file."""
         import json
+
         state = self.get_state()
         with open(path, "w", encoding="utf-8") as f:
             json.dump(state, f, ensure_ascii=False, indent=2)
@@ -253,6 +252,7 @@ class SOTv2Embedder:
     def load(cls, path: str) -> "SOTv2Embedder":
         """Load embedder state from a JSON file."""
         import json
+
         with open(path, "r", encoding="utf-8") as f:
             state = json.load(f)
         inst = cls(

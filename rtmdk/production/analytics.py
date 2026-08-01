@@ -37,7 +37,7 @@ class MemoryAnalytics:
         """Get distribution of nodes by topic/tier."""
         distribution: Dict[str, int] = defaultdict(int)
         for node in self.memory.field.nodes.values():
-            tier = getattr(node, 'tier', 'unknown')
+            tier = getattr(node, "tier", "unknown")
             distribution[tier] += 1
         return dict(distribution)
 
@@ -56,8 +56,7 @@ class MemoryAnalytics:
                 bins["critical"] += 1
 
         total = sum(bins.values()) or 1
-        return [{"category": k, "count": v, "percentage": round(
-            v / total * 100, 1)} for k, v in bins.items()]
+        return [{"category": k, "count": v, "percentage": round(v / total * 100, 1)} for k, v in bins.items()]
 
     def get_retrieval_stats(self) -> Dict[str, Any]:
         """Get retrieval statistics."""
@@ -81,6 +80,7 @@ class MemoryAnalytics:
             return {"count": 0}
 
         import numpy as np
+
         return {
             "count": len(ages),
             "avg_age_hours": round(np.mean(ages), 1),

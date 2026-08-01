@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 from unittest.mock import patch
-from rtmdk.production.multi_tenant import TenantRouter, TenantConfig, TenantStats
+from rtmdk.production.multi_tenant import TenantRouter
 from rtmdk.memory.core import RTMDKConfig, RTMDKMemory
 
 

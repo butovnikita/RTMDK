@@ -83,16 +83,17 @@ include = ["rtmdk*"]
 [tool.black]
 line-length = 120
 target-version = ['py310']
-include = '\\.pyi?$'
+include = '\.pyi?$'
 extend-exclude = '''
 /(
   # directories
-    \\.git
-  | \\.pytest_cache
+    \.git
+  | \.pytest_cache
   | __pycache__
   | myenv
   | rtmdk_github
   | archive
+  | legacy
 )/
 '''
 

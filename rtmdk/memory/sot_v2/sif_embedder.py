@@ -25,7 +25,7 @@ Theoretical foundation:
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional, Callable, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -115,6 +115,7 @@ class SIFEmbedder:
         # 1. Count unigrams and co-occurrences (sparse to avoid OOM)
         unigram_counts = np.zeros(vocab_size, dtype=np.float64)
         from collections import defaultdict
+
         cooc_sparse = defaultdict(lambda: defaultdict(float))
         total_tokens = 0
 
@@ -138,9 +139,7 @@ class SIFEmbedder:
 
         # Word probabilities
         self.word_probs = {
-            t: float(unigram_counts[t]) / total_tokens
-            for t in range(vocab_size)
-            if unigram_counts[t] > 0
+            t: float(unigram_counts[t]) / total_tokens for t in range(vocab_size) if unigram_counts[t] > 0
         }
 
         valid_mask = unigram_counts >= self.min_count
@@ -203,6 +202,7 @@ class SIFEmbedder:
                     pmi_cols.append(j)
 
             from scipy.sparse import coo_matrix as _coo
+
             pmi = _coo((pmi_data, (pmi_rows, pmi_cols)), shape=(n_valid, n_valid)).tocsr()
             self._pmi_matrix = pmi
             self._pmi_idx_map = idx_map
@@ -210,6 +210,7 @@ class SIFEmbedder:
 
             # Truncated SVD on sparse PMI via sklearn
             from sklearn.decomposition import TruncatedSVD
+
             svd = TruncatedSVD(n_components=k, algorithm="randomized", random_state=42)
             raw_emb = svd.fit_transform(pmi).astype(np.float32)
             norms = np.linalg.norm(raw_emb, axis=1, keepdims=True) + 1e-8
@@ -308,7 +309,7 @@ class SIFEmbedder:
         padded = f"#{word}#"
         if len(padded) < n:
             return [padded] if padded else []
-        return [padded[i:i + n] for i in range(len(padded) - n + 1)]
+        return [padded[i : i + n] for i in range(len(padded) - n + 1)]
 
     def _fit_char_ngrams(
         self,
@@ -484,7 +485,7 @@ class SIFEmbedder:
             # Remove projection onto first PC
             emb = emb - emb.dot(self._pc) * self._pc
         # Apply learnable projection if available
-        if hasattr(self, '_projection') and self._projection is not None:
+        if hasattr(self, "_projection") and self._projection is not None:
             emb = self._projection(emb)
         # Apply Procrustes alignment if available
         if self._aligner is not None:
@@ -535,7 +536,7 @@ class SIFEmbedder:
         self._proj_out = rng.standard_normal((h, self.latent_dim)).astype(np.float32) * 0.01
         self._proj_out_b = np.zeros(self.latent_dim, dtype=np.float32)
         # Near-identity shortcut
-        self._proj_W[:min(self.latent_dim, h), :min(self.latent_dim, h)] += np.eye(
+        self._proj_W[: min(self.latent_dim, h), : min(self.latent_dim, h)] += np.eye(
             min(self.latent_dim, h), dtype=np.float32
         )
         self._projection = lambda x: self._mlp_forward(x)
@@ -570,7 +571,7 @@ class SIFEmbedder:
         word vectors are frozen; only the sentence-level projection is
         updated to match the retrieval task distribution.
         """
-        if not hasattr(self, '_projection') or self._projection is None:
+        if not hasattr(self, "_projection") or self._projection is None:
             self.add_projection_layer()
 
         N = len(tokenized_queries)
@@ -579,7 +580,8 @@ class SIFEmbedder:
 
         logger.info(
             "SIFEmbedder: projection fine-tuning, N=%d, epochs=%d",
-            N, n_epochs,
+            N,
+            n_epochs,
         )
 
         rng = np.random.default_rng(42)
@@ -608,7 +610,7 @@ class SIFEmbedder:
 
                 probs = exp_logits / (exp_logits.sum() + 1e-8)
                 # Gradient w.r.t. query embedding
-                d_q = -(p_emb - sum(probs[i+1] * neg_embs[i] for i in range(len(neg_embs)))) / temperature
+                d_q = -(p_emb - sum(probs[i + 1] * neg_embs[i] for i in range(len(neg_embs)))) / temperature
                 # Backprop through projection only
                 q_raw = self._embed_sentence_raw(tokenized_queries[idx])
                 if q_raw is not None:
@@ -670,7 +672,9 @@ class SIFEmbedder:
 
         logger.info(
             "SIFEmbedder: contrastive fine-tuning, N=%d, epochs=%d, lr=%.4f",
-            N, n_epochs, lr,
+            N,
+            n_epochs,
+            lr,
         )
 
         rng = np.random.default_rng(42)
@@ -719,9 +723,9 @@ class SIFEmbedder:
                 # Correct InfoNCE gradient: dL/dq = -( (1-p₀)*p - Σ pᵢ*nᵢ ) / τ
                 probs = exp_logits / (exp_logits.sum() + 1e-8)
                 pos_prob = float(probs[0])
-                neg_weighted = sum(probs[i+1] * neg_embs[i] for i in range(len(neg_embs)))
-                d_q = -( (1.0 - pos_prob) * p_emb - neg_weighted ) / temperature
-                d_p = -( (1.0 - pos_prob) * q_emb ) / temperature
+                neg_weighted = sum(probs[i + 1] * neg_embs[i] for i in range(len(neg_embs)))
+                d_q = -((1.0 - pos_prob) * p_emb - neg_weighted) / temperature
+                d_p = -((1.0 - pos_prob) * q_emb) / temperature
 
                 # Backpropagate to word embeddings via average gradient
                 # (simplified: treat each word as contributing equally to sentence emb)
@@ -934,16 +938,12 @@ class SIFEmbedder:
         self.a = state["a"]
         self.remove_pc = state["remove_pc"]
         self.use_char_fallback = state.get("use_char_fallback", True)
-        self.word_embeddings = {
-            int(k): np.array(v, dtype=np.float32)
-            for k, v in state["word_embeddings"].items()
-        }
+        self.word_embeddings = {int(k): np.array(v, dtype=np.float32) for k, v in state["word_embeddings"].items()}
         self.word_probs = {int(k): v for k, v in state["word_probs"].items()}
         pc = state.get("pc")
         self._pc = np.array(pc, dtype=np.float32) if pc is not None else None
         self.char_ngram_embeddings = {
-            k: np.array(v, dtype=np.float32)
-            for k, v in state.get("char_ngram_embeddings", {}).items()
+            k: np.array(v, dtype=np.float32) for k, v in state.get("char_ngram_embeddings", {}).items()
         }
         # Note: aligner must be loaded separately via ProcrustesAligner.load()
         return self
@@ -999,10 +999,7 @@ class SIFEmbedder:
         token_ids = data["token_ids"]
         word_emb_matrix = data["word_emb_matrix"]
         if len(token_ids) > 0 and len(word_emb_matrix) > 0:
-            inst.word_embeddings = {
-                int(tid): word_emb_matrix[i]
-                for i, tid in enumerate(token_ids)
-            }
+            inst.word_embeddings = {int(tid): word_emb_matrix[i] for i, tid in enumerate(token_ids)}
         prob_ids = data["prob_ids"]
         prob_values = data["prob_values"]
         if len(prob_ids) > 0:
@@ -1013,9 +1010,6 @@ class SIFEmbedder:
         ngram_keys = data.get("ngram_keys", [])
         ngram_matrix = data.get("ngram_matrix", np.array([]))
         if len(ngram_keys) > 0 and len(ngram_matrix) > 0:
-            inst.char_ngram_embeddings = {
-                str(k): ngram_matrix[i]
-                for i, k in enumerate(ngram_keys)
-            }
+            inst.char_ngram_embeddings = {str(k): ngram_matrix[i] for i, k in enumerate(ngram_keys)}
         logger.info("SIFEmbedder: loaded NPZ from %s", path)
         return inst

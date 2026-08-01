@@ -1,4 +1,5 @@
 """rtmdk/production/active_inference.py — Active Inference & Curiosity Loop."""
+
 import numpy as np
 from typing import Dict, List, Optional, Any
 
@@ -10,8 +11,7 @@ class ActiveInferenceLoop:
     Based on Friston's free energy principle.
     """
 
-    def __init__(self, curiosity_weight: float = 0.1,
-                 uncertainty_threshold: float = 0.3):
+    def __init__(self, curiosity_weight: float = 0.1, uncertainty_threshold: float = 0.3):
         self.curiosity_weight = curiosity_weight
         self.uncertainty_threshold = uncertainty_threshold
         self._interventions_generated = 0
@@ -56,5 +56,4 @@ class ActiveInferenceLoop:
         """Get current curiosity drive level."""
         if not self._prediction_errors:
             return 0.0
-        return float(
-            np.mean(self._prediction_errors[-100:])) * self.curiosity_weight
+        return float(np.mean(self._prediction_errors[-100:])) * self.curiosity_weight

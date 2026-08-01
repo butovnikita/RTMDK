@@ -74,7 +74,9 @@ class QuantizationHelper:
             return q
         return vec.astype(np.float32)
 
-    def dequantize(self, qvec: NDArray, scale: float = 1.0, zero_point: float = 0.0, scale_arr: Optional[NDArray] = None) -> NDArray:
+    def dequantize(
+        self, qvec: NDArray, scale: float = 1.0, zero_point: float = 0.0, scale_arr: Optional[NDArray] = None
+    ) -> NDArray:
         """Return float32 copy (or original if mode == 'none')."""
         if self.mode == "fp16":
             return qvec.astype(np.float32)
@@ -86,7 +88,9 @@ class QuantizationHelper:
             return _dequantize_int8(qvec, scale, zero_point)
         return qvec.astype(np.float32)
 
-    def maybe_dequantize(self, qvec: NDArray, scale: float = 1.0, zero_point: float = 0.0, scale_arr: Optional[NDArray] = None) -> NDArray:
+    def maybe_dequantize(
+        self, qvec: NDArray, scale: float = 1.0, zero_point: float = 0.0, scale_arr: Optional[NDArray] = None
+    ) -> NDArray:
         """Dequantize only if currently quantized."""
         if self.mode == "none":
             return qvec

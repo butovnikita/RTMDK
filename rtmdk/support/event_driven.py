@@ -1,4 +1,5 @@
 """Event-driven scheduler and low-rank compression for RTMDK."""
+
 from __future__ import annotations
 
 import time
@@ -73,11 +74,13 @@ class EventDrivenScheduler:
         self._event_counts: Dict[str, int] = defaultdict(int)
 
     def enqueue(self, event_type: str, payload: Dict[str, Any]):
-        self._event_queue.append({
-            "type": event_type,
-            "payload": payload,
-            "timestamp": time.time(),
-        })
+        self._event_queue.append(
+            {
+                "type": event_type,
+                "payload": payload,
+                "timestamp": time.time(),
+            }
+        )
         self._event_counts[event_type] += 1
 
     def process_pending(self, field: Any, max_events: int = 10) -> int:
@@ -96,11 +99,11 @@ class EventDrivenScheduler:
             elif etype == "query":
                 pass  # Already handled by query
             elif etype == "crystallize":
-                if hasattr(field, '_crystallize_recurring'):
+                if hasattr(field, "_crystallize_recurring"):
                     field._crystallize_recurring()
                 processed += 1
             elif etype == "compress":
-                if hasattr(field, '_compress_field'):
+                if hasattr(field, "_compress_field"):
                     field._compress_field()
                 processed += 1
 

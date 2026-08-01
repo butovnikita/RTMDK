@@ -33,10 +33,12 @@ class StreamingResponse:
             {"content": str, "finish_reason": str or None}
         """
         # Get context from RTMDK
-        ctx = self.memory.load_memory_variables({
-            "input": query,
-            "session_id": session_id,
-        })
+        ctx = self.memory.load_memory_variables(
+            {
+                "input": query,
+                "session_id": session_id,
+            }
+        )
         context = ctx.get("rtmdk_context", "")
 
         # Get full response from LLM

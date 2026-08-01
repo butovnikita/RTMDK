@@ -37,7 +37,7 @@ class MemoryExporter:
                 "salience": node.salience,
                 "amplitude": node.amplitude,
                 "phase": node.phase,
-                "tier": getattr(node, 'tier', 'unknown'),
+                "tier": getattr(node, "tier", "unknown"),
                 "created_at": node.created_at,
             }
 
@@ -63,19 +63,18 @@ class MemoryExporter:
         # Group by tier
         tiers: Dict[str, List[Any]] = {}
         for node in nodes:
-            tier = getattr(node, 'tier', 'unknown')
+            tier = getattr(node, "tier", "unknown")
             if tier not in tiers:
                 tiers[tier] = []
             tiers[tier].append(node)
 
         for tier, tier_nodes in tiers.items():
-            lines.append(
-                f"\n## {tier.title()} Memory ({len(tier_nodes)} nodes)\n")
+            lines.append(f"\n## {tier.title()} Memory ({len(tier_nodes)} nodes)\n")
             for node in tier_nodes:
                 text = node.content.get("text", "")[:200]
                 lines.append(f"- **[{node.salience:.2f}]** {text}")
 
-        return '\n'.join(lines)
+        return "\n".join(lines)
 
     def to_text(self, max_nodes: int = 100) -> str:
         """Export as plain text."""
@@ -93,7 +92,7 @@ class MemoryExporter:
             text = node.content.get("text", "")[:200]
             lines.append(f"[{node.salience:.2f}] {text}")
 
-        return '\n'.join(lines)
+        return "\n".join(lines)
 
     def export_to_file(self, filepath: str, format: str = "markdown"):
         """Export memory to a file.
@@ -110,9 +109,10 @@ class MemoryExporter:
             content = self.to_text()
         elif format == "json":
             import json
+
             content = json.dumps(self.to_dict(), indent=2, default=str)
         else:
             raise ValueError(f"Unknown format: {format}")
 
-        path.write_text(content, encoding='utf-8')
+        path.write_text(content, encoding="utf-8")
         return str(path)

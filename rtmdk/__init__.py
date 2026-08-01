@@ -8,6 +8,7 @@ Usage:
 """
 
 from rtmdk.nodes import MemoryNode
+
 __version__ = "8.3.1"
 
 from rtmdk.memory.config import RTMDKConfig, ConsolidationMode, Backend, ContextFormat, FieldHealth, EvalMode
@@ -15,9 +16,17 @@ from rtmdk.memory.core import RTMDKMemory, RTMDKField
 
 # Bind preset methods to RTMDKConfig class
 from rtmdk.config import (
-    _local, _production, _research, _enterprise,  # type: ignore[attr-defined]
-    _agent, _legal, _medical, _streaming, _sillytavern,  # type: ignore[attr-defined]
+    _local,
+    _production,
+    _research,
+    _enterprise,  # type: ignore[attr-defined]
+    _agent,
+    _legal,
+    _medical,
+    _streaming,
+    _sillytavern,  # type: ignore[attr-defined]
 )
+
 RTMDKConfig.local = staticmethod(_local)  # type: ignore
 RTMDKConfig.production = staticmethod(_production)  # type: ignore
 RTMDKConfig.research = staticmethod(_research)  # type: ignore
@@ -31,8 +40,7 @@ RTMDKConfig.sillytavern = staticmethod(_sillytavern)  # type: ignore
 
 def list_presets():
     """List all available configuration presets."""
-    return ["local", "production", "research", "enterprise",
-            "agent", "legal", "medical", "streaming", "sillytavern"]
+    return ["local", "production", "research", "enterprise", "agent", "legal", "medical", "streaming", "sillytavern"]
 
 
 def create_rtmdk(preset: str = "local", embedder=None) -> RTMDKMemory:
@@ -59,8 +67,7 @@ def create_rtmdk(preset: str = "local", embedder=None) -> RTMDKMemory:
     }
 
     if preset not in preset_methods:
-        raise ValueError(
-            f"Unknown preset: {preset}. Available: {list(preset_methods.keys())}")
+        raise ValueError(f"Unknown preset: {preset}. Available: {list(preset_methods.keys())}")
 
     config = preset_methods[preset]()
     return RTMDKMemory(config=config, embedder=embedder)
@@ -71,8 +78,11 @@ __all__ = [
     "RTMDKConfig",
     "RTMDKField",
     "MemoryNode",
-    "ConsolidationMode", "Backend", "ContextFormat",
-    "FieldHealth", "EvalMode",
+    "ConsolidationMode",
+    "Backend",
+    "ContextFormat",
+    "FieldHealth",
+    "EvalMode",
     "list_presets",
     "create_rtmdk",
     "__version__",

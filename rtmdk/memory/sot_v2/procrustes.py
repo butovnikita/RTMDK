@@ -30,9 +30,9 @@ class ProcrustesAligner:
 
     def __init__(self, d: Optional[int] = None):
         self.d = d
-        self.R: Optional[NDArray] = None          # alignment matrix (d×d)
-        self.src_mean: Optional[NDArray] = None   # source centering vector
-        self.tgt_mean: Optional[NDArray] = None   # target centering vector
+        self.R: Optional[NDArray] = None  # alignment matrix (d×d)
+        self.src_mean: Optional[NDArray] = None  # source centering vector
+        self.tgt_mean: Optional[NDArray] = None  # target centering vector
         self._fitted = False
 
     def fit(
@@ -53,9 +53,7 @@ class ProcrustesAligner:
                 Usually not needed for embeddings already on same scale.
         """
         if src_embs.shape != tgt_embs.shape:
-            raise ValueError(
-                f"Shape mismatch: src {src_embs.shape} vs tgt {tgt_embs.shape}"
-            )
+            raise ValueError(f"Shape mismatch: src {src_embs.shape} vs tgt {tgt_embs.shape}")
         n, d = src_embs.shape
         self.d = d
 
@@ -202,9 +200,7 @@ def procrustes_align_sif_to_teacher(
 
     # Ensure same dimensionality
     if sif_embs.shape[1] != teacher_embs.shape[1]:
-        raise ValueError(
-            f"Dimension mismatch: SIF {sif_embs.shape[1]} vs teacher {teacher_embs.shape[1]}"
-        )
+        raise ValueError(f"Dimension mismatch: SIF {sif_embs.shape[1]} vs teacher {teacher_embs.shape[1]}")
 
     aligner = ProcrustesAligner(d=sif_embs.shape[1])
     aligner.fit(sif_embs, teacher_embs, center=center)

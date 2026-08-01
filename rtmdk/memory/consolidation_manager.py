@@ -4,10 +4,11 @@ Extracted from RTMDKField to reduce monolithic field.py size.
 Delegates back to the parent field for node access, indexing,
 kalman filtering, versioning, etc.
 """
+
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
 import numpy as np
 
@@ -70,8 +71,7 @@ class ConsolidationManager:
                 field.stats["adaptive_threshold_value"] = field.adaptive_threshold.get_threshold()
 
         high_tension = [
-            nid for nid in node_index_snapshot
-            if nid in field.nodes and field.nodes[nid].tension > eff_threshold
+            nid for nid in node_index_snapshot if nid in field.nodes and field.nodes[nid].tension > eff_threshold
         ]
         processed: Set[str] = set()
         pending_deletions: List[str] = []
@@ -84,10 +84,7 @@ class ConsolidationManager:
                 high_tension, mode, updated, pending_deletions, processed, pre_state
             )
             if spectral_merged:
-                high_tension = [
-                    nid for nid in high_tension
-                    if nid not in processed and nid in field.nodes
-                ]
+                high_tension = [nid for nid in high_tension if nid not in processed and nid in field.nodes]
 
         # HNSW or vectorized pairwise merge
         if cfg.use_hnsw and field.hnsw_index and n_snap > getattr(cfg, "hnsw_min_nodes", 50):
@@ -97,9 +94,7 @@ class ConsolidationManager:
                 if nid in processed or nid not in field.nodes:
                     continue
                 node = field.nodes[nid]
-                candidate_ids = field._index_mgr.hnsw_search(
-                    node.latent_pos, top_k=min(50, n_snap)
-                )
+                candidate_ids = field._index_mgr.hnsw_search(node.latent_pos, top_k=min(50, n_snap))
                 candidates = []
                 for oid in candidate_ids:
                     if oid == nid or oid in processed or oid not in field.nodes:
@@ -120,9 +115,9 @@ class ConsolidationManager:
                 self._do_merge(nid, pid, mode, updated, pending_deletions, processed, pre_state)
         else:
             # Vectorized fallback
-            snap_positions = np.array([
-                field.nodes[oid].latent_pos for oid in node_index_snapshot if oid in field.nodes
-            ])
+            snap_positions = np.array(
+                [field.nodes[oid].latent_pos for oid in node_index_snapshot if oid in field.nodes]
+            )
             snap_ids = [oid for oid in node_index_snapshot if oid in field.nodes]
             snap_phases = np.array([field.nodes[oid].phase for oid in snap_ids])
             snap_id_to_idx = {nid: idx for idx, nid in enumerate(snap_ids)}
@@ -137,7 +132,7 @@ class ConsolidationManager:
                 dists = np.linalg.norm(snap_positions - node_pos, axis=1)
                 phase_diffs = np.minimum(
                     np.abs(snap_phases - field.nodes[nid].phase),
-                    2 * np.pi - np.abs(snap_phases - field.nodes[nid].phase)
+                    2 * np.pi - np.abs(snap_phases - field.nodes[nid].phase),
                 )
                 mask = (dists < 2.5) & (phase_diffs > 1.0)
                 candidate_indices = np.where(mask)[0]
@@ -180,9 +175,7 @@ class ConsolidationManager:
                 field.stats["field_stability"] = float(np.mean(field._stability_buffer))
 
         if cfg.enable_rollback and pre_state:
-            field._rollback_history.append({
-                "timestamp": time.time(), "pre_state": pre_state, "updated": updated
-            })
+            field._rollback_history.append({"timestamp": time.time(), "pre_state": pre_state, "updated": updated})
             if len(field._rollback_history) > cfg.max_rollback_history:
                 field._rollback_history.pop(0)
 
@@ -190,21 +183,20 @@ class ConsolidationManager:
             deltas = []
             for nid in updated:
                 if nid in field.nodes:
-                    deltas.append(NodeDelta(
-                        node_id=nid, action="merged",
-                        old_state=pre_state.get(nid),
-                        new_state=field.nodes[nid].to_dict()
-                    ))
+                    deltas.append(
+                        NodeDelta(
+                            node_id=nid,
+                            action="merged",
+                            old_state=pre_state.get(nid),
+                            new_state=field.nodes[nid].to_dict(),
+                        )
+                    )
             for pid in pending_deletions:
                 if pid in pre_state:
-                    deltas.append(NodeDelta(
-                        node_id=pid, action="deleted",
-                        old_state=pre_state.get(pid)
-                    ))
+                    deltas.append(NodeDelta(node_id=pid, action="deleted", old_state=pre_state.get(pid)))
             if deltas:
                 field.version_control.create_version(
-                    deltas,
-                    message=f"consolidation: {len(updated)} merged, {len(pending_deletions)} deleted"
+                    deltas, message=f"consolidation: {len(updated)} merged, {len(pending_deletions)} deleted"
                 )
                 field.stats["current_version"] = field.version_control.current_version
                 field.stats["n_versions"] = field.version_control.n_versions
@@ -220,7 +212,11 @@ class ConsolidationManager:
         if updated:
             field._cache_dirty = True
 
-        if field.learned_consolidator is not None and field.stats["consolidations"] % 20 == 0 and field.stats["consolidations"] > 0:
+        if (
+            field.learned_consolidator is not None
+            and field.stats["consolidations"] % 20 == 0
+            and field.stats["consolidations"] > 0
+        ):
             field._train_learned_consolidator()
 
         field.wal.append_consolidate(updated)
@@ -274,7 +270,8 @@ class ConsolidationManager:
             if cfg.hyperbolic:
                 node.latent_pos = exp_map_poincare(
                     log_map_poincare(synth["latent_pos"], node.latent_pos, cfg.ball_radius),
-                    node.latent_pos, cfg.ball_radius,
+                    node.latent_pos,
+                    cfg.ball_radius,
                 )
             else:
                 node.latent_pos = synth["latent_pos"]
@@ -287,8 +284,7 @@ class ConsolidationManager:
             else:
                 field._merge_latents(node, partner)
             node.phase = np.arctan2(
-                0.5 * (np.sin(node.phase) + np.sin(partner.phase)),
-                0.5 * (np.cos(node.phase) + np.cos(partner.phase))
+                0.5 * (np.sin(node.phase) + np.sin(partner.phase)), 0.5 * (np.cos(node.phase) + np.cos(partner.phase))
             ) % (2 * np.pi)
             node.amplitude = min(1.0, 0.8 * (node.amplitude + partner.amplitude))
             node.salience = min(1.0, 0.7 * (node.salience + partner.salience))
@@ -298,20 +294,15 @@ class ConsolidationManager:
             else:
                 field._merge_latents(node, partner)
             node.phase = np.arctan2(
-                0.5 * (np.sin(node.phase) + np.sin(partner.phase)),
-                0.5 * (np.cos(node.phase) + np.cos(partner.phase))
+                0.5 * (np.sin(node.phase) + np.sin(partner.phase)), 0.5 * (np.cos(node.phase) + np.cos(partner.phase))
             ) % (2 * np.pi)
 
         if field.kalman_filter is not None:
             if node.covariance is not None:
                 node.covariance = field.kalman_filter.predict(node.covariance)
             if node.covariance is not None and partner.covariance is not None:
-                _, node.covariance = field.kalman_filter.update(
-                    node.latent_pos, partner.latent_pos, node.covariance
-                )
-                node.covariance = field.kalman_filter.merge_covariance(
-                    node.covariance, partner.covariance
-                )
+                _, node.covariance = field.kalman_filter.update(node.latent_pos, partner.latent_pos, node.covariance)
+                node.covariance = field.kalman_filter.merge_covariance(node.covariance, partner.covariance)
             elif partner.covariance is not None:
                 node.covariance = partner.covariance.copy()
 
@@ -351,6 +342,7 @@ class ConsolidationManager:
         """Self-supervision: probe merged nodes to verify they remain retrievable."""
         field = self.field
         from collections import deque
+
         if not isinstance(field._stability_buffer, deque):
             field._stability_buffer = deque(field._stability_buffer, maxlen=100)
 
@@ -411,9 +403,7 @@ class ConsolidationManager:
             while len(cluster_nids) >= 2:
                 best_pair = None
                 best_dist = float("inf")
-                cluster_positions = {
-                    nid: field.nodes[nid].latent_pos for nid in cluster_nids if nid in field.nodes
-                }
+                cluster_positions = {nid: field.nodes[nid].latent_pos for nid in cluster_nids if nid in field.nodes}
                 if len(cluster_positions) < 2:
                     break
                 nids_list = list(cluster_positions.keys())

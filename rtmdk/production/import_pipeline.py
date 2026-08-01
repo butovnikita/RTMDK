@@ -21,6 +21,7 @@ from dataclasses import dataclass
 @dataclass
 class ImportResult:
     """Result of an import operation."""
+
     total_items: int
     imported_items: int
     failed_items: int
@@ -44,11 +45,7 @@ class ImportPipeline:
         result = pipeline.import_url("https://example.com/article")
     """
 
-    def __init__(
-            self,
-            memory,
-            batch_size: int = 100,
-            session_id: str = "import"):
+    def __init__(self, memory, batch_size: int = 100, session_id: str = "import"):
         self.memory = memory
         self.batch_size = batch_size
         self.session_id = session_id
@@ -68,7 +65,7 @@ class ImportPipeline:
         t0 = time.time()
         path = Path(filepath)
 
-        with open(path, 'r', encoding='utf-8') as f:
+        with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
         # Handle nested format
@@ -77,12 +74,7 @@ class ImportPipeline:
         elif isinstance(data, dict):
             data = [data]
 
-        return self._import_items(
-            data,
-            text_field,
-            query_field,
-            metadata_fields,
-            time.time() - t0)
+        return self._import_items(data, text_field, query_field, metadata_fields, time.time() - t0)
 
     def import_csv(
         self,
@@ -95,14 +87,14 @@ class ImportPipeline:
         t0 = time.time()
         items = []
 
-        with open(filepath, 'r', encoding='utf-8') as f:
+        with open(filepath, "r", encoding="utf-8") as f:
             reader = csv.DictReader(f, delimiter=delimiter)
             for row in reader:
                 items.append(row)
 
         return self._import_items(
-            items, text_column, query_column, list(
-                items[0].keys()) if items else None, time.time() - t0)
+            items, text_column, query_column, list(items[0].keys()) if items else None, time.time() - t0
+        )
 
     def import_text(
         self,
@@ -114,7 +106,7 @@ class ImportPipeline:
         t0 = time.time()
         path = Path(filepath)
 
-        with open(path, 'r', encoding='utf-8') as f:
+        with open(path, "r", encoding="utf-8") as f:
             text = f.read()
 
         # Split into chunks
@@ -125,10 +117,7 @@ class ImportPipeline:
 
         for i, chunk in enumerate(chunks):
             try:
-                self.memory.save_context(
-                    {"input": chunk, "session_id": self.session_id},
-                    {"output": chunk}
-                )
+                self.memory.save_context({"input": chunk, "session_id": self.session_id}, {"output": chunk})
                 imported += 1
             except Exception as e:
                 errors.append(f"Chunk {i}: {e}")
@@ -162,9 +151,9 @@ class ImportPipeline:
             # Extract text (simple approach)
             if extract_text:
                 # Remove HTML tags
-                text = re.sub(r'<[^>]+>', ' ', html)
+                text = re.sub(r"<[^>]+>", " ", html)
                 # Remove extra whitespace
-                text = re.sub(r'\s+', ' ', text).strip()
+                text = re.sub(r"\s+", " ", text).strip()
             else:
                 text = html
 
@@ -175,8 +164,7 @@ class ImportPipeline:
             for chunk in chunks:
                 try:
                     self.memory.save_context(
-                        {"input": chunk, "session_id": self.session_id, "source": url},
-                        {"output": chunk}
+                        {"input": chunk, "session_id": self.session_id, "source": url}, {"output": chunk}
                     )
                     imported += 1
                 except Exception as e:
@@ -190,8 +178,7 @@ class ImportPipeline:
                 errors=errors,
             )
         except ImportError:
-            return ImportResult(0, 0, 1, time.time() - t0,
-                                ["requests not installed"])
+            return ImportResult(0, 0, 1, time.time() - t0, ["requests not installed"])
         except Exception as e:
             return ImportResult(0, 0, 1, time.time() - t0, [str(e)])
 
@@ -224,10 +211,7 @@ class ImportPipeline:
                         if field in item and field != text_field:
                             metadata[field] = item[field]
 
-                self.memory.save_context(
-                    {"input": query, "session_id": self.session_id, **metadata},
-                    {"output": text}
-                )
+                self.memory.save_context({"input": query, "session_id": self.session_id, **metadata}, {"output": text})
                 imported += 1
 
                 # Progress
@@ -246,17 +230,13 @@ class ImportPipeline:
             errors=errors[:10],  # First 10 errors
         )
 
-    def _chunk_text(
-            self,
-            text: str,
-            chunk_size: int,
-            overlap: int) -> List[str]:
+    def _chunk_text(self, text: str, chunk_size: int, overlap: int) -> List[str]:
         """Split text into overlapping chunks."""
         words = text.split()
         chunks = []
 
         for i in range(0, len(words), chunk_size - overlap):
-            chunk = ' '.join(words[i:i + chunk_size])
+            chunk = " ".join(words[i : i + chunk_size])
             if chunk.strip():
                 chunks.append(chunk)
 

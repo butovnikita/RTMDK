@@ -35,11 +35,7 @@ def test_memory_query_503_when_not_initialized(client):
 
 def test_memory_batch_query_503_when_not_initialized(client):
     """Batch memory query returns 503 when memory not initialized."""
-    resp = client.post(
-        "/v1/memory/batch_query",
-        json={
-            "queries": ["hello"],
-            "top_k": 5})
+    resp = client.post("/v1/memory/batch_query", json={"queries": ["hello"], "top_k": 5})
     assert resp.status_code == 503
     assert "not initialized" in resp.json()["detail"]
 
@@ -60,20 +56,11 @@ def test_memory_query_validation(client):
         assert resp.status_code == 422
 
         # top_k too high
-        resp = client.post(
-            "/v1/memory/query",
-            json={
-                "query": "x",
-                "top_k": 100})
+        resp = client.post("/v1/memory/query", json={"query": "x", "top_k": 100})
         assert resp.status_code == 422
 
         # negative threshold
-        resp = client.post(
-            "/v1/memory/query",
-            json={
-                "query": "x",
-                "threshold": -
-                0.1})
+        resp = client.post("/v1/memory/query", json={"query": "x", "threshold": -0.1})
         assert resp.status_code == 422
     finally:
         app_mod.memory = None
@@ -87,30 +74,15 @@ def test_memory_query_returns_results(client):
 
     cfg = RTMDKConfig(latent_dim=16, use_hnsw=False)
     field = RTMDKField(cfg)
-    field.add_node(
-        embedding=np.array(
-            [0.0] * 16),
-        content={
-            "content": "hello world"},
-        node_id="n0")
-    field.add_node(
-        embedding=np.array(
-            [1.0] * 16),
-        content={
-            "content": "foo bar"},
-        node_id="n1")
+    field.add_node(embedding=np.array([0.0] * 16), content={"content": "hello world"}, node_id="n0")
+    field.add_node(embedding=np.array([1.0] * 16), content={"content": "foo bar"}, node_id="n1")
 
     mem = RTMDKMemory(config=cfg, embedder=lambda x: np.array([0.0] * 16))
     mem.field = field
     app_mod.memory = mem
 
     try:
-        resp = client.post(
-            "/v1/memory/query",
-            json={
-                "query": "hello",
-                "top_k": 2,
-                "threshold": 0.0})
+        resp = client.post("/v1/memory/query", json={"query": "hello", "top_k": 2, "threshold": 0.0})
         assert resp.status_code == 200
         data = resp.json()
         assert data["query"] == "hello"
@@ -130,18 +102,8 @@ def test_memory_batch_query_returns_results(client):
 
     cfg = RTMDKConfig(latent_dim=16, use_hnsw=False)
     field = RTMDKField(cfg)
-    field.add_node(
-        embedding=np.array(
-            [0.0] * 16),
-        content={
-            "content": "hello world"},
-        node_id="n0")
-    field.add_node(
-        embedding=np.array(
-            [1.0] * 16),
-        content={
-            "content": "foo bar"},
-        node_id="n1")
+    field.add_node(embedding=np.array([0.0] * 16), content={"content": "hello world"}, node_id="n0")
+    field.add_node(embedding=np.array([1.0] * 16), content={"content": "foo bar"}, node_id="n1")
 
     mem = RTMDKMemory(config=cfg, embedder=lambda x: np.array([0.0] * 16))
     mem.field = field
@@ -239,13 +201,15 @@ def test_memory_pipeline_metrics_summary(client, tmp_path):
     store_path = tmp_path / "pipeline_metrics.jsonl"
     app_mod.pipeline_metrics_store = PipelineMetricsStore(str(store_path))
     try:
-        app_mod.pipeline_metrics_store.write({
-            "query_text": "q1",
-            "total_latency_ms": 10.0,
-            "stages": [
-                {"stage": "embed", "latency_ms": 5.0, "error": None, "degraded": False},
-            ],
-        })
+        app_mod.pipeline_metrics_store.write(
+            {
+                "query_text": "q1",
+                "total_latency_ms": 10.0,
+                "stages": [
+                    {"stage": "embed", "latency_ms": 5.0, "error": None, "degraded": False},
+                ],
+            }
+        )
         resp = client.get("/v1/memory/pipeline/metrics")
         assert resp.status_code == 200
         data = resp.json()

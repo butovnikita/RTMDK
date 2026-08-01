@@ -77,7 +77,9 @@ def test_1_memory_creation(memory):
 
     print("[OK] Memory initialized successfully")
     print(
-        f"   Config: latent_dim={memory.config.latent_dim}, learn_projection={getattr(memory.config, 'learn_projection', 'N/A')}")
+        f"   Config: latent_dim={memory.config.latent_dim}, "
+        f"learn_projection={getattr(memory.config, 'learn_projection', 'N/A')}"
+    )
     print(f"   Initial nodes: {len(memory.field.nodes)}")
 
 
@@ -97,21 +99,16 @@ def test_2_save_context(memory):
 
     for i, (input_text, output_text) in enumerate(test_messages):
         try:
-            memory.save_context(
-                {"input": input_text, "session_id": "test"},
-                {"output": output_text}
-            )
+            memory.save_context({"input": input_text, "session_id": "test"}, {"output": output_text})
             print(f"[OK] Message {i+1} saved: '{input_text[:40]}...'")
         except Exception as e:
             print(f"[FAIL] Message {i+1} FAILED: {e}")
             raise
 
     node_count = len(memory.field.nodes)
-    print(
-        f"\n   Total nodes after {len(test_messages)} messages: {node_count}")
+    print(f"\n   Total nodes after {len(test_messages)} messages: {node_count}")
     assert node_count > 0, "Should have nodes after saving messages"
-    assert node_count >= len(
-        test_messages), f"Expected at least {len(test_messages)} nodes, got {node_count}"
+    assert node_count >= len(test_messages), f"Expected at least {len(test_messages)} nodes, got {node_count}"
 
     # Check stats
     total_adds = memory.field.stats.get("total_adds", 0)
@@ -136,8 +133,7 @@ def test_3_query_memory(memory):
 
     for query, expected_keyword in test_queries:
         try:
-            ctx = memory.load_memory_variables(
-                {"input": query, "session_id": "test"})
+            ctx = memory.load_memory_variables({"input": query, "session_id": "test"})
             context = ctx.get("rtmdk_context", "")
 
             if context and context not in ("No relevant memory.", "[]"):
@@ -147,8 +143,7 @@ def test_3_query_memory(memory):
                 print(f"{status} Query: '{query}'")
                 print(f"   Context length: {len(context)} chars")
                 if not found:
-                    print(
-                        f"   Keyword '{expected_keyword}' NOT found in context")
+                    print(f"   Keyword '{expected_keyword}' NOT found in context")
                     print(f"   Context preview: {context[:100]}...")
             else:
                 print(f"[FAIL] Query: '{query}' - No context returned")
@@ -192,8 +187,9 @@ def test_4_memory_persistence(memory, temp_dir):
         print("[OK] Memory imported successfully")
         print(f"   Nodes after load: {node_count_after}")
 
-        assert node_count_before == node_count_after, \
-            f"Node count mismatch: {node_count_before} before, {node_count_after} after"
+        assert (
+            node_count_before == node_count_after
+        ), f"Node count mismatch: {node_count_before} before, {node_count_after} after"
 
         # Verify nodes have same data
         for nid in list(memory.field.nodes.keys())[:5]:
@@ -202,8 +198,7 @@ def test_4_memory_persistence(memory, temp_dir):
 
             assert node1.salience == node2.salience, f"Salience mismatch for {nid}"
             assert node1.amplitude == node2.amplitude, f"Amplitude mismatch for {nid}"
-            assert node1.content.get("text") == node2.content.get(
-                "text"), f"Content mismatch for {nid}"
+            assert node1.content.get("text") == node2.content.get("text"), f"Content mismatch for {nid}"
 
         print("[OK] All verified nodes match")
 
@@ -227,29 +222,25 @@ def test_5_projection_logic(memory):
 
     try:
         # Test _project method
-        if hasattr(memory.field, '_project'):
+        if hasattr(memory.field, "_project"):
             latent = memory.field._project(test_embedding)
-            assert latent.shape == (
-                256,), f"Expected shape (256,), got {latent.shape}"
+            assert latent.shape == (256,), f"Expected shape (256,), got {latent.shape}"
             print(f"[OK] _project works: output shape {latent.shape}")
 
         # Test projection_learner if exists
-        if hasattr(
-                memory.field._projection_mgr,
-                'projection_learner') and memory.field._projection_mgr.projection_learner is not None:
+        if (
+            hasattr(memory.field._projection_mgr, "projection_learner")
+            and memory.field._projection_mgr.projection_learner is not None
+        ):
             proj = memory.field._projection_mgr.projection_learner
             result = proj.project(test_embedding)
-            assert result.shape == (
-                256,), f"Expected shape (256,), got {result.shape}"
-            print(
-                f"[OK] projection_learner.project works: output shape {result.shape}")
+            assert result.shape == (256,), f"Expected shape (256,), got {result.shape}"
+            print(f"[OK] projection_learner.project works: output shape {result.shape}")
 
             # Test update doesn't crash
             result2 = proj.update(test_embedding)
-            assert result2.shape == (
-                256,), f"Expected shape (256,), got {result2.shape}"
-            print(
-                f"[OK] projection_learner.update works: output shape {result2.shape}")
+            assert result2.shape == (256,), f"Expected shape (256,), got {result2.shape}"
+            print(f"[OK] projection_learner.update works: output shape {result2.shape}")
 
         else:
             print("[WARN]  No projection_learner (using manual projection)")
@@ -269,10 +260,7 @@ def test_6_stats_consistency(memory):
     stats = memory.field.stats
 
     # Check all expected keys exist
-    expected_keys = [
-        "total_adds", "total_queries", "consolidations",
-        "bm25_fallbacks", "field_health"
-    ]
+    expected_keys = ["total_adds", "total_queries", "consolidations", "bm25_fallbacks", "field_health"]
 
     for key in expected_keys:
         if key in stats:
@@ -285,8 +273,9 @@ def test_6_stats_consistency(memory):
     print(f"\n   Node count: {node_count}")
     print(f"   Node index length: {len(memory.field.node_index)}")
 
-    assert node_count == len(memory.field.node_index), \
-        f"Node count mismatch: {node_count} nodes, {len(memory.field.node_index)} in index"
+    assert node_count == len(
+        memory.field.node_index
+    ), f"Node count mismatch: {node_count} nodes, {len(memory.field.node_index)} in index"
 
     print("[OK] Stats consistent")
     return True
@@ -318,8 +307,7 @@ def test_7_error_handling():
     # Test very long query
     try:
         long_query = "test " * 1000
-        memory.load_memory_variables(
-            {"input": long_query, "session_id": "test"})
+        memory.load_memory_variables({"input": long_query, "session_id": "test"})
         print("[OK] Long query handled gracefully")
     except Exception as e:
         print(f"[FAIL] Long query FAILED: {e}")
@@ -327,10 +315,7 @@ def test_7_error_handling():
 
     # Test invalid session
     try:
-        memory.save_context(
-            {"input": "test", "session_id": None},
-            {"output": "test"}
-        )
+        memory.save_context({"input": "test", "session_id": None}, {"output": "test"})
         print("[OK] None session_id handled gracefully")
     except Exception as e:
         print(f"[FAIL] None session_id FAILED: {e}")
@@ -367,6 +352,7 @@ def run_all_tests():
         print(f"[FAIL] TEST FAILED: {e}")
         print("=" * 70)
         import traceback
+
         traceback.print_exc()
         all_passed = False
 

@@ -27,18 +27,10 @@ if _HNSWLIB_AVAILABLE:
     class HNSWLibIndex:
         """HNSW index backed by hnswlib. API-compatible with NaiveGraphIndex."""
 
-        def __init__(
-                self,
-                dim: int = 64,
-                m: int = 16,
-                ef_construction: int = 200,
-                space: str = "cosine"):
+        def __init__(self, dim: int = 64, m: int = 16, ef_construction: int = 200, space: str = "cosine"):
             self.dim = dim
             self._index = hnswlib.Index(space=space, dim=dim)
-            self._index.init_index(
-                max_elements=100_000,
-                ef_construction=ef_construction,
-                M=m)
+            self._index.init_index(max_elements=100_000, ef_construction=ef_construction, M=m)
             self._index.set_ef(max(ef_construction // 2, 10))
             self._id_to_int: Dict[Union[int, str], int] = {}
             self._int_to_id: Dict[int, Union[int, str]] = {}
@@ -50,8 +42,7 @@ if _HNSWLIB_AVAILABLE:
                 return  # idempotent
             vec = np.asarray(pos, dtype=np.float32).reshape(1, -1)
             if vec.shape[1] != self.dim:
-                raise ValueError(
-                    f"Expected dim {self.dim}, got {vec.shape[1]}")
+                raise ValueError(f"Expected dim {self.dim}, got {vec.shape[1]}")
             idx = self._next_int
             self._next_int += 1
             self._id_to_int[node_id] = idx
@@ -64,11 +55,9 @@ if _HNSWLIB_AVAILABLE:
                 self._index.resize_index(new_max)
             self._index.add_items(vec, np.array([idx]))
 
-        def insert_batch(
-                self, node_ids: List[Union[int, str]], positions: NDArray):
+        def insert_batch(self, node_ids: List[Union[int, str]], positions: NDArray):
             if positions.shape[0] != len(node_ids):
-                raise ValueError(
-                    f"positions count {positions.shape[0]} != node_ids count {len(node_ids)}")
+                raise ValueError(f"positions count {positions.shape[0]} != node_ids count {len(node_ids)}")
             new_ids = []
             new_vecs = []
             for nid, pos in zip(node_ids, positions):
@@ -76,8 +65,7 @@ if _HNSWLIB_AVAILABLE:
                     continue
                 vec = np.asarray(pos, dtype=np.float32).reshape(1, -1)
                 if vec.shape[1] != self.dim:
-                    raise ValueError(
-                        f"Expected dim {self.dim}, got {vec.shape[1]}")
+                    raise ValueError(f"Expected dim {self.dim}, got {vec.shape[1]}")
                 idx = self._next_int
                 self._next_int += 1
                 self._id_to_int[nid] = idx
@@ -102,8 +90,7 @@ if _HNSWLIB_AVAILABLE:
                 self.positions.pop(node_id, None)
                 self._index.mark_deleted(idx)
 
-        def search(self, query_pos: NDArray,
-                   top_k: int = 10) -> List[Union[int, str]]:
+        def search(self, query_pos: NDArray, top_k: int = 10) -> List[Union[int, str]]:
             if not self._id_to_int:
                 return []
             # Adaptive ef for high recall at scale

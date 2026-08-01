@@ -1,6 +1,5 @@
 """Tests for rtmdk.production.tagging."""
 
-import pytest
 from rtmdk.production.tagging import TaggingSystem
 
 

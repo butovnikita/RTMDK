@@ -12,6 +12,7 @@ Usage:
 Then in config:
     sot_bootstrap_projection = "sot_bootstrap.npz"
 """
+
 import json
 import logging
 from typing import Callable, List, Optional
@@ -38,9 +39,11 @@ def run_bootstrap(
     """
     if teacher_embed_fn is None:
         from sentence_transformers import SentenceTransformer
+
         teacher = SentenceTransformer(model_name)
-        def teacher_embed_fn(t): return teacher.encode(
-            t, show_progress_bar=False)
+
+        def teacher_embed_fn(t):
+            return teacher.encode(t, show_progress_bar=False)
 
     logger.info(f"SBERT bootstrap: {len(texts)} texts -> {output_path}")
     teacher_embs = []
@@ -106,8 +109,7 @@ def run_bootstrap(
 
     # W shape: (n_vocab, teacher_dim)
     # We also store token embeddings aligned to this vocab
-    emb_matrix = np.stack([token_embeddings[t]
-                          for t in vocab]).astype(np.float32)
+    emb_matrix = np.stack([token_embeddings[t] for t in vocab]).astype(np.float32)
 
     np.savez(
         output_path,
@@ -116,8 +118,7 @@ def run_bootstrap(
         token_embeddings=emb_matrix,
         token_frequencies=np.array([token_freq[t] for t in vocab], dtype=np.float32),
     )
-    logger.info(
-        f"Saved bootstrap to {output_path}: vocab={n_vocab}, proj={W.shape}")
+    logger.info(f"Saved bootstrap to {output_path}: vocab={n_vocab}, proj={W.shape}")
 
 
 def load_bootstrap(path: str, tokenizer):
@@ -146,11 +147,12 @@ def load_bootstrap(path: str, tokenizer):
 
 if __name__ == "__main__":
     import sys
+
     logging.basicConfig(level=logging.INFO)
 
     if len(sys.argv) < 3:
         print("Usage: python bootstrap_sbert.py <input_json> <output.npz>")
-        print("  input_json: [{\"text\": \"...\"}, ...]")
+        print('  input_json: [{"text": "..."}, ...]')
         sys.exit(1)
 
     with open(sys.argv[1], "r", encoding="utf-8") as f:

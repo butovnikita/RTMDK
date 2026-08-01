@@ -11,8 +11,9 @@ Third-party packages can auto-register via setuptools entry points:
     [rtmdk.pipeline.stages]
     my_rerank = my_package.stages:MyRerankStage
 """
+
 from __future__ import annotations
-from typing import Any, Callable, Dict, Type
+from typing import Any, Dict, Type
 import logging
 
 try:

@@ -29,7 +29,7 @@ class DashboardGenerator:
         # Collect node data for visualization
         tiers = {}
         for nid, node in nodes.items():
-            tier = getattr(node, 'tier', 'unknown')
+            tier = getattr(node, "tier", "unknown")
             if tier not in tiers:
                 tiers[tier] = 0
             tiers[tier] += 1
@@ -98,7 +98,7 @@ class DashboardGenerator:
 </html>"""
 
         path = Path(output_path)
-        path.write_text(html, encoding='utf-8')
+        path.write_text(html, encoding="utf-8")
         print(f"Dashboard saved to: {output_path}")
         return str(path)
 
@@ -108,8 +108,9 @@ class DashboardGenerator:
             pct = count / max(total, 1) * 100
             rows.append(
                 f"<tr><td>{tier}</td><td>{count}</td>"
-                f"<td><div class='bar' style='width:{pct}%'></div> {pct:.0f}%</td></tr>")
-        return '\n'.join(rows)
+                f"<td><div class='bar' style='width:{pct}%'></div> {pct:.0f}%</td></tr>"
+            )
+        return "\n".join(rows)
 
     def _top_node_rows(self, nodes) -> str:
         rows = []
@@ -118,11 +119,12 @@ class DashboardGenerator:
             rows.append(
                 f"<tr><td>{i}</td><td>{node.salience:.3f}</td>"
                 f"<td>{node.amplitude:.3f}</td><td>{getattr(node, 'tier', '?')}</td>"
-                f"<td>{text}</td></tr>")
-        return '\n'.join(rows)
+                f"<td>{text}</td></tr>"
+            )
+        return "\n".join(rows)
 
     def _format_stats(self, stats: Dict) -> str:
         lines = []
         for key, value in sorted(stats.items()):
             lines.append(f"  {key}: {value}")
-        return '\n'.join(lines)
+        return "\n".join(lines)

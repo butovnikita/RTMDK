@@ -3,7 +3,6 @@
 import time
 
 import numpy as np
-import pytest
 
 from rtmdk.pipeline.base import PipelineContext, PipelineStage
 from rtmdk.pipeline.circuit_breaker import CircuitBreaker, BreakerState
@@ -12,6 +11,7 @@ from rtmdk.pipeline.health import PipelineHealthMonitor
 
 class FlakyStage(PipelineStage):
     """Stage that fails on first N calls, then succeeds."""
+
     name = "flaky"
 
     def __init__(self, fail_count: int = 3):
@@ -28,6 +28,7 @@ class FlakyStage(PipelineStage):
 
 class SlowStage(PipelineStage):
     """Stage that always takes a long time."""
+
     name = "slow"
 
     def process(self, ctx: PipelineContext) -> PipelineContext:
@@ -52,10 +53,8 @@ class TestCircuitBreaker:
         assert breaker.can_execute() is False
 
     def test_opens_after_latency_violations(self):
-        breaker = CircuitBreaker(
-            name="test", latency_threshold_ms=10.0, latency_violation_threshold=2
-        )
-        breaker.record_success(5.0)   # ok
+        breaker = CircuitBreaker(name="test", latency_threshold_ms=10.0, latency_violation_threshold=2)
+        breaker.record_success(5.0)  # ok
         breaker.record_success(15.0)  # violation 1
         assert breaker.state == BreakerState.CLOSED
         breaker.record_success(20.0)  # violation 2
@@ -147,14 +146,16 @@ class TestConfigDrivenBreakers:
         from rtmdk.memory.config import RTMDKConfig
 
         cfg = RTMDKConfig(
-            latent_dim=64, embedding_dim=64, top_k=5,
+            latent_dim=64,
+            embedding_dim=64,
+            top_k=5,
             pipeline_breaker_enabled=True,
             pipeline_breaker_failure_threshold=2,
             pipeline_breaker_thresholds={"embed": 10.0, "retrieve": 10.0},
         )
 
         def embed(text):
-            h = hash(text) % (2 ** 32)
+            h = hash(text) % (2**32)
             rng = np.random.default_rng(h)
             return rng.standard_normal(64, dtype=np.float32)
 
@@ -170,12 +171,14 @@ class TestConfigDrivenBreakers:
         from rtmdk.memory.config import RTMDKConfig
 
         cfg = RTMDKConfig(
-            latent_dim=64, embedding_dim=64, top_k=5,
+            latent_dim=64,
+            embedding_dim=64,
+            top_k=5,
             pipeline_breaker_enabled=False,
         )
 
         def embed(text):
-            h = hash(text) % (2 ** 32)
+            h = hash(text) % (2**32)
             rng = np.random.default_rng(h)
             return rng.standard_normal(64, dtype=np.float32)
 
@@ -188,9 +191,7 @@ class TestConfigDrivenBreakers:
 class TestPipelineContextBreakerStates:
     def test_breaker_states_in_to_dict(self):
         stage = SlowStage()
-        stage.circuit_breaker = CircuitBreaker(
-            name="slow", latency_threshold_ms=5.0, latency_violation_threshold=1
-        )
+        stage.circuit_breaker = CircuitBreaker(name="slow", latency_threshold_ms=5.0, latency_violation_threshold=1)
         ctx = PipelineContext(query_text="q")
         ctx = stage.run(ctx)
         result = ctx.to_dict()
@@ -209,5 +210,5 @@ class TestPipelineContextBreakerStates:
         ctx = stage1.run(ctx)
         ctx = stage2.run(ctx)
 
-        assert ctx.breaker_states["s1"] == "open"   # 20ms > 5ms, 1 violation >= threshold=1
+        assert ctx.breaker_states["s1"] == "open"  # 20ms > 5ms, 1 violation >= threshold=1
         assert ctx.breaker_states["s2"] == "closed"  # 20ms < 50ms, no violation

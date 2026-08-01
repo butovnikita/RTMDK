@@ -20,9 +20,7 @@ class TestRTMDKClientUnit:
     @patch("rtmdk.client.httpx.Client")
     def test_health(self, mock_client_cls):
         mock_client = MagicMock()
-        mock_client.request.return_value = self._mock_response(
-            {"status": "ok", "version": "8.2.0"}
-        )
+        mock_client.request.return_value = self._mock_response({"status": "ok", "version": "8.2.0"})
         mock_client_cls.return_value = mock_client
 
         client = RTMDKClient(base_url="http://test", api_key="key")
@@ -36,9 +34,7 @@ class TestRTMDKClientUnit:
     @patch("rtmdk.client.httpx.Client")
     def test_query_memory(self, mock_client_cls):
         mock_client = MagicMock()
-        mock_client.request.return_value = self._mock_response(
-            {"query": "hello", "total": 2, "results": []}
-        )
+        mock_client.request.return_value = self._mock_response({"query": "hello", "total": 2, "results": []})
         mock_client_cls.return_value = mock_client
 
         client = RTMDKClient(base_url="http://test")
@@ -50,9 +46,7 @@ class TestRTMDKClientUnit:
     @patch("rtmdk.client.httpx.Client")
     def test_create_node(self, mock_client_cls):
         mock_client = MagicMock()
-        mock_client.request.return_value = self._mock_response(
-            {"id": "n1", "status": "created"}
-        )
+        mock_client.request.return_value = self._mock_response({"id": "n1", "status": "created"})
         mock_client_cls.return_value = mock_client
 
         client = RTMDKClient(base_url="http://test")
@@ -77,9 +71,7 @@ class TestRTMDKClientUnit:
     @patch("rtmdk.client.httpx.Client")
     def test_batch_ingest(self, mock_client_cls):
         mock_client = MagicMock()
-        mock_client.request.return_value = self._mock_response(
-            {"ingested": 3, "node_ids": ["a", "b", "c"]}
-        )
+        mock_client.request.return_value = self._mock_response({"ingested": 3, "node_ids": ["a", "b", "c"]})
         mock_client_cls.return_value = mock_client
 
         client = RTMDKClient(base_url="http://test")
@@ -90,9 +82,7 @@ class TestRTMDKClientUnit:
     @patch("rtmdk.client.httpx.Client")
     def test_export_memory(self, mock_client_cls):
         mock_client = MagicMock()
-        mock_client.request.return_value = self._mock_response(
-            {"total": 5, "nodes": []}
-        )
+        mock_client.request.return_value = self._mock_response({"total": 5, "nodes": []})
         mock_client_cls.return_value = mock_client
 
         client = RTMDKClient(base_url="http://test")
@@ -103,9 +93,7 @@ class TestRTMDKClientUnit:
     @patch("rtmdk.client.httpx.Client")
     def test_context_manager(self, mock_client_cls):
         mock_client = MagicMock()
-        mock_client.request.return_value = self._mock_response(
-            {"status": "ok"}
-        )
+        mock_client.request.return_value = self._mock_response({"status": "ok"})
         mock_client_cls.return_value = mock_client
 
         with RTMDKClient(base_url="http://test") as client:

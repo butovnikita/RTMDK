@@ -7,7 +7,7 @@ from rtmdk.production.embedding_cache import EmbeddingCache
 
 
 def _embedder(text: str) -> np.ndarray:
-    h = hash(text) % (2 ** 32)
+    h = hash(text) % (2**32)
     rng = np.random.default_rng(h)
     return rng.standard_normal(64, dtype=np.float32)
 

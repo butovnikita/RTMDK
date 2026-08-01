@@ -3,6 +3,7 @@
 Visualizes memory as a chronological timeline and generates
 human-readable stories from episodic memories.
 """
+
 from __future__ import annotations
 from typing import Dict, List, Any, Optional
 import time
@@ -35,18 +36,20 @@ class MemoryTimeline:
             if tier and content.get("tier") != tier:
                 continue
 
-            events.append({
-                "node_id": nid,
-                "timestamp": ts,
-                "input_text": content.get("input_text", ""),
-                "output_text": content.get("output_text", ""),
-                "text": content.get("text", ""),
-                "tier": content.get("tier", "semantic"),
-                "session": content.get("session", ""),
-                "emotion": content.get("emotion", ""),
-                "tags": content.get("tags", []),
-                "salience": getattr(node, "salience", 0.0),
-            })
+            events.append(
+                {
+                    "node_id": nid,
+                    "timestamp": ts,
+                    "input_text": content.get("input_text", ""),
+                    "output_text": content.get("output_text", ""),
+                    "text": content.get("text", ""),
+                    "tier": content.get("tier", "semantic"),
+                    "session": content.get("session", ""),
+                    "emotion": content.get("emotion", ""),
+                    "tags": content.get("tags", []),
+                    "salience": getattr(node, "salience", 0.0),
+                }
+            )
 
         events.sort(key=lambda x: x["timestamp"])
         return events
@@ -99,7 +102,13 @@ class MemoryNarrator:
             try:
                 prompt = (
                     "Summarize the following conversation history as a brief narrative.\n\n"
-                    + "\n".join([ev.get("input_text") or ev.get("text", "") for ev in selected if ev.get("input_text") or ev.get("text")])
+                    + "\n".join(
+                        [
+                            ev.get("input_text") or ev.get("text", "")
+                            for ev in selected
+                            if ev.get("input_text") or ev.get("text")
+                        ]
+                    )
                     + "\n\nNarrative:"
                 )
                 narrative = self.llm_client.complete(prompt, max_tokens=300).strip()

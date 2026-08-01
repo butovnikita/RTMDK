@@ -33,8 +33,7 @@ class _WALStore:
 
     def _ensure_schema(self) -> None:
         with self._conn:
-            self._conn.execute(
-                """
+            self._conn.execute("""
                 CREATE TABLE IF NOT EXISTS wal (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     clock INTEGER NOT NULL,
@@ -42,14 +41,9 @@ class _WALStore:
                     mutation TEXT NOT NULL,
                     ts REAL DEFAULT (julianday('now'))
                 )
-                """
-            )
-            self._conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_wal_clock ON wal(clock)"
-            )
-            self._conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_wal_origin ON wal(origin)"
-            )
+                """)
+            self._conn.execute("CREATE INDEX IF NOT EXISTS idx_wal_clock ON wal(clock)")
+            self._conn.execute("CREATE INDEX IF NOT EXISTS idx_wal_origin ON wal(origin)")
 
     def append(self, clock: int, origin: str, mutation: Dict[str, Any]) -> int:
         with self._lock, self._conn:
@@ -83,6 +77,7 @@ class _WALStore:
 # Replication manager
 # ---------------------------------------------------------------------------
 
+
 class ReplicationManager:
     """Light-weight multi-master replication manager.
 
@@ -111,6 +106,7 @@ class ReplicationManager:
         if self._enabled:
             try:
                 import httpx
+
                 self._httpx = httpx
             except ImportError as exc:
                 logger.warning("httpx not installed; replication disabled (%s)", exc)
@@ -185,10 +181,7 @@ class ReplicationManager:
     def get_wal(self, since: int = 0) -> List[Dict[str, Any]]:
         """Return local WAL entries with clock > *since*."""
         rows = self._wal.since(since)
-        return [
-            {**mut, "_rep_clock": clock, "_rep_origin": origin}
-            for clock, origin, mut in rows
-        ]
+        return [{**mut, "_rep_clock": clock, "_rep_origin": origin} for clock, origin, mut in rows]
 
     def local_clock(self) -> int:
         return self._local_clock
@@ -211,7 +204,7 @@ class ReplicationManager:
                     break
                 except Exception as exc:
                     last_exc = exc
-                    __import__("time").sleep(0.1 * (2 ** attempt))
+                    __import__("time").sleep(0.1 * (2**attempt))
             else:
                 logger.warning("Replication to %s failed after 3 retries: %s", peer, last_exc)
 

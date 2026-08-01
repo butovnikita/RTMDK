@@ -66,9 +66,7 @@ class RTMDKLlamaIndexRetriever(BaseRetriever if LLAMAINDEX_AVAILABLE else object
         else:
             query_str = str(query_bundle)
 
-        ctx = self.memory.load_memory_variables(
-            {"input": query_str, "session_id": self.session_id}
-        )
+        ctx = self.memory.load_memory_variables({"input": query_str, "session_id": self.session_id})
         context = ctx.get("rtmdk_context", "")
         return self._parse_context(context)
 
@@ -79,9 +77,7 @@ class RTMDKLlamaIndexRetriever(BaseRetriever if LLAMAINDEX_AVAILABLE else object
 
         nodes: List["NodeWithScore"] = []
         # Structured format: [ATTN:x.xx][SAL:y.yy][TIER:...] text
-        pattern = (
-            r"\[ATTN:([0-9.]+)\](?:\[SAL:([0-9.]+)\])?(?:\[TIER:(\w+)\])?\s*(.+?)(?=\[ATTN:|$)"
-        )
+        pattern = r"\[ATTN:([0-9.]+)\](?:\[SAL:([0-9.]+)\])?(?:\[TIER:(\w+)\])?\s*(.+?)(?=\[ATTN:|$)"
         matches = re.findall(pattern, context, re.DOTALL)
 
         if matches and LLAMAINDEX_AVAILABLE and TextNode is not None:
@@ -147,9 +143,7 @@ class RTMDKVectorStore:
 
     def query(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
         """Query the store and return raw dicts."""
-        ctx = self.memory.load_memory_variables(
-            {"input": query, "session_id": self.session_id}
-        )
+        ctx = self.memory.load_memory_variables({"input": query, "session_id": self.session_id})
         return [{"content": ctx.get("rtmdk_context", "")}]
 
     def get_nodes(self) -> List[Dict[str, Any]]:

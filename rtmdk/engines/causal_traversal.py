@@ -43,10 +43,7 @@ class CausalTraversalEngine:
             return []
 
         # Check if causal graph exists
-        has_causal = any(
-            hasattr(n, 'causal_parents') and n.causal_parents
-            for _, _, n in resonance_results
-        )
+        has_causal = any(hasattr(n, "causal_parents") and n.causal_parents for _, _, n in resonance_results)
         if not has_causal:
             return resonance_results[:top_k]
 
@@ -57,9 +54,7 @@ class CausalTraversalEngine:
         # Top 3 seeds
         for seed_id, seed_score, seed_node in resonance_results[:3]:
             self._bfs_causal(
-                seed_id, seed_score, memory_field,
-                causal_results, visited={seed_id}, path=[seed_id],
-                depth=0
+                seed_id, seed_score, memory_field, causal_results, visited={seed_id}, path=[seed_id], depth=0
             )
 
         # Merge resonance and causal results
@@ -77,14 +72,10 @@ class CausalTraversalEngine:
                 # New node from causal traversal
                 node = memory_field.nodes.get(nid)
                 if node:
-                    all_results[nid] = (
-                        nid, causal_score * 0.7, node)  # Lower base score
+                    all_results[nid] = (nid, causal_score * 0.7, node)  # Lower base score
 
         # Sort and return top_k
-        results = sorted(
-            all_results.values(),
-            key=lambda x: x[1],
-            reverse=True)
+        results = sorted(all_results.values(), key=lambda x: x[1], reverse=True)
         return results[:top_k]
 
     def _bfs_causal(
@@ -106,7 +97,7 @@ class CausalTraversalEngine:
             return
 
         # Get causal connections
-        causal_parents = getattr(current_node, 'causal_parents', [])
+        causal_parents = getattr(current_node, "causal_parents", [])
         causal_children = self._get_causal_children(current_id, memory_field)
 
         # Traverse parents (causes)
@@ -116,18 +107,12 @@ class CausalTraversalEngine:
             visited.add(parent_id)
 
             # Score: parent_score × decay × causal_strength
-            causal_strength = self._get_causal_strength(
-                parent_id, current_id, memory_field)
-            hop_score = parent_score * \
-                (self.decay_per_hop ** (depth + 1)) * causal_strength
+            causal_strength = self._get_causal_strength(parent_id, current_id, memory_field)
+            hop_score = parent_score * (self.decay_per_hop ** (depth + 1)) * causal_strength
 
             if hop_score > 0.01:  # Minimum threshold
                 results[parent_id] = (hop_score, path + [parent_id])
-                self._bfs_causal(
-                    parent_id, hop_score, memory_field,
-                    results, visited, path + [parent_id],
-                    depth + 1
-                )
+                self._bfs_causal(parent_id, hop_score, memory_field, results, visited, path + [parent_id], depth + 1)
 
         # Traverse children (effects)
         for child_id in causal_children:
@@ -135,39 +120,29 @@ class CausalTraversalEngine:
                 continue
             visited.add(child_id)
 
-            causal_strength = self._get_causal_strength(
-                current_id, child_id, memory_field)
-            hop_score = parent_score * \
-                (self.decay_per_hop ** (depth + 1)) * causal_strength
+            causal_strength = self._get_causal_strength(current_id, child_id, memory_field)
+            hop_score = parent_score * (self.decay_per_hop ** (depth + 1)) * causal_strength
 
             if hop_score > 0.01:
                 results[child_id] = (hop_score, path + [child_id])
-                self._bfs_causal(
-                    child_id, hop_score, memory_field,
-                    results, visited, path + [child_id],
-                    depth + 1
-                )
+                self._bfs_causal(child_id, hop_score, memory_field, results, visited, path + [child_id], depth + 1)
 
     def _get_causal_children(self, node_id: str, memory_field) -> List[str]:
         """Find nodes that have this node as causal parent."""
         children = []
         for nid, node in memory_field.nodes.items():
-            parents = getattr(node, 'causal_parents', [])
+            parents = getattr(node, "causal_parents", [])
             if node_id in parents:
                 children.append(nid)
         return children
 
-    def _get_causal_strength(
-            self,
-            from_id: str,
-            to_id: str,
-            memory_field) -> float:
+    def _get_causal_strength(self, from_id: str, to_id: str, memory_field) -> float:
         """Get causal strength between two nodes."""
         to_node = memory_field.nodes.get(to_id)
         if not to_node:
             return 0.5  # Default
 
-        causal_strengths = getattr(to_node, 'causal_strengths', {})
+        causal_strengths = getattr(to_node, "causal_strengths", {})
         return causal_strengths.get(from_id, 0.5)
 
 

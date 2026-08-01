@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 import numpy as np
 
@@ -96,8 +96,13 @@ class AdaptiveBandwidthOptimizer:
 
         for bw in candidates:
             score = self._evaluate_bandwidth(
-                positions, phases, amplitudes, saliences,
-                probe_idx, bw, top_k,
+                positions,
+                phases,
+                amplitudes,
+                saliences,
+                probe_idx,
+                bw,
+                top_k,
             )
             self._history.append((float(bw), float(score)))
             if score > best_score:
@@ -108,7 +113,9 @@ class AdaptiveBandwidthOptimizer:
         self._best_score = best_score
         logger.info(
             "AdaptiveBandwidth: optimal bw=%.4f, score=%.3f (n=%d)",
-            best_bw, best_score, n,
+            best_bw,
+            best_score,
+            n,
         )
         return best_bw
 
@@ -129,7 +136,7 @@ class AdaptiveBandwidthOptimizer:
             positions[probe_idx][:, np.newaxis, :] - positions[np.newaxis, :, :],
             axis=2,
         )
-        spatial = np.exp(-dists ** 2 / (2 * bw ** 2))
+        spatial = np.exp(-(dists**2) / (2 * bw**2))
         # Phase alignment (simplified: assume probe phase = target phase)
         phase_align = 1.0  # identity for self-match
         responses = spatial * phase_align * amplitudes * saliences

@@ -1,4 +1,5 @@
 """Goal tracker for RTMDK."""
+
 from __future__ import annotations
 
 import time
@@ -13,42 +14,38 @@ if TYPE_CHECKING:
 class GoalTracker:
     """Tracks user goals, subgoals, and completion progress."""
 
-    def __init__(self, max_goals: int = 20, goal_decay: float = 0.995,
-                 completion_threshold: float = 0.8):
+    def __init__(self, max_goals: int = 20, goal_decay: float = 0.995, completion_threshold: float = 0.8):
         self.max_goals = max_goals
         self.goal_decay = goal_decay
         self.completion_threshold = completion_threshold
         self.goals: Dict[str, GoalNode] = {}
         self._history: List[Dict] = []
 
-    def add_goal(self, description: str, goal_id: Optional[str] = None,
-                 subgoals: Optional[List[str]] = None,
-                 priority: float = 1.0) -> str:
+    def add_goal(
+        self,
+        description: str,
+        goal_id: Optional[str] = None,
+        subgoals: Optional[List[str]] = None,
+        priority: float = 1.0,
+    ) -> str:
         gid = goal_id or f"goal_{len(self.goals)}_{int(time.time())}"
-        self.goals[gid] = GoalNode(
-            id=gid, description=description,
-            subgoals=subgoals or [], priority=priority
-        )
-        self._history.append(
-            {"action": "add", "goal_id": gid, "time": time.time()})
+        self.goals[gid] = GoalNode(id=gid, description=description, subgoals=subgoals or [], priority=priority)
+        self._history.append({"action": "add", "goal_id": gid, "time": time.time()})
         self._enforce_max_goals()
         return gid
 
-    def update_completion(self, goal_id: str, completion: float,
-                          related_nodes: Optional[List[str]] = None):
+    def update_completion(self, goal_id: str, completion: float, related_nodes: Optional[List[str]] = None):
         if goal_id in self.goals:
             goal = self.goals[goal_id]
             goal.completion = min(1.0, max(0.0, completion))
             goal.last_updated = time.time()
             if related_nodes:
-                goal.related_nodes = list(
-                    set(goal.related_nodes + related_nodes))
+                goal.related_nodes = list(set(goal.related_nodes + related_nodes))
             if goal.completion >= self.completion_threshold:
                 goal.status = "completed"
-            self._history.append({
-                "action": "update", "goal_id": goal_id,
-                "completion": goal.completion, "time": time.time()
-            })
+            self._history.append(
+                {"action": "update", "goal_id": goal_id, "completion": goal.completion, "time": time.time()}
+            )
 
     def get_active_goals(self) -> List[GoalNode]:
         return [g for g in self.goals.values() if g.status == "active"]
@@ -83,7 +80,7 @@ class GoalTracker:
         active = self.get_active_goals()
         if len(active) > self.max_goals:
             sorted_goals = sorted(active, key=lambda g: g.priority)
-            for goal in sorted_goals[:len(active) - self.max_goals]:
+            for goal in sorted_goals[: len(active) - self.max_goals]:
                 goal.status = "abandoned"
 
     def get_state(self) -> Dict:

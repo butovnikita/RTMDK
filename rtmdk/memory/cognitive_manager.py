@@ -2,10 +2,11 @@
 
 Extracted from RTMDKField to reduce monolithic field.py size.
 """
+
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Dict, List, Tuple
+from typing import TYPE_CHECKING, List, Tuple
 
 import numpy as np
 
@@ -80,7 +81,7 @@ class CognitiveManager:
 
         high_res = [(nid, r, n) for nid, r, n in results if r > f.cfg.high_resonance_threshold]
         contradictions = [n for _, _, n in results if n.content.get("causal_flag") == "incompatible"]
-        procedural = [n for _, _, n in results if getattr(n, 'tier', 'semantic') == "procedural"]
+        procedural = [n for _, _, n in results if getattr(n, "tier", "semantic") == "procedural"]
 
         lines = ["### COGNITIVE_CONTEXT"]
         if high_res:

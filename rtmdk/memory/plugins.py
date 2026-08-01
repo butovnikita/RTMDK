@@ -3,6 +3,7 @@
 Phase 5 Architecture: Introduces FieldPlugin Protocol and MemoryPort ABC
 to enable modular, testable, and swappable memory subsystems.
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -20,21 +21,11 @@ class FieldPlugin(Protocol):
 
     name: str
 
-    def on_node_added(
-            self,
-            node_id: str,
-            latent_pos: NDArray,
-            content: Dict) -> None:
+    def on_node_added(self, node_id: str, latent_pos: NDArray, content: Dict) -> None:
         """Called after a node is added to the field."""
         ...
 
-    def on_query(self,
-                 query_latent: NDArray,
-                 results: List[Tuple[str,
-                                     float,
-                                     Any]]) -> List[Tuple[str,
-                                                          float,
-                                                          Any]]:
+    def on_query(self, query_latent: NDArray, results: List[Tuple[str, float, Any]]) -> List[Tuple[str, float, Any]]:
         """Called after query results are computed. May modify or filter results."""
         return results
 
@@ -64,8 +55,7 @@ class MemoryPort(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def query(self, embedding: NDArray, top_k: int = 10,
-              session_id: Optional[str] = None) -> List[Tuple[str, float]]:
+    def query(self, embedding: NDArray, top_k: int = 10, session_id: Optional[str] = None) -> List[Tuple[str, float]]:
         """Retrieve top-k memories by vector similarity. Returns (id, score) pairs."""
         raise NotImplementedError
 

@@ -8,6 +8,7 @@ Key design:
 - Three modes: monitor_only (local), soft_regulate (default), hard_block (production)
 - Hooks into RTMDKField.step() before consolidation and meta-adaptation
 """
+
 from __future__ import annotations
 from typing import Dict, List, Any
 from collections import deque
@@ -19,15 +20,10 @@ import numpy as np
 class LyapunovFunction:
     """Computes V = α·tension² + β·entropy(responses) + γ·causal_conflict."""
 
-    def __init__(
-            self,
-            alpha: float = 0.4,
-            beta: float = 0.4,
-            gamma: float = 0.2,
-            window_size: int = 20):
-        self.alpha = alpha    # tension weight
-        self.beta = beta      # entropy weight
-        self.gamma = gamma    # causal conflict weight
+    def __init__(self, alpha: float = 0.4, beta: float = 0.4, gamma: float = 0.2, window_size: int = 20):
+        self.alpha = alpha  # tension weight
+        self.beta = beta  # entropy weight
+        self.gamma = gamma  # causal conflict weight
         self.window_size = window_size
         self._tension_history: deque = deque(maxlen=window_size)
         self._response_history: deque = deque(maxlen=window_size)
@@ -39,7 +35,7 @@ class LyapunovFunction:
         if not nodes:
             self._tension_history.append(0.0)
             return
-        tensions = [getattr(n, 'tension', 0.0) for n in nodes.values()]
+        tensions = [getattr(n, "tension", 0.0) for n in nodes.values()]
         mean_tension = float(np.mean(tensions))
         self._tension_history.append(mean_tension)
 
@@ -92,15 +88,9 @@ class LyapunovFunction:
         return {
             "V": self.compute_V(),
             "dV_dt": self.compute_dV_dt(),
-            "mean_tension": float(
-                np.mean(
-                    self._tension_history)) if self._tension_history else 0.0,
-            "mean_entropy": float(
-                np.mean(
-                    self._response_history)) if self._response_history else 0.0,
-            "mean_conflict": float(
-                np.mean(
-                    self._conflict_history)) if self._conflict_history else 0.0,
+            "mean_tension": float(np.mean(self._tension_history)) if self._tension_history else 0.0,
+            "mean_entropy": float(np.mean(self._response_history)) if self._response_history else 0.0,
+            "mean_conflict": float(np.mean(self._conflict_history)) if self._conflict_history else 0.0,
         }
 
 
@@ -113,11 +103,16 @@ class SafetyCertifier:
     - hard_block: Block updates entirely when dV/dt > threshold
     """
 
-    def __init__(self, mode: str = "soft_regulate",
-                 lyapunov_threshold: float = 0.1,
-                 clamp_value: float = 0.5,
-                 alpha: float = 0.4, beta: float = 0.4, gamma: float = 0.2,
-                 window_size: int = 20):
+    def __init__(
+        self,
+        mode: str = "soft_regulate",
+        lyapunov_threshold: float = 0.1,
+        clamp_value: float = 0.5,
+        alpha: float = 0.4,
+        beta: float = 0.4,
+        gamma: float = 0.2,
+        window_size: int = 20,
+    ):
         self.mode = mode  # "monitor_only" | "soft_regulate" | "hard_block"
         self.lyapunov_threshold = lyapunov_threshold
         self.clamp_value = clamp_value
@@ -127,8 +122,9 @@ class SafetyCertifier:
         self._block_events: int = 0
         self._total_checks: int = 0
 
-    def check_and_regulate(self, nodes: Dict, resonance_scores: List[float],
-                           n_contradictions: int = 0) -> Dict[str, Any]:
+    def check_and_regulate(
+        self, nodes: Dict, resonance_scores: List[float], n_contradictions: int = 0
+    ) -> Dict[str, Any]:
         """Check Lyapunov stability and apply regulation if needed.
 
         Returns:
@@ -158,42 +154,50 @@ class SafetyCertifier:
         if abs(dV_dt) > self.lyapunov_threshold:
             if self.mode == "monitor_only":
                 result["safe"] = True  # Don't block, just warn
-                self._warnings.append({
-                    "type": "lyapunov_warning",
-                    "V": V, "dV_dt": dV_dt,
-                    "timestamp": time.time(),
-                })
+                self._warnings.append(
+                    {
+                        "type": "lyapunov_warning",
+                        "V": V,
+                        "dV_dt": dV_dt,
+                        "timestamp": time.time(),
+                    }
+                )
             elif self.mode == "soft_regulate":
                 # Soft regulation: exp(-|dV|/clamp)
                 reg_factor = math.exp(-abs(dV_dt) / self.clamp_value)
-                reg_factor = max(0.1, min(1.0, reg_factor)
-                                 )  # Clamp to [0.1, 1.0]
+                reg_factor = max(0.1, min(1.0, reg_factor))  # Clamp to [0.1, 1.0]
                 result["safe"] = True  # Still allow updates, just slower
                 result["regulation_factor"] = reg_factor
                 self._regulation_events += 1
                 if reg_factor < 0.5:
-                    self._warnings.append({
-                        "type": "strong_regulation",
-                        "V": V, "dV_dt": dV_dt, "factor": reg_factor,
-                        "timestamp": time.time(),
-                    })
+                    self._warnings.append(
+                        {
+                            "type": "strong_regulation",
+                            "V": V,
+                            "dV_dt": dV_dt,
+                            "factor": reg_factor,
+                            "timestamp": time.time(),
+                        }
+                    )
             elif self.mode == "hard_block":
                 result["safe"] = False
                 result["should_block"] = True
                 self._block_events += 1
-                self._warnings.append({
-                    "type": "update_blocked",
-                    "V": V, "dV_dt": dV_dt,
-                    "timestamp": time.time(),
-                })
+                self._warnings.append(
+                    {
+                        "type": "update_blocked",
+                        "V": V,
+                        "dV_dt": dV_dt,
+                        "timestamp": time.time(),
+                    }
+                )
 
         return result
 
     def get_regulation_factor(self) -> float:
         """Get current regulation factor for scaling learning rates."""
         dV_dt = self.lyapunov.compute_dV_dt()
-        if self.mode == "soft_regulate" and abs(
-                dV_dt) > self.lyapunov_threshold:
+        if self.mode == "soft_regulate" and abs(dV_dt) > self.lyapunov_threshold:
             return math.exp(-abs(dV_dt) / self.clamp_value)
         return 1.0
 
@@ -206,13 +210,15 @@ class SafetyCertifier:
 
     def get_stats(self) -> Dict:
         summary: Dict[str, Any] = dict(self.lyapunov.get_state_summary())
-        summary.update({
-            "mode": self.mode,
-            "total_checks": self._total_checks,
-            "regulation_events": self._regulation_events,
-            "block_events": self._block_events,
-            "n_warnings": len(self._warnings),
-        })
+        summary.update(
+            {
+                "mode": self.mode,
+                "total_checks": self._total_checks,
+                "regulation_events": self._regulation_events,
+                "block_events": self._block_events,
+                "n_warnings": len(self._warnings),
+            }
+        )
         return summary
 
     def get_state(self) -> Dict:
@@ -232,20 +238,12 @@ class SafetyCertifier:
 
     def load_state(self, data: Dict):
         self.mode = data.get("mode", self.mode)
-        self.lyapunov_threshold = data.get(
-            "lyapunov_threshold", self.lyapunov_threshold)
+        self.lyapunov_threshold = data.get("lyapunov_threshold", self.lyapunov_threshold)
         self.clamp_value = data.get("clamp_value", self.clamp_value)
-        self.lyapunov._tension_history = deque(
-            data.get("tension_history", []), maxlen=self.lyapunov.window_size)
-        self.lyapunov._response_history = deque(
-            data.get("response_history", []), maxlen=self.lyapunov.window_size)
-        self.lyapunov._conflict_history = deque(
-            data.get("conflict_history", []), maxlen=self.lyapunov.window_size)
-        self.lyapunov._v_history = deque(
-            data.get(
-                "v_history",
-                []),
-            maxlen=self.lyapunov.window_size)
+        self.lyapunov._tension_history = deque(data.get("tension_history", []), maxlen=self.lyapunov.window_size)
+        self.lyapunov._response_history = deque(data.get("response_history", []), maxlen=self.lyapunov.window_size)
+        self.lyapunov._conflict_history = deque(data.get("conflict_history", []), maxlen=self.lyapunov.window_size)
+        self.lyapunov._v_history = deque(data.get("v_history", []), maxlen=self.lyapunov.window_size)
         self._warnings = data.get("warnings", [])
         self._regulation_events = data.get("regulation_events", 0)
         self._block_events = data.get("block_events", 0)

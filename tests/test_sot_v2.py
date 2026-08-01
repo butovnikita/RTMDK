@@ -1,4 +1,5 @@
 """Tests for SOT v2 improvements (A-F)."""
+
 import numpy as np
 import pytest
 import tempfile
@@ -59,39 +60,27 @@ class TestCooccurrenceStore:
 
 class TestSOTWordMode:
     def test_word_mode_encode(self):
-        tok = SOTokenizer(
-            latent_dim=64,
-            token_dim=64,
-            tokenization_mode="word")
+        tok = SOTokenizer(latent_dim=64, token_dim=64, tokenization_mode="word")
         tokens = tok.encode("Hello world hello")
         assert len(tokens) == 3
         assert tok.decode(tokens) == "hello world hello"
 
     def test_word_mode_vocab_grows(self):
-        tok = SOTokenizer(
-            latent_dim=64,
-            token_dim=64,
-            tokenization_mode="word")
+        tok = SOTokenizer(latent_dim=64, token_dim=64, tokenization_mode="word")
         tok.encode("the quick brown fox")
         assert len(tok.word_to_id) == 4
         tok.encode("the lazy dog")
         assert len(tok.word_to_id) == 6  # 'lazy', 'dog' added
 
     def test_word_mode_embed(self):
-        tok = SOTokenizer(
-            latent_dim=64,
-            token_dim=64,
-            tokenization_mode="word")
+        tok = SOTokenizer(latent_dim=64, token_dim=64, tokenization_mode="word")
         tokens = tok.encode("hello world")
         emb = tok.embed(tokens)
         assert emb.shape == (64,)
         assert np.isfinite(emb).all()
 
     def test_word_mode_prune_vocab(self):
-        tok = SOTokenizer(
-            latent_dim=64,
-            token_dim=64,
-            tokenization_mode="word")
+        tok = SOTokenizer(latent_dim=64, token_dim=64, tokenization_mode="word")
         tok.encode("hello world hello")  # hello:2, world:1
         tok.record_cooccurrence(tok.encode("hello world hello"))
         tok.prune_vocab(min_freq=2.0)
@@ -103,10 +92,7 @@ class TestSOTWordMode:
         assert world_id == tok._unk_token_id
 
     def test_word_mode_save_load(self):
-        tok = SOTokenizer(
-            latent_dim=64,
-            token_dim=64,
-            tokenization_mode="word")
+        tok = SOTokenizer(latent_dim=64, token_dim=64, tokenization_mode="word")
         tok.encode("hello world hello")
         state = tok.get_state()
         assert state["tokenization_mode"] == "word"
@@ -120,15 +106,12 @@ class TestSOTWordMode:
         assert tok2.encode("hello world") == tok.encode("hello world")
 
     def test_word_mode_field_integration(self):
-        cfg = RTMDKConfig(
-            latent_dim=64,
-            sot_enabled=True,
-            sot_tokenization_mode="word")
+        cfg = RTMDKConfig(latent_dim=64, sot_enabled=True, sot_tokenization_mode="word")
         field = RTMDKField(cfg)
         tok = field._projection_mgr.sot_tokenizer
         tokens = tok.encode("coffee is great")
         emb = tok.embed(tokens)
-        field.add_node(emb, {'text': 'coffee is great'}, node_id='n1')
+        field.add_node(emb, {"text": "coffee is great"}, node_id="n1")
         q = tok.encode("coffee")
         qemb = tok.embed(q)
         res = field.query(qemb, top_k=1)
@@ -149,9 +132,10 @@ class TestSOTWarmStart:
         tok.warm_start_from_corpus(corpus)
         # After warm-start: some bytes should have shifted
         changes = sum(
-            1 for k in emb_before if k in tok.token_embeddings and np.linalg.norm(
-                emb_before[k] -
-                tok.token_embeddings[k]) > 1e-6)
+            1
+            for k in emb_before
+            if k in tok.token_embeddings and np.linalg.norm(emb_before[k] - tok.token_embeddings[k]) > 1e-6
+        )
         assert changes > 0, "Warm-start should modify at least some embeddings"
 
     def test_warm_start_idf_computed(self):
@@ -179,32 +163,18 @@ class TestSOTWarmStart:
 # ------------------------------------------------------------------
 class TestSOTSubwordSeed:
     def test_subword_seed_increases_vocab(self):
-        tok = SOTokenizer(
-            latent_dim=64,
-            token_dim=64,
-            subword_seed=True,
-            seed=42)
-        assert len(
-            tok.token_embeddings) > 256, "Subword seed should create additional tokens"
+        tok = SOTokenizer(latent_dim=64, token_dim=64, subword_seed=True, seed=42)
+        assert len(tok.token_embeddings) > 256, "Subword seed should create additional tokens"
 
     def test_subword_seed_encoding_shorter(self):
-        tok = SOTokenizer(
-            latent_dim=64,
-            token_dim=64,
-            subword_seed=True,
-            seed=42)
+        tok = SOTokenizer(latent_dim=64, token_dim=64, subword_seed=True, seed=42)
         text = "the"
         tokens = tok.encode(text)
         # With subword seeds, "the" might be a single token instead of 3 bytes
-        assert len(
-            tokens) <= 3, "Encoding should be same or shorter with subword seeds"
+        assert len(tokens) <= 3, "Encoding should be same or shorter with subword seeds"
 
     def test_no_subword_seed_has_only_bytes(self):
-        tok = SOTokenizer(
-            latent_dim=64,
-            token_dim=64,
-            subword_seed=False,
-            seed=42)
+        tok = SOTokenizer(latent_dim=64, token_dim=64, subword_seed=False, seed=42)
         assert len(tok.token_embeddings) == 256
 
 
@@ -213,22 +183,14 @@ class TestSOTSubwordSeed:
 # ------------------------------------------------------------------
 class TestSOTAttentionPooling:
     def test_attention_pooling_different_from_mean(self):
-        tok = SOTokenizer(
-            latent_dim=64,
-            token_dim=64,
-            attention_pooling=True,
-            seed=42)
+        tok = SOTokenizer(latent_dim=64, token_dim=64, attention_pooling=True, seed=42)
         # Set up artificial IDF weights
         tok.token_idf[0] = 10.0  # high IDF = rare = important
-        tok.token_idf[1] = 0.1   # low IDF = common = less important
+        tok.token_idf[1] = 0.1  # low IDF = common = less important
         tok.token_embeddings[0] = np.ones(64, dtype=np.float32) / np.sqrt(64)
         tok.token_embeddings[1] = -np.ones(64, dtype=np.float32) / np.sqrt(64)
         emb_attn = tok.embed([0, 1])
-        tok_mean = SOTokenizer(
-            latent_dim=64,
-            token_dim=64,
-            attention_pooling=False,
-            seed=42)
+        tok_mean = SOTokenizer(latent_dim=64, token_dim=64, attention_pooling=False, seed=42)
         tok_mean.token_embeddings[0] = tok.token_embeddings[0].copy()
         tok_mean.token_embeddings[1] = tok.token_embeddings[1].copy()
         emb_mean = tok_mean.embed([0, 1])
@@ -236,11 +198,7 @@ class TestSOTAttentionPooling:
         assert not np.allclose(emb_attn, emb_mean, atol=1e-4)
 
     def test_position_weight_first_token(self):
-        tok = SOTokenizer(
-            latent_dim=64,
-            token_dim=64,
-            attention_pooling=True,
-            seed=42)
+        tok = SOTokenizer(latent_dim=64, token_dim=64, attention_pooling=True, seed=42)
         tok.token_idf[0] = 1.0
         tok.token_idf[1] = 1.0
         tok.token_idf[2] = 1.0
@@ -262,10 +220,8 @@ class TestSOTAttentionPooling:
         assert emb[2] > emb[1], "Last token should have higher weight than middle"
         # After normalization, proportions should still reflect weights
         # 0.375 : 0.25 : 0.375 = 3 : 2 : 3
-        assert emb[0] / \
-            emb[1] > 1.4, f"First/middle ratio should be ~1.5, got {emb[0]/emb[1]}"
-        assert emb[2] / \
-            emb[1] > 1.4, f"Last/middle ratio should be ~1.5, got {emb[2]/emb[1]}"
+        assert emb[0] / emb[1] > 1.4, f"First/middle ratio should be ~1.5, got {emb[0]/emb[1]}"
+        assert emb[2] / emb[1] > 1.4, f"Last/middle ratio should be ~1.5, got {emb[2]/emb[1]}"
 
 
 # ------------------------------------------------------------------
@@ -285,23 +241,17 @@ class TestSOTHardNegatives:
         }
         positives = [0, 1]
         all_candidates = [0, 1, 2, 3]
-        ch.update_with_hard_negatives(
-            embeddings, positives, all_candidates, n_negatives=1)
+        ch.update_with_hard_negatives(embeddings, positives, all_candidates, n_negatives=1)
         # Hard negative mining should have picked token 2 (closest non-positive)
         # We can't directly observe which was picked, but we can verify the
         # method runs
 
     def test_hard_negatives_fewer_than_candidates(self):
         ch = ContrastiveHebbian(lr=0.1)
-        embeddings = {
-            i: np.random.randn(8).astype(
-                np.float32) for i in range(10)}
+        embeddings = {i: np.random.randn(8).astype(np.float32) for i in range(10)}
         for k, v in embeddings.items():
             embeddings[k] = v / np.linalg.norm(v)
-        ch.update_with_hard_negatives(
-            embeddings, [
-                0, 1], list(
-                range(10)), n_negatives=3)
+        ch.update_with_hard_negatives(embeddings, [0, 1], list(range(10)), n_negatives=3)
         # Should run without error even with few candidates
 
 
@@ -314,20 +264,16 @@ class TestSOTSkipGram:
         tok.record_cooccurrence([10, 20, 30])
         assert tok.cooccurrence[(10, 20)] > 0
         assert tok.cooccurrence[(20, 30)] > 0
-        assert tok.cooccurrence.get(
-            (10, 30), 0) == 0, "Window=1 should not record non-adjacent"
+        assert tok.cooccurrence.get((10, 30), 0) == 0, "Window=1 should not record non-adjacent"
 
     def test_window_3_records_skip_pairs(self):
         tok = SOTokenizer(latent_dim=64, skipgram_window=3, seed=42)
         tok.record_cooccurrence([10, 20, 30, 40])
         assert tok.cooccurrence[(10, 20)] > 0
-        assert tok.cooccurrence[(
-            10, 30)] > 0, "Window=3 should record skip-1 pairs"
-        assert tok.cooccurrence[(
-            10, 40)] > 0, "Window=3 should record skip-2 pairs"
+        assert tok.cooccurrence[(10, 30)] > 0, "Window=3 should record skip-1 pairs"
+        assert tok.cooccurrence[(10, 40)] > 0, "Window=3 should record skip-2 pairs"
         # Distance weighting: closer pairs should have higher weight
-        assert tok.cooccurrence[(10, 20)] > tok.cooccurrence[(
-            10, 30)], "Closer pairs should have higher weight"
+        assert tok.cooccurrence[(10, 20)] > tok.cooccurrence[(10, 30)], "Closer pairs should have higher weight"
 
     def test_frequency_tracked(self):
         tok = SOTokenizer(latent_dim=64, skipgram_window=2, seed=42)
@@ -378,14 +324,12 @@ class TestSOTBootstrap:
         sim_after = emb1_after @ emb2_after
 
         assert sim_after > sim_before, (
-            f"Bootstrap should increase similarity for related texts: "
-            f"{sim_before:.3f} -> {sim_after:.3f}")
+            f"Bootstrap should increase similarity for related texts: " f"{sim_before:.3f} -> {sim_after:.3f}"
+        )
 
     def test_bootstrap_empty_texts_safe(self):
         tok = SOTokenizer(latent_dim=64, token_dim=64, seed=42)
-        tok.bootstrap_from_teacher(
-            [], lambda x: np.zeros(
-                64, dtype=np.float32))
+        tok.bootstrap_from_teacher([], lambda x: np.zeros(64, dtype=np.float32))
         assert len(tok.token_embeddings) == 256
 
 
@@ -435,11 +379,13 @@ class TestSOTV2Integration:
 
     def test_warm_start_from_file(self):
         # Create temp corpus file
-        corpus = {"records": [
-            {"query": "hello", "answer": "world", "context": "test"},
-            {"query": "foo", "answer": "bar", "context": "baz"},
-        ]}
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, encoding='utf-8') as f:
+        corpus = {
+            "records": [
+                {"query": "hello", "answer": "world", "context": "test"},
+                {"query": "foo", "answer": "bar", "context": "baz"},
+            ]
+        }
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8") as f:
             json.dump(corpus, f)
             path = f.name
         try:
@@ -449,8 +395,7 @@ class TestSOTV2Integration:
                 sot_warm_start_corpus=path,
             )
             field = RTMDKField(cfg)
-            assert len(
-                field._projection_mgr.sot_tokenizer.token_idf) > 0, "Warm-start should compute IDF"
+            assert len(field._projection_mgr.sot_tokenizer.token_idf) > 0, "Warm-start should compute IDF"
         finally:
             os.unlink(path)
 
@@ -466,14 +411,8 @@ class TestSOTV2Integration:
         emb1 = emb1 / np.linalg.norm(emb1)
         emb2 = np.random.randn(64).astype(np.float32)
         emb2 = emb2 / np.linalg.norm(emb2)
-        field.add_node(emb1,
-                       {'text': 'hello world',
-                        'node_id': 'n1'},
-                       skip_projection=True)
-        field.add_node(emb2,
-                       {'text': 'foo bar',
-                        'node_id': 'n2'},
-                       skip_projection=True)
+        field.add_node(emb1, {"text": "hello world", "node_id": "n1"}, skip_projection=True)
+        field.add_node(emb2, {"text": "foo bar", "node_id": "n2"}, skip_projection=True)
         # Query should trigger feedback
         results = field.query(emb1, top_k=2)
         assert len(results) > 0
@@ -490,28 +429,22 @@ class TestSOTV2Integration:
 
     def test_fasttext_bootstrap_skips_if_no_model(self):
         from rtmdk.memory.bootstrap_fasttext import run_bootstrap
+
         tok = SOTokenizer(latent_dim=64, tokenization_mode="word")
-        run_bootstrap(
-            tok,
-            texts=["hello world"],
-            model_path="nonexistent.model")
+        run_bootstrap(tok, texts=["hello world"], model_path="nonexistent.model")
         # Should not crash, just warn
         assert len(tok.token_embeddings) > 0
 
     def test_bootstrap_projection_load(self):
         import tempfile
+
         # Create a fake bootstrap .npz
         vocab = np.array([0, 1, 2], dtype=np.int32)
         proj = np.ones((3, 64), dtype=np.float32) * 0.1
         embs = np.ones((3, 384), dtype=np.float32) * 0.2
         freqs = np.array([10.0, 5.0, 1.0], dtype=np.float32)
-        with tempfile.NamedTemporaryFile(suffix='.npz', delete=False) as f:
-            np.savez(
-                f.name,
-                projection=proj,
-                vocab=vocab,
-                token_embeddings=embs,
-                token_frequencies=freqs)
+        with tempfile.NamedTemporaryFile(suffix=".npz", delete=False) as f:
+            np.savez(f.name, projection=proj, vocab=vocab, token_embeddings=embs, token_frequencies=freqs)
             path = f.name
         try:
             cfg = RTMDKConfig(
@@ -558,21 +491,21 @@ class TestSOTV2Integration:
 
         # v1: default SOT (byte-level)
         cfg_v1 = RTMDKConfig(
-            latent_dim=64, sot_enabled=True, sot_use_for_query=True,
+            latent_dim=64,
+            sot_enabled=True,
+            sot_use_for_query=True,
             sot_tokenization_mode="byte",
         )
         field_v1 = RTMDKField(cfg_v1)
         for i, (text, _) in enumerate(docs):
             emb = make_emb(text)
-            field_v1.add_node(emb,
-                              {'text': text,
-                               'node_id': f'd{i}',
-                               'topic': text},
-                              skip_projection=True)
+            field_v1.add_node(emb, {"text": text, "node_id": f"d{i}", "topic": text}, skip_projection=True)
 
         # v2: all features (byte-level with subword seeds)
         cfg_v2 = RTMDKConfig(
-            latent_dim=64, sot_enabled=True, sot_use_for_query=True,
+            latent_dim=64,
+            sot_enabled=True,
+            sot_use_for_query=True,
             sot_tokenization_mode="byte",
             sot_subword_seed=True,
             sot_attention_pooling=True,
@@ -581,11 +514,7 @@ class TestSOTV2Integration:
         field_v2 = RTMDKField(cfg_v2)
         for i, (text, _) in enumerate(docs):
             emb = make_emb(text)
-            field_v2.add_node(emb,
-                              {'text': text,
-                               'node_id': f'd{i}',
-                               'topic': text},
-                              skip_projection=True)
+            field_v2.add_node(emb, {"text": text, "node_id": f"d{i}", "topic": text}, skip_projection=True)
 
         # Query about coffee
         q_coffee = make_emb("coffee")
@@ -593,21 +522,15 @@ class TestSOTV2Integration:
         res_v2 = field_v2.query(q_coffee, top_k=3)
 
         # Both should find coffee-related docs
-        v1_has_coffee = any(
-            'coffee' in field_v1.nodes[nid].content['text'].lower() for nid,
-            _,
-            _ in res_v1)
-        v2_has_coffee = any(
-            'coffee' in field_v2.nodes[nid].content['text'].lower() for nid,
-            _,
-            _ in res_v2)
+        v1_has_coffee = any("coffee" in field_v1.nodes[nid].content["text"].lower() for nid, _, _ in res_v1)
+        v2_has_coffee = any("coffee" in field_v2.nodes[nid].content["text"].lower() for nid, _, _ in res_v2)
         assert v1_has_coffee
         assert v2_has_coffee
 
         # v2 should have more nodes (subword seeds)
-        assert len(
-            field_v2._projection_mgr.sot_tokenizer.token_embeddings) > len(
-            field_v1._projection_mgr.sot_tokenizer.token_embeddings)
+        assert len(field_v2._projection_mgr.sot_tokenizer.token_embeddings) > len(
+            field_v1._projection_mgr.sot_tokenizer.token_embeddings
+        )
 
 
 # ------------------------------------------------------------------
@@ -616,14 +539,12 @@ class TestSOTV2Integration:
 class TestSparsePMI:
     def test_sparse_pmi_path_does_not_crash(self):
         from rtmdk.memory.sot_v2.sif_embedder import SIFEmbedder
+
         sif = SIFEmbedder(latent_dim=64, min_count=1, window_size=2)
         vocab_size = 6000  # > SPARSE_PMI_THRESHOLD (5000)
         n_docs = 1200
         doc_len = 10
-        tokenized_docs = [
-            [(i * doc_len + j) % vocab_size for j in range(doc_len)]
-            for i in range(n_docs)
-        ]
+        tokenized_docs = [[(i * doc_len + j) % vocab_size for j in range(doc_len)] for i in range(n_docs)]
         # Ensure every token appears at least twice
         for t in range(vocab_size):
             tokenized_docs[t % n_docs].append(t)
@@ -633,14 +554,12 @@ class TestSparsePMI:
 
     def test_sparse_pmi_expand_query_terms(self):
         from rtmdk.memory.sot_v2.sif_embedder import SIFEmbedder
+
         sif = SIFEmbedder(latent_dim=64, min_count=1, window_size=2)
         vocab_size = 6000
         n_docs = 1200
         doc_len = 10
-        tokenized_docs = [
-            [(i * doc_len + j) % vocab_size for j in range(doc_len)]
-            for i in range(n_docs)
-        ]
+        tokenized_docs = [[(i * doc_len + j) % vocab_size for j in range(doc_len)] for i in range(n_docs)]
         for t in range(vocab_size):
             tokenized_docs[t % n_docs].append(t)
         sif.fit(tokenized_docs, vocab_size=vocab_size)
@@ -650,6 +569,7 @@ class TestSparsePMI:
 
     def test_dense_pmi_still_works_for_small_vocab(self):
         from rtmdk.memory.sot_v2.sif_embedder import SIFEmbedder
+
         sif = SIFEmbedder(latent_dim=16, min_count=1, window_size=2)
         tokenized_docs = [
             [0, 1, 2, 3, 4],

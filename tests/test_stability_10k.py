@@ -36,8 +36,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 class BatchEmbedder:
-    def __init__(self, url="http://127.0.0.1:12345",
-                 model="text-embedding-nomic-embed-text-v1.5"):
+    def __init__(self, url="http://127.0.0.1:12345", model="text-embedding-nomic-embed-text-v1.5"):
         self.url = url
         self.model = model
         self.cache = {}
@@ -46,9 +45,7 @@ class BatchEmbedder:
 
     def _check(self):
         try:
-            return requests.get(
-                f"{self.url}/v1/models",
-                timeout=3).status_code == 200
+            return requests.get(f"{self.url}/v1/models", timeout=3).status_code == 200
         except Exception:
             return False
 
@@ -72,7 +69,7 @@ class BatchEmbedder:
         if not uncached:
             return results
         for start in range(0, len(uncached), 50):
-            batch = uncached[start:start + 50]
+            batch = uncached[start : start + 50]
             try:
                 resp = requests.post(
                     f"{self.url}/v1/embeddings",
@@ -146,23 +143,15 @@ def get_ram_mb() -> float:
     return proc.memory_info().rss / (1024 * 1024)
 
 
-def benchmark_query_latency(
-        memory,
-        embedder,
-        queries: List[str],
-        n_samples: int = 100) -> Dict:
+def benchmark_query_latency(memory, embedder, queries: List[str], n_samples: int = 100) -> Dict:
     """Run n_samples queries and return latency stats."""
     rng = np.random.RandomState(7)
-    sample = [
-        queries[i] for i in rng.choice(
-            len(queries), min(
-                n_samples, len(queries)), replace=False)]
+    sample = [queries[i] for i in rng.choice(len(queries), min(n_samples, len(queries)), replace=False)]
     latencies = []
     for q in sample:
         emb = embedder.embed(q)
         t0 = time.perf_counter()
-        memory.load_memory_variables_with_embedding(
-            {"input": q, "session_id": "default"}, emb)
+        memory.load_memory_variables_with_embedding({"input": q, "session_id": "default"}, emb)
         latencies.append((time.perf_counter() - t0) * 1000)
     latencies.sort()
     n = len(latencies)
@@ -175,11 +164,7 @@ def benchmark_query_latency(
     }
 
 
-def benchmark_r1(
-        memory,
-        embedder,
-        records: List[Dict],
-        sample_size: int = 200) -> float:
+def benchmark_r1(memory, embedder, records: List[Dict], sample_size: int = 200) -> float:
     """Compute Recall@1 on a sample of original queries.
     A hit means the retrieved top-1 node belongs to the same group_id."""
     rng = np.random.RandomState(13)
@@ -194,8 +179,7 @@ def benchmark_r1(
     hits = 0
     for rec in eval_set:
         emb = embedder.embed(rec["query"])
-        result = memory.load_memory_variables_with_embedding(
-            {"input": rec["query"], "session_id": "default"}, emb)
+        result = memory.load_memory_variables_with_embedding({"input": rec["query"], "session_id": "default"}, emb)
         ctx_str = result.get("rtmdk_context", "")
         if not ctx_str:
             continue
@@ -240,7 +224,7 @@ def run_stability_benchmark(target_size: int):
         top_k=15,
         min_response=0.001,
         decay_rate=0.999,
-        use_hnsw=True,               # HNSW enabled for N > 5000
+        use_hnsw=True,  # HNSW enabled for N > 5000
         learn_projection=False,
         bm25_fallback=False,
         enable_async=False,
@@ -263,8 +247,7 @@ def run_stability_benchmark(target_size: int):
     embed_t0 = time.time()
     all_embeddings = embedder.embed_many(all_texts)
     embed_elapsed = time.time() - embed_t0
-    print(
-        f"  Embedding done in {embed_elapsed:.1f}s ({len(all_texts)/embed_elapsed:.1f} texts/sec)")
+    print(f"  Embedding done in {embed_elapsed:.1f}s ({len(all_texts)/embed_elapsed:.1f} texts/sec)")
 
     memory = RTMDKMemory(config=config, embedder=embedder.embed)
     add_t0 = time.time()
@@ -276,22 +259,17 @@ def run_stability_benchmark(target_size: int):
             modality="text",
         )
         if (i + 1) % 1000 == 0:
-            print(
-                f"    Added {i+1}/{len(records)} nodes ({get_ram_mb():.0f} MB)")
+            print(f"    Added {i+1}/{len(records)} nodes ({get_ram_mb():.0f} MB)")
     add_elapsed = time.time() - add_t0
 
     ram_after = get_ram_mb()
-    print(
-        f"\n  Insert: {add_elapsed:.1f}s ({len(records)/add_elapsed:.1f} nodes/sec)")
-    print(
-        f"  RAM: {ram_before:.1f} MB -> {ram_after:.1f} MB  (+{ram_after-ram_before:.1f} MB)")
+    print(f"\n  Insert: {add_elapsed:.1f}s ({len(records)/add_elapsed:.1f} nodes/sec)")
+    print(f"  RAM: {ram_before:.1f} MB -> {ram_after:.1f} MB  (+{ram_after-ram_before:.1f} MB)")
 
     print("\n[3/6] Query latency (sample of 100)...")
     original_questions = [r["query"] for r in raw]
-    latency_stats = benchmark_query_latency(
-        memory, embedder, original_questions, n_samples=100)
-    print(
-        f"  P50={latency_stats['P50']:.2f}ms  P95={latency_stats['P95']:.2f}ms  P99={latency_stats['P99']:.2f}ms")
+    latency_stats = benchmark_query_latency(memory, embedder, original_questions, n_samples=100)
+    print(f"  P50={latency_stats['P50']:.2f}ms  P95={latency_stats['P95']:.2f}ms  P99={latency_stats['P99']:.2f}ms")
 
     print("\n[4/6] Recall@1 (sample of 200 original queries)...")
     r1 = benchmark_r1(memory, embedder, records, sample_size=200)
@@ -314,8 +292,7 @@ def run_stability_benchmark(target_size: int):
         memory.export_field(tmp_path)
         save_elapsed = time.time() - save_t0
         file_size_mb = os.path.getsize(tmp_path) / (1024 * 1024)
-        print(
-            f"  Save:   {save_elapsed:.1f}s  ({file_size_mb:.1f} MB on disk)")
+        print(f"  Save:   {save_elapsed:.1f}s  ({file_size_mb:.1f} MB on disk)")
 
         load_t0 = time.time()
         memory2 = RTMDKMemory.import_field(tmp_path, embedder=embedder.embed)
@@ -323,9 +300,7 @@ def run_stability_benchmark(target_size: int):
         print(f"  Load:   {load_elapsed:.1f}s")
 
         # Verify loaded memory has same node count
-        assert len(
-            memory2.field.nodes) == len(
-            memory.field.nodes), "Node count mismatch after load"
+        assert len(memory2.field.nodes) == len(memory.field.nodes), "Node count mismatch after load"
         print(f"  Node count after load: {len(memory2.field.nodes)} (OK)")
     finally:
         if os.path.exists(tmp_path):
@@ -338,8 +313,7 @@ def run_stability_benchmark(target_size: int):
     print(f"Scale:                 {target_size} nodes")
     print(f"Embedding time:        {embed_elapsed:.1f}s")
     print(f"Insert throughput:     {len(records)/add_elapsed:.1f} nodes/sec")
-    print(
-        f"RAM usage:             {ram_after:.1f} MB ({ram_after/len(records)*1000:.2f} MB / 1K nodes)")
+    print(f"RAM usage:             {ram_after:.1f} MB ({ram_after/len(records)*1000:.2f} MB / 1K nodes)")
     print(f"Query latency P50:     {latency_stats['P50']:.2f} ms")
     print(f"Query latency P95:     {latency_stats['P95']:.2f} ms")
     print(f"Query latency P99:     {latency_stats['P99']:.2f} ms")
@@ -369,14 +343,7 @@ def run_stability_benchmark(target_size: int):
 
 def main():
     parser = argparse.ArgumentParser(description="RTMDK Stability Benchmark")
-    parser.add_argument(
-        "--scale",
-        type=int,
-        choices=[
-            5000,
-            10000],
-        default=5000,
-        help="Target node count")
+    parser.add_argument("--scale", type=int, choices=[5000, 10000], default=5000, help="Target node count")
     args = parser.parse_args()
 
     # Ensure rate limit doesn't interfere

@@ -91,14 +91,17 @@ class LearnedConsolidator:
         sal_b: float,
     ) -> np.ndarray:
         """Concatenate node pair into input vector."""
-        return np.concatenate([
-            latent_a.astype(np.float32),
-            latent_b.astype(np.float32),
-            [math.sin(phase_a), math.sin(phase_b)],
-            [math.cos(phase_a), math.cos(phase_b)],
-            [amp_a, amp_b],
-            [sal_a, sal_b],
-        ], axis=0)
+        return np.concatenate(
+            [
+                latent_a.astype(np.float32),
+                latent_b.astype(np.float32),
+                [math.sin(phase_a), math.sin(phase_b)],
+                [math.cos(phase_a), math.cos(phase_b)],
+                [amp_a, amp_b],
+                [sal_a, sal_b],
+            ],
+            axis=0,
+        )
 
     def _forward(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """MLP forward. Returns (output, hidden_activations)."""
@@ -118,8 +121,7 @@ class LearnedConsolidator:
         sal_b: float = 1.0,
     ) -> np.ndarray:
         """Predict merged latent position."""
-        x = self._encode_pair(latent_a, latent_b, phase_a, phase_b,
-                              amp_a, amp_b, sal_a, sal_b)
+        x = self._encode_pair(latent_a, latent_b, phase_a, phase_b, amp_a, amp_b, sal_a, sal_b)
         y, _ = self._forward(x)
         # Normalise to unit sphere (consistent with heuristic merge)
         norm = np.linalg.norm(y) + 1e-8
@@ -147,19 +149,23 @@ class LearnedConsolidator:
             latent_a, latent_b: Parent node latent positions.
             queries: List of query embeddings that retrieved A or B.
         """
-        self._buffer.append({
-            "latent_a": latent_a.copy(),
-            "latent_b": latent_b.copy(),
-            "queries": [q.copy() for q in queries],
-            "phase_a": phase_a, "phase_b": phase_b,
-            "amp_a": amp_a, "amp_b": amp_b,
-            "sal_a": sal_a, "sal_b": sal_b,
-        })
+        self._buffer.append(
+            {
+                "latent_a": latent_a.copy(),
+                "latent_b": latent_b.copy(),
+                "queries": [q.copy() for q in queries],
+                "phase_a": phase_a,
+                "phase_b": phase_b,
+                "amp_a": amp_a,
+                "amp_b": amp_b,
+                "sal_a": sal_a,
+                "sal_b": sal_b,
+            }
+        )
         if len(self._buffer) > self._max_buffer:
             self._buffer.pop(0)
 
-    def train(self, epochs: int = 20, lr: float = 0.01,
-              lambda_reg: float = 0.5, batch_size: int = 32) -> float:
+    def train(self, epochs: int = 20, lr: float = 0.01, lambda_reg: float = 0.5, batch_size: int = 32) -> float:
         """Train MLP on replay buffer via SGD.
 
         Loss = hinge(merged, queries) + λ·L2_reg(merged, heuristic_avg)
@@ -168,12 +174,10 @@ class LearnedConsolidator:
             Final average loss.
         """
         if len(self._buffer) < 8:
-            logger.info("LearnedConsolidator: buffer too small (%d), skipping train",
-                        len(self._buffer))
+            logger.info("LearnedConsolidator: buffer too small (%d), skipping train", len(self._buffer))
             return 0.0
 
-        logger.info("LearnedConsolidator: training on %d examples, epochs=%d",
-                    len(self._buffer), epochs)
+        logger.info("LearnedConsolidator: training on %d examples, epochs=%d", len(self._buffer), epochs)
 
         total_loss = 0.0
         n_batches = 0
@@ -185,7 +189,7 @@ class LearnedConsolidator:
             epoch_n = 0
 
             for i in range(0, len(order), batch_size):
-                batch_idx = order[i:i + batch_size]
+                batch_idx = order[i : i + batch_size]
                 grad_W1 = np.zeros_like(self.W1)
                 grad_b1 = np.zeros_like(self.b1)
                 grad_W2 = np.zeros_like(self.W2)
@@ -194,10 +198,14 @@ class LearnedConsolidator:
                 for idx in batch_idx:
                     ex = self._buffer[idx]
                     x = self._encode_pair(
-                        ex["latent_a"], ex["latent_b"],
-                        ex["phase_a"], ex["phase_b"],
-                        ex["amp_a"], ex["amp_b"],
-                        ex["sal_a"], ex["sal_b"],
+                        ex["latent_a"],
+                        ex["latent_b"],
+                        ex["phase_a"],
+                        ex["phase_b"],
+                        ex["amp_a"],
+                        ex["amp_b"],
+                        ex["sal_a"],
+                        ex["sal_b"],
                     )
                     y, h = self._forward(x)
                     norm_y = np.linalg.norm(y) + 1e-8

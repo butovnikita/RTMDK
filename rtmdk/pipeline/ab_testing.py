@@ -3,13 +3,12 @@
 Compares retrieve_nodes_pipeline() against legacy retrieve_nodes()
 on latency, result overlap, and ranking correlation.
 """
+
 from __future__ import annotations
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
-
-from rtmdk.pipeline.base import PipelineContext
 
 
 class PipelineABTester:
@@ -45,9 +44,7 @@ class PipelineABTester:
 
         # Legacy path
         t0 = time.perf_counter()
-        legacy_results = self.memory.retrieve_nodes(
-            query, embedding, top_k=top_k, session_id=session_id
-        )
+        legacy_results = self.memory.retrieve_nodes(query, embedding, top_k=top_k, session_id=session_id)
         legacy_latency_ms = (time.perf_counter() - t0) * 1000
 
         # Pipeline path
@@ -73,9 +70,7 @@ class PipelineABTester:
                 "route": pipeline_output.get("route"),
                 "metrics": pipeline_output.get("metrics"),
             },
-            "comparison": self._compare(
-                legacy_results, pipeline_results, legacy_latency_ms, pipeline_latency_ms
-            ),
+            "comparison": self._compare(legacy_results, pipeline_results, legacy_latency_ms, pipeline_latency_ms),
         }
         self._runs.append(result)
         return result
@@ -87,10 +82,7 @@ class PipelineABTester:
         session_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Run A/B comparison for multiple queries."""
-        return [
-            self.compare_single(q, top_k=top_k, session_id=session_id)
-            for q in queries
-        ]
+        return [self.compare_single(q, top_k=top_k, session_id=session_id) for q in queries]
 
     def _compare(
         self,
@@ -165,10 +157,7 @@ class PipelineABTester:
                 "max": round(float(np.max(arr)), 3),
             }
 
-        pipeline_faster = sum(
-            1 for r in self._runs
-            if r["pipeline"]["latency_ms"] < r["legacy"]["latency_ms"]
-        )
+        pipeline_faster = sum(1 for r in self._runs if r["pipeline"]["latency_ms"] < r["legacy"]["latency_ms"])
 
         return {
             "runs": len(self._runs),

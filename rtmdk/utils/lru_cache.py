@@ -1,4 +1,5 @@
 """Simple LRU cache for embedding vectors."""
+
 from collections import OrderedDict
 from typing import Any, Optional
 

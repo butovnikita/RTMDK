@@ -30,16 +30,11 @@ class TenantRateLimiter:
         self._api_key_manager = api_key_manager
         # Global defaults from env
         self._defaults = {
-            "per_minute": default_per_minute
-            or int(os.getenv("RTMDK_RATE_LIMIT_PER_MINUTE", "60")),
-            "per_hour": default_per_hour
-            or int(os.getenv("RTMDK_RATE_LIMIT_PER_HOUR", "1000")),
-            "per_day": default_per_day
-            or int(os.getenv("RTMDK_RATE_LIMIT_PER_DAY", "10000")),
+            "per_minute": default_per_minute or int(os.getenv("RTMDK_RATE_LIMIT_PER_MINUTE", "60")),
+            "per_hour": default_per_hour or int(os.getenv("RTMDK_RATE_LIMIT_PER_HOUR", "1000")),
+            "per_day": default_per_day or int(os.getenv("RTMDK_RATE_LIMIT_PER_DAY", "10000")),
         }
-        self._pipeline_per_minute = pipeline_per_minute or int(
-            os.getenv("RTMDK_PIPELINE_RATE_LIMIT_PER_MINUTE", "30")
-        )
+        self._pipeline_per_minute = pipeline_per_minute or int(os.getenv("RTMDK_PIPELINE_RATE_LIMIT_PER_MINUTE", "30"))
         # tenant_id -> RateLimiter instance
         self._limiters: Dict[str, RateLimiter] = {}
         # tenant_id -> RateLimiter instance for pipeline endpoints

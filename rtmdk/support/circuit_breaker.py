@@ -3,6 +3,7 @@
 Replaces the overly broad _safe_run() catch-all with per-subsystem
 failure tracking and automatic recovery.
 """
+
 from __future__ import annotations
 
 import logging
@@ -15,8 +16,8 @@ T = TypeVar("T")
 
 
 class CircuitState(Enum):
-    CLOSED = "closed"      # Normal operation
-    OPEN = "open"          # Failing fast
+    CLOSED = "closed"  # Normal operation
+    OPEN = "open"  # Failing fast
     HALF_OPEN = "half_open"  # Testing recovery
 
 
@@ -57,12 +58,9 @@ class CircuitBreaker:
         if self.state == CircuitState.OPEN:
             if self._should_attempt_reset():
                 self.state = CircuitState.HALF_OPEN
-                logger.info(
-                    f"[CircuitBreaker:{self.name}] HALF_OPEN — probing recovery")
+                logger.info(f"[CircuitBreaker:{self.name}] HALF_OPEN — probing recovery")
             else:
-                logger.debug(
-                    f"[CircuitBreaker:{self.name}] OPEN — fast-fail ({self._failure_count} failures)"
-                )
+                logger.debug(f"[CircuitBreaker:{self.name}] OPEN — fast-fail ({self._failure_count} failures)")
                 return self.default  # type: ignore[return-value]
 
         try:
@@ -78,8 +76,7 @@ class CircuitBreaker:
 
     def _on_success(self):
         if self.state == CircuitState.HALF_OPEN:
-            logger.info(
-                f"[CircuitBreaker:{self.name}] CLOSED — recovery confirmed")
+            logger.info(f"[CircuitBreaker:{self.name}] CLOSED — recovery confirmed")
         self.state = CircuitState.CLOSED
         self._failure_count = 0
         self._last_failure_time = None
@@ -87,9 +84,7 @@ class CircuitBreaker:
     def _on_failure(self, exc: Exception):
         self._failure_count += 1
         self._last_failure_time = time.time()
-        logger.exception(
-            f"[CircuitBreaker:{self.name}] failure {self._failure_count}/{self.failure_threshold}: {exc}"
-        )
+        logger.exception(f"[CircuitBreaker:{self.name}] failure {self._failure_count}/{self.failure_threshold}: {exc}")
         if self._failure_count >= self.failure_threshold:
             self.state = CircuitState.OPEN
             logger.warning(
@@ -117,12 +112,9 @@ class AsyncCircuitBreaker(CircuitBreaker):
         if self.state == CircuitState.OPEN:
             if self._should_attempt_reset():
                 self.state = CircuitState.HALF_OPEN
-                logger.info(
-                    f"[CircuitBreaker:{self.name}] HALF_OPEN — probing recovery")
+                logger.info(f"[CircuitBreaker:{self.name}] HALF_OPEN — probing recovery")
             else:
-                logger.debug(
-                    f"[CircuitBreaker:{self.name}] OPEN — fast-fail ({self._failure_count} failures)"
-                )
+                logger.debug(f"[CircuitBreaker:{self.name}] OPEN — fast-fail ({self._failure_count} failures)")
                 return self.default
 
         try:

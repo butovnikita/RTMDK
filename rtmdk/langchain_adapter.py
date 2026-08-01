@@ -4,6 +4,7 @@ rtmdk/langchain_adapter.py — D3: LangChain Adapter
 Provides RTMDKMemory class implementing LangChain's BaseChatMessageHistory interface
 and as_langchain() helper for use with LangChain chains.
 """
+
 from __future__ import annotations
 
 from typing import List, Callable, Optional, Dict, Any
@@ -11,6 +12,7 @@ from typing import List, Callable, Optional, Dict, Any
 try:
     from langchain_core.messages import BaseMessage, AIMessage, HumanMessage
     from langchain_core.chat_history import BaseChatMessageHistory
+
     LANGCHAIN_AVAILABLE = True
 except ImportError:
     LANGCHAIN_AVAILABLE = False
@@ -57,9 +59,7 @@ class RTMDKMemory(BaseChatMessageHistory):
             embedder: Optional embedder function (uses core_memory.embedder if not provided)
         """
         if not LANGCHAIN_AVAILABLE:
-            raise ImportError(
-                "langchain-core is required. Install it: pip install langchain-core"
-            )
+            raise ImportError("langchain-core is required. Install it: pip install langchain-core")
         self._core = core_memory
         self._session_id = session_id
         self._embedder = embedder or getattr(core_memory, "embedder", None)
@@ -93,7 +93,7 @@ class RTMDKMemory(BaseChatMessageHistory):
         role = "user" if isinstance(message, HumanMessage) else "assistant"
         self._core.save_context(
             {"input": str(content), "session_id": self._session_id, "role": role},
-            {"output": "" if role == "user" else str(content)}
+            {"output": "" if role == "user" else str(content)},
         )
 
     def clear(self) -> None:
@@ -112,10 +112,12 @@ class RTMDKMemory(BaseChatMessageHistory):
 
     def get_context(self, query: str, top_k: int = 5) -> str:
         """Query RTMDK semantic memory for relevant context."""
-        result = self._core.load_memory_variables({
-            "input": query,
-            "session_id": self._session_id,
-        })
+        result = self._core.load_memory_variables(
+            {
+                "input": query,
+                "session_id": self._session_id,
+            }
+        )
         return result.get("rtmdk_context", "")
 
     def get_stats(self) -> Dict[str, Any]:

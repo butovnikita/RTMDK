@@ -4,17 +4,18 @@
 - DistributedLock (file backend)
 - RAG Quality (query decomposition, sentence reranking, feedback loop)
 """
+
 import os
 import tempfile
 import threading
 import time
 import numpy as np
-import pytest
 
 
 class TestEngramEmbeddingCache:
     def test_basic_add_get(self):
         from rtmdk.memory.engram_cache import EngramEmbeddingCache
+
         cache = EngramEmbeddingCache(max_hot=2, max_warm=2)
         emb = np.array([1.0, 2.0, 3.0])
         cache.add("n1", emb)
@@ -24,12 +25,14 @@ class TestEngramEmbeddingCache:
 
     def test_put_alias(self):
         from rtmdk.memory.engram_cache import EngramEmbeddingCache
+
         cache = EngramEmbeddingCache(max_hot=2, max_warm=2)
         cache.put("n1", np.array([1.0]))
         assert cache.get("n1") is not None
 
     def test_hot_eviction_moves_to_warm(self):
         from rtmdk.memory.engram_cache import EngramEmbeddingCache
+
         cache = EngramEmbeddingCache(max_hot=2, max_warm=2)
         cache.add("n1", np.array([1.0]))
         cache.add("n2", np.array([2.0]))
@@ -40,6 +43,7 @@ class TestEngramEmbeddingCache:
 
     def test_warm_eviction_drops_to_cold(self):
         from rtmdk.memory.engram_cache import EngramEmbeddingCache
+
         cache = EngramEmbeddingCache(max_hot=1, max_warm=1)
         cache.add("n1", np.array([1.0]))
         cache.add("n2", np.array([2.0]))  # n1 warm
@@ -50,6 +54,7 @@ class TestEngramEmbeddingCache:
 
     def test_warm_promotion_to_hot(self):
         from rtmdk.memory.engram_cache import EngramEmbeddingCache
+
         cache = EngramEmbeddingCache(max_hot=1, max_warm=1)
         cache.add("n1", np.array([1.0]))
         cache.add("n2", np.array([2.0]))  # n1 warm
@@ -61,6 +66,7 @@ class TestEngramEmbeddingCache:
 
     def test_thread_safety(self):
         from rtmdk.memory.engram_cache import EngramEmbeddingCache
+
         cache = EngramEmbeddingCache(max_hot=100, max_warm=100)
         errors = []
 
@@ -83,6 +89,7 @@ class TestEngramEmbeddingCache:
 
     def test_get_all(self):
         from rtmdk.memory.engram_cache import EngramEmbeddingCache
+
         cache = EngramEmbeddingCache(max_hot=10, max_warm=10)
         cache.add("n1", np.array([1.0]))
         cache.add("n2", np.array([2.0]))
@@ -93,6 +100,7 @@ class TestEngramEmbeddingCache:
 
     def test_remove(self):
         from rtmdk.memory.engram_cache import EngramEmbeddingCache
+
         cache = EngramEmbeddingCache(max_hot=10, max_warm=10)
         cache.add("n1", np.array([1.0]))
         cache.remove("n1")
@@ -101,6 +109,7 @@ class TestEngramEmbeddingCache:
 
     def test_len(self):
         from rtmdk.memory.engram_cache import EngramEmbeddingCache
+
         cache = EngramEmbeddingCache(max_hot=10, max_warm=10)
         assert len(cache) == 0
         cache.add("n1", np.array([1.0]))
@@ -108,6 +117,7 @@ class TestEngramEmbeddingCache:
 
     def test_save_load(self):
         from rtmdk.memory.engram_cache import EngramEmbeddingCache
+
         cache = EngramEmbeddingCache(max_hot=10, max_warm=10)
         cache.add("n1", np.array([1.0, 2.0]))
         cache.add("n2", np.array([3.0, 4.0]))
@@ -124,6 +134,7 @@ class TestEngramEmbeddingCache:
 class TestObservability:
     def test_record_latency_percentiles(self):
         from rtmdk.memory.observability import MemoryMetrics
+
         metrics = MemoryMetrics()
         for i in range(1, 101):
             metrics.record_query(float(i), cache_hit=False)
@@ -134,6 +145,7 @@ class TestObservability:
 
     def test_cache_hit_ratio(self):
         from rtmdk.memory.observability import MemoryMetrics
+
         metrics = MemoryMetrics()
         for _ in range(3):
             metrics.record_query(1.0, cache_hit=True)
@@ -143,6 +155,7 @@ class TestObservability:
 
     def test_alert_rule(self):
         from rtmdk.memory.observability import AlertRule
+
         rule = AlertRule("high_latency", "query_p99", threshold=50.0)
         assert not rule.check(30.0, time.time())
         assert rule.check(60.0, time.time())
@@ -151,6 +164,7 @@ class TestObservability:
 
     def test_check_alerts(self):
         from rtmdk.memory.observability import MemoryMetrics, AlertRule
+
         metrics = MemoryMetrics()
         metrics.add_alert_rule(AlertRule("high_latency", "query_p99", threshold=50.0))
         metrics.record_query(100.0, cache_hit=False)
@@ -160,6 +174,7 @@ class TestObservability:
 
     def test_prometheus_export(self):
         from rtmdk.memory.observability import MemoryMetrics
+
         metrics = MemoryMetrics()
         metrics.record_query(10.0, cache_hit=False)
         prom = metrics.to_prometheus()
@@ -168,6 +183,7 @@ class TestObservability:
 
     def test_flush_to_file(self):
         from rtmdk.memory.observability import MemoryMetrics
+
         metrics = MemoryMetrics()
         metrics.record_query(10.0, cache_hit=True)
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -175,6 +191,7 @@ class TestObservability:
             metrics.flush_to_file(path)
             assert os.path.exists(path)
             import json
+
             with open(path) as f:
                 data = json.load(f)
             assert data["cache_hit_ratio"] == 1.0
@@ -183,6 +200,7 @@ class TestObservability:
 class TestDistributedLock:
     def test_file_lock_acquire_release(self):
         from rtmdk.memory.distributed_lock import DistributedLock
+
         with tempfile.TemporaryDirectory() as tmpdir:
             lock = DistributedLock(os.path.join(tmpdir, "lock"))
             assert lock.acquire(blocking=False)
@@ -190,6 +208,7 @@ class TestDistributedLock:
 
     def test_file_lock_blocks_second_acquirer(self):
         from rtmdk.memory.distributed_lock import DistributedLock
+
         with tempfile.TemporaryDirectory() as tmpdir:
             lock1 = DistributedLock(os.path.join(tmpdir, "lock"))
             lock2 = DistributedLock(os.path.join(tmpdir, "lock"))
@@ -199,6 +218,7 @@ class TestDistributedLock:
 
     def test_file_lock_timeout(self):
         from rtmdk.memory.distributed_lock import DistributedLock
+
         with tempfile.TemporaryDirectory() as tmpdir:
             lock1 = DistributedLock(os.path.join(tmpdir, "lock"))
             lock2 = DistributedLock(os.path.join(tmpdir, "lock"), timeout=0.1)
@@ -208,6 +228,7 @@ class TestDistributedLock:
 
     def test_file_lock_thread_safety(self):
         from rtmdk.memory.distributed_lock import DistributedLock
+
         with tempfile.TemporaryDirectory() as tmpdir:
             lock = DistributedLock(os.path.join(tmpdir, "lock"))
             acquired = []
@@ -227,6 +248,7 @@ class TestDistributedLock:
 
     def test_redis_fallback_when_unavailable(self):
         from rtmdk.memory.distributed_lock import DistributedLock
+
         with tempfile.TemporaryDirectory() as tmpdir:
             lock = DistributedLock(
                 os.path.join(tmpdir, "lock"),
@@ -242,6 +264,7 @@ class TestDistributedLock:
 class TestRAGQuality:
     def test_query_decomposer_splits_multi_hop(self):
         from rtmdk.memory.rag_quality import QueryDecomposer
+
         dec = QueryDecomposer()
         sub = dec.decompose("What is X and who invented Y")
         assert len(sub) >= 1
@@ -249,6 +272,7 @@ class TestRAGQuality:
 
     def test_query_decomposer_single_query_unchanged(self):
         from rtmdk.memory.rag_quality import QueryDecomposer
+
         dec = QueryDecomposer()
         sub = dec.decompose("simple query")
         assert sub == ["simple query"]
@@ -276,39 +300,46 @@ class TestRAGQuality:
                 self.content = {"text": text}
 
         reranker = SentenceReranker(MockEmbedder())
-        results = [
-            (f"n{i}", float(i), MockNode("Sentence one. Sentence two."))
-            for i in range(10)
-        ]
+        results = [(f"n{i}", float(i), MockNode("Sentence one. Sentence two.")) for i in range(10)]
         reranked = reranker.rerank("query", results, top_k=3)
         assert len(reranked) == 3
 
     def test_feedback_loop_records(self):
         from rtmdk.memory.rag_quality import FeedbackLoop
+
         class MockSIF:
             word_embeddings = {0: np.ones(4), 1: np.ones(4)}
+
             def _embed_sentence_raw(self, tokens):
                 return np.ones(4)
+
         class MockEmbedder:
             _vocab = {"q1": 0, "node": 1}
             _embedder = MockSIF()
+
             def _word_tokenize(self, text):
                 return text.lower().split()
+
         fl = FeedbackLoop(MockEmbedder())
         assert fl.add_feedback("q1", "node", True)
         assert fl.feedback_count == 1
 
     def test_feedback_loop_persistence(self):
         from rtmdk.memory.rag_quality import FeedbackLoop
+
         class MockSIF:
             word_embeddings = {0: np.ones(4), 1: np.ones(4)}
+
             def _embed_sentence_raw(self, tokens):
                 return np.ones(4)
+
         class MockEmbedder:
             _vocab = {"q1": 0, "node": 1}
             _embedder = MockSIF()
+
             def _word_tokenize(self, text):
                 return text.lower().split()
+
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "feedback.json")
             fl = FeedbackLoop(MockEmbedder(), persist_path=path)

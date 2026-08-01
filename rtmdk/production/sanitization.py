@@ -45,9 +45,7 @@ def validate_embedding(
     if arr.ndim != 1:
         raise SanitizationError(f"Embedding must be 1-D, got shape {arr.shape}")
     if arr.shape[0] > max_dim:
-        raise SanitizationError(
-            f"Embedding dim {arr.shape[0]} exceeds max {max_dim}"
-        )
+        raise SanitizationError(f"Embedding dim {arr.shape[0]} exceeds max {max_dim}")
     if not allow_nan and np.isnan(arr).any():
         raise SanitizationError("Embedding contains NaN values")
     if not allow_inf and np.isinf(arr).any():
@@ -58,9 +56,7 @@ def validate_embedding(
 def validate_batch_size(n: int, *, max_size: int = MAX_BATCH_SIZE) -> None:
     """Validate batch size for ingestion or query."""
     if n > max_size:
-        raise SanitizationError(
-            f"Batch size {n} exceeds maximum {max_size}"
-        )
+        raise SanitizationError(f"Batch size {n} exceeds maximum {max_size}")
 
 
 def sanitize_text(text: Optional[str], *, max_length: int = 10000) -> str:

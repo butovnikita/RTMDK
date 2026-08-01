@@ -1,10 +1,10 @@
 """Base classes for the retrieval pipeline."""
+
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 import time
-import numpy as np
 from numpy.typing import NDArray
 
 from rtmdk.pipeline.circuit_breaker import CircuitBreaker
@@ -13,6 +13,7 @@ from rtmdk.pipeline.circuit_breaker import CircuitBreaker
 @dataclass
 class StageMetrics:
     """Latency and throughput metrics for a single stage."""
+
     name: str
     latency_ms: float = 0.0
     input_count: int = 0
@@ -34,6 +35,7 @@ class StageMetrics:
 @dataclass
 class PipelineContext:
     """Mutable context passed through every pipeline stage."""
+
     query_text: str
     embedding: Optional[NDArray] = None
     route: Optional[str] = None
@@ -46,15 +48,25 @@ class PipelineContext:
     breaker_states: Dict[str, str] = field(default_factory=dict)
     skip_remaining: bool = False
 
-    def add_metric(self, name: str, latency_ms: float, input_count: int = 0, output_count: int = 0, error: Optional[str] = None, degraded: bool = False):
-        self.metrics.append(StageMetrics(
-            name=name,
-            latency_ms=latency_ms,
-            input_count=input_count,
-            output_count=output_count,
-            error=error,
-            degraded=degraded,
-        ))
+    def add_metric(
+        self,
+        name: str,
+        latency_ms: float,
+        input_count: int = 0,
+        output_count: int = 0,
+        error: Optional[str] = None,
+        degraded: bool = False,
+    ):
+        self.metrics.append(
+            StageMetrics(
+                name=name,
+                latency_ms=latency_ms,
+                input_count=input_count,
+                output_count=output_count,
+                error=error,
+                degraded=degraded,
+            )
+        )
         if degraded:
             self.degraded_stages.append(name)
 

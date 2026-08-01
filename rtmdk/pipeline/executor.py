@@ -1,4 +1,5 @@
 """Pipeline executor: compose stages and run them in order."""
+
 from __future__ import annotations
 import asyncio
 from typing import Any, Dict, List, Optional
@@ -66,10 +67,7 @@ class PipelineExecutor:
         session_id: Optional[str] = None,
     ) -> List[PipelineContext]:
         """Run pipeline on multiple queries sequentially."""
-        return [
-            self.run(q, top_k=top_k, session_id=session_id)
-            for q in queries
-        ]
+        return [self.run(q, top_k=top_k, session_id=session_id) for q in queries]
 
     async def run_async(
         self,
@@ -83,9 +81,7 @@ class PipelineExecutor:
         Useful for FastAPI endpoints to avoid blocking the event loop.
         """
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            None, self.run, query_text, top_k, session_id, embedding
-        )
+        return await loop.run_in_executor(None, self.run, query_text, top_k, session_id, embedding)
 
     def run_with_profiler(
         self,
@@ -121,10 +117,7 @@ class PipelineExecutor:
         session_id: Optional[str] = None,
     ) -> List[PipelineContext]:
         """Async batch execution — runs queries concurrently."""
-        tasks = [
-            self.run_async(q, top_k=top_k, session_id=session_id)
-            for q in queries
-        ]
+        tasks = [self.run_async(q, top_k=top_k, session_id=session_id) for q in queries]
         return await asyncio.gather(*tasks)
 
     def get_metrics(self, ctx: PipelineContext) -> Dict[str, Any]:

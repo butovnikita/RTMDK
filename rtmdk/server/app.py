@@ -54,6 +54,7 @@ _sot_bootstrap_breaker = AsyncCircuitBreaker("SOTBootstrap", failure_threshold=3
 
 try:
     from strawberry.fastapi import GraphQLRouter
+
     graphql_router = GraphQLRouter(schema)
     GRAPHQL_AVAILABLE = True
 except Exception:
@@ -70,6 +71,7 @@ except ImportError:
 
 if _PROMETHEUS_AVAILABLE:
     from prometheus_client import REGISTRY
+
     def _safe_metric(cls, *args, **kwargs):
         try:
             return cls(*args, **kwargs)
@@ -82,26 +84,15 @@ if _PROMETHEUS_AVAILABLE:
 
     _metric_nodes = _safe_metric(Gauge, "rtmdk_nodes_total", "Number of memory nodes")
     _metric_queries = _safe_metric(Counter, "rtmdk_queries_total", "Total memory queries")
-    _metric_query_dur = _safe_metric(
-        Histogram, "rtmdk_query_duration_seconds", "Query duration")
-    _metric_consolidations = _safe_metric(
-        Counter, "rtmdk_consolidations_total", "Total consolidations")
-    _metric_security = _safe_metric(
-        Counter, "rtmdk_security_violations_total", "Security violations")
-    _metric_lm_requests = _safe_metric(
-        Counter, "rtmdk_lm_requests_total", "LM Studio requests",
-        ["endpoint"])
-    _metric_lm_errors = _safe_metric(
-        Counter, "rtmdk_lm_errors_total", "LM Studio errors",
-        ["endpoint"])
+    _metric_query_dur = _safe_metric(Histogram, "rtmdk_query_duration_seconds", "Query duration")
+    _metric_consolidations = _safe_metric(Counter, "rtmdk_consolidations_total", "Total consolidations")
+    _metric_security = _safe_metric(Counter, "rtmdk_security_violations_total", "Security violations")
+    _metric_lm_requests = _safe_metric(Counter, "rtmdk_lm_requests_total", "LM Studio requests", ["endpoint"])
+    _metric_lm_errors = _safe_metric(Counter, "rtmdk_lm_errors_total", "LM Studio errors", ["endpoint"])
     # SOT-specific metrics
-    _metric_sot_vocab = _safe_metric(
-        Gauge, "rtmdk_sot_vocab_size", "SOT vocabulary size",
-        ["mode"])
-    _metric_sot_cooccurrence = _safe_metric(
-        Gauge, "rtmdk_sot_cooccurrence_size", "SOT cooccurrence store entries")
-    _metric_sot_bootstrap_time = _safe_metric(
-        Gauge, "rtmdk_sot_bootstrap_time_seconds", "SOT bootstrap duration")
+    _metric_sot_vocab = _safe_metric(Gauge, "rtmdk_sot_vocab_size", "SOT vocabulary size", ["mode"])
+    _metric_sot_cooccurrence = _safe_metric(Gauge, "rtmdk_sot_cooccurrence_size", "SOT cooccurrence store entries")
+    _metric_sot_bootstrap_time = _safe_metric(Gauge, "rtmdk_sot_bootstrap_time_seconds", "SOT bootstrap duration")
 
 
 # ============================================================================
@@ -124,20 +115,11 @@ SERVER_PORT = int(os.getenv("RTMDK_PORT", "8080"))
 LM_STUDIO_URL = os.getenv("LM_STUDIO_URL", "http://localhost:12345/v1")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-MEMORY_FILE = os.getenv(
-    "RTMDK_MEMORY_FILE",
-    os.path.join(
-        os.path.expanduser("~"),
-        ".rtmdk",
-        "memory.json"))
-EMBED_MODEL = os.getenv(
-    "RTMDK_EMBED_MODEL",
-    "nomic-ai/nomic-embed-text-v1.5-GGUF")
+MEMORY_FILE = os.getenv("RTMDK_MEMORY_FILE", os.path.join(os.path.expanduser("~"), ".rtmdk", "memory.json"))
+EMBED_MODEL = os.getenv("RTMDK_EMBED_MODEL", "nomic-ai/nomic-embed-text-v1.5-GGUF")
 CHAT_MODEL = os.getenv("RTMDK_CHAT_MODEL", "")
 API_KEY = os.getenv("RTMDK_API_KEY", "rtmdk-local")
-ENABLE_LM_STUDIO = os.getenv(
-    "RTMDK_ENABLE_LM_STUDIO",
-    "true").lower() == "true"
+ENABLE_LM_STUDIO = os.getenv("RTMDK_ENABLE_LM_STUDIO", "true").lower() == "true"
 ENABLE_API_AUTH = os.getenv("RTMDK_ENABLE_API_AUTH", "true").lower() == "true"
 MAX_PAYLOAD_SIZE = int(os.getenv("RTMDK_MAX_PAYLOAD_SIZE", "1048576"))
 _raw_origins = os.getenv("RTMDK_ALLOWED_ORIGINS", "*")
@@ -189,6 +171,7 @@ async def _drain_active_requests(timeout: float = 30.0):
         logger.warning(f"Shutdown with {count} requests still active")
     else:
         logger.info("All requests drained gracefully")
+
 
 # ============================================================================
 # SIGNAL / LIFECYCLE HANDLERS
@@ -268,8 +251,7 @@ _log_handler = logging.StreamHandler()
 if os.getenv("RTMDK_LOG_FORMAT", "").lower() == "json":
     _log_handler.setFormatter(JsonFormatter())
 else:
-    _log_handler.setFormatter(logging.Formatter(
-        "%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+    _log_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
 logging.basicConfig(level=log_level, handlers=[_log_handler])
 logger = logging.getLogger("rtmdk_production")
 
@@ -309,6 +291,7 @@ async def lifespan(app: FastAPI):
     if os.getenv("RTMDK_JSON_LOG", "").lower() in ("1", "true", "yes"):
         try:
             from rtmdk.production.json_logger import setup_json_logging
+
             setup_json_logging()
         except Exception:
             pass
@@ -318,7 +301,8 @@ async def lifespan(app: FastAPI):
     if ENABLE_API_AUTH and API_KEY == "rtmdk-local":
         logger.warning(
             "SECURITY: default API key 'rtmdk-local' is in use with auth enabled. "
-            "Set RTMDK_API_KEY (e.g. in .env) for any non-local deployment.")
+            "Set RTMDK_API_KEY (e.g. in .env) for any non-local deployment."
+        )
 
     if ENABLE_LM_STUDIO:
         ai_provider_available = await check_ai_provider()
@@ -341,16 +325,12 @@ async def lifespan(app: FastAPI):
     # Initialize production performance modules
     query_cache = QueryCache(max_size=10000, ttl_seconds=3600)
     embedding_cache = EmbeddingCache(
-        cache_dir=os.path.join(
-            os.path.expanduser("~"),
-            ".rtmdk",
-            "embedding_cache"),
+        cache_dir=os.path.join(os.path.expanduser("~"), ".rtmdk", "embedding_cache"),
         max_size=100000,
         ttl_seconds=86400,
         memory_cache_size=4096,
     )
-    context_optimizer = ContextOptimizer(
-        model="default", min_tokens=50, max_tokens=300)
+    context_optimizer = ContextOptimizer(model="default", min_tokens=50, max_tokens=300)
     health_monitor = HealthMonitor(memory=memory, check_interval=60)
     analytics_dashboard = AnalyticsDashboard(memory, health_monitor=health_monitor)
     api_key_manager = APIKeyManager()
@@ -388,10 +368,13 @@ async def lifespan(app: FastAPI):
         logger.info("OpenTelemetry tracing enabled")
 
     # SOT checkpoint loading
-    _sot_checkpoint_path = os.path.join(
-        os.path.expanduser("~"), ".rtmdk", "sot_checkpoint.json"
-    )
-    if memory and memory.field is not None and hasattr(memory.field, "_projection_mgr") and memory.field._projection_mgr.sot_tokenizer:
+    _sot_checkpoint_path = os.path.join(os.path.expanduser("~"), ".rtmdk", "sot_checkpoint.json")
+    if (
+        memory
+        and memory.field is not None
+        and hasattr(memory.field, "_projection_mgr")
+        and memory.field._projection_mgr.sot_tokenizer
+    ):
         if os.path.exists(_sot_checkpoint_path):
             try:
                 with open(_sot_checkpoint_path, "r", encoding="utf-8") as fh:
@@ -414,8 +397,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"Server ready on {SERVER_HOST}:{SERVER_PORT}")
     if memory.field is not None:
         logger.info(f"Memory nodes: {len(memory.field.nodes)}")
-    logger.info(
-        "Production modules: QueryCache, EmbeddingCache, ContextOptimizer, HealthMonitor, AuditLog enabled")
+    logger.info("Production modules: QueryCache, EmbeddingCache, ContextOptimizer, HealthMonitor, AuditLog enabled")
 
     yield
 
@@ -445,8 +427,7 @@ async def lifespan(app: FastAPI):
         if field and field._projection_mgr.sot_tokenizer:
             try:
                 sot_state = field._projection_mgr.sot_tokenizer.get_state()
-                _sot_checkpoint_path = os.path.join(
-                    os.path.expanduser("~"), ".rtmdk", "sot_checkpoint.json")
+                _sot_checkpoint_path = os.path.join(os.path.expanduser("~"), ".rtmdk", "sot_checkpoint.json")
                 os.makedirs(os.path.dirname(_sot_checkpoint_path), exist_ok=True)
                 with open(_sot_checkpoint_path, "w", encoding="utf-8") as fh:
                     json.dump(sot_state, fh, ensure_ascii=False, default=str)
@@ -459,8 +440,7 @@ async def lifespan(app: FastAPI):
             os.makedirs(os.path.dirname(save_path), exist_ok=True)
             await run_sync(memory.export_field, save_path)
             if memory.field is not None:
-                logger.info(
-                    f"Memory saved to {save_path} ({len(memory.field.nodes)} nodes)")
+                logger.info(f"Memory saved to {save_path} ({len(memory.field.nodes)} nodes)")
         except Exception:
             logger.exception("Failed to save memory on shutdown")
 
@@ -491,6 +471,7 @@ app.add_middleware(
 
 try:
     from rtmdk.production.metrics import MetricsMiddleware
+
     app.add_middleware(MetricsMiddleware)
 except Exception:
     pass
@@ -506,9 +487,7 @@ async def request_counter_middleware(request: Request, call_next):
     """Count active requests for graceful shutdown."""
     global _active_requests
     if _shutdown_event.is_set():
-        return JSONResponse(
-            status_code=503,
-            content={"error": "Server is shutting down"})
+        return JSONResponse(status_code=503, content={"error": "Server is shutting down"})
     async with _active_requests_lock:
         _active_requests += 1
     try:
@@ -528,6 +507,7 @@ async def request_counter_middleware(request: Request, call_next):
 async def request_logging_middleware(request: Request, call_next):
     """Log every request with structured JSON for production observability."""
     import uuid
+
     request_id = str(uuid.uuid4())[:8]
     request.state.request_id = request_id
     t0 = time.perf_counter()
@@ -535,31 +515,37 @@ async def request_logging_middleware(request: Request, call_next):
         response = await call_next(request)
         latency_ms = round((time.perf_counter() - t0) * 1000, 2)
         logger.info(
-            json.dumps({
-                "event": "http_request",
-                "request_id": request_id,
-                "method": request.method,
-                "path": request.url.path,
-                "status_code": response.status_code,
-                "latency_ms": latency_ms,
-                "tenant_id": getattr(request.state, "tenant_id", None),
-                "client_host": request.client.host if request.client else None,
-            }, ensure_ascii=False)
+            json.dumps(
+                {
+                    "event": "http_request",
+                    "request_id": request_id,
+                    "method": request.method,
+                    "path": request.url.path,
+                    "status_code": response.status_code,
+                    "latency_ms": latency_ms,
+                    "tenant_id": getattr(request.state, "tenant_id", None),
+                    "client_host": request.client.host if request.client else None,
+                },
+                ensure_ascii=False,
+            )
         )
         response.headers["X-Request-ID"] = request_id
         return response
     except Exception as exc:
         latency_ms = round((time.perf_counter() - t0) * 1000, 2)
         logger.warning(
-            json.dumps({
-                "event": "http_request_error",
-                "request_id": request_id,
-                "method": request.method,
-                "path": request.url.path,
-                "error": str(exc),
-                "latency_ms": latency_ms,
-                "tenant_id": getattr(request.state, "tenant_id", None),
-            }, ensure_ascii=False)
+            json.dumps(
+                {
+                    "event": "http_request_error",
+                    "request_id": request_id,
+                    "method": request.method,
+                    "path": request.url.path,
+                    "error": str(exc),
+                    "latency_ms": latency_ms,
+                    "tenant_id": getattr(request.state, "tenant_id", None),
+                },
+                ensure_ascii=False,
+            )
         )
         raise
 
@@ -580,14 +566,14 @@ async def security_middleware(request: Request, call_next):
         "/docs",
         "/openapi.json",
         "/redoc",
-        "/dashboard"}
+        "/dashboard",
+    }
     if request.url.path in skip_auth_paths or request.url.path.startswith("/api/"):
         return await call_next(request)
 
     content_length = request.headers.get("content-length")
     if content_length and int(content_length) > MAX_PAYLOAD_SIZE:
-        return JSONResponse(
-            status_code=413, content={"error": "Payload too large"})
+        return JSONResponse(status_code=413, content={"error": "Payload too large"})
 
     if ENABLE_API_AUTH:
         auth_header = request.headers.get("authorization", "")
@@ -604,9 +590,7 @@ async def security_middleware(request: Request, call_next):
             tenant_id = "__admin__"
 
         if tenant_id is None:
-            return JSONResponse(
-                status_code=401,
-                content={"error": "Unauthorized. Provide valid API key."})
+            return JSONResponse(status_code=401, content={"error": "Unauthorized. Provide valid API key."})
 
         request.state.tenant_id = tenant_id
         request.state.api_key = api_key
@@ -621,14 +605,7 @@ async def security_middleware(request: Request, call_next):
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
     """Enforce per-tenant rate limits."""
-    skip_paths = {
-        "/health",
-        "/v1/models",
-        "/docs",
-        "/openapi.json",
-        "/redoc",
-        "/dashboard",
-        "/metrics"}
+    skip_paths = {"/health", "/v1/models", "/docs", "/openapi.json", "/redoc", "/dashboard", "/metrics"}
     if request.url.path in skip_paths or request.url.path.startswith("/api/"):
         return await call_next(request)
 
@@ -646,24 +623,14 @@ async def rate_limit_middleware(request: Request, call_next):
         )
         if not allowed:
             remaining = tenant_rate_limiter.get_remaining(tenant_id)
-            return JSONResponse(
-                status_code=429,
-                content={"error": "Rate limit exceeded", "remaining": remaining})
+            return JSONResponse(status_code=429, content={"error": "Rate limit exceeded", "remaining": remaining})
 
     return await call_next(request)
 
 
 # Phase 4: Circuit breakers for external calls
-llm_chat_circuit = AsyncCircuitBreaker(
-    "llm_chat",
-    failure_threshold=3,
-    recovery_timeout=30.0,
-    default=None)
-llm_embed_circuit = AsyncCircuitBreaker(
-    "llm_embed",
-    failure_threshold=3,
-    recovery_timeout=30.0,
-    default=None)
+llm_chat_circuit = AsyncCircuitBreaker("llm_chat", failure_threshold=3, recovery_timeout=30.0, default=None)
+llm_embed_circuit = AsyncCircuitBreaker("llm_embed", failure_threshold=3, recovery_timeout=30.0, default=None)
 
 
 # ============================================================================
@@ -743,10 +710,7 @@ async def check_ai_provider() -> bool:
             await http_client.get(f"{LM_STUDIO_URL}/models", timeout=3)
             return True
         except Exception:
-            logger.warning(
-                "AI provider not reachable at %s",
-                LM_STUDIO_URL,
-                exc_info=True)
+            logger.warning("AI provider not reachable at %s", LM_STUDIO_URL, exc_info=True)
         return False
     try:
         resp = await http_client.get(f"{LM_STUDIO_URL}/models", timeout=3)
@@ -758,10 +722,7 @@ async def check_ai_provider() -> bool:
             logger.info(f"AI provider detected: {chat_model}")
             return True
     except Exception:
-        logger.warning(
-            "AI provider not available at %s",
-            LM_STUDIO_URL,
-            exc_info=True)
+        logger.warning("AI provider not available at %s", LM_STUDIO_URL, exc_info=True)
     return False
 
 
@@ -886,13 +847,11 @@ async def get_embedding(text: str, model: str = None) -> np.ndarray:
 
     expected_dim = 768
     if len(embedding) != expected_dim:
-        logger.warning(
-            f"Embedding dimension mismatch: got {len(embedding)}, expected {expected_dim}. Resizing.")
+        logger.warning(f"Embedding dimension mismatch: got {len(embedding)}, expected {expected_dim}. Resizing.")
         if len(embedding) > expected_dim:
             embedding = embedding[:expected_dim]
         else:
-            embedding = np.pad(
-                embedding, (0, expected_dim - len(embedding)), "constant")
+            embedding = np.pad(embedding, (0, expected_dim - len(embedding)), "constant")
 
     embedder_cache.set(text, embedding)
     return embedding
@@ -907,12 +866,12 @@ def init_memory() -> RTMDKMemory:
     preset_name = os.getenv("RTMDK_PRESET", "production")
     preset_fn = getattr(RTMDKConfig, preset_name, None)
     if preset_fn is None:
-        logger.warning(
-            f"Unknown preset '{preset_name}', falling back to 'production'")
+        logger.warning(f"Unknown preset '{preset_name}', falling back to 'production'")
         preset_fn = RTMDKConfig.production
 
     # Preset creates the base config, env vars override individual fields
     from typing import Callable, cast
+
     config = cast(Callable[[], RTMDKConfig], preset_fn)()
 
     logger.info(f"Memory config preset: {preset_name}")
@@ -927,17 +886,12 @@ def init_memory() -> RTMDKMemory:
 
     if os.path.exists(load_path):
         try:
-            mem = RTMDKMemory.import_field(
-                load_path, get_embedding, wal_path=load_path + ".wal")
+            mem = RTMDKMemory.import_field(load_path, get_embedding, wal_path=load_path + ".wal")
             if mem.field is not None:
-                logger.info(
-                    f"Loaded memory from {load_path}: {len(mem.field.nodes)} nodes")
+                logger.info(f"Loaded memory from {load_path}: {len(mem.field.nodes)} nodes")
             return mem
         except Exception:
-            logger.warning(
-                "Failed to load memory from %s",
-                load_path,
-                exc_info=True)
+            logger.warning("Failed to load memory from %s", load_path, exc_info=True)
             import shutil
 
             backup_path = load_path + f".corrupted.{int(time.time())}"
@@ -948,10 +902,7 @@ def init_memory() -> RTMDKMemory:
                 pass
 
     save_path = _get_save_path(MEMORY_FILE)
-    mem = RTMDKMemory(
-        config=config,
-        embedder=get_embedding,
-        wal_path=save_path + ".wal")
+    mem = RTMDKMemory(config=config, embedder=get_embedding, wal_path=save_path + ".wal")
     try:
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         mem.export_field(save_path)
@@ -963,9 +914,7 @@ def init_memory() -> RTMDKMemory:
     return mem
 
 
-def build_system_prompt(
-        user_messages: List[ChatMessage],
-        session_id: str) -> str:
+def build_system_prompt(user_messages: List[ChatMessage], session_id: str) -> str:
     """Build system prompt with RTMDK context."""
     last_user = ""
     for msg in reversed(user_messages):
@@ -976,8 +925,7 @@ def build_system_prompt(
     ctx = {"rtmdk_context": ""}
     if last_user and memory:
         try:
-            ctx = memory.load_memory_variables(
-                {"input": last_user, "session_id": session_id})
+            ctx = memory.load_memory_variables({"input": last_user, "session_id": session_id})
         except Exception:
             logger.warning("Memory query failed", exc_info=True)
 
@@ -1003,8 +951,7 @@ def build_system_prompt(
             base_prompt = None
 
     system_prompt = base_prompt or ""
-    if ctx["rtmdk_context"] and ctx["rtmdk_context"] not in (
-            "No relevant memory.", "[]"):
+    if ctx["rtmdk_context"] and ctx["rtmdk_context"] not in ("No relevant memory.", "[]"):
         system_prompt += (
             f"\n\nRelevant memories:\n{ctx['rtmdk_context']}\n\n"
             "Use these memories to provide accurate, context-aware answers."
@@ -1030,8 +977,7 @@ def auto_save():
         save_path = _get_save_path(MEMORY_FILE)
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         memory.export_field(save_path)
-        logger.debug(
-            f"Auto-saved memory: {len(memory.field.nodes)} nodes to {save_path}")
+        logger.debug(f"Auto-saved memory: {len(memory.field.nodes)} nodes to {save_path}")
     except Exception:
         logger.exception("Auto-save failed")
 
@@ -1067,23 +1013,17 @@ telemetry_manager: Optional[TelemetryManager] = None
 async def list_models():
     """List available models."""
     if chat_model:
-        return {"object": "list",
-                "data": [{"id": chat_model,
-                          "object": "model",
-                          "created": int(time.time()),
-                          "owned_by": "lm-studio"},
-                         {"id": "rtmdk",
-                          "object": "model",
-                          "created": int(time.time()),
-                          "owned_by": "rtmdk"},
-                         ],
-                }
-    return {"object": "list",
-            "data": [{"id": "rtmdk",
-                      "object": "model",
-                      "created": int(time.time()),
-                      "owned_by": "rtmdk"}],
-            }
+        return {
+            "object": "list",
+            "data": [
+                {"id": chat_model, "object": "model", "created": int(time.time()), "owned_by": "lm-studio"},
+                {"id": "rtmdk", "object": "model", "created": int(time.time()), "owned_by": "rtmdk"},
+            ],
+        }
+    return {
+        "object": "list",
+        "data": [{"id": "rtmdk", "object": "model", "created": int(time.time()), "owned_by": "rtmdk"}],
+    }
 
 
 @app.post("/v1/chat/completions")
@@ -1101,9 +1041,7 @@ async def chat_completions(req: ChatCompletionRequest):
 
     # Save user input to memory
     if memory and req.messages:
-        last_user = next(
-            (m.content for m in reversed(
-                req.messages) if m.role == "user"), "")
+        last_user = next((m.content for m in reversed(req.messages) if m.role == "user"), "")
         if last_user:
             try:
                 await run_sync(memory.save_context, {"input": last_user, "session_id": req.session_id}, {"output": ""})
@@ -1149,8 +1087,7 @@ async def chat_completions(req: ChatCompletionRequest):
     if resp is None:
         if _PROMETHEUS_AVAILABLE:
             _metric_lm_errors.labels(endpoint="chat").inc()
-        raise HTTPException(status_code=503,
-                            detail="LM Studio unavailable (circuit open)")
+        raise HTTPException(status_code=503, detail="LM Studio unavailable (circuit open)")
 
     if req.stream:
 
@@ -1165,9 +1102,7 @@ async def chat_completions(req: ChatCompletionRequest):
             finally:
                 if memory:
                     try:
-                        last_user = next(
-                            (m.content for m in reversed(
-                                req.messages) if m.role == "user"), "")
+                        last_user = next((m.content for m in reversed(req.messages) if m.role == "user"), "")
                         if last_user:
                             await run_sync(
                                 memory.save_context,
@@ -1180,10 +1115,7 @@ async def chat_completions(req: ChatCompletionRequest):
         return StreamingResponse(
             stream_generator(),
             media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Accel-Buffering": "no"},
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
         )
 
     data = resp.json()
@@ -1192,9 +1124,7 @@ async def chat_completions(req: ChatCompletionRequest):
 
     if memory and req.messages:
         try:
-            last_user = next(
-                (m.content for m in reversed(
-                    req.messages) if m.role == "user"), "")
+            last_user = next((m.content for m in reversed(req.messages) if m.role == "user"), "")
             if last_user:
                 await run_sync(
                     memory.save_context,
@@ -1242,11 +1172,7 @@ class MemoryQueryRequest(BaseModel):
 
     query: str = Field(..., min_length=1, description="Search query")
     top_k: int = Field(5, ge=1, le=50, description="Number of results")
-    threshold: float = Field(
-        0.0,
-        ge=0.0,
-        le=1.0,
-        description="Minimum similarity score")
+    threshold: float = Field(0.0, ge=0.0, le=1.0, description="Minimum similarity score")
 
     model_config = {
         "json_schema_extra": {
@@ -1280,18 +1206,9 @@ class MemoryQueryPipelineRequest(BaseModel):
 class BatchQueryRequest(BaseModel):
     """Batch query the memory field."""
 
-    queries: List[str] = Field(..., min_length=1,
-                               description="List of search queries")
-    top_k: int = Field(
-        5,
-        ge=1,
-        le=50,
-        description="Number of results per query")
-    threshold: float = Field(
-        0.0,
-        ge=0.0,
-        le=1.0,
-        description="Minimum similarity score")
+    queries: List[str] = Field(..., min_length=1, description="List of search queries")
+    top_k: int = Field(5, ge=1, le=50, description="Number of results per query")
+    threshold: float = Field(0.0, ge=0.0, le=1.0, description="Minimum similarity score")
 
     model_config = {
         "json_schema_extra": {
@@ -1466,15 +1383,17 @@ async def memory_query_pipeline(req: MemoryQueryPipelineRequest):
         # Format results
         formatted = []
         for nid, score, node in result["results"]:
-            formatted.append({
-                "id": nid,
-                "content": (
-                    node.content.get("content", node.content)
-                    if isinstance(node.content, dict)
-                    else str(node.content)
-                ),
-                "score": round(float(score), 4),
-            })
+            formatted.append(
+                {
+                    "id": nid,
+                    "content": (
+                        node.content.get("content", node.content)
+                        if isinstance(node.content, dict)
+                        else str(node.content)
+                    ),
+                    "score": round(float(score), 4),
+                }
+            )
 
         resp = {
             "query": req.query,
@@ -1515,8 +1434,10 @@ async def memory_pipeline_stream(
         es.addEventListener('message', e => console.log(JSON.parse(e.data)));
     """
     if not memory or not memory.field:
+
         async def _error():
             yield f"data: {json.dumps({'event': 'error', 'message': 'Memory not initialized'})}\n\n"
+
         return StreamingResponse(_error(), media_type="text/event-stream")
 
     from rtmdk.pipeline.streaming import StreamingPipelineExecutor
@@ -1555,19 +1476,23 @@ async def memory_pipeline_dag():
     edges = []
 
     for i, stage in enumerate(pipeline.stages):
-        nodes.append({
-            "id": stage.name,
-            "label": stage.name,
-            "enabled": stage.enabled,
-            "has_breaker": stage.circuit_breaker is not None,
-            "breaker_state": stage.circuit_breaker.state.value if stage.circuit_breaker else None,
-            "has_fallback": hasattr(stage, "fallback") and stage.fallback is not None,
-        })
+        nodes.append(
+            {
+                "id": stage.name,
+                "label": stage.name,
+                "enabled": stage.enabled,
+                "has_breaker": stage.circuit_breaker is not None,
+                "breaker_state": stage.circuit_breaker.state.value if stage.circuit_breaker else None,
+                "has_fallback": hasattr(stage, "fallback") and stage.fallback is not None,
+            }
+        )
         if i > 0:
-            edges.append({
-                "from": pipeline.stages[i - 1].name,
-                "to": stage.name,
-            })
+            edges.append(
+                {
+                    "from": pipeline.stages[i - 1].name,
+                    "to": stage.name,
+                }
+            )
 
     return {
         "nodes": nodes,
@@ -1592,6 +1517,7 @@ async def memory_pipeline_plan(query: str = "", route: Optional[str] = None, top
         plan = pipeline.get_plan(query, route=route, top_k=top_k)
     else:
         from rtmdk.pipeline.planner import QueryPlanner
+
         planner = QueryPlanner()
         plan = planner.plan(query, route=route, top_k=top_k).to_dict()
     return {"query": query, "plan": plan}
@@ -1662,11 +1588,13 @@ async def memory_pipeline_prometheus():
         enabled = 1 if stage.enabled else 0
         lines.append(f'rtmdk_pipeline_stage_enabled{{stage="{stage.name}"}} {enabled}')
 
-    lines.extend([
-        "",
-        "# HELP rtmdk_pipeline_breaker_state Circuit breaker state (0=closed, 1=half_open, 2=open)",
-        "# TYPE rtmdk_pipeline_breaker_state gauge",
-    ])
+    lines.extend(
+        [
+            "",
+            "# HELP rtmdk_pipeline_breaker_state Circuit breaker state (0=closed, 1=half_open, 2=open)",
+            "# TYPE rtmdk_pipeline_breaker_state gauge",
+        ]
+    )
     state_map = {"closed": 0, "half_open": 1, "open": 2}
     for stage in pipeline.stages:
         if stage.circuit_breaker is not None:
@@ -1676,17 +1604,23 @@ async def memory_pipeline_prometheus():
     # Include metrics store stats if available
     if pipeline_metrics_store is not None:
         summary = pipeline_metrics_store.summary()
-        lines.extend([
-            "",
-            "# HELP rtmdk_pipeline_queries_total Total pipeline queries",
-            "# TYPE rtmdk_pipeline_queries_total counter",
-            f"rtmdk_pipeline_queries_total {summary.get('queries', 0)}",
-        ])
+        lines.extend(
+            [
+                "",
+                "# HELP rtmdk_pipeline_queries_total Total pipeline queries",
+                "# TYPE rtmdk_pipeline_queries_total counter",
+                f"rtmdk_pipeline_queries_total {summary.get('queries', 0)}",
+            ]
+        )
         for stage_name, stage_data in summary.get("stages", {}).items():
             lat = stage_data.get("latency_ms", {})
             if lat:
-                lines.append(f'rtmdk_pipeline_stage_latency_ms{{stage="{stage_name}",quantile="0.5"}} {lat.get("median", 0)}')
-                lines.append(f'rtmdk_pipeline_stage_latency_ms{{stage="{stage_name}",quantile="0.95"}} {lat.get("p95", 0)}')
+                lines.append(
+                    f'rtmdk_pipeline_stage_latency_ms{{stage="{stage_name}",quantile="0.5"}} {lat.get("median", 0)}'
+                )
+                lines.append(
+                    f'rtmdk_pipeline_stage_latency_ms{{stage="{stage_name}",quantile="0.95"}} {lat.get("p95", 0)}'
+                )
             err_count = stage_data.get("errors", 0)
             lines.append(f'rtmdk_pipeline_stage_errors_total{{stage="{stage_name}"}} {err_count}')
 
@@ -1730,8 +1664,7 @@ async def memory_batch_query(req: BatchQueryRequest):
             if query_cache is not None:
                 cached = query_cache.get(q)
                 if cached is not None:
-                    responses[i] = {
-                        "query": q, "results": cached.get("results", []), "cached": True}
+                    responses[i] = {"query": q, "results": cached.get("results", []), "cached": True}
                     continue
             uncached_indices.append(i)
             uncached_queries.append(q)
@@ -1740,10 +1673,7 @@ async def memory_batch_query(req: BatchQueryRequest):
 
         # Phase 2: batch resonance for uncached queries
         if embeddings_list:
-            batch_results = await run_sync(
-                memory.batch_query,
-                embeddings_list,
-                top_k=req.top_k)
+            batch_results = await run_sync(memory.batch_query, embeddings_list, top_k=req.top_k)
             for offset, i in enumerate(uncached_indices):
                 q = req.queries[i]
                 results = batch_results[offset]
@@ -1764,15 +1694,15 @@ async def memory_batch_query(req: BatchQueryRequest):
                     )
                 resp = {"query": q, "results": formatted}
                 if query_cache is not None:
-                    query_cache.put(
-                        q, {"query": q, "results": formatted, "total": len(formatted)})
+                    query_cache.put(q, {"query": q, "results": formatted, "total": len(formatted)})
                 responses[i] = resp
 
         _metric_query_dur.observe(time.perf_counter() - t0)
         return {
             "queries": len(req.queries),
             "results": responses,
-            "latency_ms": round((time.perf_counter() - t0) * 1000, 2)}
+            "latency_ms": round((time.perf_counter() - t0) * 1000, 2),
+        }
     except Exception as exc:
         _metric_query_dur.observe(time.perf_counter() - t0)
         logger.warning("Batch memory query failed: %s", exc)
@@ -1896,15 +1826,18 @@ async def list_nodes(
     if memory.field is None:
         raise HTTPException(status_code=503, detail="Memory field not initialized")
     from itertools import islice
+
     total = len(memory.field.nodes)
     page = list(islice(memory.field.nodes.items(), offset, offset + limit))
     results = []
     for nid, node in page:
-        results.append({
-            "id": nid,
-            "content": node.content if isinstance(node.content, dict) else {"content": str(node.content)},
-            "salience": node.salience,
-        })
+        results.append(
+            {
+                "id": nid,
+                "content": node.content if isinstance(node.content, dict) else {"content": str(node.content)},
+                "salience": node.salience,
+            }
+        )
     return {"total": total, "offset": offset, "limit": limit, "nodes": results}
 
 
@@ -1949,14 +1882,16 @@ async def memory_export():
     try:
         nodes = []
         for nid, node in memory.field.nodes.items():
-            nodes.append({
-                "id": nid,
-                "content": node.content,
-                "latent_pos": node.latent_pos.tolist(),
-                "salience": node.salience,
-                "created_at": getattr(node, "created_at", None),
-                "last_accessed": getattr(node, "last_accessed", None),
-            })
+            nodes.append(
+                {
+                    "id": nid,
+                    "content": node.content,
+                    "latent_pos": node.latent_pos.tolist(),
+                    "salience": node.salience,
+                    "created_at": getattr(node, "created_at", None),
+                    "last_accessed": getattr(node, "last_accessed", None),
+                }
+            )
         return {"nodes": nodes, "total": len(nodes), "exported_at": time.time()}
     except Exception as exc:
         logger.warning("Memory export failed: %s", exc)
@@ -1972,6 +1907,7 @@ async def memory_import(req: MemoryImportRequest):
         raise HTTPException(status_code=503, detail="Memory field not initialized")
     try:
         import numpy as np
+
         t0 = time.perf_counter()
         if req.clear_existing:
             memory.field.nodes.clear()
@@ -2053,8 +1989,7 @@ async def health_deep():
             expected_dim = memory.config.latent_dim
             sample_nodes = list(field.nodes.values())[:5]
             dim_ok = all(
-                getattr(n, "latent_pos", None) is not None and len(n.latent_pos) == expected_dim
-                for n in sample_nodes
+                getattr(n, "latent_pos", None) is not None and len(n.latent_pos) == expected_dim for n in sample_nodes
             )
             checks["embedding_dims"] = {
                 "status": "ok" if dim_ok else "error",
@@ -2105,8 +2040,7 @@ async def health_deep():
 async def metrics():
     """Prometheus-compatible metrics endpoint."""
     if not _PROMETHEUS_AVAILABLE:
-        raise HTTPException(status_code=501,
-                            detail="prometheus-client not installed")
+        raise HTTPException(status_code=501, detail="prometheus-client not installed")
     # Ensure production metrics are registered in the global Prometheus registry
     try:
         from rtmdk.production.metrics import (  # noqa: F401
@@ -2120,6 +2054,7 @@ async def metrics():
         _metric_nodes.set(node_count)
         try:
             from rtmdk.production.metrics import update_node_count
+
             update_node_count(node_count)
         except Exception:
             pass
@@ -2148,8 +2083,7 @@ async def metrics():
 async def analytics_overview():
     """Dashboard overview with key metrics."""
     if analytics_dashboard is None:
-        raise HTTPException(status_code=503,
-                            detail="Analytics dashboard not available")
+        raise HTTPException(status_code=503, detail="Analytics dashboard not available")
     try:
         return analytics_dashboard.get_overview()
     except Exception as exc:
@@ -2161,8 +2095,7 @@ async def analytics_overview():
 async def analytics_memory():
     """Memory-specific analytics."""
     if analytics_dashboard is None:
-        raise HTTPException(status_code=503,
-                            detail="Analytics dashboard not available")
+        raise HTTPException(status_code=503, detail="Analytics dashboard not available")
     try:
         return analytics_dashboard.get_memory_analytics()
     except Exception as exc:
@@ -2171,12 +2104,10 @@ async def analytics_memory():
 
 
 @app.get("/v1/analytics/events")
-async def analytics_events(limit: int = Query(50, ge=1, le=500),
-                           event_type: Optional[str] = Query(None)):
+async def analytics_events(limit: int = Query(50, ge=1, le=500), event_type: Optional[str] = Query(None)):
     """Recent event log with optional filtering."""
     if analytics_dashboard is None:
-        raise HTTPException(status_code=503,
-                            detail="Analytics dashboard not available")
+        raise HTTPException(status_code=503, detail="Analytics dashboard not available")
     try:
         return analytics_dashboard.get_event_series(
             limit=limit,
@@ -2191,8 +2122,7 @@ async def analytics_events(limit: int = Query(50, ge=1, le=500),
 async def analytics_pipeline():
     """Pipeline-specific metrics for dashboard display."""
     if analytics_dashboard is None:
-        raise HTTPException(status_code=503,
-                            detail="Analytics dashboard not available")
+        raise HTTPException(status_code=503, detail="Analytics dashboard not available")
     try:
         return analytics_dashboard.get_pipeline_metrics()
     except Exception as exc:
@@ -2204,8 +2134,7 @@ async def analytics_pipeline():
 async def analytics_report():
     """Full analytics report combining all metrics."""
     if analytics_dashboard is None:
-        raise HTTPException(status_code=503,
-                            detail="Analytics dashboard not available")
+        raise HTTPException(status_code=503, detail="Analytics dashboard not available")
     try:
         return analytics_dashboard.get_report()
     except Exception as exc:
@@ -2217,8 +2146,7 @@ async def analytics_report():
 async def analytics_track(req: AnalyticsTrackRequest):
     """Track a custom analytics event."""
     if analytics_dashboard is None:
-        raise HTTPException(status_code=503,
-                            detail="Analytics dashboard not available")
+        raise HTTPException(status_code=503, detail="Analytics dashboard not available")
     try:
         analytics_dashboard.track_event(
             event_type=req.event_type,
@@ -2322,11 +2250,13 @@ async def memory_websocket(websocket: WebSocket):
                                     content = node.content.get("content", str(node.content))
                                 else:
                                     content = str(node.content)
-                            out.append({
-                                "node_id": nid,
-                                "score": score,
-                                "content": content,
-                            })
+                            out.append(
+                                {
+                                    "node_id": nid,
+                                    "score": score,
+                                    "content": content,
+                                }
+                            )
                         await websocket.send_json({"type": "query_results", "results": out})
                     else:
                         await websocket.send_json({"type": "error", "message": "Memory not ready"})
@@ -2339,20 +2269,25 @@ async def memory_websocket(websocket: WebSocket):
                         try:
                             if use_stream:
                                 from rtmdk.pipeline.streaming import StreamingPipelineExecutor
+
                                 pipeline = memory.build_pipeline()
                                 streamer = StreamingPipelineExecutor(pipeline.stages)
                                 embedding = await _get_embedding_cached(query)
-                                async for chunk in streamer.run_async(query, top_k=top_k, session_id=session_id, embedding=embedding):
+                                async for chunk in streamer.run_async(
+                                    query, top_k=top_k, session_id=session_id, embedding=embedding
+                                ):
                                     # chunk is already SSE-formatted "data: {...}\n\n"
                                     # strip prefix for WebSocket JSON
                                     raw = chunk.strip()
                                     if raw.startswith("data: "):
                                         raw = raw[6:]
                                     event_data = json.loads(raw)
-                                    await websocket.send_json({
-                                        "type": "pipeline_event",
-                                        "event": event_data,
-                                    })
+                                    await websocket.send_json(
+                                        {
+                                            "type": "pipeline_event",
+                                            "event": event_data,
+                                        }
+                                    )
                             else:
                                 embedding = await _get_embedding_cached(query)
                                 result = await memory.retrieve_nodes_pipeline_async(
@@ -2366,19 +2301,23 @@ async def memory_websocket(websocket: WebSocket):
                                             content = node.content.get("text", str(node.content))
                                         else:
                                             content = str(node.content)
-                                    formatted.append({
-                                        "node_id": nid,
-                                        "score": round(float(score), 4),
-                                        "content": content,
-                                    })
-                                await websocket.send_json({
-                                    "type": "pipeline_results",
-                                    "query": query,
-                                    "results": formatted,
-                                    "route": result.get("route"),
-                                    "metrics": result.get("metrics"),
-                                    "total": len(formatted),
-                                })
+                                    formatted.append(
+                                        {
+                                            "node_id": nid,
+                                            "score": round(float(score), 4),
+                                            "content": content,
+                                        }
+                                    )
+                                await websocket.send_json(
+                                    {
+                                        "type": "pipeline_results",
+                                        "query": query,
+                                        "results": formatted,
+                                        "route": result.get("route"),
+                                        "metrics": result.get("metrics"),
+                                        "total": len(formatted),
+                                    }
+                                )
                         except Exception as exc:
                             await websocket.send_json({"type": "error", "message": str(exc)})
                     else:
@@ -2438,7 +2377,7 @@ async def sot_vocab(
     if search:
         search_lower = search.lower()
         filtered = [(w, t) for w, t in filtered if search_lower in w.lower()]
-    for word, tid in filtered[offset:offset + limit]:
+    for word, tid in filtered[offset : offset + limit]:
         items.append({"word": word, "token_id": tid})
     return {"items": items, "total": len(filtered), "limit": limit, "offset": offset}
 
@@ -2623,8 +2562,13 @@ async def admin_config_reload(req: dict, request: Request):
     if memory is None or memory.field is None:
         raise HTTPException(status_code=503, detail="Memory not initialized")
     whitelist = {
-        "decay_rate", "top_k", "min_response", "bandwidth",
-        "phase_coupling", "tension_threshold", "adaptive_threshold",
+        "decay_rate",
+        "top_k",
+        "min_response",
+        "bandwidth",
+        "phase_coupling",
+        "tension_threshold",
+        "adaptive_threshold",
     }
     updated = []
     for key, value in req.items():
@@ -2731,18 +2675,9 @@ def create_dashboard_router(memory_fn, config: Dict) -> "APIRouter":
 
 
 _ux_config = {
-    "RTMDK_BACKUP_DIR": os.path.join(
-        os.path.expanduser("~"),
-        ".rtmdk",
-        "backups"),
-    "RTMDK_SESSION_DIR": os.path.join(
-        os.path.expanduser("~"),
-        ".rtmdk",
-        "sessions"),
-    "RTMDK_CACHE_DIR": os.path.join(
-        os.path.expanduser("~"),
-        ".rtmdk",
-        "embedding_cache"),
+    "RTMDK_BACKUP_DIR": os.path.join(os.path.expanduser("~"), ".rtmdk", "backups"),
+    "RTMDK_SESSION_DIR": os.path.join(os.path.expanduser("~"), ".rtmdk", "sessions"),
+    "RTMDK_CACHE_DIR": os.path.join(os.path.expanduser("~"), ".rtmdk", "embedding_cache"),
     "RTMDK_CACHE_MAX_SIZE": "100000",
 }
 

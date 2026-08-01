@@ -48,11 +48,7 @@ def cmd_export(output: str = "rtmdk_backup.json"):
     print("Use: memory.save_session('backup')")
 
 
-def cmd_recommend(
-        nodes: int = 1000,
-        ram: float = 256,
-        latency: float = 100,
-        use_case: str = "general"):
+def cmd_recommend(nodes: int = 1000, ram: float = 256, latency: float = 100, use_case: str = "general"):
     """Recommend optimal preset."""
     from rtmdk.utils.preset_recommender import recommend_preset
 
@@ -68,7 +64,7 @@ def cmd_recommend(
     print(f"  Preset:        {result['preset']}")
     print(f"  Est. RAM:      {result['estimated_ram_mb']} MB")
     print(f"  Est. Latency:  {result['estimated_latency_ms']} ms")
-    if result['overrides']:
+    if result["overrides"]:
         print(f"  Overrides:     {result['overrides']}")
     print()
     print("Usage:")
@@ -77,8 +73,8 @@ def cmd_recommend(
 
 
 def cmd_pipeline_diagnose(
-        memory_file: str = "",
-        config_preset: str = "local",
+    memory_file: str = "",
+    config_preset: str = "local",
 ):
     """Diagnose pipeline health and run a smoke test query.
 
@@ -128,7 +124,7 @@ def cmd_pipeline_diagnose(
     print("\nRunning smoke test query...")
     try:
         result = mem.retrieve_nodes_pipeline("smoke test", top_k=3)
-        print(f"  Query:     smoke test")
+        print("  Query:     smoke test")
         print(f"  Results:   {result.get('results_count', 0)}")
         print(f"  Route:     {result.get('route', 'N/A')}")
         print(f"  Latency:   {result.get('total_latency_ms', 0):.2f} ms")
@@ -140,10 +136,7 @@ def cmd_pipeline_diagnose(
         raise SystemExit(1)
 
 
-def cmd_bootstrap_sbert(
-        corpus_path: str,
-        output: str,
-        model_name: str = "all-MiniLM-L6-v2"):
+def cmd_bootstrap_sbert(corpus_path: str, output: str, model_name: str = "all-MiniLM-L6-v2"):
     """Generate SBERT bootstrap projection from corpus."""
     from rtmdk.memory.bootstrap_sbert import run_bootstrap
 
@@ -159,10 +152,7 @@ def cmd_bootstrap_sbert(
 
     # Support both list of strings and dict with 'records'
     if isinstance(data, dict) and "records" in data:
-        texts = [
-            r.get("context", "") + " " + r.get("answer", "")
-            for r in data["records"]
-        ]
+        texts = [r.get("context", "") + " " + r.get("answer", "") for r in data["records"]]
     elif isinstance(data, list):
         texts = [str(item) for item in data]
     else:
@@ -178,8 +168,7 @@ def cmd_bootstrap_sbert(
     run_bootstrap(texts, output_path=output, model_name=model_name)
     print(f"Bootstrap projection saved to: {output}")
     print("Usage:")
-    print(
-        f"  RTMDKConfig(sot_enabled=True, sot_bootstrap_projection='{output}')")
+    print(f"  RTMDKConfig(sot_enabled=True, sot_bootstrap_projection='{output}')")
 
 
 def cmd_bootstrap_fasttext(model_path: str, corpus_path: str, output: str):
@@ -202,8 +191,7 @@ def cmd_bootstrap_fasttext(model_path: str, corpus_path: str, output: str):
         data = json.load(f)
 
     if isinstance(data, dict) and "records" in data:
-        texts = [r.get("context", "") + " " + r.get("answer", "")
-                 for r in data["records"]]
+        texts = [r.get("context", "") + " " + r.get("answer", "") for r in data["records"]]
     elif isinstance(data, list):
         texts = [str(item) for item in data]
     else:
@@ -260,7 +248,8 @@ def cmd_list_presets():
             f"{cfg.decay_rate:>6} {'[OK]' if cfg.enable_engrams else '[FAIL]':>7} "
             f"{'[OK]' if cfg.offline_dreaming else '[FAIL]':>6} "
             f"{'[OK]' if cfg.causal_traversal else '[FAIL]':>6} "
-            f"{'[OK]' if cfg.ssm_dynamics else '[FAIL]':>4}")
+            f"{'[OK]' if cfg.ssm_dynamics else '[FAIL]':>4}"
+        )
 
 
 def main():
@@ -279,11 +268,7 @@ def main():
 
     # export
     e_parser = subparsers.add_parser("export", help="Export memory")
-    e_parser.add_argument(
-        "--output",
-        "-o",
-        type=str,
-        default="rtmdk_backup.json")
+    e_parser.add_argument("--output", "-o", type=str, default="rtmdk_backup.json")
 
     # recommend
     r_parser = subparsers.add_parser("recommend", help="Recommend preset")
@@ -296,42 +281,23 @@ def main():
     subparsers.add_parser("presets", help="List available presets")
 
     # bootstrap
-    b_parser = subparsers.add_parser(
-        "bootstrap", help="Generate SBERT bootstrap projection")
+    b_parser = subparsers.add_parser("bootstrap", help="Generate SBERT bootstrap projection")
     b_parser.add_argument("corpus", type=str, help="Path to corpus JSON")
-    b_parser.add_argument(
-        "--output",
-        "-o",
-        type=str,
-        default="sot_bootstrap.npz")
-    b_parser.add_argument(
-        "--model",
-        "-m",
-        type=str,
-        default="all-MiniLM-L6-v2")
+    b_parser.add_argument("--output", "-o", type=str, default="sot_bootstrap.npz")
+    b_parser.add_argument("--model", "-m", type=str, default="all-MiniLM-L6-v2")
 
     # bootstrap-fasttext
-    bf_parser = subparsers.add_parser(
-        "bootstrap-fasttext",
-        help="Generate FastText bootstrap state")
-    bf_parser.add_argument(
-        "model_path",
-        type=str,
-        help="Path to gensim KeyedVectors model")
+    bf_parser = subparsers.add_parser("bootstrap-fasttext", help="Generate FastText bootstrap state")
+    bf_parser.add_argument("model_path", type=str, help="Path to gensim KeyedVectors model")
     bf_parser.add_argument("corpus", type=str, help="Path to corpus JSON")
-    bf_parser.add_argument("--output", "-o", type=str,
-                           default="sot_fasttext.json")
+    bf_parser.add_argument("--output", "-o", type=str, default="sot_fasttext.json")
 
     # pipeline-diagnose
-    pd_parser = subparsers.add_parser(
-        "pipeline-diagnose",
-        help="Diagnose pipeline health and run smoke test")
+    pd_parser = subparsers.add_parser("pipeline-diagnose", help="Diagnose pipeline health and run smoke test")
+    pd_parser.add_argument("--memory", "-m", type=str, default="", help="Path to memory file (optional)")
     pd_parser.add_argument(
-        "--memory", "-m", type=str, default="",
-        help="Path to memory file (optional)")
-    pd_parser.add_argument(
-        "--preset", "-p", type=str, default="local",
-        help="Config preset: local, production, research")
+        "--preset", "-p", type=str, default="local", help="Config preset: local, production, research"
+    )
 
     args = parser.parse_args()
 

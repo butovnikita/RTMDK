@@ -137,6 +137,7 @@ class WebhookManager:
         if sub.secret:
             import hmac
             import hashlib
+
             sig = hmac.new(
                 sub.secret.encode(),
                 json.dumps(body, sort_keys=True).encode(),

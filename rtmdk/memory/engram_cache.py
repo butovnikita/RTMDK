@@ -3,8 +3,8 @@
 Prevents TieredNodeStore from scanning cold disk layers during
 engram similarity searches.
 """
+
 from __future__ import annotations
-import json
 import os
 import threading
 from collections import OrderedDict

@@ -1,4 +1,5 @@
 """RAG Quality improvements: sentence reranking, query decomposition, feedback loop."""
+
 from __future__ import annotations
 import json
 import os
@@ -13,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 def _split_sentences(text: str) -> List[str]:
     """Split text into sentences."""
-    sentences = re.split(r'(?<=[.!?])\s+', text)
+    sentences = re.split(r"(?<=[.!?])\s+", text)
     return [s.strip() for s in sentences if len(s.strip()) > 5]
 
 
@@ -63,7 +64,7 @@ class SentenceReranker:
                 all_texts = sentences
                 sent_embs = []
                 for i in range(0, len(all_texts), self.batch_size):
-                    batch = all_texts[i:i + self.batch_size]
+                    batch = all_texts[i : i + self.batch_size]
                     batch_embs = self._embed_batch(batch)
                     for se in batch_embs:
                         se = se / (np.linalg.norm(se) + 1e-8)
@@ -89,20 +90,23 @@ class QueryDecomposer:
     # Expanded to catch comparative and list structures
     # NOTE: use non-capturing groups so re.split keeps [before, match, after] shape
     SPLIT_PATTERN = re.compile(
-        r'\b(and|plus|also|additionally|furthermore|moreover|'
-        r'as well as|together with|in addition to|'
-        r'compare\s+(?:.+?)\s+to|versus|vs|'
-        r'what\s+is\s+the\s+difference\s+between)\b',
+        r"\b(and|plus|also|additionally|furthermore|moreover|"
+        r"as well as|together with|in addition to|"
+        r"compare\s+(?:.+?)\s+to|versus|vs|"
+        r"what\s+is\s+the\s+difference\s+between)\b",
         re.IGNORECASE,
     )
 
     # Known named entities that contain "and" — do NOT split these
     NOUN_PHRASE_EXCEPTIONS = [
-        re.compile(r'\b(pride\s+and\s+prejudice|north\s+and\s+south|'
-                   r'romeo\s+and\s+juliet|ben\s+and\s+jerry|'
-                   r'rock\s+and\s+roll|rhythm\s+and\s+blues|'
-                   r'bacon\s+and\s+eggs|fish\s+and\s+chips|'
-                   r'peanut\s+butter\s+and\s+jelly)\b', re.I),
+        re.compile(
+            r"\b(pride\s+and\s+prejudice|north\s+and\s+south|"
+            r"romeo\s+and\s+juliet|ben\s+and\s+jerry|"
+            r"rock\s+and\s+roll|rhythm\s+and\s+blues|"
+            r"bacon\s+and\s+eggs|fish\s+and\s+chips|"
+            r"peanut\s+butter\s+and\s+jelly)\b",
+            re.I,
+        ),
     ]
 
     def __init__(self, llm_client=None):
@@ -110,11 +114,11 @@ class QueryDecomposer:
 
     # Special patterns that need custom parsing (not simple split)
     COMPARE_PATTERN = re.compile(
-        r'compare\s+(.+?)\s+to\s+(.+?)(?:\?|$|\.\s*)',
+        r"compare\s+(.+?)\s+to\s+(.+?)(?:\?|$|\.\s*)",
         re.IGNORECASE,
     )
     DIFF_PATTERN = re.compile(
-        r'what\s+is\s+the\s+difference\s+between\s+(.+?)\s+and\s+(.+?)(?:\?|$|\.\s*)',
+        r"what\s+is\s+the\s+difference\s+between\s+(.+?)\s+and\s+(.+?)(?:\?|$|\.\s*)",
         re.IGNORECASE,
     )
 
@@ -157,13 +161,11 @@ class QueryDecomposer:
         for i in range(1, len(parts), 2):
             conjunction = parts[i].strip().lower() if i < len(parts) else ""
             rest = parts[i + 1].strip() if i + 1 < len(parts) else ""
-            if conjunction in {"and", "plus", "also", "additionally",
-                               "as well as", "together with", "in addition to"}:
+            if conjunction in {"and", "plus", "also", "additionally", "as well as", "together with", "in addition to"}:
                 if current:
                     sub_queries.append(current)
                 current = rest
-            elif any(kw in conjunction for kw in {"compare", "versus", "vs",
-                                                   "what is the difference between"}):
+            elif any(kw in conjunction for kw in {"compare", "versus", "vs", "what is the difference between"}):
                 # Fallback if regex above missed edge cases
                 if current:
                     sub_queries.append(current)
@@ -194,14 +196,14 @@ class QueryDecomposer:
         response = self.llm_client.complete(prompt, max_tokens=200, temperature=0.0)
         text = response.strip()
         # Robust markdown + JSON extraction
-        m = re.search(r'```(?:json)?\s*(\[.*?\])\s*```', text, re.DOTALL)
+        m = re.search(r"```(?:json)?\s*(\[.*?\])\s*```", text, re.DOTALL)
         if m:
             text = m.group(1)
         else:
             start = text.find("[")
             end = text.rfind("]")
             if start != -1 and end != -1:
-                text = text[start:end + 1]
+                text = text[start : end + 1]
         try:
             parsed = json.loads(text)
             if isinstance(parsed, list) and len(parsed) > 0:
@@ -235,13 +237,13 @@ class FeedbackLoop:
         relevant: bool,
     ) -> bool:
         """Apply feedback to word embeddings."""
-        if not hasattr(self.embedder, '_vocab') or not hasattr(self.embedder, '_embedder'):
+        if not hasattr(self.embedder, "_vocab") or not hasattr(self.embedder, "_embedder"):
             logger.debug("FeedbackLoop: embedder does not support online updates")
             return False
 
         vocab = self.embedder._vocab
         sif = self.embedder._embedder
-        if not hasattr(sif, 'word_embeddings'):
+        if not hasattr(sif, "word_embeddings"):
             return False
 
         q_tokens = [vocab[w] for w in self.embedder._word_tokenize(query) if w in vocab]
@@ -268,16 +270,20 @@ class FeedbackLoop:
                 sif.word_embeddings[t] /= np.linalg.norm(sif.word_embeddings[t]) + 1e-8
 
         self.feedback_count += 1
-        self._buffer.append({
-            "query": query,
-            "node_text": node_text,
-            "relevant": relevant,
-            "timestamp": time.time(),
-        })
+        self._buffer.append(
+            {
+                "query": query,
+                "node_text": node_text,
+                "relevant": relevant,
+                "timestamp": time.time(),
+            }
+        )
         if self.persist_path and len(self._buffer) >= 10:
             self._flush()
 
-        logger.info("FeedbackLoop: applied %s feedback (#%d)", "positive" if relevant else "negative", self.feedback_count)
+        logger.info(
+            "FeedbackLoop: applied %s feedback (#%d)", "positive" if relevant else "negative", self.feedback_count
+        )
         return True
 
     def _flush(self) -> None:

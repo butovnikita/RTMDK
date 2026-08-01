@@ -65,15 +65,9 @@ class SSMDynamics:
             self.A = self._init_stable_matrix(state_dim)
 
         # B: input projection
-        self.B = np.random.randn(
-            state_dim,
-            input_dim).astype(
-            np.float32) * 0.01
+        self.B = np.random.randn(state_dim, input_dim).astype(np.float32) * 0.01
         # C: output projection
-        self.C = np.random.randn(
-            output_dim,
-            state_dim).astype(
-            np.float32) * 0.01
+        self.C = np.random.randn(output_dim, state_dim).astype(np.float32) * 0.01
         # D: skip connection
         self.D = np.eye(output_dim, input_dim).astype(np.float32) * 0.1
 
@@ -119,14 +113,14 @@ class SSMDynamics:
             B_bar[i,j] = A_bar[i] · dt·B[i,j]
         """
         import time
+
         t0 = time.time()
 
         if self.diagonal:
             # Diagonal backward Euler: element-wise
             self.A_bar = 1.0 / (1.0 - self.dt * self.A)  # (state_dim,)
             # B_bar = diag(A_bar) · dt · B
-            self.B_bar = (self.A_bar[:, None] * self.dt) * \
-                self.B  # (state_dim, input_dim)
+            self.B_bar = (self.A_bar[:, None] * self.dt) * self.B  # (state_dim, input_dim)
         else:
             try:
                 eye_mat = np.eye(self.state_dim, dtype=np.float32)
@@ -134,11 +128,8 @@ class SSMDynamics:
                 self.A_bar = A_inv
                 self.B_bar = A_inv @ (self.dt * self.B)
             except np.linalg.LinAlgError:
-                logger.warning(
-                    "SSM: Matrix inversion failed, using simple Euler")
-                self.A_bar = np.eye(
-                    self.state_dim,
-                    dtype=np.float32) + self.dt * self.A
+                logger.warning("SSM: Matrix inversion failed, using simple Euler")
+                self.A_bar = np.eye(self.state_dim, dtype=np.float32) + self.dt * self.A
                 self.B_bar = self.dt * self.B
 
         self.stats["discretize_time_s"] = time.time() - t0
@@ -161,6 +152,7 @@ class SSMDynamics:
             (h_next, y): Next state and output
         """
         import time
+
         t0 = time.time()
 
         # Handle single input
@@ -198,7 +190,7 @@ class SSMDynamics:
 
     def apply_to_field(self, memory_field):
         """Apply SSM dynamics to all nodes in the field."""
-        if not memory_field or not hasattr(memory_field, 'nodes'):
+        if not memory_field or not hasattr(memory_field, "nodes"):
             return
 
         nodes = list(memory_field.nodes.values())
@@ -209,8 +201,7 @@ class SSMDynamics:
         h = np.array([node.latent_pos for node in nodes])  # (N, latent_dim)
 
         # Input: node salience × amplitude
-        u = np.array([[node.salience * node.amplitude]
-                     * self.input_dim for node in nodes])
+        u = np.array([[node.salience * node.amplitude] * self.input_dim for node in nodes])
 
         # Apply SSM step
         h_next, _ = self.step(h, u)

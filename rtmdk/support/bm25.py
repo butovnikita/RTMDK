@@ -1,4 +1,5 @@
 """BM25 index for RTMDK — optimized with pre-tokenized inverted index."""
+
 from __future__ import annotations
 
 import math
@@ -34,8 +35,7 @@ class BM25Index:
         for token, count in counts.items():
             self.doc_freq[token] = self.doc_freq.get(token, 0) + 1
             self.term_freqs.setdefault(token, {})[doc_id] = count
-        self.avg_doc_length = float(np.mean(
-            list(self.doc_lengths.values()))) if self.doc_lengths else 0.0
+        self.avg_doc_length = float(np.mean(list(self.doc_lengths.values()))) if self.doc_lengths else 0.0
 
     def remove_document(self, doc_id: str):
         if doc_id not in self.documents:
@@ -78,5 +78,4 @@ class BM25Index:
 
         if not scores:
             return []
-        return [(d, s) for d, s in sorted(
-            scores.items(), key=lambda x: x[1], reverse=True)[:top_k] if s > 0]
+        return [(d, s) for d, s in sorted(scores.items(), key=lambda x: x[1], reverse=True)[:top_k] if s > 0]

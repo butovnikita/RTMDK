@@ -13,7 +13,6 @@ import re
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
 
-
 # LLM model context limits (in tokens)
 MODEL_CONTEXT_LIMITS = {
     "gpt-4": 8192,
@@ -32,11 +31,12 @@ MODEL_CONTEXT_LIMITS = {
 @dataclass
 class ContextSegment:
     """A segment of context text with metadata."""
+
     text: str
-    score: float        # Relevance score from retrieval
-    node_id: str        # Source node ID
-    token_count: int    # Estimated token count
-    topic: str = ""     # Topic/category tag
+    score: float  # Relevance score from retrieval
+    node_id: str  # Source node ID
+    token_count: int  # Estimated token count
+    topic: str = ""  # Topic/category tag
 
 
 def estimate_tokens(text: str) -> int:
@@ -44,7 +44,7 @@ def estimate_tokens(text: str) -> int:
     if not text:
         return 0
     # Rough estimate: English ~4 chars/token, Russian ~6 chars/token
-    has_cyrillic = bool(re.search(r'[а-яё]', text.lower()))
+    has_cyrillic = bool(re.search(r"[а-яё]", text.lower()))
     chars_per_token = 6 if has_cyrillic else 4
     return max(1, len(text) // chars_per_token)
 
@@ -68,8 +68,7 @@ class ContextOptimizer:
         self.model = model
         self.min_tokens = min_tokens
         self.max_tokens = max_tokens
-        self.model_limit = MODEL_CONTEXT_LIMITS.get(
-            model, MODEL_CONTEXT_LIMITS["default"])
+        self.model_limit = MODEL_CONTEXT_LIMITS.get(model, MODEL_CONTEXT_LIMITS["default"])
         self.deduplicate = deduplicate
         self.priority_format = priority_format
 
@@ -116,7 +115,7 @@ class ContextOptimizer:
         segments = []
 
         # Try to parse structured format: [ATTN:xxx][SAL:xxx][TIER:x] text
-        pattern = r'\[ATTN:([0-9.]+)\](?:\[SAL:([0-9.]+)\])?(?:\[TIER:(\w+)\])?\s*(.+?)(?=\[ATTN:|$)'
+        pattern = r"\[ATTN:([0-9.]+)\](?:\[SAL:([0-9.]+)\])?(?:\[TIER:(\w+)\])?\s*(.+?)(?=\[ATTN:|$)"
         matches = re.findall(pattern, raw_context, re.DOTALL)
 
         if matches:
@@ -124,45 +123,47 @@ class ContextOptimizer:
                 text = text.strip()
                 if text:
                     score = float(attn)
-                    segments.append(ContextSegment(
-                        text=text,
-                        score=score,
-                        node_id=f"segment_{i}",
-                        token_count=estimate_tokens(text),
-                        topic=tier or "",
-                    ))
+                    segments.append(
+                        ContextSegment(
+                            text=text,
+                            score=score,
+                            node_id=f"segment_{i}",
+                            token_count=estimate_tokens(text),
+                            topic=tier or "",
+                        )
+                    )
         else:
             # Fallback: split by newlines
-            lines = raw_context.strip().split('\n')
+            lines = raw_context.strip().split("\n")
             for i, line in enumerate(lines):
                 line = line.strip()
                 if line:
-                    segments.append(ContextSegment(
-                        text=line,
-                        score=1.0 / (i + 1),  # Decreasing score by position
-                        node_id=f"line_{i}",
-                        token_count=estimate_tokens(line),
-                    ))
+                    segments.append(
+                        ContextSegment(
+                            text=line,
+                            score=1.0 / (i + 1),  # Decreasing score by position
+                            node_id=f"line_{i}",
+                            token_count=estimate_tokens(line),
+                        )
+                    )
 
         return segments
 
-    def _deduplicate(
-            self,
-            segments: List[ContextSegment]) -> List[ContextSegment]:
+    def _deduplicate(self, segments: List[ContextSegment]) -> List[ContextSegment]:
         """Remove semantically duplicate segments."""
         unique = []
         seen_hashes = set()
 
         for seg in segments:
             # Normalize text for comparison
-            normalized = re.sub(r'[^a-zа-яё0-9\s]', '', seg.text.lower())
+            normalized = re.sub(r"[^a-zа-яё0-9\s]", "", seg.text.lower())
             # Create n-gram fingerprint
             words = normalized.split()
             if len(words) < 3:
                 key = normalized
             else:
                 # Use first 5 words as fingerprint
-                key = ' '.join(words[:5])
+                key = " ".join(words[:5])
 
             if key not in seen_hashes:
                 seen_hashes.add(key)
@@ -207,7 +208,7 @@ class ContextOptimizer:
                 return f"{segments[0].text}"
             return ""
 
-        return '\n'.join(result_parts).strip()
+        return "\n".join(result_parts).strip()
 
     def get_stats(self) -> Dict[str, Any]:
         """Return optimizer configuration."""

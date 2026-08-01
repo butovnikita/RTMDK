@@ -1,6 +1,6 @@
 """Tests for ConsolidationManager extraction."""
+
 import numpy as np
-import pytest
 
 from rtmdk.memory.config import RTMDKConfig, ConsolidationMode
 from rtmdk.memory.field import RTMDKField

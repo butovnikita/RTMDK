@@ -51,10 +51,7 @@ class SessionPersistence:
         self._auto_save_timer: float = 0
         self._load_metadata()
 
-    def save_session(
-            self,
-            session_id: str,
-            metadata: Optional[Dict] = None) -> str:
+    def save_session(self, session_id: str, metadata: Optional[Dict] = None) -> str:
         """Save current memory state to a session file.
 
         Args:
@@ -71,17 +68,11 @@ class SessionPersistence:
         for nid, node in self.memory.field.nodes.items():
             nodes_data[nid] = {
                 "content": node.content,
-                "latent_pos": node.latent_pos.tolist() if hasattr(
-                    node.latent_pos,
-                    'tolist') else list(
-                    node.latent_pos),
+                "latent_pos": node.latent_pos.tolist() if hasattr(node.latent_pos, "tolist") else list(node.latent_pos),
                 "phase": node.phase,
                 "amplitude": node.amplitude,
                 "salience": node.salience,
-                "tier": getattr(
-                    node,
-                    'tier',
-                    'semantic'),
+                "tier": getattr(node, "tier", "semantic"),
                 "created_at": node.created_at,
             }
 
@@ -95,7 +86,7 @@ class SessionPersistence:
         }
 
         # Save to file
-        with open(filepath, 'w') as f:
+        with open(filepath, "w") as f:
             json.dump(session_data, f, indent=2)
 
         # Update metadata
@@ -125,7 +116,7 @@ class SessionPersistence:
         if not filepath.exists():
             return None
 
-        with open(filepath, 'r') as f:
+        with open(filepath, "r") as f:
             session_data = json.load(f)
 
         # Note: Full node restoration requires access to embedder
@@ -135,6 +126,7 @@ class SessionPersistence:
 
         for nid, node_data in session_data.get("nodes", {}).items():
             from rtmdk.nodes import MemoryNode
+
             node = MemoryNode(
                 id=nid,
                 latent_pos=node_data["latent_pos"],
@@ -192,7 +184,7 @@ class SessionPersistence:
     def _save_metadata(self):
         """Save session index file."""
         meta_path = self.save_dir / "sessions_index.json"
-        with open(meta_path, 'w') as f:
+        with open(meta_path, "w") as f:
             json.dump(self._sessions, f, indent=2)
 
     def _load_metadata(self):
@@ -200,7 +192,7 @@ class SessionPersistence:
         meta_path = self.save_dir / "sessions_index.json"
         if meta_path.exists():
             try:
-                with open(meta_path, 'r') as f:
+                with open(meta_path, "r") as f:
                     self._sessions = json.load(f)
             except (json.JSONDecodeError, KeyError):
                 self._sessions = {}

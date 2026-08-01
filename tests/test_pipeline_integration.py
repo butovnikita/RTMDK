@@ -1,7 +1,6 @@
 """Integration tests for retrieve_nodes_pipeline() end-to-end."""
 
 import numpy as np
-import pytest
 
 from rtmdk.memory.core import RTMDKMemory
 from rtmdk.memory.config import RTMDKConfig
@@ -10,9 +9,10 @@ from rtmdk.pipeline import BatchPipelineExecutor
 
 def _make_embedder(dim: int = 64):
     def embed(text: str) -> np.ndarray:
-        h = hash(text) % (2 ** 32)
+        h = hash(text) % (2**32)
         rng = np.random.default_rng(h)
         return rng.standard_normal(dim, dtype=np.float32)
+
     return embed
 
 
@@ -55,7 +55,9 @@ class TestRetrieveNodesPipeline:
 
     def test_pipeline_breaker_states(self):
         cfg = RTMDKConfig(
-            latent_dim=64, embedding_dim=64, top_k=5,
+            latent_dim=64,
+            embedding_dim=64,
+            top_k=5,
             pipeline_breaker_enabled=True,
         )
         mem = RTMDKMemory(config=cfg, embedder=_make_embedder(64))
@@ -153,10 +155,11 @@ class TestBatchPipelineIntegration:
 class TestPipelineExecutorWebhook:
     def test_webhook_dispatch_on_degraded_stage(self):
         from rtmdk.pipeline.executor import PipelineExecutor
-        from rtmdk.pipeline.base import PipelineStage, PipelineContext
+        from rtmdk.pipeline.base import PipelineStage
 
         class FailingStage(PipelineStage):
             name = "fail"
+
             def process(self, ctx):
                 raise RuntimeError("intentional failure")
 
@@ -167,7 +170,7 @@ class TestPipelineExecutorWebhook:
                 dispatched.append((event_type, payload))
 
         executor = PipelineExecutor([FailingStage()], webhook_manager=FakeWebhookManager())
-        ctx = executor.run("test", top_k=5)
+        executor.run("test", top_k=5)
 
         assert len(dispatched) == 1
         assert dispatched[0][0] == "pipeline_stage_degraded"
@@ -176,10 +179,11 @@ class TestPipelineExecutorWebhook:
 
     def test_no_webhook_when_healthy(self):
         from rtmdk.pipeline.executor import PipelineExecutor
-        from rtmdk.pipeline.base import PipelineStage, PipelineContext
+        from rtmdk.pipeline.base import PipelineStage
 
         class PassStage(PipelineStage):
             name = "pass"
+
             def process(self, ctx):
                 return ctx
 
@@ -190,6 +194,6 @@ class TestPipelineExecutorWebhook:
                 dispatched.append((event_type, payload))
 
         executor = PipelineExecutor([PassStage()], webhook_manager=FakeWebhookManager())
-        ctx = executor.run("test", top_k=5)
+        executor.run("test", top_k=5)
 
         assert len(dispatched) == 0

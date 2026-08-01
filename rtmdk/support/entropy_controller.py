@@ -1,4 +1,5 @@
 """rtmdk/support/entropy_controller.py — Information-theoretic capacity management."""
+
 from __future__ import annotations
 from typing import Dict, List, Any
 import numpy as np
@@ -11,11 +12,14 @@ class EntropyController:
     Low entropy → field is stagnant → trigger exploration.
     """
 
-    def __init__(self, high_entropy_threshold: float = 3.0,
-                 low_entropy_threshold: float = 0.5,
-                 consolidation_boost: float = 0.1,
-                 exploration_boost: float = 0.05,
-                 window_size: int = 50):
+    def __init__(
+        self,
+        high_entropy_threshold: float = 3.0,
+        low_entropy_threshold: float = 0.5,
+        consolidation_boost: float = 0.1,
+        exploration_boost: float = 0.05,
+        window_size: int = 50,
+    ):
         self.high_entropy_threshold = high_entropy_threshold
         self.low_entropy_threshold = low_entropy_threshold
         self.consolidation_boost = consolidation_boost
@@ -32,8 +36,8 @@ class EntropyController:
         self._salience_history.append(max(0.0, salience))
         # Keep bounded history
         if len(self._response_history) > self.window_size:
-            self._response_history = self._response_history[-self.window_size:]
-            self._salience_history = self._salience_history[-self.window_size:]
+            self._response_history = self._response_history[-self.window_size :]
+            self._salience_history = self._salience_history[-self.window_size :]
 
     def compute_entropy(self) -> float:
         """Compute Shannon entropy of resonance response distribution.

@@ -9,13 +9,13 @@ Standardized exchange format with:
 
 Phase 1: Schema + export/import (no semantic merge yet).
 """
+
 from __future__ import annotations
 import json
 import hashlib
 import time
 from typing import Dict, Any
 from dataclasses import dataclass, field, asdict
-
 
 UMP_VERSION = "1.0.0"
 UMP_SCHEMA = "rtmdk-v8"
@@ -24,6 +24,7 @@ UMP_SCHEMA = "rtmdk-v8"
 @dataclass
 class UMPHeader:
     """Metadata header for UMP export."""
+
     ump_version: str = UMP_VERSION
     schema: str = UMP_SCHEMA
     timestamp: float = field(default_factory=time.time)
@@ -36,13 +37,13 @@ class UMPHeader:
 
     @classmethod
     def from_dict(cls, data: Dict) -> "UMPHeader":
-        return cls(**{k: v for k, v in data.items()
-                   if k in cls.__dataclass_fields__})
+        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
 
 
 @dataclass
 class UMPTopology:
     """Summary of field topology."""
+
     n_nodes: int = 0
     n_causal_edges: int = 0
     n_contradictions: int = 0
@@ -58,13 +59,13 @@ class UMPTopology:
 
     @classmethod
     def from_dict(cls, data: Dict) -> "UMPTopology":
-        return cls(**{k: v for k, v in data.items()
-                   if k in cls.__dataclass_fields__})
+        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
 
 
 @dataclass
 class UMPKernelParams:
     """Kernel parameters for reproducibility."""
+
     bandwidth: float = 1.0
     phase_coupling: float = 0.3
     decay_rate: float = 0.998
@@ -78,8 +79,7 @@ class UMPKernelParams:
 
     @classmethod
     def from_dict(cls, data: Dict) -> "UMPKernelParams":
-        return cls(**{k: v for k, v in data.items()
-                   if k in cls.__dataclass_fields__})
+        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
 
 
 def compute_sha256(data: Dict) -> str:
@@ -99,11 +99,7 @@ class UniversalMemoryProtocol:
     """UMP v1: Schema + integrity check + export/import."""
 
     @staticmethod
-    def export(
-            field: Any,
-            memory: Any,
-            source: str = "",
-            comment: str = "") -> Dict:
+    def export(field: Any, memory: Any, source: str = "", comment: str = "") -> Dict:
         """Export RTMDK memory to UMP format.
 
         Args:
@@ -130,9 +126,9 @@ class UniversalMemoryProtocol:
         tier_dist: Dict[str, int] = {}
         modality_dist: Dict[str, int] = {}
         for node in field.nodes.values():
-            tier = getattr(node, 'tier', 'semantic')
+            tier = getattr(node, "tier", "semantic")
             tier_dist[tier] = tier_dist.get(tier, 0) + 1
-            mod = getattr(node, 'modality', 'text')
+            mod = getattr(node, "modality", "text")
             modality_dist[mod] = modality_dist.get(mod, 0) + 1
         topology.n_tiers = tier_dist
         topology.modalities = modality_dist
@@ -150,7 +146,7 @@ class UniversalMemoryProtocol:
 
         # Consolidation log (from version control if available)
         consolidation_log = []
-        if hasattr(field, 'version_control') and field.version_control:
+        if hasattr(field, "version_control") and field.version_control:
             for v_info in field.version_control.history(limit=50):
                 consolidation_log.append(v_info)
 
@@ -188,23 +184,20 @@ class UniversalMemoryProtocol:
         """
         if memory_class is None:
             from rtmdk.memory.core import RTMDKMemory
+
             memory_class = RTMDKMemory
 
         # Verify SHA-256
         expected_hash = ump.get("header", {}).get("sha256", "")
         if expected_hash:
             if not verify_sha256(ump, expected_hash):
-                raise ValueError(
-                    "UMP integrity check failed: SHA-256 mismatch. "
-                    f"Expected: {expected_hash[:16]}...")
+                raise ValueError("UMP integrity check failed: SHA-256 mismatch. " f"Expected: {expected_hash[:16]}...")
 
         # Validate schema
         ump_ver = ump.get("ump_version", "unknown")
         schema = ump.get("schema", "unknown")
         if schema != UMP_SCHEMA:
-            raise ValueError(
-                f"UMP schema mismatch: expected {UMP_SCHEMA}, got {schema}. "
-                f"UMP version: {ump_ver}")
+            raise ValueError(f"UMP schema mismatch: expected {UMP_SCHEMA}, got {schema}. " f"UMP version: {ump_ver}")
 
         # Import field state
         field_state = ump.get("field_state", {})
@@ -222,21 +215,14 @@ class UniversalMemoryProtocol:
         warnings = []
 
         # Check required fields
-        required = [
-            "ump_version",
-            "schema",
-            "header",
-            "topology",
-            "kernel_params",
-            "field_state"]
+        required = ["ump_version", "schema", "header", "topology", "kernel_params", "field_state"]
         for field_name in required:
             if field_name not in ump:
                 issues.append(f"Missing required field: {field_name}")
 
         # Check schema version
         if ump.get("schema") != UMP_SCHEMA:
-            warnings.append(
-                f"Schema version mismatch: expected {UMP_SCHEMA}, got {ump.get('schema')}")
+            warnings.append(f"Schema version mismatch: expected {UMP_SCHEMA}, got {ump.get('schema')}")
 
         # Verify SHA-256
         if "header" in ump and "sha256" in ump["header"]:
@@ -307,11 +293,13 @@ class UniversalMemoryProtocol:
             "added_nodes": added_nodes,
             "removed_nodes": removed_nodes,
             "modified_nodes": modified_nodes,
-            "delta_hash": compute_sha256({
-                "added": len(added_nodes),
-                "removed": len(removed_nodes),
-                "modified": len(modified_nodes),
-            }),
+            "delta_hash": compute_sha256(
+                {
+                    "added": len(added_nodes),
+                    "removed": len(removed_nodes),
+                    "modified": len(modified_nodes),
+                }
+            ),
         }
 
     @staticmethod
@@ -326,6 +314,7 @@ class UniversalMemoryProtocol:
             Updated field state dict
         """
         import copy
+
         result = copy.deepcopy(state)
         nodes = result.get("nodes", {})
 

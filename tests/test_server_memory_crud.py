@@ -43,11 +43,14 @@ def test_create_node(client):
     mem = _make_mem()
     app_mod.memory = mem
     try:
-        resp = client.post("/v1/memory/nodes", json={
-            "content": "hello world",
-            "node_id": "n_test_1",
-            "metadata": {"tag": "greeting"},
-        })
+        resp = client.post(
+            "/v1/memory/nodes",
+            json={
+                "content": "hello world",
+                "node_id": "n_test_1",
+                "metadata": {"tag": "greeting"},
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["id"] == "n_test_1"
@@ -93,9 +96,12 @@ def test_update_node(client):
     )
     app_mod.memory = mem
     try:
-        resp = client.put("/v1/memory/nodes/n1", json={
-            "content": "new",
-        })
+        resp = client.put(
+            "/v1/memory/nodes/n1",
+            json={
+                "content": "new",
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "updated"

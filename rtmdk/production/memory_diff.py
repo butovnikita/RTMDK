@@ -36,13 +36,9 @@ class MemoryDiff:
 
             changes: Dict[str, Any] = {}
             if b_node.salience != a_node.salience:
-                changes["salience"] = {
-                    "before": b_node.salience,
-                    "after": a_node.salience}
+                changes["salience"] = {"before": b_node.salience, "after": a_node.salience}
             if b_node.amplitude != a_node.amplitude:
-                changes["amplitude"] = {
-                    "before": b_node.amplitude,
-                    "after": a_node.amplitude}
+                changes["amplitude"] = {"before": b_node.amplitude, "after": a_node.amplitude}
             if b_node.content.get("text") != a_node.content.get("text"):
                 changes["text"] = True
 
@@ -59,5 +55,5 @@ class MemoryDiff:
                 "added_count": len(added),
                 "removed_count": len(removed),
                 "modified_count": len(modified),
-            }
+            },
         }

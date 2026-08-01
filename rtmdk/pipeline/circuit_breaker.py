@@ -3,6 +3,7 @@
 Provides per-stage fault isolation: if a stage repeatedly fails or is too slow,
 the breaker opens and the stage is automatically bypassed (fallback always runs).
 """
+
 from __future__ import annotations
 from enum import Enum
 from typing import Optional
@@ -11,8 +12,8 @@ import time
 
 
 class BreakerState(Enum):
-    CLOSED = "closed"       # Normal operation
-    OPEN = "open"           # Bypassing stage, fallback always runs
+    CLOSED = "closed"  # Normal operation
+    OPEN = "open"  # Bypassing stage, fallback always runs
     HALF_OPEN = "half_open"  # Testing if stage recovered
 
 

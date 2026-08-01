@@ -22,10 +22,10 @@ from dataclasses import dataclass, field
 import numpy as np
 from collections import defaultdict
 
-
 # ============================================================================
 # ENGRAM DATA STRUCTURES
 # ============================================================================
+
 
 @dataclass
 class EngramPattern:
@@ -33,16 +33,17 @@ class EngramPattern:
 
     Biological analogy: Engram cell ensemble in hippocampus.
     """
+
     id: str
-    node_weights: Dict[str, float]       # {node_id: contribution_weight}
+    node_weights: Dict[str, float]  # {node_id: contribution_weight}
     centroid_embedding: Optional[np.ndarray] = None  # Mean embedding in 768D
-    strength: float = 1.0                # Overall engram strength
-    created_at: float = 0.0              # Creation timestamp
-    last_activated: float = 0.0          # Last activation time
-    activation_count: int = 0            # Number of activations
-    semantic_core: str = ""              # Central theme/topic
+    strength: float = 1.0  # Overall engram strength
+    created_at: float = 0.0  # Creation timestamp
+    last_activated: float = 0.0  # Last activation time
+    activation_count: int = 0  # Number of activations
+    semantic_core: str = ""  # Central theme/topic
     context_tags: Set[str] = field(default_factory=set)  # Contextual markers
-    tier: str = "episodic"               # episodic/semantic/procedural
+    tier: str = "episodic"  # episodic/semantic/procedural
 
     def activate(self, current_time: Optional[float] = None):
         """Boost engram on activation."""
@@ -70,9 +71,7 @@ class EngramPattern:
     def node_count(self) -> int:
         return len(self.node_weights)
 
-    def compute_centroid(self,
-                         node_embeddings: Dict[str,
-                                               np.ndarray]) -> Optional[np.ndarray]:
+    def compute_centroid(self, node_embeddings: Dict[str, np.ndarray]) -> Optional[np.ndarray]:
         """Compute centroid from member node embeddings."""
         if not self.node_weights or not node_embeddings:
             return None
@@ -108,6 +107,7 @@ class EngramPattern:
 # ENGRAM INDEX (HNSW on centroids)
 # ============================================================================
 
+
 class EngramIndex:
     """Fast retrieval of engrams via HNSW on centroid embeddings.
 
@@ -131,8 +131,7 @@ class EngramIndex:
         self.engrams.pop(engram_id, None)
         self._centroid_cache.pop(engram_id, None)
 
-    def search(self, query_embedding: np.ndarray,
-               top_k: int = 10) -> List[Tuple[str, float, EngramPattern]]:
+    def search(self, query_embedding: np.ndarray, top_k: int = 10) -> List[Tuple[str, float, EngramPattern]]:
         """Find most similar engrams by cosine similarity."""
         if not self.engrams:
             return []
@@ -144,8 +143,7 @@ class EngramIndex:
             if eid not in self.engrams:
                 continue
             cent_norm = np.linalg.norm(centroid) + 1e-8
-            cos_sim = float(np.dot(query_embedding, centroid) /
-                            (query_norm * cent_norm))
+            cos_sim = float(np.dot(query_embedding, centroid) / (query_norm * cent_norm))
             # Normalize to [0, 1]
             score = max(0.0, (cos_sim + 1.0) / 2.0)
             # Boost by engram strength and recency
@@ -153,8 +151,7 @@ class EngramIndex:
             score *= engram.strength
             # Recency bonus: recent activations are more accessible
             age_hours = (time.time() - engram.last_activated) / 3600
-            recency_bonus = max(
-                0.5, math.exp(-age_hours / 24))  # 24h half-life
+            recency_bonus = max(0.5, math.exp(-age_hours / 24))  # 24h half-life
             score *= recency_bonus
 
             scores.append((eid, score, engram))
@@ -162,8 +159,7 @@ class EngramIndex:
         scores.sort(key=lambda x: x[1], reverse=True)
         return scores[:top_k]
 
-    def update_centroid(self, engram: EngramPattern,
-                        node_embeddings: Dict[str, np.ndarray]):
+    def update_centroid(self, engram: EngramPattern, node_embeddings: Dict[str, np.ndarray]):
         """Recompute and cache centroid."""
         centroid = engram.compute_centroid(node_embeddings)
         if centroid is not None:
@@ -182,6 +178,7 @@ class EngramIndex:
 # PATTERN COMPLETER
 # ============================================================================
 
+
 class PatternCompleter:
     """Completes partial queries by finding engrams that match a subset.
 
@@ -192,10 +189,13 @@ class PatternCompleter:
     def __init__(self, min_overlap: float = 0.2):
         self.min_overlap = min_overlap  # Min fraction to trigger completion
 
-    def complete(self, query_embedding: np.ndarray,
-                 engram_results: List[Tuple[str, float, EngramPattern]],
-                 node_embeddings: Dict[str, np.ndarray],
-                 top_k: int = 5) -> List[Tuple[str, float, EngramPattern]]:
+    def complete(
+        self,
+        query_embedding: np.ndarray,
+        engram_results: List[Tuple[str, float, EngramPattern]],
+        node_embeddings: Dict[str, np.ndarray],
+        top_k: int = 5,
+    ) -> List[Tuple[str, float, EngramPattern]]:
         """Expand partial matches to full engrams.
 
         Returns engrams where query matched >= min_overlap of nodes.
@@ -219,6 +219,7 @@ class PatternCompleter:
 # ============================================================================
 # ENGRAM MANAGER
 # ============================================================================
+
 
 class EngramManager:
     """Manages the full lifecycle of engrams.
@@ -279,7 +280,7 @@ class EngramManager:
 
         # Take top nodes (up to max_nodes)
         activated_nodes.sort(key=lambda x: x[1], reverse=True)
-        top_nodes = activated_nodes[:self.max_nodes]
+        top_nodes = activated_nodes[: self.max_nodes]
 
         # Check if average activation exceeds threshold
         avg_activation = np.mean([s for _, s in top_nodes])
@@ -332,9 +333,7 @@ class EngramManager:
 
         # 2. Pattern completion (if enabled)
         if self.pattern_completion_enabled:
-            results = self.completer.complete(
-                query_embedding, results, node_embeddings, top_k
-            )
+            results = self.completer.complete(query_embedding, results, node_embeddings, top_k)
             if results:
                 self.stats["pattern_completions"] += 1
 
@@ -368,7 +367,7 @@ class EngramManager:
                 expanded.append((nid, combined, node))
 
         expanded.sort(key=lambda x: x[1], reverse=True)
-        return expanded[:top_k * 2]  # Return more for downstream filtering
+        return expanded[: top_k * 2]  # Return more for downstream filtering
 
     def step(self, node_embeddings: Dict[str, np.ndarray]):
         """Advance one time step: decay, cleanup, check for merges."""
@@ -426,18 +425,14 @@ class EngramManager:
         # Combine node weights (take max for overlapping nodes)
         for nid, weight in source.node_weights.items():
             if nid in target.node_weights:
-                target.node_weights[nid] = max(
-                    target.node_weights[nid], weight)
+                target.node_weights[nid] = max(target.node_weights[nid], weight)
             else:
                 target.node_weights[nid] = weight
 
         # Cap at max_nodes
         if target.node_count > self.max_nodes:
-            sorted_nodes = sorted(
-                target.node_weights.items(),
-                key=lambda x: x[1],
-                reverse=True)
-            target.node_weights = dict(sorted_nodes[:self.max_nodes])
+            sorted_nodes = sorted(target.node_weights.items(), key=lambda x: x[1], reverse=True)
+            target.node_weights = dict(sorted_nodes[: self.max_nodes])
 
         # Update metadata
         target.strength = min(2.0, target.strength + source.strength * 0.5)

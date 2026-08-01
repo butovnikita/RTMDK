@@ -10,9 +10,10 @@ from rtmdk.production.health_monitor import HealthMonitor
 
 def _make_embedder(dim: int = 64):
     def embed(text: str) -> np.ndarray:
-        h = hash(text) % (2 ** 32)
+        h = hash(text) % (2**32)
         rng = np.random.default_rng(h)
         return rng.standard_normal(dim, dtype=np.float32)
+
     return embed
 
 
@@ -49,7 +50,9 @@ class TestHealthMonitor:
         mem = RTMDKMemory(config=cfg, embedder=_make_embedder(64))
         monitor = HealthMonitor(mem)
         fired = []
-        monitor.add_alert("test_alert", threshold=0.5, callback=lambda name, status, checks: fired.append((name, status)))
+        monitor.add_alert(
+            "test_alert", threshold=0.5, callback=lambda name, status, checks: fired.append((name, status))
+        )
         # Trigger degraded state with high latency
         monitor.record_latency(1000.0)
         monitor.check_health()

@@ -1,4 +1,5 @@
 """Integration tests for SOT + RTMDKField."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -27,6 +28,7 @@ def field_sot():
     field = RTMDKField(config=cfg)
     # Override tokenizer with token_dim != latent_dim for testing
     from rtmdk.memory.self_organizing_field import SOTokenizer
+
     field._projection_mgr.sot_tokenizer = SOTokenizer(
         latent_dim=LATENT_DIM,
         token_dim=TOKEN_DIM,
@@ -81,22 +83,30 @@ class TestSOTAddNode:
 class TestSOTStep:
     def test_step_with_text_content(self, field_sot):
         emb = np.random.randn(LATENT_DIM).astype(np.float32)
-        field_sot.step([{
-            "embedding": emb,
-            "content": {"text": "hello world"},
-            "phase": 0.0,
-        }])
+        field_sot.step(
+            [
+                {
+                    "embedding": emb,
+                    "content": {"text": "hello world"},
+                    "phase": 0.0,
+                }
+            ]
+        )
         # Should not crash; tokenizer should have recorded cooccurrence
         assert field_sot._step_counter == 1
 
     def test_step_creates_nodes_for_novel_input(self, field_sot):
         initial_nodes = len(field_sot.nodes)
         emb = np.random.randn(LATENT_DIM).astype(np.float32)
-        field_sot.step([{
-            "embedding": emb,
-            "content": {"text": "something completely new"},
-            "phase": 0.0,
-        }])
+        field_sot.step(
+            [
+                {
+                    "embedding": emb,
+                    "content": {"text": "something completely new"},
+                    "phase": 0.0,
+                }
+            ]
+        )
         assert len(field_sot.nodes) > initial_nodes
 
     def test_step_triggers_contrastive_update(self, field_sot):
@@ -106,15 +116,18 @@ class TestSOTStep:
         for i in range(5):
             emb = base + np.random.randn(LATENT_DIM).astype(np.float32) * 0.1
             field_sot.add_node(emb, {"text": f"node_{i}"})
-        latent_before = {nid: n.latent_pos.copy()
-                         for nid, n in field_sot.nodes.items()}
+        latent_before = {nid: n.latent_pos.copy() for nid, n in field_sot.nodes.items()}
         # Run step with text that will query and retrieve nodes
         query_emb = base.copy()
-        field_sot.step([{
-            "embedding": query_emb,
-            "content": {"text": "query text"},
-            "phase": 0.0,
-        }])
+        field_sot.step(
+            [
+                {
+                    "embedding": query_emb,
+                    "content": {"text": "query text"},
+                    "phase": 0.0,
+                }
+            ]
+        )
         changed = False
         for nid, before_pos in latent_before.items():
             if nid in field_sot.nodes:
@@ -126,16 +139,20 @@ class TestSOTStep:
 
     def test_step_ssm_sync_changes_token_embeddings(self, field_sot):
         tokens = field_sot._projection_mgr.sot_tokenizer.encode("abc")
-        embs_before = {
-            t: field_sot._projection_mgr.sot_tokenizer.token_embeddings[t].copy() for t in tokens}
-        field_sot.step([{
-            "embedding": np.random.randn(LATENT_DIM).astype(np.float32),
-            "content": {"text": "abc"},
-            "phase": 0.0,
-        }])
+        embs_before = {t: field_sot._projection_mgr.sot_tokenizer.token_embeddings[t].copy() for t in tokens}
+        field_sot.step(
+            [
+                {
+                    "embedding": np.random.randn(LATENT_DIM).astype(np.float32),
+                    "content": {"text": "abc"},
+                    "phase": 0.0,
+                }
+            ]
+        )
         for t in tokens:
-            assert not np.allclose(field_sot._projection_mgr.sot_tokenizer.token_embeddings[t], embs_before[t]), \
-                "SSM sync should change token embeddings"
+            assert not np.allclose(
+                field_sot._projection_mgr.sot_tokenizer.token_embeddings[t], embs_before[t]
+            ), "SSM sync should change token embeddings"
 
 
 class TestSOTQuery:
@@ -152,9 +169,7 @@ class TestSOTQuery:
         for i in range(10):
             emb = np.zeros(LATENT_DIM, dtype=np.float32)
             emb[i % LATENT_DIM] = 1.0
-            field_sot.add_node(
-                emb, {
-                    "text": "topic alpha" if i < 5 else "topic beta"})
+            field_sot.add_node(emb, {"text": "topic alpha" if i < 5 else "topic beta"})
         results = field_sot.query_by_text("topic alpha", top_k=5)
         assert len(results) <= 5
 
@@ -164,18 +179,26 @@ class TestSOTMerge:
         field_sot.cfg.sot_merge_freq = 5
         # Step 4 times — no merge yet
         for _ in range(4):
-            field_sot.step([{
-                "embedding": np.random.randn(LATENT_DIM).astype(np.float32),
-                "content": {"text": "ab ab ab"},
-                "phase": 0.0,
-            }])
+            field_sot.step(
+                [
+                    {
+                        "embedding": np.random.randn(LATENT_DIM).astype(np.float32),
+                        "content": {"text": "ab ab ab"},
+                        "phase": 0.0,
+                    }
+                ]
+            )
         len(field_sot._projection_mgr.sot_tokenizer.token_embeddings)
         # 5th step should trigger merge check
-        field_sot.step([{
-            "embedding": np.random.randn(LATENT_DIM).astype(np.float32),
-            "content": {"text": "ab ab ab"},
-            "phase": 0.0,
-        }])
+        field_sot.step(
+            [
+                {
+                    "embedding": np.random.randn(LATENT_DIM).astype(np.float32),
+                    "content": {"text": "ab ab ab"},
+                    "phase": 0.0,
+                }
+            ]
+        )
         len(field_sot._projection_mgr.sot_tokenizer.token_embeddings)
         # Vocab may or may not grow depending on threshold, but merge logic
         # should run
@@ -184,28 +207,36 @@ class TestSOTMerge:
 
 class TestSOTStatePersistence:
     def test_state_includes_sot(self, field_sot):
-        field_sot.step([{
-            "embedding": np.random.randn(LATENT_DIM).astype(np.float32),
-            "content": {"text": "hello"},
-            "phase": 0.0,
-        }])
+        field_sot.step(
+            [
+                {
+                    "embedding": np.random.randn(LATENT_DIM).astype(np.float32),
+                    "content": {"text": "hello"},
+                    "phase": 0.0,
+                }
+            ]
+        )
         state = field_sot.get_state()
         assert "sot_tokenizer" in state
         assert "sot_hebbian" in state
 
     def test_load_state_restores_sot(self, field_sot):
-        field_sot.step([{
-            "embedding": np.random.randn(LATENT_DIM).astype(np.float32),
-            "content": {"text": "hello world"},
-            "phase": 0.0,
-        }])
+        field_sot.step(
+            [
+                {
+                    "embedding": np.random.randn(LATENT_DIM).astype(np.float32),
+                    "content": {"text": "hello world"},
+                    "phase": 0.0,
+                }
+            ]
+        )
         state = field_sot.get_state()
         field2 = RTMDKField(config=RTMDKConfig(sot_enabled=True))
         field2.load_state(state)
         assert field2._projection_mgr.sot_tokenizer is not None
-        assert len(
-            field2._projection_mgr.sot_tokenizer.token_embeddings) == len(
-            field_sot._projection_mgr.sot_tokenizer.token_embeddings)
+        assert len(field2._projection_mgr.sot_tokenizer.token_embeddings) == len(
+            field_sot._projection_mgr.sot_tokenizer.token_embeddings
+        )
 
 
 class TestSOTContrastiveField:
@@ -218,7 +249,8 @@ class TestSOTContrastiveField:
         )
         # After contrastive step, embeddings should still be valid
         emb = field_sot._projection_mgr.sot_tokenizer.embed(
-            field_sot._projection_mgr.sot_tokenizer.encode("query text"))
+            field_sot._projection_mgr.sot_tokenizer.encode("query text")
+        )
         assert emb.shape == (LATENT_DIM,)
         assert np.linalg.norm(emb) > 0.9
 
@@ -230,7 +262,8 @@ class TestSOTContrastiveField:
             lr=0.05,
         )
         emb = field_sot._projection_mgr.sot_tokenizer.embed(
-            field_sot._projection_mgr.sot_tokenizer.encode("hello world"))
+            field_sot._projection_mgr.sot_tokenizer.encode("hello world")
+        )
         assert emb.shape == (LATENT_DIM,)
 
 

@@ -1,7 +1,6 @@
 """Smoke tests for rtmdk.production.integration."""
 
 import numpy as np
-import pytest
 from rtmdk.production.integration import ProductionRTMDK, ProductionConfig
 
 

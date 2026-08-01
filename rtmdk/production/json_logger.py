@@ -24,8 +24,7 @@ class JSONFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         msg = super().format(record)
         payload = {
-            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(record.created))
-            + f".{int(record.msecs):03d}Z",
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(record.created)) + f".{int(record.msecs):03d}Z",
             "level": record.levelname,
             "logger": record.name,
             "message": msg,

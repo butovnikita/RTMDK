@@ -3,19 +3,17 @@
 import asyncio
 
 import numpy as np
-import pytest
 
 from rtmdk.memory.core import RTMDKMemory
 from rtmdk.memory.config import RTMDKConfig
-from rtmdk.pipeline.executor import PipelineExecutor
-from rtmdk.pipeline.stages import EmbedStage, RetrieveStage
 
 
 def _make_embedder(dim: int = 64):
     def embed(text: str) -> np.ndarray:
-        h = hash(text) % (2 ** 32)
+        h = hash(text) % (2**32)
         rng = np.random.default_rng(h)
         return rng.standard_normal(dim, dtype=np.float32)
+
     return embed
 
 
@@ -47,7 +45,9 @@ class TestPipelineExecutorAsync:
 
     def test_retrieve_nodes_pipeline_async(self):
         cfg = RTMDKConfig(
-            latent_dim=64, embedding_dim=64, top_k=5,
+            latent_dim=64,
+            embedding_dim=64,
+            top_k=5,
             pipeline_enabled=True,
             pipeline_breaker_enabled=False,
         )
@@ -72,10 +72,7 @@ class TestPipelineExecutorAsync:
         pipeline = mem.build_pipeline()
 
         async def concurrent_queries():
-            tasks = [
-                pipeline.run_async(f"doc {i}", top_k=3)
-                for i in range(5)
-            ]
+            tasks = [pipeline.run_async(f"doc {i}", top_k=3) for i in range(5)]
             return await asyncio.gather(*tasks)
 
         ctxs = asyncio.run(concurrent_queries())

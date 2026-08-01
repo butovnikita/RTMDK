@@ -629,7 +629,9 @@ class NodeManager:
                 modality=modalities[i] if modalities else "text",
                 latent_scale=_latent_scales[i],
                 latent_zero_point=_latent_zps[i],
-                latent_scale_array=_latent_scale_arrays[i].astype(np.float32) if _latent_scale_arrays[i] is not None else None,
+                latent_scale_array=(
+                    _latent_scale_arrays[i].astype(np.float32) if _latent_scale_arrays[i] is not None else None
+                ),
             )
             if f.cfg.cross_modal:
                 node.modal_embedding = embeddings[i].copy()

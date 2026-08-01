@@ -64,10 +64,12 @@ class LLMEvaluator:
         t0 = time.time()
 
         # Get RTMDK context
-        ctx = self.memory.load_memory_variables({
-            "input": query,
-            "session_id": session_id,
-        })
+        ctx = self.memory.load_memory_variables(
+            {
+                "input": query,
+                "session_id": session_id,
+            }
+        )
         context = ctx.get("rtmdk_context", "")
 
         # Get LLM answer
@@ -120,7 +122,7 @@ class LLMEvaluator:
                 self.evaluate_query(query, answer)
 
             if (i + 1) % checkpoint_every == 0:
-                with open(ckpt_path, 'w') as f:
+                with open(ckpt_path, "w") as f:
                     json.dump({"done": i + 1, "results": self._results}, f)
 
         # Aggregate results
@@ -141,9 +143,8 @@ class LLMEvaluator:
             }
 
             system_msg = (
-                "Answer based ONLY on this context. "
-                "If you don't know, say 'I don't know'.\n\n"
-                f"Context: {context}")
+                "Answer based ONLY on this context. " "If you don't know, say 'I don't know'.\n\n" f"Context: {context}"
+            )
 
             resp = requests.post(
                 f"{self.base_url}/chat/completions",
@@ -161,11 +162,7 @@ class LLMEvaluator:
             )
 
             data = resp.json()
-            return data.get(
-                "choices", [
-                    {}])[0].get(
-                "message", {}).get(
-                "content", "")
+            return data.get("choices", [{}])[0].get("message", {}).get("content", "")
         except Exception as e:
             return f"[Error: {e}]"
 
@@ -189,8 +186,7 @@ class LLMEvaluator:
             exact_match = len(overlap) / len(expected_words)
 
         # Context match: does expected answer appear in context?
-        context_match = any(w in context.lower()
-                            for w in expected_words) if expected_words else False
+        context_match = any(w in context.lower() for w in expected_words) if expected_words else False
 
         # Hallucination: words in answer not in context or expected
         context_words = set(context.lower().split())

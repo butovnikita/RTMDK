@@ -56,8 +56,8 @@ class TestPipelineSSEStream:
         try:
             resp = client.get("/v1/memory/pipeline/stream?query=hello&top_k=5")
             body = resp.text
-            lines = [l for l in body.split("\n") if l.startswith("data: ")]
-            events = [json.loads(l[6:]) for l in lines]
+            lines = [ln for ln in body.split("\n") if ln.startswith("data: ")]
+            events = [json.loads(ln[6:]) for ln in lines]
 
             assert len(events) >= 2
             assert events[0]["event"] == "pipeline_started"
@@ -86,8 +86,8 @@ class TestPipelineSSEStream:
         try:
             resp = client.get("/v1/memory/pipeline/stream?query=hello&top_k=5")
             body = resp.text
-            lines = [l for l in body.split("\n") if l.startswith("data: ")]
-            events = [json.loads(l[6:]) for l in lines]
+            lines = [ln for ln in body.split("\n") if ln.startswith("data: ")]
+            events = [json.loads(ln[6:]) for ln in lines]
 
             stage_events = [e for e in events if e["event"] == "stage_completed"]
             assert len(stage_events) >= 1

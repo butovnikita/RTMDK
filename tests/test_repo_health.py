@@ -23,8 +23,7 @@ def _pyproject_version() -> str:
 class TestVersionSync:
     def test_package_version_matches_pyproject(self):
         assert rtmdk.__version__ == _pyproject_version(), (
-            f"rtmdk.__version__={rtmdk.__version__} != "
-            f"pyproject version={_pyproject_version()}"
+            f"rtmdk.__version__={rtmdk.__version__} != " f"pyproject version={_pyproject_version()}"
         )
 
     def test_server_banner_matches_package_version(self):
@@ -33,7 +32,7 @@ class TestVersionSync:
             content = f.read()
         # Only version-reporting spots: banners, FastAPI metadata, health payloads
         reported = set()
-        reported |= set(re.findall(r'Production API v(\d+\.\d+\.\d+)', content))
+        reported |= set(re.findall(r"Production API v(\d+\.\d+\.\d+)", content))
         reported |= set(re.findall(r'version="(\d+\.\d+\.\d+)"', content))
         reported |= set(re.findall(r'"version":\s*"(\d+\.\d+\.\d+)"', content))
         assert reported, "no version banners found in server/app.py"
@@ -57,6 +56,4 @@ class TestLegacyModules:
         _ensure_legacy_path()
         import sys
 
-        assert any(p.endswith("legacy") for p in sys.path), (
-            "_ensure_legacy_path() did not add legacy/ to sys.path"
-        )
+        assert any(p.endswith("legacy") for p in sys.path), "_ensure_legacy_path() did not add legacy/ to sys.path"

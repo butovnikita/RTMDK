@@ -179,8 +179,11 @@ class TestAdaptiveTopK:
         base = np.random.randn(16).astype(np.float32)
         base /= np.linalg.norm(base)
         field.add_node(
-            base.copy(), content={"id": 0}, phase=0.0,
-            node_id="n0", skip_projection=True,
+            base.copy(),
+            content={"id": 0},
+            phase=0.0,
+            node_id="n0",
+            skip_projection=True,
         )
         field.nodes["n0"].amplitude = 1.0
         field.nodes["n0"].salience = 1.0

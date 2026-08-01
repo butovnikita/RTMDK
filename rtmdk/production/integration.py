@@ -43,10 +43,10 @@ except ImportError:
 from rtmdk.production.query_cache import QueryCache
 from rtmdk.production.bm25_fallback import BM25FallbackRetriever
 
-
 # ============================================================================
 # PRODUCTION CONFIGURATION
 # ============================================================================
+
 
 @dataclass
 class ProductionConfig:
@@ -89,10 +89,12 @@ class ProductionConfig:
 
     # A/B Testing
     enable_ab_testing: bool = False
-    ab_test_variants: Dict[str, Dict] = field(default_factory=lambda: {
-        "A": {"dual_space": True, "phase_alignment": True},
-        "B": {"dual_space": True, "multi_hop": True},
-    })
+    ab_test_variants: Dict[str, Dict] = field(
+        default_factory=lambda: {
+            "A": {"dual_space": True, "phase_alignment": True},
+            "B": {"dual_space": True, "multi_hop": True},
+        }
+    )
 
     # Scaling for N > 100K
     enable_pq_compression: bool = False  # Requires N > 100K
@@ -107,6 +109,7 @@ class ProductionConfig:
 # USER SESSION MANAGER
 # ============================================================================
 
+
 class UserSessionManager:
     """Manages per-user memory persistence."""
 
@@ -116,8 +119,7 @@ class UserSessionManager:
         self._loaded_sessions: Dict[str, RTMDKMemory] = {}
         self._session_metadata: Dict[str, Dict] = {}
 
-    def get_memory(self, user_id: str, embedder: Callable,
-                   create_new: bool = True) -> Optional[RTMDKMemory]:
+    def get_memory(self, user_id: str, embedder: Callable, create_new: bool = True) -> Optional[RTMDKMemory]:
         if user_id in self._loaded_sessions:
             return self._loaded_sessions[user_id]
 
@@ -162,6 +164,7 @@ class UserSessionManager:
 # FEEDBACK LOOP
 # ============================================================================
 
+
 class FeedbackLoop:
     """Updates node salience based on user feedback."""
 
@@ -170,38 +173,32 @@ class FeedbackLoop:
         self._feedback_history: List[Dict] = []
         self._node_rewards: Dict[str, List[float]] = defaultdict(list)
 
-    def apply_feedback(
-            self,
-            memory: RTMDKMemory,
-            query: str,
-            response_quality: float):
+    def apply_feedback(self, memory: RTMDKMemory, query: str, response_quality: float):
         """Apply feedback to nodes that contributed to the response.
 
         response_quality: 0.0 (bad) → 1.0 (excellent)
         """
         # Find nodes that were retrieved for this query
-        ctx = memory.load_memory_variables(
-            {"input": query, "session_id": "feedback"})
+        ctx = memory.load_memory_variables({"input": query, "session_id": "feedback"})
         context = ctx.get("rtmdk_context", "")
 
         # Update salience of nodes mentioned in context
         assert memory.field is not None
-        for nid, node in list(
-                memory.field.nodes.items())[:50]:  # Limit for performance
+        for nid, node in list(memory.field.nodes.items())[:50]:  # Limit for performance
             node_text = node.content.get("text", "").lower()
-            if any(
-                word in node_text for word in context.lower().split()[
-                    :20] if len(word) > 3):
+            if any(word in node_text for word in context.lower().split()[:20] if len(word) > 3):
                 # Adjust salience based on feedback
                 delta = self.lr * (response_quality - 0.5)  # -0.05 to +0.05
                 node.salience = max(0.0, min(1.0, node.salience + delta))
                 self._node_rewards[nid].append(response_quality)
 
-        self._feedback_history.append({
-            "query": query,
-            "quality": response_quality,
-            "timestamp": time.time(),
-        })
+        self._feedback_history.append(
+            {
+                "query": query,
+                "quality": response_quality,
+                "timestamp": time.time(),
+            }
+        )
 
     def get_node_quality(self, node_id: str) -> Optional[float]:
         rewards = self._node_rewards.get(node_id, [])
@@ -221,6 +218,7 @@ class FeedbackLoop:
 # CONTEXT OPTIMIZER
 # ============================================================================
 
+
 class ContextOptimizer:
     """Optimizes context for LLM consumption."""
 
@@ -237,7 +235,7 @@ class ContextOptimizer:
             return context
 
         # Split context into lines
-        lines = context.split('\n')
+        lines = context.split("\n")
 
         # Prioritize lines with query keywords
         query_words = set(query.lower().split())
@@ -265,12 +263,13 @@ class ContextOptimizer:
         if not optimized and lines:
             optimized = [lines[0]]
 
-        return '\n'.join(optimized)
+        return "\n".join(optimized)
 
 
 # ============================================================================
 # SMART PRUNER
 # ============================================================================
+
 
 class SmartPruner:
     """Removes old/irrelevant nodes to keep memory efficient."""
@@ -306,6 +305,7 @@ class SmartPruner:
 # ============================================================================
 # PRODUCTION RTMDK — MAIN INTEGRATION CLASS
 # ============================================================================
+
 
 class ProductionRTMDK:
     """Production-ready RTMDK with all optimizations.
@@ -349,30 +349,50 @@ class ProductionRTMDK:
         )
 
         # Production modules
-        self.query_cache = QueryCache(
-            max_size=self.pconfig.cache_max_size,
-            ttl_seconds=self.pconfig.cache_ttl_seconds,
-        ) if self.pconfig.enable_query_cache else None
+        self.query_cache = (
+            QueryCache(
+                max_size=self.pconfig.cache_max_size,
+                ttl_seconds=self.pconfig.cache_ttl_seconds,
+            )
+            if self.pconfig.enable_query_cache
+            else None
+        )
 
-        self.bm25_fallback = BM25FallbackRetriever(
-            min_score=self.pconfig.bm25_min_score,
-        ) if self.pconfig.enable_bm25_fallback else None
+        self.bm25_fallback = (
+            BM25FallbackRetriever(
+                min_score=self.pconfig.bm25_min_score,
+            )
+            if self.pconfig.enable_bm25_fallback
+            else None
+        )
 
-        self.session_manager = UserSessionManager(
-            persistence_dir=self.pconfig.persistence_dir,
-        ) if self.pconfig.enable_session_persistence else None
+        self.session_manager = (
+            UserSessionManager(
+                persistence_dir=self.pconfig.persistence_dir,
+            )
+            if self.pconfig.enable_session_persistence
+            else None
+        )
 
-        self.context_optimizer = ContextOptimizer(
-            max_tokens=self.pconfig.max_context_tokens,
-            min_tokens=self.pconfig.min_context_tokens,
-        ) if self.pconfig.enable_context_optimization else None
+        self.context_optimizer = (
+            ContextOptimizer(
+                max_tokens=self.pconfig.max_context_tokens,
+                min_tokens=self.pconfig.min_context_tokens,
+            )
+            if self.pconfig.enable_context_optimization
+            else None
+        )
 
         self.feedback_loop = FeedbackLoop() if self.pconfig.enable_feedback_loop else None
 
-        self.pruner = SmartPruner(
-            max_age_days=self.pconfig.pruning_max_age_days,
-            min_salience=self.pconfig.pruning_min_salience,
-        ) if self.pconfig.enable_smart_pruning else None
+        self.pruner = (
+            SmartPruner(
+                max_age_days=self.pconfig.pruning_max_age_days,
+                min_salience=self.pconfig.pruning_min_salience,
+            )
+            if self.pconfig.enable_smart_pruning
+            else None
+        )
 
         # Metrics
         self._query_count = 0
@@ -424,15 +444,15 @@ class ProductionRTMDK:
         context = ctx.get("rtmdk_context", "")
 
         # 3. BM25 fallback if resonance is low
-        if (not context or context in ("No relevant memory.", "[]")) and \
-                self.bm25_fallback:
-            bm25_results = self.bm25_fallback.search(
-                query, top_k=self.pconfig.top_k)
+        if (not context or context in ("No relevant memory.", "[]")) and self.bm25_fallback:
+            bm25_results = self.bm25_fallback.search(query, top_k=self.pconfig.top_k)
             if bm25_results:
-                context = "\n".join([
-                    f"[BM25:{score:.3f}] {self.bm25_fallback._documents.get(doc_id, '')[:100]}"
-                    for doc_id, score in bm25_results[:self.pconfig.top_k]
-                ])
+                context = "\n".join(
+                    [
+                        f"[BM25:{score:.3f}] {self.bm25_fallback._documents.get(doc_id, '')[:100]}"
+                        for doc_id, score in bm25_results[: self.pconfig.top_k]
+                    ]
+                )
 
         # 4. Context optimization
         if self.context_optimizer:
@@ -452,8 +472,7 @@ class ProductionRTMDK:
     ):
         """Apply user feedback to improve future retrieval."""
         if self.feedback_loop:
-            self.feedback_loop.apply_feedback(
-                self.memory, query, response_quality)
+            self.feedback_loop.apply_feedback(self.memory, query, response_quality)
 
     def prune_memory(self) -> int:
         """Remove old/irrelevant nodes."""
@@ -480,6 +499,7 @@ class ProductionRTMDK:
 # ============================================================================
 # CONVENIENCE FUNCTIONS
 # ============================================================================
+
 
 def create_production_memory(
     embedder: Callable,

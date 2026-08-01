@@ -31,8 +31,7 @@ _DOMAIN_PATTERNS = {
             "Databases": [
                 r"\b(sql|database|query|index|table|join|schema|"
                 r"relational|nosql|mongodb|postgres|mysql|oracle|sqlite)\b",
-                r"\b(select|insert|update|delete|create table|alter|"
-                r"drop|transaction|commit|rollback)\b",
+                r"\b(select|insert|update|delete|create table|alter|" r"drop|transaction|commit|rollback)\b",
             ],
             "Programming": [
                 r"\b(python|java|javascript|typescript|c\+\+|rust|go(lang)?|ruby|swift|kotlin|react|angular|vue)\b",
@@ -167,9 +166,7 @@ _COMPILED_PATTERNS: Dict[str, Dict[str, List[Any]]] = {}
 for domain, data in _DOMAIN_PATTERNS.items():
     _COMPILED_PATTERNS[domain] = {}
     for subdomain, patterns in data["subdomains"].items():
-        _COMPILED_PATTERNS[domain][subdomain] = [
-            re.compile(p, re.IGNORECASE) for p in patterns
-        ]
+        _COMPILED_PATTERNS[domain][subdomain] = [re.compile(p, re.IGNORECASE) for p in patterns]
 
 
 @lru_cache(maxsize=10000)
@@ -225,49 +222,37 @@ def _extract_topic(text: str, domain: str, subdomain: str) -> str:
 
     # 1. Look for quoted concepts
     import re
+
     quoted = re.findall(r'"([^"]+)"', text)
     if quoted:
         return quoted[0][:50]  # First quote, max 50 chars
 
     # 2. Look for title-case phrases
-    title_case = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b', text)
+    title_case = re.findall(r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b", text)
     if title_case:
         return title_case[0][:50]
 
     # 3. Extract domain-specific keywords (simplified)
     if domain == "IT" and subdomain == "Databases":
-        m = re.search(
-            r'\b(sql|nosql|mongodb|postgres|mysql|redis|elasticsearch)\b',
-            text,
-            re.IGNORECASE)
+        m = re.search(r"\b(sql|nosql|mongodb|postgres|mysql|redis|elasticsearch)\b", text, re.IGNORECASE)
         if m:
             return m.group(1).upper()
     elif domain == "IT" and subdomain == "Programming":
         m = re.search(
-            r'\b(python|java|javascript|typescript|rust|go|ruby|swift|react|django|flask)\b',
-            text,
-            re.IGNORECASE)
+            r"\b(python|java|javascript|typescript|rust|go|ruby|swift|react|django|flask)\b", text, re.IGNORECASE
+        )
         if m:
             return m.group(1).capitalize()
     elif domain == "Law" and subdomain == "Contracts":
-        m = re.search(
-            r'\b(nda|msa|sla|sla|contract|agreement|clause)\b',
-            text,
-            re.IGNORECASE)
+        m = re.search(r"\b(nda|msa|sla|sla|contract|agreement|clause)\b", text, re.IGNORECASE)
         if m:
             return m.group(1).upper()
     elif domain == "Medicine" and subdomain == "Cardiology":
-        m = re.search(
-            r'\b(heart|cardiac|ecg|ekg|stroke|infarction|cholesterol)\b',
-            text,
-            re.IGNORECASE)
+        m = re.search(r"\b(heart|cardiac|ecg|ekg|stroke|infarction|cholesterol)\b", text, re.IGNORECASE)
         if m:
             return m.group(1).capitalize()
     elif domain == "Finance" and subdomain == "Investing":
-        m = re.search(
-            r'\b(stock|bond|etf|mutual fund|portfolio|dividend|ipo)\b',
-            text,
-            re.IGNORECASE)
+        m = re.search(r"\b(stock|bond|etf|mutual fund|portfolio|dividend|ipo)\b", text, re.IGNORECASE)
         if m:
             return m.group(1).capitalize()
 
@@ -306,18 +291,13 @@ def get_domain_stats(field) -> dict:
         return {"total": 0, "domains": {}}
 
     for node in field.nodes.values():
-        d = getattr(node, 'domain', 'general')
+        d = getattr(node, "domain", "general")
         domain_counts[d] = domain_counts.get(d, 0) + 1
 
     return {
         "total": total,
         "domains": {
-            domain: {
-                "count": count,
-                "percentage": round(
-                    count / total * 100,
-                    1)} for domain,
-            count in sorted(
-                domain_counts.items(),
-                key=lambda x: x[1],
-                reverse=True)}}
+            domain: {"count": count, "percentage": round(count / total * 100, 1)}
+            for domain, count in sorted(domain_counts.items(), key=lambda x: x[1], reverse=True)
+        },
+    }

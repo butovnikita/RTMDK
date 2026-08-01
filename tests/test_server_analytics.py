@@ -85,10 +85,13 @@ def test_analytics_report_503_when_not_initialized(client):
 
 def test_analytics_track_503_when_not_initialized(client):
     """Analytics track returns 503 when dashboard not initialized."""
-    resp = client.post("/v1/analytics/track", json={
-        "event_type": "test",
-        "properties": {"key": "value"},
-    })
+    resp = client.post(
+        "/v1/analytics/track",
+        json={
+            "event_type": "test",
+            "properties": {"key": "value"},
+        },
+    )
     assert resp.status_code == 503
     assert "not available" in resp.json()["detail"]
 
@@ -170,11 +173,14 @@ def test_analytics_track_creates_event(client):
     app_mod.memory = mem
     app_mod.analytics_dashboard = dash
     try:
-        resp = client.post("/v1/analytics/track", json={
-            "event_type": "user_action",
-            "properties": {"action": "click"},
-            "session_id": "sess-42",
-        })
+        resp = client.post(
+            "/v1/analytics/track",
+            json={
+                "event_type": "user_action",
+                "properties": {"action": "click"},
+                "session_id": "sess-42",
+            },
+        )
         assert resp.status_code == 200
         assert resp.json()["status"] == "ok"
         events = dash.get_event_series(event_type="user_action")

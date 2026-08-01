@@ -1,7 +1,6 @@
 """Tests for rtmdk.langchain_adapter (root)."""
 
 import numpy as np
-import pytest
 from langchain_core.messages import HumanMessage, AIMessage
 
 from rtmdk.memory.core import RTMDKConfig, RTMDKMemory

@@ -32,8 +32,7 @@ class TestPathSanitization:
         assert _sanitize_path("/etc/passwd") == "\\etc\\passwd"
 
     def test_allows_absolute_windows_path(self):
-        assert _sanitize_path(
-            "C:\\Windows\\system.ini") == "C:\\Windows\\system.ini"
+        assert _sanitize_path("C:\\Windows\\system.ini") == "C:\\Windows\\system.ini"
 
     def test_allows_safe_relative_path(self):
         assert _sanitize_path("memory/state.json") == "memory\\state.json"
@@ -73,6 +72,7 @@ class TestRateLimiting:
 
     def test_rate_limit_resets_after_window(self):
         import time
+
         config = RTMDKConfig.local()
         config.max_nodes = 10000
 
@@ -108,6 +108,7 @@ class TestJsonSizeLimit:
     def test_safe_json_load_allows_normal_file(self):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8") as f:
             import json
+
             json.dump({"config": {}, "nodes": []}, f)
             path = f.name
         try:

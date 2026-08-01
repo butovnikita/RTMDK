@@ -9,16 +9,19 @@ from rtmdk.pipeline.ab_testing import PipelineABTester
 
 def _make_embedder(dim: int = 64):
     def embed(text: str) -> np.ndarray:
-        h = hash(text) % (2 ** 32)
+        h = hash(text) % (2**32)
         rng = np.random.default_rng(h)
         return rng.standard_normal(dim, dtype=np.float32)
+
     return embed
 
 
 class TestPipelineABTester:
     def test_compare_single(self):
         cfg = RTMDKConfig(
-            latent_dim=64, embedding_dim=64, top_k=5,
+            latent_dim=64,
+            embedding_dim=64,
+            top_k=5,
             pipeline_enabled=True,
             pipeline_breaker_enabled=False,
         )
@@ -42,7 +45,9 @@ class TestPipelineABTester:
 
     def test_compare_batch(self):
         cfg = RTMDKConfig(
-            latent_dim=64, embedding_dim=64, top_k=5,
+            latent_dim=64,
+            embedding_dim=64,
+            top_k=5,
             pipeline_enabled=True,
             pipeline_breaker_enabled=False,
         )
@@ -61,7 +66,9 @@ class TestPipelineABTester:
 
     def test_summary(self):
         cfg = RTMDKConfig(
-            latent_dim=64, embedding_dim=64, top_k=5,
+            latent_dim=64,
+            embedding_dim=64,
+            top_k=5,
             pipeline_enabled=True,
             pipeline_breaker_enabled=False,
         )
@@ -91,7 +98,9 @@ class TestPipelineABTester:
 
     def test_compare_with_embedding(self):
         cfg = RTMDKConfig(
-            latent_dim=64, embedding_dim=64, top_k=5,
+            latent_dim=64,
+            embedding_dim=64,
+            top_k=5,
             pipeline_enabled=True,
             pipeline_breaker_enabled=False,
         )

@@ -2,6 +2,7 @@
 
 Extracted from RTMDKField to reduce monolithic field.py size.
 """
+
 from __future__ import annotations
 
 import time
@@ -19,16 +20,15 @@ class CrystallizationManager:
     def __init__(self, field: RTMDKField) -> None:
         self.field = field
 
-    def crystallize_recurring(
-        self, window: int = 100, similarity_thresh: float = 0.75
-    ) -> None:
+    def crystallize_recurring(self, window: int = 100, similarity_thresh: float = 0.75) -> None:
         """Detect recurring episodic patterns and crystallize into semantic nodes."""
         f = self.field
         recent_ids = f.node_index[-window:]
         recent = [
-            f.nodes[nid] for nid in recent_ids
+            f.nodes[nid]
+            for nid in recent_ids
             if nid in f.nodes
-            and getattr(f.nodes[nid], 'tier', 'semantic') == "episodic"
+            and getattr(f.nodes[nid], "tier", "semantic") == "episodic"
             and nid not in f._crystallized_nodes
         ]
         if len(recent) < 5:
@@ -40,10 +40,7 @@ class CrystallizationManager:
             return
 
         pos = np.array([n.latent_pos for n in recent])
-        labels = DBSCAN(
-            eps=0.4,
-            min_samples=f.cfg.crystallization_min_cluster
-        ).fit_predict(pos)
+        labels = DBSCAN(eps=0.4, min_samples=f.cfg.crystallization_min_cluster).fit_predict(pos)
 
         crystallized_count = 0
         for cluster_id in set(labels):

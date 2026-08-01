@@ -16,9 +16,8 @@ def client():
     if app_mod.api_key_manager is None:
         from rtmdk.production.api_key_manager import APIKeyManager
         import tempfile
-        app_mod.api_key_manager = APIKeyManager(
-            storage_path=tempfile.mktemp(suffix=".json")
-        )
+
+        app_mod.api_key_manager = APIKeyManager(storage_path=tempfile.mktemp(suffix=".json"))
     return TestClient(app_mod.app)
 
 
@@ -27,9 +26,8 @@ def reset_keys():
     old_mgr = app_mod.api_key_manager
     import tempfile
     from rtmdk.production.api_key_manager import APIKeyManager
-    app_mod.api_key_manager = APIKeyManager(
-        storage_path=tempfile.mktemp(suffix=".json")
-    )
+
+    app_mod.api_key_manager = APIKeyManager(storage_path=tempfile.mktemp(suffix=".json"))
     yield
     app_mod.api_key_manager = old_mgr
 

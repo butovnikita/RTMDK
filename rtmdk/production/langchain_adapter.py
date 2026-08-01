@@ -17,6 +17,7 @@ try:
     from langchain_core.chat_history import BaseChatMessageHistory
     from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
     from pydantic import Field, ConfigDict
+
     LANGCHAIN_AVAILABLE = True
 except ImportError:
     BaseRetriever = object  # type: ignore[misc,assignment]
@@ -30,6 +31,7 @@ except ImportError:
 
     def Field(*a, **kw):  # type: ignore[no-redef]
         return None
+
     ConfigDict = dict  # type: ignore[misc,assignment]
     LANGCHAIN_AVAILABLE = False
 
@@ -37,6 +39,7 @@ except ImportError:
 @dataclass
 class RTMDKDocument:
     """Document wrapper for LangChain compatibility (legacy, kept for BC)."""
+
     page_content: str
     metadata: Dict[str, Any]
     score: float = 0.0
@@ -72,22 +75,21 @@ class RTMDKRetriever(BaseRetriever if LANGCHAIN_AVAILABLE else object):  # type:
 
     # --- BaseRetriever abstract methods ---
 
-    def _get_relevant_documents(
-        self, query: str, *, run_manager: "CallbackManagerForRetrieverRun"
-    ) -> List["Document"]:
+    def _get_relevant_documents(self, query: str, *, run_manager: "CallbackManagerForRetrieverRun") -> List["Document"]:
         """Sync retrieval — called by invoke(), batch(), stream()."""
-        ctx = self.memory.load_memory_variables({
-            "input": query,
-            "session_id": self.session_id,
-        })
+        ctx = self.memory.load_memory_variables(
+            {
+                "input": query,
+                "session_id": self.session_id,
+            }
+        )
         return self._parse_context(ctx.get("rtmdk_context", ""))
 
     async def _aget_relevant_documents(
         self, query: str, *, run_manager: "AsyncCallbackManagerForRetrieverRun"
     ) -> List["Document"]:
         """Async retrieval — called by ainvoke(), abatch(), astream()."""
-        return self._get_relevant_documents(
-            query, run_manager=run_manager)  # type: ignore[arg-type]
+        return self._get_relevant_documents(query, run_manager=run_manager)  # type: ignore[arg-type]
 
     # --- Internal helpers ---
 
@@ -98,9 +100,7 @@ class RTMDKRetriever(BaseRetriever if LANGCHAIN_AVAILABLE else object):  # type:
 
         docs: List["Document"] = []
         # Try structured format: [ATTN:x.xx][SAL:y.yy][TIER:...] text
-        pattern = (
-            r"\[ATTN:([0-9.]+)\](?:\[SAL:([0-9.]+)\])?(?:\[TIER:(\w+)\])?\s*(.+?)(?=\[ATTN:|$)"
-        )
+        pattern = r"\[ATTN:([0-9.]+)\](?:\[SAL:([0-9.]+)\])?(?:\[TIER:(\w+)\])?\s*(.+?)(?=\[ATTN:|$)"
         matches = re.findall(pattern, context, re.DOTALL)
 
         if matches and LANGCHAIN_AVAILABLE and Document is not dict:
@@ -109,31 +109,33 @@ class RTMDKRetriever(BaseRetriever if LANGCHAIN_AVAILABLE else object):  # type:
                 if text:
                     score = float(attn)
                     if score >= self.score_threshold:
-                        docs.append(Document(
-                            page_content=text,
-                            metadata={
-                                "attention": score,
-                                "salience": float(sal) if sal else 0.0,
-                                "tier": tier or "",
-                                "source": "rtmdk",
-                            },
-                        ))
+                        docs.append(
+                            Document(
+                                page_content=text,
+                                metadata={
+                                    "attention": score,
+                                    "salience": float(sal) if sal else 0.0,
+                                    "tier": tier or "",
+                                    "source": "rtmdk",
+                                },
+                            )
+                        )
         elif context.strip():
             # Fallback: whole context as one document
-            docs.append(Document(
-                page_content=context.strip(),
-                metadata={"source": "rtmdk"},
-            ))
+            docs.append(
+                Document(
+                    page_content=context.strip(),
+                    metadata={"source": "rtmdk"},
+                )
+            )
 
-        return docs[:self.top_k]
+        return docs[: self.top_k]
 
     # --- Legacy compatibility ---
 
     def get_relevant_documents(self, query: str) -> List[RTMDKDocument]:
         """Legacy interface returning RTMDKDocument (kept for backwards compat)."""
-        docs = self._get_relevant_documents(
-            query, run_manager=None  # type: ignore[arg-type]
-        )
+        docs = self._get_relevant_documents(query, run_manager=None)  # type: ignore[arg-type]
         return [
             RTMDKDocument(
                 page_content=d.page_content,
@@ -145,9 +147,7 @@ class RTMDKRetriever(BaseRetriever if LANGCHAIN_AVAILABLE else object):  # type:
 
     async def aget_relevant_documents(self, query: str) -> List[RTMDKDocument]:
         """Async legacy interface."""
-        docs = await self._aget_relevant_documents(
-            query, run_manager=None  # type: ignore[arg-type]
-        )
+        docs = await self._aget_relevant_documents(query, run_manager=None)  # type: ignore[arg-type]
         return [
             RTMDKDocument(
                 page_content=d.page_content,
@@ -162,8 +162,7 @@ class RTMDKRetriever(BaseRetriever if LANGCHAIN_AVAILABLE else object):  # type:
         return "rtmdk"
 
 
-class RTMDKChatMessageHistory(
-        BaseChatMessageHistory if LANGCHAIN_AVAILABLE else object):  # type: ignore[misc]
+class RTMDKChatMessageHistory(BaseChatMessageHistory if LANGCHAIN_AVAILABLE else object):  # type: ignore[misc]
     """LangChain-compatible chat message history backed by RTMDK.
 
     Implements BaseChatMessageHistory with full message persistence into
@@ -220,10 +219,7 @@ class RTMDKChatMessageHistory(
             role = getattr(message, "type", "user")
 
         content = getattr(message, "content", str(message))
-        self.memory.save_context(
-            {"input": content, "session_id": self.session_id, "role": role},
-            {"output": content}
-        )
+        self.memory.save_context({"input": content, "session_id": self.session_id, "role": role}, {"output": content})
 
     def clear(self) -> None:
         """Clear in-memory message cache.
@@ -238,9 +234,7 @@ class RTMDKChatMessageHistory(
     def add_user_message(self, message: Any) -> None:
         """Add a user message."""
         if LANGCHAIN_AVAILABLE and HumanMessage is not None:
-            msg = message if isinstance(
-                message, HumanMessage) else HumanMessage(
-                content=message)
+            msg = message if isinstance(message, HumanMessage) else HumanMessage(content=message)
         else:
             msg = message
         self.add_messages([msg])  # type: ignore[list-item]
@@ -248,9 +242,7 @@ class RTMDKChatMessageHistory(
     def add_ai_message(self, message: Any) -> None:
         """Add an AI message."""
         if LANGCHAIN_AVAILABLE and AIMessage is not None:
-            msg = message if isinstance(
-                message, AIMessage) else AIMessage(
-                content=message)
+            msg = message if isinstance(message, AIMessage) else AIMessage(content=message)
         else:
             msg = message
         self.add_messages([msg])  # type: ignore[list-item]
@@ -273,15 +265,14 @@ class RTMDKVectorStore:
         """Add texts to the vector store."""
         for i, text in enumerate(texts):
             metadata = metadatas[i] if metadatas else {}
-            self.memory.save_context(
-                {"input": text, "session_id": "vectorstore", **metadata},
-                {"output": text}
-            )
+            self.memory.save_context({"input": text, "session_id": "vectorstore", **metadata}, {"output": text})
 
     def query(self, query: str, top_k: int = 5) -> List[Dict]:
         """Query the vector store."""
-        ctx = self.memory.load_memory_variables({
-            "input": query,
-            "session_id": "vectorstore",
-        })
+        ctx = self.memory.load_memory_variables(
+            {
+                "input": query,
+                "session_id": "vectorstore",
+            }
+        )
         return [{"content": ctx.get("rtmdk_context", "")}]

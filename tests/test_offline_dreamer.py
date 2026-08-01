@@ -11,9 +11,10 @@ from rtmdk.production.offline_dreamer import OfflineDreamer, DreamTask
 
 def _make_embedder(dim: int = 64):
     def embed(text: str) -> np.ndarray:
-        h = hash(text) % (2 ** 32)
+        h = hash(text) % (2**32)
         rng = np.random.default_rng(h)
         return rng.standard_normal(dim, dtype=np.float32)
+
     return embed
 
 
@@ -41,8 +42,10 @@ class TestOfflineDreamer:
 
     def test_task_execution(self):
         called = []
+
         def dummy():
             called.append(1)
+
         dreamer = OfflineDreamer()
         dreamer._task_queue.put((-1, DreamTask("test", dummy, priority=1)))
         dreamer.start()

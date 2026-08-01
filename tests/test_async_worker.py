@@ -8,9 +8,10 @@ from rtmdk.memory.config import RTMDKConfig
 
 def _make_embedder(dim: int = 64):
     def embed(text: str) -> np.ndarray:
-        h = hash(text) % (2 ** 32)
+        h = hash(text) % (2**32)
         rng = np.random.default_rng(h)
         return rng.standard_normal(dim, dtype=np.float32)
+
     return embed
 
 
@@ -19,8 +20,12 @@ class TestAsyncWorker:
         """When async_pipeline=False queue_add_nodes falls back to sync."""
         wal_path = str(tmp_path / "wal.jsonl")
         cfg = RTMDKConfig(
-            latent_dim=64, use_hnsw=False, hyperbolic=False,
-            quantization="none", async_pipeline=False, enable_engrams=False,
+            latent_dim=64,
+            use_hnsw=False,
+            hyperbolic=False,
+            quantization="none",
+            async_pipeline=False,
+            enable_engrams=False,
         )
         embedder = _make_embedder(64)
         mem = RTMDKMemory(config=cfg, embedder=embedder, wal_path=wal_path)
@@ -34,8 +39,12 @@ class TestAsyncWorker:
         """Async pipeline: queue_add_nodes + worker eventually ingests."""
         wal_path = str(tmp_path / "wal.jsonl")
         cfg = RTMDKConfig(
-            latent_dim=64, use_hnsw=False, hyperbolic=False,
-            quantization="none", async_pipeline=True, enable_engrams=False,
+            latent_dim=64,
+            use_hnsw=False,
+            hyperbolic=False,
+            quantization="none",
+            async_pipeline=True,
+            enable_engrams=False,
         )
         embedder = _make_embedder(64)
         mem = RTMDKMemory(config=cfg, embedder=embedder, wal_path=wal_path)
@@ -61,16 +70,21 @@ class TestAsyncWorker:
         """When queue is full, fallback to synchronous path."""
         wal_path = str(tmp_path / "wal.jsonl")
         cfg = RTMDKConfig(
-            latent_dim=64, use_hnsw=False, hyperbolic=False,
-            quantization="none", async_pipeline=True, save_queue_size=1,
+            latent_dim=64,
+            use_hnsw=False,
+            hyperbolic=False,
+            quantization="none",
+            async_pipeline=True,
+            save_queue_size=1,
             enable_engrams=False,
         )
         embedder = _make_embedder(64)
         mem = RTMDKMemory(config=cfg, embedder=embedder, wal_path=wal_path)
 
         # Fill the queue without consuming
-        mem.field.save_q.put_nowait({"embeddings": np.zeros(
-            (1, 64), dtype=np.float32), "contents": [{"text": "filler"}]})
+        mem.field.save_q.put_nowait(
+            {"embeddings": np.zeros((1, 64), dtype=np.float32), "contents": [{"text": "filler"}]}
+        )
 
         n = 3
         embeddings = np.random.randn(n, 64).astype(np.float32)

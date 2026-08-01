@@ -1,8 +1,8 @@
 """Integration tests for Tiered Storage v2 (memmap-based) with RTMDKField."""
+
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from rtmdk.memory.config import RTMDKConfig
 from rtmdk.memory.field import RTMDKField
@@ -20,6 +20,7 @@ class TestTieredStorageV2Integration:
         )
         field = RTMDKField(config=cfg)
         from rtmdk.storage.tiered_adapter import TieredNodeStoreAdapter
+
         assert isinstance(field.nodes, TieredNodeStoreAdapter)
 
     def test_add_and_query_node_with_tiered_v2(self, tmp_path):
@@ -46,7 +47,7 @@ class TestTieredStorageV2Integration:
             max_nodes=100,
             tiered_storage_v2_enabled=True,
             tiered_storage_path=str(tmp_path / "cold"),
-            tiered_hot_pct=0.05,   # hot = 5 nodes
+            tiered_hot_pct=0.05,  # hot = 5 nodes
             tiered_warm_pct=0.10,  # warm = 10 nodes
             use_hnsw=False,
         )

@@ -81,7 +81,7 @@ class RetentionManager:
                 key=lambda item: getattr(item[1], "last_accessed", 0) or getattr(item[1], "created_at", 0) or 0,
                 reverse=True,
             )
-            to_remove.extend(nid for nid, _ in sorted_nodes[self.policy.max_nodes:])
+            to_remove.extend(nid for nid, _ in sorted_nodes[self.policy.max_nodes :])
 
         if to_remove:
             self.field.delete_nodes(list(set(to_remove)))

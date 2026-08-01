@@ -39,9 +39,7 @@ class APIKeyManager:
 
     def __init__(self, storage_path: Optional[str] = None):
         if storage_path is None:
-            storage_path = str(
-                Path.home() / ".rtmdk" / "api_keys.json"
-            )
+            storage_path = str(Path.home() / ".rtmdk" / "api_keys.json")
         self.storage_path = storage_path
         Path(self.storage_path).parent.mkdir(parents=True, exist_ok=True)
         # key_hash -> APIKeyRecord
@@ -63,9 +61,7 @@ class APIKeyManager:
             pass
 
     def _save(self):
-        payload = {
-            h: asdict(r) for h, r in self._keys.items()
-        }
+        payload = {h: asdict(r) for h, r in self._keys.items()}
         with open(self.storage_path, "w", encoding="utf-8") as fh:
             json.dump(payload, fh, ensure_ascii=False, indent=2)
 
@@ -75,10 +71,7 @@ class APIKeyManager:
     @staticmethod
     def _hash_key(raw_key: str) -> str:
         """HMAC-SHA256 with a fixed secret derived from process env."""
-        secret = os.getenv(
-            "RTMDK_KEY_SECRET",
-            "rtmdk-default-secret-change-me"
-        ).encode()
+        secret = os.getenv("RTMDK_KEY_SECRET", "rtmdk-default-secret-change-me").encode()
         return hmac.new(secret, raw_key.encode(), hashlib.sha256).hexdigest()
 
     @staticmethod

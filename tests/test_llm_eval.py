@@ -26,11 +26,7 @@ class TestLLMEvaluator:
 
     @patch("requests.post")
     def test_with_api_key(self, mock_post):
-        mock_post.return_value = MagicMock(
-            json=lambda: {
-                "choices": [{"message": {"content": "The answer is Y"}}]
-            }
-        )
+        mock_post.return_value = MagicMock(json=lambda: {"choices": [{"message": {"content": "The answer is Y"}}]})
         mem = _make_mem()
         evaluator = LLMEvaluator(memory=mem, api_key="test-key")
         result = evaluator.evaluate_query("What is X?", "The answer is Y")
@@ -46,11 +42,7 @@ class TestLLMEvaluator:
 
     @patch("requests.post")
     def test_evaluate_dataset(self, mock_post, tmp_path):
-        mock_post.return_value = MagicMock(
-            json=lambda: {
-                "choices": [{"message": {"content": "answer"}}]
-            }
-        )
+        mock_post.return_value = MagicMock(json=lambda: {"choices": [{"message": {"content": "answer"}}]})
         mem = _make_mem()
         evaluator = LLMEvaluator(memory=mem, api_key="test-key")
         dataset = [

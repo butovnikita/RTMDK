@@ -76,7 +76,6 @@ class TestStreamingPipelineExecutor:
         assert "total_latency_ms" in events[-1]
 
     def test_stream_no_memory_returns_error(self):
-        from rtmdk.pipeline.base import PipelineContext
         from rtmdk.pipeline.stages import EmbedStage
 
         class FakeEmbedder:
@@ -103,8 +102,8 @@ class TestServerSSEEndpoint:
             assert resp.headers["content-type"] == "text/event-stream; charset=utf-8"
 
             body = resp.text
-            lines = [l for l in body.split("\n") if l.startswith("data: ")]
-            events = [json.loads(l[6:]) for l in lines]
+            lines = [ln for ln in body.split("\n") if ln.startswith("data: ")]
+            events = [json.loads(ln[6:]) for ln in lines]
 
             assert events[0]["event"] == "pipeline_started"
             assert events[-1]["event"] == "pipeline_completed"

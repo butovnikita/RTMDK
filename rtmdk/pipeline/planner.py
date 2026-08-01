@@ -8,6 +8,7 @@ Example savings:
 - Short query (<10 tokens): skip explain → ~15% latency reduction
 - High-confidence retrieve (>0.9 top score): skip rerank → ~25% latency reduction
 """
+
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set
@@ -51,12 +52,12 @@ class QueryPlanner:
 
     # Default stage costs (latency ms, relative cost units)
     DEFAULT_STAGE_COSTS: Dict[str, tuple[float, float]] = {
-        "embed": (15.0, 0.30),      # GPU inference
-        "route": (0.1, 0.01),       # Lightweight classifier
-        "retrieve": (1.0, 0.05),    # Vector search
-        "rerank": (8.0, 0.20),      # Cross-encoder / sentence model
-        "calibrate": (0.5, 0.02),   # Conformal prediction
-        "explain": (2.0, 0.08),     # LLM call or template rendering
+        "embed": (15.0, 0.30),  # GPU inference
+        "route": (0.1, 0.01),  # Lightweight classifier
+        "retrieve": (1.0, 0.05),  # Vector search
+        "rerank": (8.0, 0.20),  # Cross-encoder / sentence model
+        "calibrate": (0.5, 0.02),  # Conformal prediction
+        "explain": (2.0, 0.08),  # LLM call or template rendering
     }
 
     def __init__(
@@ -120,10 +121,7 @@ class QueryPlanner:
         """Generate plans for a batch of queries."""
         routes = routes or [None] * len(queries)
         top_ks = top_ks or [5] * len(queries)
-        return [
-            self.plan(q, r, k)
-            for q, r, k in zip(queries, routes, top_ks)
-        ]
+        return [self.plan(q, r, k) for q, r, k in zip(queries, routes, top_ks)]
 
     def report_savings(self, plan: ExecutionPlan, baseline_stages: Optional[List[str]] = None) -> Dict[str, float]:
         """Report latency/cost savings vs baseline (all stages)."""

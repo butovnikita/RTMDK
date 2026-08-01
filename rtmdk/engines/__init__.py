@@ -1,4 +1,5 @@
 """rtmdk/engines/__init__.py"""
+
 from .causal import CausalInferenceEngine
 from .causal_traversal import CausalTraversalEngine, CausalExplanationGenerator
 from .predictive import PredictiveCodingModel
@@ -11,12 +12,15 @@ from .neuro_symbolic_prover import NeuroSymbolicProver, LogicalRule
 
 __all__ = [
     "CausalInferenceEngine",
-    "CausalTraversalEngine", "CausalExplanationGenerator",
+    "CausalTraversalEngine",
+    "CausalExplanationGenerator",
     "PredictiveCodingModel",
     "ScenarioPlanner",
     "DifferentialPrivacy",
     "NeuralODEDynamics",
     "SSMDynamics",
-    "TrustConsensusEngine", "TrustDAG",
-    "NeuroSymbolicProver", "LogicalRule",
+    "TrustConsensusEngine",
+    "TrustDAG",
+    "NeuroSymbolicProver",
+    "LogicalRule",
 ]

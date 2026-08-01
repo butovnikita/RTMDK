@@ -136,7 +136,7 @@ class SmartPruner:
         """Check if a node should be pruned."""
         # Check age
         age = time.time() - node.created_at
-        tier = getattr(node, 'tier', 'semantic')
+        tier = getattr(node, "tier", "semantic")
 
         # Get tier-specific thresholds
         tier_config = self.tier_overrides.get(tier, {})
@@ -166,16 +166,18 @@ class SmartPruner:
         for nid in node_ids:
             node = self.memory.field.nodes.get(nid)
             if node:
-                data.append({
-                    "id": nid,
-                    "text": node.content.get("text", ""),
-                    "salience": node.salience,
-                    "amplitude": node.amplitude,
-                    "tier": getattr(node, 'tier', 'unknown'),
-                    "created_at": node.created_at,
-                })
+                data.append(
+                    {
+                        "id": nid,
+                        "text": node.content.get("text", ""),
+                        "salience": node.salience,
+                        "amplitude": node.amplitude,
+                        "tier": getattr(node, "tier", "unknown"),
+                        "created_at": node.created_at,
+                    }
+                )
 
-        with open(filepath, 'w') as f:
+        with open(filepath, "w") as f:
             json.dump(data, f, indent=2)
 
         return str(filepath)

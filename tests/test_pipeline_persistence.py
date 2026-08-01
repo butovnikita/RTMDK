@@ -1,9 +1,7 @@
 """Tests for pipeline metrics persistence."""
 
-import json
 import os
 
-import pytest
 
 from rtmdk.pipeline.persistence import PipelineMetricsStore
 
@@ -24,22 +22,26 @@ class TestPipelineMetricsStore:
     def test_summary(self, tmp_path):
         path = tmp_path / "metrics.jsonl"
         store = PipelineMetricsStore(str(path))
-        store.write({
-            "query_text": "q1",
-            "total_latency_ms": 10.0,
-            "stages": [
-                {"stage": "embed", "latency_ms": 5.0, "error": None, "degraded": False},
-                {"stage": "retrieve", "latency_ms": 5.0, "error": None, "degraded": False},
-            ],
-        })
-        store.write({
-            "query_text": "q2",
-            "total_latency_ms": 20.0,
-            "stages": [
-                {"stage": "embed", "latency_ms": 10.0, "error": None, "degraded": False},
-                {"stage": "retrieve", "latency_ms": 10.0, "error": "boom", "degraded": True},
-            ],
-        })
+        store.write(
+            {
+                "query_text": "q1",
+                "total_latency_ms": 10.0,
+                "stages": [
+                    {"stage": "embed", "latency_ms": 5.0, "error": None, "degraded": False},
+                    {"stage": "retrieve", "latency_ms": 5.0, "error": None, "degraded": False},
+                ],
+            }
+        )
+        store.write(
+            {
+                "query_text": "q2",
+                "total_latency_ms": 20.0,
+                "stages": [
+                    {"stage": "embed", "latency_ms": 10.0, "error": None, "degraded": False},
+                    {"stage": "retrieve", "latency_ms": 10.0, "error": "boom", "degraded": True},
+                ],
+            }
+        )
 
         summary = store.summary()
         assert summary["queries"] == 2
@@ -57,22 +59,26 @@ class TestPipelineMetricsStore:
     def test_summary_stage_filter(self, tmp_path):
         path = tmp_path / "metrics.jsonl"
         store = PipelineMetricsStore(str(path))
-        store.write({
-            "query_text": "q1",
-            "total_latency_ms": 10.0,
-            "stages": [
-                {"stage": "embed", "latency_ms": 5.0, "error": None, "degraded": False},
-                {"stage": "retrieve", "latency_ms": 5.0, "error": None, "degraded": False},
-            ],
-        })
-        store.write({
-            "query_text": "q2",
-            "total_latency_ms": 20.0,
-            "stages": [
-                {"stage": "embed", "latency_ms": 10.0, "error": None, "degraded": False},
-                {"stage": "retrieve", "latency_ms": 10.0, "error": "boom", "degraded": True},
-            ],
-        })
+        store.write(
+            {
+                "query_text": "q1",
+                "total_latency_ms": 10.0,
+                "stages": [
+                    {"stage": "embed", "latency_ms": 5.0, "error": None, "degraded": False},
+                    {"stage": "retrieve", "latency_ms": 5.0, "error": None, "degraded": False},
+                ],
+            }
+        )
+        store.write(
+            {
+                "query_text": "q2",
+                "total_latency_ms": 20.0,
+                "stages": [
+                    {"stage": "embed", "latency_ms": 10.0, "error": None, "degraded": False},
+                    {"stage": "retrieve", "latency_ms": 10.0, "error": "boom", "degraded": True},
+                ],
+            }
+        )
 
         summary = store.summary(stage_filter="embed")
         assert summary["queries"] == 2
@@ -82,6 +88,7 @@ class TestPipelineMetricsStore:
 
     def test_summary_since_filter(self, tmp_path):
         import time
+
         path = tmp_path / "metrics.jsonl"
         store = PipelineMetricsStore(str(path))
         store.write({"query_text": "old", "total_latency_ms": 1.0, "stages": []})

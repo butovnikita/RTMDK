@@ -9,9 +9,10 @@ from rtmdk.memory.config import RTMDKConfig
 
 def _make_embedder(dim: int = 64):
     def embed(text: str) -> np.ndarray:
-        h = hash(text) % (2 ** 32)
+        h = hash(text) % (2**32)
         rng = np.random.default_rng(h)
         return rng.standard_normal(dim, dtype=np.float32)
+
     return embed
 
 
@@ -22,18 +23,19 @@ pytest.importorskip("langchain_core", reason="langchain-core not installed")
 @pytest.fixture
 def memory():
     cfg = RTMDKConfig(
-        latent_dim=64, use_hnsw=False, hyperbolic=False,
-        quantization="none", enable_engrams=False,
+        latent_dim=64,
+        use_hnsw=False,
+        hyperbolic=False,
+        quantization="none",
+        enable_engrams=False,
     )
     return RTMDKMemory(config=cfg, embedder=_make_embedder(64), wal_path=None)
 
 
 class TestRTMDKRetriever:
     def test_get_relevant_documents(self, memory):
-        memory.save_context({"input": "coffee is delicious",
-                            "session_id": "s1"}, {"output": ""})
-        memory.save_context(
-            {"input": "tea is warm", "session_id": "s1"}, {"output": ""})
+        memory.save_context({"input": "coffee is delicious", "session_id": "s1"}, {"output": ""})
+        memory.save_context({"input": "tea is warm", "session_id": "s1"}, {"output": ""})
         retriever = RTMDKRetriever(memory=memory, top_k=2)
         docs = retriever.get_relevant_documents("coffee")
         assert len(docs) > 0
@@ -41,25 +43,21 @@ class TestRTMDKRetriever:
         assert "coffee" in docs[0].page_content.lower()
 
     def test_score_threshold(self, memory):
-        memory.save_context(
-            {"input": "very specific topic xyz", "session_id": "s1"}, {"output": ""})
-        retriever = RTMDKRetriever(
-            memory=memory, top_k=5, score_threshold=0.99)
+        memory.save_context({"input": "very specific topic xyz", "session_id": "s1"}, {"output": ""})
+        retriever = RTMDKRetriever(memory=memory, top_k=5, score_threshold=0.99)
         docs = retriever.get_relevant_documents("completely unrelated query")
         assert len(docs) == 0
 
     def test_top_k_limit(self, memory):
         for i in range(5):
-            memory.save_context(
-                {"input": f"doc {i}", "session_id": "s1"}, {"output": ""})
+            memory.save_context({"input": f"doc {i}", "session_id": "s1"}, {"output": ""})
         retriever = RTMDKRetriever(memory=memory, top_k=2)
         docs = retriever.get_relevant_documents("doc")
         assert len(docs) <= 2
 
     @pytest.mark.asyncio
     async def test_aget_relevant_documents(self, memory):
-        memory.save_context(
-            {"input": "async test", "session_id": "s1"}, {"output": ""})
+        memory.save_context({"input": "async test", "session_id": "s1"}, {"output": ""})
         retriever = RTMDKRetriever(memory=memory)
         docs = await retriever.aget_relevant_documents("async")
         assert len(docs) >= 1
@@ -69,8 +67,7 @@ class TestRTMDKRetrieverLCEL:
     """LCEL compatibility: invoke, ainvoke, batch, abatch."""
 
     def test_invoke(self, memory):
-        memory.save_context({"input": "LCEL test query",
-                            "session_id": "lcel"}, {"output": ""})
+        memory.save_context({"input": "LCEL test query", "session_id": "lcel"}, {"output": ""})
         retriever = RTMDKRetriever(memory=memory, top_k=3)
         docs = retriever.invoke("LCEL test")
         assert isinstance(docs, list)
@@ -81,8 +78,7 @@ class TestRTMDKRetrieverLCEL:
 
     @pytest.mark.asyncio
     async def test_ainvoke(self, memory):
-        memory.save_context({"input": "async LCEL test",
-                            "session_id": "lcel"}, {"output": ""})
+        memory.save_context({"input": "async LCEL test", "session_id": "lcel"}, {"output": ""})
         retriever = RTMDKRetriever(memory=memory)
         docs = await retriever.ainvoke("async LCEL")
         assert isinstance(docs, list)
@@ -90,11 +86,9 @@ class TestRTMDKRetrieverLCEL:
 
     def test_batch(self, memory):
         for i in range(3):
-            memory.save_context(
-                {"input": f"batch doc {i}", "session_id": "lcel"}, {"output": ""})
+            memory.save_context({"input": f"batch doc {i}", "session_id": "lcel"}, {"output": ""})
         retriever = RTMDKRetriever(memory=memory, top_k=2)
-        results = retriever.batch(
-            ["batch doc 0", "batch doc 1", "batch doc 2"])
+        results = retriever.batch(["batch doc 0", "batch doc 1", "batch doc 2"])
         assert len(results) == 3
         for docs in results:
             assert isinstance(docs, list)
@@ -102,8 +96,7 @@ class TestRTMDKRetrieverLCEL:
 
     @pytest.mark.asyncio
     async def test_abatch(self, memory):
-        memory.save_context(
-            {"input": "abatch test", "session_id": "lcel"}, {"output": ""})
+        memory.save_context({"input": "abatch test", "session_id": "lcel"}, {"output": ""})
         retriever = RTMDKRetriever(memory=memory)
         results = await retriever.abatch(["abatch test", "nothing"])
         assert len(results) == 2
@@ -112,8 +105,8 @@ class TestRTMDKRetrieverLCEL:
     def test_pipe_composition(self, memory):
         """Test that retriever can be composed with RunnableLambda (| operator)."""
         from langchain_core.runnables import RunnableLambda
-        memory.save_context(
-            {"input": "pipe test", "session_id": "lcel"}, {"output": ""})
+
+        memory.save_context({"input": "pipe test", "session_id": "lcel"}, {"output": ""})
         retriever = RTMDKRetriever(memory=memory)
 
         def pick_first(docs):
@@ -150,12 +143,15 @@ class TestRTMDKChatMessageHistory:
 
     def test_add_messages_bulk(self, memory):
         from langchain_core.messages import HumanMessage, AIMessage
+
         history = RTMDKChatMessageHistory(memory=memory, session_id="bulk")
-        history.add_messages([
-            HumanMessage(content="msg1"),
-            AIMessage(content="msg2"),
-            HumanMessage(content="msg3"),
-        ])
+        history.add_messages(
+            [
+                HumanMessage(content="msg1"),
+                AIMessage(content="msg2"),
+                HumanMessage(content="msg3"),
+            ]
+        )
         assert len(history.messages) == 3
         assert history.messages[0].content == "msg1"
         assert history.messages[1].content == "msg2"

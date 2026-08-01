@@ -22,10 +22,10 @@ import numpy as np
 from rtmdk.memory.core import RTMDKMemory, MemoryNode
 from rtmdk.production.bm25_fallback import BM25FallbackRetriever
 
-
 # ============================================================================
 # 1. HYBRID RETRIEVAL (Resonance + BM25 + Cosine)
 # ============================================================================
+
 
 class HybridRetriever:
     """Combines RTMDK resonance, BM25, and cosine similarity."""
@@ -58,8 +58,7 @@ class HybridRetriever:
     ) -> List[Tuple[str, float, MemoryNode]]:
         """Hybrid retrieval combining all three signals."""
         # Step 1: Get RTMDK resonance results
-        rtmdk_results = self._get_rtmdk_results(
-            query, query_embedding, top_k * 3)
+        rtmdk_results = self._get_rtmdk_results(query, query_embedding, top_k * 3)
 
         # Step 2: Get BM25 results
         bm25_results = self.bm25.search(query, top_k * 3)
@@ -70,8 +69,7 @@ class HybridRetriever:
         # RTMDK resonance scores
         max_rtmdk = max((r[1] for r in rtmdk_results), default=1.0)
         for nid, score, node in rtmdk_results:
-            all_scores.setdefault(
-                nid, {"rtmdk": 0.0, "bm25": 0.0, "cosine": 0.0, "node": node})
+            all_scores.setdefault(nid, {"rtmdk": 0.0, "bm25": 0.0, "cosine": 0.0, "node": node})
             all_scores[nid]["rtmdk"] = score / max(max_rtmdk, 1e-8)
 
         # BM25 scores
@@ -80,9 +78,7 @@ class HybridRetriever:
             # BM25 returns doc_id, find corresponding node
             node = self._find_node_by_bm25_id(nid)
             if node:
-                all_scores.setdefault(
-                    node.id, {
-                        "rtmdk": 0.0, "bm25": 0.0, "cosine": 0.0, "node": node})
+                all_scores.setdefault(node.id, {"rtmdk": 0.0, "bm25": 0.0, "cosine": 0.0, "node": node})
                 all_scores[node.id]["bm25"] = score / max(max_bm25, 1e-8)
 
         # Cosine similarity scores
@@ -90,29 +86,19 @@ class HybridRetriever:
         for nid in all_scores:
             if nid in self._embeddings_cache:
                 node_emb = self._embeddings_cache[nid]
-                cos_sim = float(np.dot(query_embedding, node_emb) /
-                                (query_norm * np.linalg.norm(node_emb) + 1e-8))
-                all_scores[nid]["cosine"] = max(
-                    0.0, (cos_sim + 1.0) / 2.0)  # Normalize to [0, 1]
+                cos_sim = float(np.dot(query_embedding, node_emb) / (query_norm * np.linalg.norm(node_emb) + 1e-8))
+                all_scores[nid]["cosine"] = max(0.0, (cos_sim + 1.0) / 2.0)  # Normalize to [0, 1]
 
         # Combined score
         combined = []
         for nid, scores in all_scores.items():
-            hybrid = (
-                self.w_res * scores["rtmdk"] +
-                self.w_bm25 * scores["bm25"] +
-                self.w_cos * scores["cosine"]
-            )
+            hybrid = self.w_res * scores["rtmdk"] + self.w_bm25 * scores["bm25"] + self.w_cos * scores["cosine"]
             combined.append((nid, hybrid, scores["node"]))
 
         combined.sort(key=lambda x: x[1], reverse=True)
         return combined[:top_k]
 
-    def _get_rtmdk_results(
-            self,
-            query: str,
-            query_embedding: np.ndarray,
-            top_k: int):
+    def _get_rtmdk_results(self, query: str, query_embedding: np.ndarray, top_k: int):
         """Get standard RTMDK results."""
         # Parse results from context (simplified — just get from field.query)
         phase = self.memory._get_phase("hybrid", query_embedding)
@@ -135,6 +121,7 @@ class HybridRetriever:
 # ============================================================================
 # 2. CONFIDENCE-AWARE FALLBACK
 # ============================================================================
+
 
 class ConfidenceAwareFallback:
     """Returns 'I don't know' when confidence is too low."""
@@ -184,6 +171,7 @@ class ConfidenceAwareFallback:
 # 3. QUERY EXPANSION WITH RTMDK CONTEXT
 # ============================================================================
 
+
 class QueryExpander:
     """Expands vague queries using RTMDK context."""
 
@@ -193,8 +181,7 @@ class QueryExpander:
     def expand(self, query: str, top_k_context: int = 3) -> str:
         """Expand query with related context keywords."""
         # Get initial context
-        ctx = self.memory.load_memory_variables(
-            {"input": query, "session_id": "expand"})
+        ctx = self.memory.load_memory_variables({"input": query, "session_id": "expand"})
         context = ctx.get("rtmdk_context", "")
 
         if not context or context in ("No relevant memory.", "[]"):
@@ -213,39 +200,41 @@ class QueryExpander:
     def _extract_significant_words(text: str) -> List[str]:
         """Extract meaningful words from context, ignoring scores and formatting."""
         # Remove score tags like [R:0.42], [ATTN:0.5], etc.
-        text = re.sub(r'\[[\w:.\s]+\]', ' ', text)
+        text = re.sub(r"\[[\w:.\s]+\]", " ", text)
         # Tokenize
-        tokens = re.findall(r'[a-zа-яё]{4,}', text.lower())
+        tokens = re.findall(r"[a-zа-яё]{4,}", text.lower())
         # Remove common words
         stopwords = {
-            'the',
-            'this',
-            'that',
-            'with',
-            'from',
-            'have',
-            'been',
-            'were',
-            'what',
-            'which',
-            'their',
-            'there',
-            'about',
-            'would',
-            'could',
-            'should',
-            'these',
-            'those',
-            'other',
-            'some',
-            'such',
-            'only'}
+            "the",
+            "this",
+            "that",
+            "with",
+            "from",
+            "have",
+            "been",
+            "were",
+            "what",
+            "which",
+            "their",
+            "there",
+            "about",
+            "would",
+            "could",
+            "should",
+            "these",
+            "those",
+            "other",
+            "some",
+            "such",
+            "only",
+        }
         return [t for t in tokens if t not in stopwords][:10]
 
 
 # ============================================================================
 # 4. ADAPTIVE RETRIEVAL DEPTH
 # ============================================================================
+
 
 class AdaptiveDepthRetriever:
     """Dynamically adjusts top_k based on score distribution."""
@@ -302,6 +291,7 @@ class AdaptiveDepthRetriever:
 # ============================================================================
 # 5. TEMPORAL DECAY WITH LEARNING
 # ============================================================================
+
 
 class TemporalDecayLearner:
     """Adapts decay rate based on user feedback."""
@@ -360,6 +350,7 @@ class TemporalDecayLearner:
 # 6. CAUSAL GRAPH-AUGMENTED RETRIEVAL
 # ============================================================================
 
+
 class CausalAugmentedRetriever:
     """Retrieval augmented by causal graph traversal."""
 
@@ -383,8 +374,7 @@ class CausalAugmentedRetriever:
         # Step 1: Get initial results
         phase = self.memory._get_phase("causal", query_embedding)
         assert self.memory.field is not None
-        initial_results = self.memory.field.query(
-            query_embedding, phase, top_k=top_k * 2)
+        initial_results = self.memory.field.query(query_embedding, phase, top_k=top_k * 2)
 
         if not initial_results:
             return []
@@ -392,8 +382,7 @@ class CausalAugmentedRetriever:
         # Step 2: Traverse causal graph from top results
         causal_bonus: Dict[str, float] = {}
         for nid, score, node in initial_results[:3]:  # Top 3 seed nodes
-            self._traverse_causal_graph(
-                nid, causal_bonus, depth=0, bonus=score)
+            self._traverse_causal_graph(nid, causal_bonus, depth=0, bonus=score)
 
         # Step 3: Combine initial scores with causal bonus
         combined = {}
@@ -434,29 +423,27 @@ class CausalAugmentedRetriever:
             return
 
         # Get causal parents and effects
-        causal_parents = getattr(node, 'causal_parents', [])
-        causal_effects = getattr(node, 'causal_strength', {})
+        causal_parents = getattr(node, "causal_parents", [])
+        causal_effects = getattr(node, "causal_strength", {})
 
         # Apply bonus to causal parents
         for parent_id in causal_parents:
             strength = causal_effects.get(parent_id, 0.5)
-            parent_bonus = bonus * strength * \
-                (0.5 ** depth)  # Decay with depth
+            parent_bonus = bonus * strength * (0.5**depth)  # Decay with depth
             bonuses[parent_id] = bonuses.get(parent_id, 0.0) + parent_bonus
-            self._traverse_causal_graph(
-                parent_id, bonuses, depth + 1, parent_bonus)
+            self._traverse_causal_graph(parent_id, bonuses, depth + 1, parent_bonus)
 
         # Apply bonus to causal effects
         for effect_id, strength in causal_effects.items():
-            effect_bonus = bonus * strength * (0.5 ** depth)
+            effect_bonus = bonus * strength * (0.5**depth)
             bonuses[effect_id] = bonuses.get(effect_id, 0.0) + effect_bonus
-            self._traverse_causal_graph(
-                effect_id, bonuses, depth + 1, effect_bonus)
+            self._traverse_causal_graph(effect_id, bonuses, depth + 1, effect_bonus)
 
 
 # ============================================================================
 # 7. META-RETRIEVAL CONTROLLER
 # ============================================================================
+
 
 class MetaRetrievalController:
     """Selects retrieval strategy based on query characteristics."""
@@ -464,18 +451,18 @@ class MetaRetrievalController:
     # Query type patterns
     PATTERNS = {
         "factual": [
-            r'\b(what|who|when|where|which|how many|how much)\b',
-            r'\b(capital|president|invented|discovered|created|built)\b',
+            r"\b(what|who|when|where|which|how many|how much)\b",
+            r"\b(capital|president|invented|discovered|created|built)\b",
         ],
         "procedural": [
-            r'\b(how to|how do|how can|steps?|tutorial|guide|configure|install)\b',
+            r"\b(how to|how do|how can|steps?|tutorial|guide|configure|install)\b",
         ],
         "multi-hop": [
-            r'\b(why|because|reason|cause|effect|lead to|result in)\b',
+            r"\b(why|because|reason|cause|effect|lead to|result in)\b",
         ],
         "vague": [
-            r'\b(that thing|you know|remember|we discussed|about)\b',
-            r'\b(something|anything|stuff|things?)\b',
+            r"\b(that thing|you know|remember|we discussed|about)\b",
+            r"\b(something|anything|stuff|things?)\b",
         ],
     }
 
@@ -507,19 +494,20 @@ class MetaRetrievalController:
     ) -> Tuple[List[Tuple[str, float, MemoryNode]], str]:
         """Select strategy and retrieve."""
         query_type = self.classify_query(query)
-        retriever = self.strategies.get(
-            query_type, self.strategies.get("factual"))
+        retriever = self.strategies.get(query_type, self.strategies.get("factual"))
         if retriever is None:
             return [], "unknown"
 
         results = retriever.retrieve(query, query_embedding, top_k)
 
-        self._query_log.append({
-            "query": query[:100],
-            "type": query_type,
-            "n_results": len(results),
-            "timestamp": time.time(),
-        })
+        self._query_log.append(
+            {
+                "query": query[:100],
+                "type": query_type,
+                "n_results": len(results),
+                "timestamp": time.time(),
+            }
+        )
 
         return results, query_type
 
@@ -537,6 +525,7 @@ class MetaRetrievalController:
 # ============================================================================
 # INTEGRATION: AdvancedRTMDKRetriever
 # ============================================================================
+
 
 class AdvancedRTMDKRetriever:
     """Combines all 7 improvements into a single retriever."""
@@ -565,20 +554,17 @@ class AdvancedRTMDKRetriever:
             self.confidence_aware = ConfidenceAwareFallback(self.hybrid, bm25)
 
         # 3. Query expander
-        self.query_expander = QueryExpander(
-            memory) if enable_query_expansion else None
+        self.query_expander = QueryExpander(memory) if enable_query_expansion else None
 
         # 4. Adaptive depth
         base_retriever = self.confidence_aware or self.hybrid or self
-        self.adaptive = AdaptiveDepthRetriever(
-            base_retriever) if enable_adaptive_depth else None
+        self.adaptive = AdaptiveDepthRetriever(base_retriever) if enable_adaptive_depth else None
 
         # 5. Temporal decay learner
         self.temporal_decay = TemporalDecayLearner() if enable_temporal_decay else None
 
         # 6. Causal augmented retriever
-        self.causal = CausalAugmentedRetriever(
-            memory) if enable_causal_augmentation else None
+        self.causal = CausalAugmentedRetriever(memory) if enable_causal_augmentation else None
 
         # 7. Meta-retrieval controller
         if enable_meta_controller:
@@ -589,10 +575,8 @@ class AdvancedRTMDKRetriever:
                 strategies["factual"] = self.hybrid
                 strategies["procedural"] = self.hybrid
             if self.query_expander:
-                strategies["vague"] = self._VagueQueryRetriever(
-                    self, self.query_expander)
-            self.meta_controller = MetaRetrievalController(
-                strategies) if strategies else None
+                strategies["vague"] = self._VagueQueryRetriever(self, self.query_expander)
+            self.meta_controller = MetaRetrievalController(strategies) if strategies else None
         else:
             self.meta_controller = None
 
@@ -609,16 +593,14 @@ class AdvancedRTMDKRetriever:
 
         # 7. Meta-controller selects strategy
         if self.meta_controller:
-            results, query_type = self.meta_controller.retrieve(
-                query, query_embedding, top_k)
+            results, query_type = self.meta_controller.retrieve(query, query_embedding, top_k)
         # 6. Causal augmentation
         elif self.causal:
             results = self.causal.retrieve(query, query_embedding, top_k)
             query_type = "causal"
         # 2. Confidence-aware fallback
         elif self.confidence_aware:
-            results, status = self.confidence_aware.retrieve(
-                query, query_embedding, top_k)
+            results, status = self.confidence_aware.retrieve(query, query_embedding, top_k)
             query_type = status
         # 1. Hybrid retrieval
         elif self.hybrid:

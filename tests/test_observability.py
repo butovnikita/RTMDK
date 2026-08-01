@@ -1,4 +1,5 @@
 """Test Phase 4 observability components."""
+
 import asyncio
 import pytest
 
@@ -9,25 +10,18 @@ from rtmdk.production.rate_limiter import RateLimiter
 class TestAsyncCircuitBreaker:
     @pytest.mark.asyncio
     async def test_async_circuit_allows_success(self):
-        cb = AsyncCircuitBreaker(
-            "test",
-            failure_threshold=2,
-            recovery_timeout=1.0,
-            default="fallback")
+        cb = AsyncCircuitBreaker("test", failure_threshold=2, recovery_timeout=1.0, default="fallback")
 
         async def ok():
             return "ok"
+
         result = await cb.call(ok)
         assert result == "ok"
         assert cb.state == CircuitState.CLOSED
 
     @pytest.mark.asyncio
     async def test_async_circuit_opens_after_failures(self):
-        cb = AsyncCircuitBreaker(
-            "test",
-            failure_threshold=2,
-            recovery_timeout=60.0,
-            default="fallback")
+        cb = AsyncCircuitBreaker("test", failure_threshold=2, recovery_timeout=60.0, default="fallback")
 
         async def fail():
             raise RuntimeError("boom")
@@ -38,16 +32,13 @@ class TestAsyncCircuitBreaker:
 
         async def ok():
             return "ok"
+
         result = await cb.call(ok)
         assert result == "fallback"
 
     @pytest.mark.asyncio
     async def test_async_circuit_half_open_recovery(self):
-        cb = AsyncCircuitBreaker(
-            "test",
-            failure_threshold=1,
-            recovery_timeout=0.1,
-            default="fallback")
+        cb = AsyncCircuitBreaker("test", failure_threshold=1, recovery_timeout=0.1, default="fallback")
 
         async def fail():
             raise RuntimeError("boom")
@@ -58,6 +49,7 @@ class TestAsyncCircuitBreaker:
 
         async def recovered():
             return "recovered"
+
         result = await cb.call(recovered)
         assert result == "recovered"
         assert cb.state == CircuitState.CLOSED

@@ -1,19 +1,17 @@
 """Tests for new P0/P1 fixes: batch API, query expansion, BM25 first-stage, NPZ, etc."""
-import json
+
 import os
 import tempfile
 
 import numpy as np
-import pytest
 
 from rtmdk.memory.config import RTMDKConfig
 from rtmdk.memory.core import RTMDKMemory
-from rtmdk.memory.field import RTMDKField
 from rtmdk.memory.sot_v2.integration import SOTv2Embedder
 
 
 def _embedder(text: str) -> np.ndarray:
-    rng = np.random.default_rng(hash(text) % (2 ** 32))
+    rng = np.random.default_rng(hash(text) % (2**32))
     emb = rng.standard_normal(64).astype(np.float32)
     emb /= np.linalg.norm(emb) + 1e-8
     return emb
@@ -54,8 +52,7 @@ class TestQueryExpansion:
 
 class TestBM25FirstStage:
     def test_bm25_first_stage_filtering(self):
-        cfg = RTMDKConfig(
-            latent_dim=64, bm25_first_stage_k=2, top_k=2)
+        cfg = RTMDKConfig(latent_dim=64, bm25_first_stage_k=2, top_k=2)
         mem = RTMDKMemory(config=cfg, embedder=_embedder)
         for i in range(5):
             mem.add_node(_embedder(f"doc{i}"), {"text": f"doc{i}"})
@@ -76,9 +73,7 @@ class TestClear:
 
 class TestCalibrateConformalSOT:
     def test_calibrate_does_not_crash(self):
-        cfg = RTMDKConfig(
-            latent_dim=64, conformal_prediction=True,
-            conformal_alpha=0.1, conformal_min_calib=2)
+        cfg = RTMDKConfig(latent_dim=64, conformal_prediction=True, conformal_alpha=0.1, conformal_min_calib=2)
         mem = RTMDKMemory(config=cfg, embedder=_embedder)
         for i in range(5):
             mem.add_node(_embedder(f"doc{i}"), {"text": f"doc{i}"})
@@ -129,8 +124,5 @@ class TestEmotionLogic:
         mem = RTMDKMemory(config=cfg, embedder=_embedder)
         # This would previously set emotion="negative" then overwrite with "questioning"
         # We just verify save_context runs without error
-        mem.save_context(
-            {"input": "what is this?"},
-            {"output": "answer"}
-        )
+        mem.save_context({"input": "what is this?"}, {"output": "answer"})
         assert len(mem.field.nodes) >= 1

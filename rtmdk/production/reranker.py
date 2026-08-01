@@ -7,8 +7,6 @@ as a Stage-2 reranker over resonance/retrieval candidates.
 import logging
 from typing import List, Tuple, Optional, Any
 
-import numpy as np
-
 logger = logging.getLogger(__name__)
 
 
@@ -25,6 +23,7 @@ class CrossEncoderReranker:
             return
         try:
             from sentence_transformers import CrossEncoder
+
             self._model = CrossEncoder(self.model_name, device=self._device)
             logger.info(f"Loaded reranker: {self.model_name}")
         except Exception as exc:

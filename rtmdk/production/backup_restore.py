@@ -45,11 +45,7 @@ class BackupManager:
         self.backup_dir.mkdir(parents=True, exist_ok=True)
         self.compression = compression
 
-    def create_backup(
-            self,
-            name: str = "",
-            auto_rotate: bool = False,
-            max_backups: int = 5) -> str:
+    def create_backup(self, name: str = "", auto_rotate: bool = False, max_backups: int = 5) -> str:
         """Create a backup of current memory state.
 
         Args:
@@ -70,22 +66,13 @@ class BackupManager:
         for nid, node in self.memory.field.nodes.items():
             nodes_data[nid] = {
                 "content": node.content,
-                "latent_pos": node.latent_pos.tolist() if hasattr(
-                    node.latent_pos,
-                    'tolist') else list(
-                    node.latent_pos),
+                "latent_pos": node.latent_pos.tolist() if hasattr(node.latent_pos, "tolist") else list(node.latent_pos),
                 "phase": node.phase,
                 "amplitude": node.amplitude,
                 "salience": node.salience,
-                "tier": getattr(
-                    node,
-                    'tier',
-                    'semantic'),
+                "tier": getattr(node, "tier", "semantic"),
                 "created_at": node.created_at,
-                "causal_parents": getattr(
-                    node,
-                    'causal_parents',
-                    []),
+                "causal_parents": getattr(node, "causal_parents", []),
             }
 
         backup_data = {
@@ -98,11 +85,11 @@ class BackupManager:
 
         # Save (optionally compressed)
         if self.compression:
-            filepath = filepath.with_suffix('.json.gz')
-            with gzip.open(filepath, 'wt', encoding='utf-8') as f:
+            filepath = filepath.with_suffix(".json.gz")
+            with gzip.open(filepath, "wt", encoding="utf-8") as f:
                 json.dump(backup_data, f)
         else:
-            with open(filepath, 'w', encoding='utf-8') as f:
+            with open(filepath, "w", encoding="utf-8") as f:
                 json.dump(backup_data, f, indent=2)
 
         # Rotate if needed
@@ -122,17 +109,15 @@ class BackupManager:
         """
         path = Path(backup_path)
         if not path.exists():
-            return {
-                "success": False,
-                "error": f"Backup not found: {backup_path}"}
+            return {"success": False, "error": f"Backup not found: {backup_path}"}
 
         try:
             # Load backup
-            if str(path).endswith('.gz'):
-                with gzip.open(path, 'rt', encoding='utf-8') as f:
+            if str(path).endswith(".gz"):
+                with gzip.open(path, "rt", encoding="utf-8") as f:
                     backup_data = json.load(f)
             else:
-                with open(path, 'r', encoding='utf-8') as f:
+                with open(path, "r", encoding="utf-8") as f:
                     backup_data = json.load(f)
 
             # Clear current memory
@@ -144,6 +129,7 @@ class BackupManager:
             for nid, node_data in backup_data.get("nodes", {}).items():
                 # Reconstruct node
                 from rtmdk.nodes import MemoryNode
+
                 node = MemoryNode(
                     id=nid,
                     latent_pos=node_data["latent_pos"],
@@ -180,12 +166,14 @@ class BackupManager:
         backups = []
         for filepath in sorted(self.backup_dir.glob("*.json*")):
             stat = filepath.stat()
-            backups.append({
-                "name": filepath.stem,
-                "path": str(filepath),
-                "size_mb": round(stat.st_size / 1024 / 1024, 2),
-                "modified": stat.st_mtime,
-            })
+            backups.append(
+                {
+                    "name": filepath.stem,
+                    "path": str(filepath),
+                    "size_mb": round(stat.st_size / 1024 / 1024, 2),
+                    "modified": stat.st_mtime,
+                }
+            )
         return backups
 
     def delete_backup(self, backup_path: str) -> bool:
@@ -198,9 +186,7 @@ class BackupManager:
 
     def _rotate_backups(self, max_backups: int):
         """Delete oldest backups if over limit."""
-        backups = sorted(
-            self.backup_dir.glob("*.json*"),
-            key=lambda p: p.stat().st_mtime)
+        backups = sorted(self.backup_dir.glob("*.json*"), key=lambda p: p.stat().st_mtime)
         while len(backups) > max_backups:
             oldest = backups.pop(0)
             oldest.unlink()

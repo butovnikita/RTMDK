@@ -84,11 +84,11 @@ def apply_attention_bias(
     weights = []
     for nid, resp, node in results:
         score = resp
-        causal_boost = sum(node.causal_strength.values()) if hasattr(node, 'causal_strength') else 0
-        score *= (1.0 + 0.2 * min(1.0, causal_boost))
+        causal_boost = sum(node.causal_strength.values()) if hasattr(node, "causal_strength") else 0
+        score *= 1.0 + 0.2 * min(1.0, causal_boost)
         score *= max(0.5, 1.0 - node.tension)
-        goal_rel = getattr(node, 'goal_relevance', 0.0)
-        score *= (1.0 + 0.3 * goal_rel)
+        goal_rel = getattr(node, "goal_relevance", 0.0)
+        score *= 1.0 + 0.3 * goal_rel
         weights.append(score)
 
     weights = np.array(weights)
@@ -124,6 +124,7 @@ def _sanitize_path(path: str) -> str:
     Returns normalized path.
     """
     import os
+
     # Reject parent directory references BEFORE normalization
     # (normpath collapses 'a/../b' to 'b', which would hide the attack)
     if ".." in path.replace("\\", "/").split("/"):
@@ -137,13 +138,14 @@ def _safe_json_load(path: str) -> Dict:
     """Load JSON with size limit to prevent memory exhaustion."""
     import json
     import os
+
     file_size = os.path.getsize(path)
     if file_size > MAX_FILE_SIZE_BYTES:
         raise ValueError(
-            f"File too large: {file_size / (1024*1024):.1f}MB (max {MAX_FILE_SIZE_BYTES / (1024*1024):.0f}MB)")
+            f"File too large: {file_size / (1024*1024):.1f}MB (max {MAX_FILE_SIZE_BYTES / (1024*1024):.0f}MB)"
+        )
     with open(path, "r", encoding="utf-8") as f:
         raw = f.read()
     if len(raw.encode("utf-8")) > MAX_FILE_SIZE_BYTES:
-        raise ValueError(
-            "File exceeds maximum allowed size after encoding check")
+        raise ValueError("File exceeds maximum allowed size after encoding check")
     return json.loads(raw)

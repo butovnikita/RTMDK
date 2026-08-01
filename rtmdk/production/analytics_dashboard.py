@@ -105,11 +105,13 @@ class AnalyticsDashboard:
                 breaker_state = stage.circuit_breaker.state.value
                 if breaker_state == "open":
                     open_breakers += 1
-            stages_info.append({
-                "name": stage.name,
-                "enabled": stage.enabled,
-                "breaker_state": breaker_state,
-            })
+            stages_info.append(
+                {
+                    "name": stage.name,
+                    "enabled": stage.enabled,
+                    "breaker_state": breaker_state,
+                }
+            )
 
         overall = "healthy"
         if open_breakers > 0:

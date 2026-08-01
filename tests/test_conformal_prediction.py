@@ -15,13 +15,7 @@ from rtmdk.memory.conformal import ConformalCalibrator
 from rtmdk import RTMDKConfig, RTMDKField
 
 
-def _make_field(
-        n_nodes=20,
-        dim=8,
-        conformal=True,
-        alpha=0.1,
-        min_calib=10,
-        bw=1.0):
+def _make_field(n_nodes=20, dim=8, conformal=True, alpha=0.1, min_calib=10, bw=1.0):
     cfg = RTMDKConfig(
         latent_dim=dim,
         bandwidth=bw,

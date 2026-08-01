@@ -2,9 +2,10 @@
 
 Tracks peak RAM usage per stage to identify memory bottlenecks.
 """
+
 from __future__ import annotations
 import tracemalloc
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from rtmdk.pipeline.base import PipelineContext, PipelineStage
 

@@ -108,9 +108,7 @@ class MI_SubwordTokenizer:
             if not pair_counts:
                 break
 
-            best_pair, best_mi = self._best_mi_pair(
-                pair_counts, token_counts, total_pairs
-            )
+            best_pair, best_mi = self._best_mi_pair(pair_counts, token_counts, total_pairs)
             if best_pair is None or best_mi < self.min_mi_threshold:
                 logger.info(
                     "MI-Tokenizer: stopping, best MI %.3f < threshold %.3f",
@@ -195,9 +193,7 @@ class MI_SubwordTokenizer:
     # Helpers
     # ------------------------------------------------------------------ #
 
-    def _count_pairs(
-        self, words: List[List[int]]
-    ) -> Tuple[Dict[Tuple[int, int], int], Dict[int, int], int]:
+    def _count_pairs(self, words: List[List[int]]) -> Tuple[Dict[Tuple[int, int], int], Dict[int, int], int]:
         pair_counts: Dict[Tuple[int, int], int] = defaultdict(int)
         token_counts: Dict[int, int] = defaultdict(int)
         total_pairs = 0
@@ -227,20 +223,13 @@ class MI_SubwordTokenizer:
             # MI = log( P(a,b) / (P(a)P(b)) )
             #     = log( count_ab / total ) - log( count_a / total ) - log( count_b / total )
             #     = log(count_ab) - log(count_a) - log(count_b) + log(total)
-            mi = (
-                math.log(count_ab + 1e-10)
-                - math.log(count_a + 1e-10)
-                - math.log(count_b + 1e-10)
-                + log_total_pairs
-            )
+            mi = math.log(count_ab + 1e-10) - math.log(count_a + 1e-10) - math.log(count_b + 1e-10) + log_total_pairs
             if mi > best_mi:
                 best_mi = mi
                 best_pair = (a, b)
         return best_pair, best_mi
 
-    def _apply_merge_in_word(
-        self, word: List[int], pair: Tuple[int, int], merged_id: int
-    ) -> List[int]:
+    def _apply_merge_in_word(self, word: List[int], pair: Tuple[int, int], merged_id: int) -> List[int]:
         new_word: List[int] = []
         i = 0
         while i < len(word):
@@ -271,9 +260,7 @@ class MI_SubwordTokenizer:
         self.max_vocab = state["max_vocab"]
         self.min_mi_threshold = state["min_mi_threshold"]
         self.char_encoding = state["char_encoding"]
-        self.vocab = {
-            int(k): v.encode("latin1") for k, v in state["vocab"].items()
-        }
+        self.vocab = {int(k): v.encode("latin1") for k, v in state["vocab"].items()}
         self.merges = {}
         for k, v in state["merges"].items():
             a_str, b_str = k.split(",")

@@ -11,9 +11,10 @@ from rtmdk.memory.config import RTMDKConfig
 
 def _make_embedder(dim: int = 64):
     def embed(text: str) -> np.ndarray:
-        h = hash(text) % (2 ** 32)
+        h = hash(text) % (2**32)
         rng = np.random.default_rng(h)
         return rng.standard_normal(dim, dtype=np.float32)
+
     return embed
 
 
@@ -21,8 +22,11 @@ def _make_embedder(dim: int = 64):
 def setup_memory(tmp_path):
     """Initialize fresh RTMDKMemory for each MCP test."""
     cfg = RTMDKConfig(
-        latent_dim=64, use_hnsw=False, hyperbolic=False,
-        quantization="none", enable_engrams=False,
+        latent_dim=64,
+        use_hnsw=False,
+        hyperbolic=False,
+        quantization="none",
+        enable_engrams=False,
     )
     embedder = _make_embedder(64)
     _ctx.memory = RTMDKMemory(config=cfg, embedder=embedder, wal_path=None)

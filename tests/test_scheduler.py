@@ -1,6 +1,6 @@
 """Tests for StepScheduler extraction."""
+
 import numpy as np
-import pytest
 
 from rtmdk.memory.config import RTMDKConfig
 from rtmdk.memory.field import RTMDKField
@@ -18,9 +18,7 @@ class TestStepSchedulerExtraction:
     def test_scheduler_run_on_step(self):
         cfg = RTMDKConfig()
         field = RTMDKField(cfg)
-        field.add_node(
-            np.random.randn(64).astype(np.float32),
-            {"text": "hello"})
+        field.add_node(np.random.randn(64).astype(np.float32), {"text": "hello"})
         # step() should call _run_periodic_tasks which delegates to scheduler
         field.step([{"embedding": np.random.randn(64).astype(np.float32), "content": {"text": "world"}}])
         assert field._step_counter == 1

@@ -43,10 +43,13 @@ def test_batch_ingest(client):
     mem = _make_mem()
     app_mod.memory = mem
     try:
-        resp = client.post("/v1/memory/batch_ingest", json={
-            "documents": ["doc1", "doc2", "doc3"],
-            "metadata": {"source": "test"},
-        })
+        resp = client.post(
+            "/v1/memory/batch_ingest",
+            json={
+                "documents": ["doc1", "doc2", "doc3"],
+                "metadata": {"source": "test"},
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["ingested"] == 3
@@ -63,10 +66,13 @@ def test_batch_ingest_with_custom_ids(client):
     mem = _make_mem()
     app_mod.memory = mem
     try:
-        resp = client.post("/v1/memory/batch_ingest", json={
-            "documents": ["doc1", "doc2"],
-            "node_ids": ["custom_1", "custom_2"],
-        })
+        resp = client.post(
+            "/v1/memory/batch_ingest",
+            json={
+                "documents": ["doc1", "doc2"],
+                "node_ids": ["custom_1", "custom_2"],
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["node_ids"] == ["custom_1", "custom_2"]

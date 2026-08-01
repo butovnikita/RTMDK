@@ -14,10 +14,10 @@ Usage:
     store.put("node_1", {"text": "hello", "embedding": np.array(...)})
     node = store.get("node_1")  # auto-promotes on access
 """
+
 from __future__ import annotations
 import gzip
 import json
-import os
 import threading
 import time
 from dataclasses import dataclass, field
@@ -30,6 +30,7 @@ import numpy as np
 @dataclass
 class _TieredEntry:
     """Internal entry tracking access frequency and tier."""
+
     key: str
     data: Dict[str, Any]
     access_count: int = 0
@@ -112,6 +113,7 @@ class TieredNodeStore:
         path = self._cold_path(key)
         # Serialize latent_pos separately, rest as JSON-serializable dict
         import json as _json
+
         payload = {k: v for k, v in data.items() if k != "latent_pos"}
         if data.get("latent_pos") is not None:
             lp = data["latent_pos"]

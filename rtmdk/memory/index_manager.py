@@ -1,4 +1,5 @@
 """IndexManager — encapsulates HNSW, BM25, and sparse shard routing indices."""
+
 from __future__ import annotations
 
 from typing import Dict, List, Optional, Tuple, Any
@@ -12,6 +13,7 @@ from rtmdk.support.hnsw import NaiveGraphIndex
 
 try:
     from rtmdk.support.hnsw_lib import HNSWLibIndex
+
     _HAS_HNSWLIB = True
 except Exception:
     _HAS_HNSWLIB = False
@@ -23,6 +25,7 @@ except Exception:
 
 try:
     from sklearn.cluster import MiniBatchKMeans
+
     _HAS_SKLEARN = True
 except Exception:
     _HAS_SKLEARN = False
@@ -75,10 +78,8 @@ class IndexManager:
         # Sparse shard routing
         self.shard_centers: Optional[NDArray] = None
         if cfg.sparse_routing and cfg.num_shards > 0:
-            self.shard_centers = rng.standard_normal(
-                (cfg.num_shards, latent_dim), dtype=np.float32)
-            self.shard_centers /= np.linalg.norm(
-                self.shard_centers, axis=1, keepdims=True)
+            self.shard_centers = rng.standard_normal((cfg.num_shards, latent_dim), dtype=np.float32)
+            self.shard_centers /= np.linalg.norm(self.shard_centers, axis=1, keepdims=True)
 
     # ------------------------------------------------------------------
     # HNSW operations
@@ -220,8 +221,7 @@ class IndexManager:
             max_iter=100,
         )
         kmeans.fit(np.stack(vectors, axis=0))
-        proj = self.rng.standard_normal(
-            (num_shards, self.latent_dim), dtype=np.float32)
+        proj = self.rng.standard_normal((num_shards, self.latent_dim), dtype=np.float32)
         proj /= np.linalg.norm(proj, axis=1, keepdims=True)
         self.shard_centers = (kmeans.cluster_centers_ @ proj).astype(np.float32)
 

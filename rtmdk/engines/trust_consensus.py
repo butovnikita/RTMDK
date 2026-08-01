@@ -22,8 +22,7 @@ class TrustDAG:
     """DAG structure for tracking trust relationships."""
 
     def __init__(self) -> None:
-        self.edges: Dict[str, Dict[str, float]] = defaultdict(
-            dict)  # from → {to: weight}
+        self.edges: Dict[str, Dict[str, float]] = defaultdict(dict)  # from → {to: weight}
         self.reputation: Dict[str, float] = defaultdict(lambda: 0.5)
         self.update_history: List[Dict[str, Any]] = []
 
@@ -49,9 +48,9 @@ class TrustConsensusEngine:
 
     def __init__(
         self,
-        min_reputation: float = 0.3,    # Min reputation to accept updates
+        min_reputation: float = 0.3,  # Min reputation to accept updates
         consensus_threshold: float = 0.6,  # Min agreement for consensus
-        reputation_decay: float = 0.99,   # How fast reputation decays
+        reputation_decay: float = 0.99,  # How fast reputation decays
         byzantine_tolerance: float = 0.33,  # Max fraction of byzantine nodes
     ):
         self.min_reputation = min_reputation
@@ -88,13 +87,11 @@ class TrustConsensusEngine:
             return False
 
         # If we have embedding, check consistency with our data
-        if peer_embedding is not None and node_id in self.peer_embeddings.get("self", {
-        }):
+        if peer_embedding is not None and node_id in self.peer_embeddings.get("self", {}):
             local_emb = self.peer_embeddings["sel"][node_id]
-            similarity = float(np.dot(peer_embedding, local_emb) /
-                               (np.linalg.norm(peer_embedding) *
-                                np.linalg.norm(local_emb) +
-                                1e-8))
+            similarity = float(
+                np.dot(peer_embedding, local_emb) / (np.linalg.norm(peer_embedding) * np.linalg.norm(local_emb) + 1e-8)
+            )
 
             # Low similarity → suspicious
             if similarity < 0.3:
@@ -169,14 +166,11 @@ class TrustConsensusEngine:
     def get_trust_stats(self) -> Dict[str, Any]:
         return {
             **self._stats,
-            "n_peers": len(
-                self.peer_embeddings),
-            "avg_reputation": float(
-                np.mean(
-                    list(
-                        self.trust_dag.reputation.values()))) if self.trust_dag.reputation else 0.5,
-            "min_reputation": float(
-                np.min(
-                    list(
-                        self.trust_dag.reputation.values()))) if self.trust_dag.reputation else 0.5,
+            "n_peers": len(self.peer_embeddings),
+            "avg_reputation": (
+                float(np.mean(list(self.trust_dag.reputation.values()))) if self.trust_dag.reputation else 0.5
+            ),
+            "min_reputation": (
+                float(np.min(list(self.trust_dag.reputation.values()))) if self.trust_dag.reputation else 0.5
+            ),
         }

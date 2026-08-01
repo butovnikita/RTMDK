@@ -1,4 +1,5 @@
 """Config validation matrix — ensures key parameter combinations initialize."""
+
 from rtmdk.memory.config import RTMDKConfig
 from rtmdk.memory.core import RTMDKField
 
@@ -25,10 +26,7 @@ class TestConfigMatrix:
         self._check(sot_enabled=True, sot_tokenization_mode="word")
 
     def test_sot_word_with_cooccurrence_limit(self):
-        self._check(
-            sot_enabled=True,
-            sot_tokenization_mode="word",
-            sot_max_cooccurrence=100)
+        self._check(sot_enabled=True, sot_tokenization_mode="word", sot_max_cooccurrence=100)
 
     def test_sot_byte_subword_seed(self):
         self._check(sot_enabled=True, sot_subword_seed=True)

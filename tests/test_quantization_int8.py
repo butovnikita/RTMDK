@@ -92,6 +92,7 @@ class TestQuantizationHelper:
 
     def test_memory_node_int8_property(self):
         from rtmdk.nodes import MemoryNode
+
         vec = np.array([1.0, 2.0, 3.0], dtype=np.float32)
         node = MemoryNode(
             id="test",
@@ -106,6 +107,7 @@ class TestQuantizationHelper:
 
     def test_memory_node_int8_dequantize(self):
         from rtmdk.nodes import MemoryNode
+
         vec = np.array([0.2, 0.5, 1.0], dtype=np.float32)
         q = (vec / QuantizationHelper.INT8_GLOBAL_SCALE).astype(np.int8)
         node = MemoryNode(

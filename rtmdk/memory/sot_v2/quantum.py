@@ -83,7 +83,7 @@ class QuantumResonanceRetriever:
             token_ids: Optional token IDs for coherence computation.
         """
         if token_embs.ndim != 2 or token_embs.shape[1] != self.latent_dim:
-            raise ValueError(f"token_embs shape mismatch")
+            raise ValueError("token_embs shape mismatch")
         n = token_embs.shape[0]
         if n == 0:
             self.doc_states[doc_id] = np.eye(self.latent_dim, dtype=np.float32) * self.epsilon
@@ -102,7 +102,7 @@ class QuantumResonanceRetriever:
             for i in range(n_tok - 1):
                 for j in range(i + 1, min(i + self.window_size + 1, n_tok)):
                     a, b = token_ids[i], token_ids[j]
-                    weight = cooc.get((min(a,b), max(a,b)), 0.0)
+                    weight = cooc.get((min(a, b), max(a, b)), 0.0)
                     if weight > 0:
                         vi = token_embs[i]
                         vj = token_embs[j]

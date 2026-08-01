@@ -58,10 +58,7 @@ class TestQueryLatency:
         p99 = latencies[int(len(latencies) * 0.99) - 1]
         threshold = self.BASELINE_P99_MS.get(n_nodes, 100.0)
 
-        assert p99 < threshold, (
-            f"p99 query latency {p99:.2f}ms exceeds threshold "
-            f"{threshold}ms for {n_nodes} nodes"
-        )
+        assert p99 < threshold, f"p99 query latency {p99:.2f}ms exceeds threshold " f"{threshold}ms for {n_nodes} nodes"
 
 
 class TestBatchIngestLatency:
@@ -81,9 +78,6 @@ class TestBatchIngestLatency:
         elapsed_ms = (time.perf_counter() - t0) * 1000
 
         ms_per_node = elapsed_ms / 100
-        assert (
-            ms_per_node < self.BASELINE_MS_PER_NODE
-        ), (
-            f"Batch ingest {ms_per_node:.2f}ms/node exceeds threshold "
-            f"{self.BASELINE_MS_PER_NODE}ms/node"
+        assert ms_per_node < self.BASELINE_MS_PER_NODE, (
+            f"Batch ingest {ms_per_node:.2f}ms/node exceeds threshold " f"{self.BASELINE_MS_PER_NODE}ms/node"
         )

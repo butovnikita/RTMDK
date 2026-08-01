@@ -10,6 +10,7 @@ Usage:
     ctx = executor.run("What is 2+2?", top_k=5)
     # For fast route: skips rerank + calibrate → ~40% faster
 """
+
 from __future__ import annotations
 from typing import Any, Dict, List, Optional
 

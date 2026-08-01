@@ -1,22 +1,27 @@
 """Numba-accelerated resonance kernels (optional — falls back to numpy if numba unavailable)."""
+
 from __future__ import annotations
 
 import math
-from typing import Optional
 
 try:
-    import numba
+    import numba  # noqa: F401  (availability probe; njit/prange imported below)
     from numba import njit, prange
+
     _NUMBA_AVAILABLE = True
 except ImportError:
     _NUMBA_AVAILABLE = False
+
     # Dummy decorators for type-checking compatibility
     def njit(*args, **kwargs):
         def wrapper(fn):
             return fn
+
         return wrapper
+
     def prange(*args):
         return range(*args)
+
 
 import numpy as np
 from numpy.typing import NDArray
@@ -78,12 +83,23 @@ def chunk_resonance(
     """Dispatch to numba kernel if available, else numpy fallback."""
     if _NUMBA_AVAILABLE:
         return _chunk_resonance_scalar_bw(
-            positions, phases, amplitudes, saliences, modal_weights,
-            gates, causal_boost, query_latent, query_phase,
-            bw, pc, use_gates, use_causal)
+            positions,
+            phases,
+            amplitudes,
+            saliences,
+            modal_weights,
+            gates,
+            causal_boost,
+            query_latent,
+            query_phase,
+            bw,
+            pc,
+            use_gates,
+            use_causal,
+        )
     # Pure-numpy fallback
     dists = np.linalg.norm(positions - query_latent, axis=1)
-    spatial = np.exp(-dists ** 2 / (2.0 * bw * bw))
+    spatial = np.exp(-(dists**2) / (2.0 * bw * bw))
     phase_align = 0.5 + 0.5 * np.cos(phases - query_phase)
     resp = spatial * ((1.0 - pc) + pc * phase_align)
     resp *= amplitudes * saliences * modal_weights

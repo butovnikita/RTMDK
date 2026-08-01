@@ -2,10 +2,11 @@
 
 Extracted from RTMDKField to reduce monolithic field.py size.
 """
+
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Dict, List, Optional
+from typing import TYPE_CHECKING, Dict, List
 
 import numpy as np
 
@@ -50,13 +51,11 @@ class RoutingManager:
         if f._index_mgr.shard_centers is None or len(f.nodes) < f.cfg.num_shards:
             return
         from sklearn.cluster import KMeans
+
         positions = np.array([n.latent_pos for n in f.nodes.values()])
         if len(positions) < f.cfg.num_shards:
             return
-        kmeans = KMeans(
-            n_clusters=f.cfg.num_shards,
-            n_init=3,
-            random_state=42)
+        kmeans = KMeans(n_clusters=f.cfg.num_shards, n_init=3, random_state=42)
         labels = kmeans.fit_predict(positions)
         f._index_mgr.shard_centers = kmeans.cluster_centers_.astype(np.float32)
         f._node_shard_map.clear()
@@ -68,7 +67,7 @@ class RoutingManager:
         f = self.field
         if f._index_mgr.bm25_index is None or len(f.nodes) < f.cfg.num_shards:
             return
-        from collections import Counter
+
         term_doc: Dict[str, List[int]] = {}
         doc_terms: List[List[str]] = []
         nids = list(f.node_index)

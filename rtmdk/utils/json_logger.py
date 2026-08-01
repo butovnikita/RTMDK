@@ -7,6 +7,7 @@ Usage:
 Produces lines like:
     {"timestamp": "2026-05-07T10:30:00", "level": "INFO", "logger": "rtmdk.memory", "message": "...", "context": {...}}
 """
+
 from __future__ import annotations
 import json
 import logging

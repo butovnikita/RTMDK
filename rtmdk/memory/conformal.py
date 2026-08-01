@@ -52,11 +52,7 @@ class ConformalCalibrator:
         # k-th largest score = element at index n - k in ascending array
         return max(0.0, float(sorted_scores[n - k]))
 
-    def predict(self,
-                scores: List[float],
-                node_ids: List[str]) -> Tuple[List[str],
-                                              float,
-                                              float]:
+    def predict(self, scores: List[float], node_ids: List[str]) -> Tuple[List[str], float, float]:
         """Return prediction set, confidence level, and threshold.
 
         Args:
@@ -67,9 +63,7 @@ class ConformalCalibrator:
             (prediction_set, confidence, threshold)
         """
         threshold = self.get_threshold()
-        prediction_set = [
-            nid for nid, s in zip(
-                node_ids, scores) if s >= threshold]
+        prediction_set = [nid for nid, s in zip(node_ids, scores) if s >= threshold]
         confidence = 1.0 - self.alpha
         return prediction_set, confidence, threshold
 

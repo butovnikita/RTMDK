@@ -1,10 +1,10 @@
 """Batch pipeline execution for high-throughput retrieval."""
+
 from __future__ import annotations
 import time
 from typing import Any, Dict, List, Optional
 
 import numpy as np
-from numpy.typing import NDArray
 
 from rtmdk.pipeline.base import PipelineContext, PipelineStage
 
@@ -152,29 +152,31 @@ class BatchPipelineExecutor:
             formatted = []
             for nid, score, node in per_query_results:
                 content = (
-                    node.content.get("content", node.content)
-                    if isinstance(node.content, dict)
-                    else str(node.content)
+                    node.content.get("content", node.content) if isinstance(node.content, dict) else str(node.content)
                 )
-                formatted.append({
-                    "id": nid,
-                    "content": content,
-                    "score": round(float(score), 4),
-                })
+                formatted.append(
+                    {
+                        "id": nid,
+                        "content": content,
+                        "score": round(float(score), 4),
+                    }
+                )
 
             total_time_ms = (time.perf_counter() - t0) * 1000
-            results.append({
-                "query": query,
-                "results": formatted,
-                "route": routes[i],
-                "total": len(formatted),
-                "metrics": {
-                    "stages": [
-                        {"stage": "embed", "latency_ms": round(embed_time_ms / len(queries), 2)},
-                        {"stage": "retrieve", "latency_ms": round(retrieve_time_ms / len(queries), 2)},
-                        {"stage": "total", "latency_ms": round(total_time_ms / len(queries), 2)},
-                    ],
-                },
-            })
+            results.append(
+                {
+                    "query": query,
+                    "results": formatted,
+                    "route": routes[i],
+                    "total": len(formatted),
+                    "metrics": {
+                        "stages": [
+                            {"stage": "embed", "latency_ms": round(embed_time_ms / len(queries), 2)},
+                            {"stage": "retrieve", "latency_ms": round(retrieve_time_ms / len(queries), 2)},
+                            {"stage": "total", "latency_ms": round(total_time_ms / len(queries), 2)},
+                        ],
+                    },
+                }
+            )
 
         return results

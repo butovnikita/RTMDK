@@ -42,6 +42,7 @@ def _decode_vector(blob: bytes, dim: int) -> NDArray:
 # Abstract base
 # ---------------------------------------------------------------------------
 
+
 class VectorStorage:
     """Factory / abstract façade for vector-native storage.
 
@@ -77,6 +78,7 @@ class VectorStorage:
 
     async def ainsert(self, node_id: str, vector: NDArray, metadata: Optional[Dict[str, Any]] = None) -> bool:
         import asyncio
+
         return await asyncio.to_thread(self.insert, node_id, vector, metadata)
 
     def search(self, query: NDArray, top_k: int = 5) -> List[Tuple[str, float]]:
@@ -84,6 +86,7 @@ class VectorStorage:
 
     async def asearch(self, query: NDArray, top_k: int = 5) -> List[Tuple[str, float]]:
         import asyncio
+
         return await asyncio.to_thread(self.search, query, top_k)
 
     def delete(self, node_id: str) -> bool:
@@ -91,6 +94,7 @@ class VectorStorage:
 
     async def adelete(self, node_id: str) -> bool:
         import asyncio
+
         return await asyncio.to_thread(self.delete, node_id)
 
     def get(self, node_id: str) -> Optional[NDArray]:
@@ -98,6 +102,7 @@ class VectorStorage:
 
     async def aget(self, node_id: str) -> Optional[NDArray]:
         import asyncio
+
         return await asyncio.to_thread(self.get, node_id)
 
     def count(self) -> int:
@@ -105,6 +110,7 @@ class VectorStorage:
 
     async def acount(self) -> int:
         import asyncio
+
         return await asyncio.to_thread(self.count)
 
     def close(self) -> None:
@@ -114,6 +120,7 @@ class VectorStorage:
 # ---------------------------------------------------------------------------
 # In-memory fallback
 # ---------------------------------------------------------------------------
+
 
 class InMemoryVectorStorage(VectorStorage):
     """Brute-force in-memory storage with numpy batch search."""
@@ -161,6 +168,7 @@ class InMemoryVectorStorage(VectorStorage):
 # SQLite backend
 # ---------------------------------------------------------------------------
 
+
 class SQLiteVectorStorage(VectorStorage):
     """SQLite-backed vector storage.
 
@@ -179,19 +187,15 @@ class SQLiteVectorStorage(VectorStorage):
         self._ensure_schema()
 
     def _ensure_schema(self) -> None:
-        self._conn.execute(
-            """
+        self._conn.execute("""
             CREATE TABLE IF NOT EXISTS rtmdk_vectors (
                 node_id TEXT PRIMARY KEY,
                 vector BLOB NOT NULL,
                 metadata TEXT,
                 created_at REAL DEFAULT (julianday('now'))
             )
-            """
-        )
-        self._conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_vec_created ON rtmdk_vectors(created_at)"
-        )
+            """)
+        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_vec_created ON rtmdk_vectors(created_at)")
         self._conn.commit()
 
     def insert(self, node_id: str, vector: NDArray, metadata: Optional[Dict[str, Any]] = None) -> bool:
@@ -218,9 +222,7 @@ class SQLiteVectorStorage(VectorStorage):
         q = np.asarray(query, dtype=np.float32).reshape(-1)
         qn = q / (np.linalg.norm(q) + 1e-12)
 
-        cur = self._conn.execute(
-            "SELECT node_id, vector FROM rtmdk_vectors"
-        )
+        cur = self._conn.execute("SELECT node_id, vector FROM rtmdk_vectors")
         rows = cur.fetchall()
         if not rows:
             return []
@@ -238,24 +240,18 @@ class SQLiteVectorStorage(VectorStorage):
 
     def delete(self, node_id: str) -> bool:
         with self._conn:
-            cur = self._conn.execute(
-                "DELETE FROM rtmdk_vectors WHERE node_id = ?", (node_id,)
-            )
+            cur = self._conn.execute("DELETE FROM rtmdk_vectors WHERE node_id = ?", (node_id,))
             return cur.rowcount > 0
 
     def get(self, node_id: str) -> Optional[NDArray]:
-        cur = self._conn.execute(
-            "SELECT vector FROM rtmdk_vectors WHERE node_id = ?", (node_id,)
-        )
+        cur = self._conn.execute("SELECT vector FROM rtmdk_vectors WHERE node_id = ?", (node_id,))
         row = cur.fetchone()
         if row is None:
             return None
         return _decode_vector(row[0], self.dim)
 
     def count(self) -> int:
-        cur = self._conn.execute(
-            "SELECT COUNT(*) FROM rtmdk_vectors"
-        )
+        cur = self._conn.execute("SELECT COUNT(*) FROM rtmdk_vectors")
         return int(cur.fetchone()[0])
 
     def close(self) -> None:
@@ -266,12 +262,14 @@ class SQLiteVectorStorage(VectorStorage):
 # pgvector backend (optional)
 # ---------------------------------------------------------------------------
 
+
 class PGVectorStorage(VectorStorage):
     """pgvector-backed storage (requires psycopg2 and pgvector extension)."""
 
     def __init__(self, dsn: str, dim: int = 64):
         super().__init__(dsn=dsn)
         import psycopg2  # type: ignore[import-untyped]
+
         self.dim = dim
         self._conn = psycopg2.connect(dsn)
         self._ensure_schema()
@@ -280,22 +278,18 @@ class PGVectorStorage(VectorStorage):
         with self._conn:
             with self._conn.cursor() as cur:
                 cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
-                cur.execute(
-                    f"""
+                cur.execute(f"""
                     CREATE TABLE IF NOT EXISTS rtmdk_vectors (
                         node_id TEXT PRIMARY KEY,
                         embedding vector({self.dim}),
                         metadata JSONB,
                         created_at TIMESTAMPTZ DEFAULT NOW()
                     )
-                    """
-                )
-                cur.execute(
-                    """
+                    """)
+                cur.execute("""
                     CREATE INDEX IF NOT EXISTS idx_vec_embedding
                     ON rtmdk_vectors USING ivfflat (embedding vector_cosine_ops)
-                    """
-                )
+                    """)
 
     def insert(self, node_id: str, vector: NDArray, metadata: Optional[Dict[str, Any]] = None) -> bool:
         vec = np.asarray(vector, dtype=np.float32).reshape(-1)
@@ -335,9 +329,7 @@ class PGVectorStorage(VectorStorage):
     def delete(self, node_id: str) -> bool:
         with self._conn:
             with self._conn.cursor() as cur:
-                cur.execute(
-                    "DELETE FROM rtmdk_vectors WHERE node_id = %s", (node_id,)
-                )
+                cur.execute("DELETE FROM rtmdk_vectors WHERE node_id = %s", (node_id,))
                 return cur.rowcount > 0
 
     def get(self, node_id: str) -> Optional[NDArray]:

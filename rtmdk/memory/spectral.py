@@ -14,17 +14,14 @@ from numpy.typing import NDArray
 from typing import List, Tuple, Optional, Dict
 
 
-def _build_affinity(
-        positions: NDArray,
-        phases: NDArray,
-        sigma: float = 1.0) -> NDArray:
+def _build_affinity(positions: NDArray, phases: NDArray, sigma: float = 1.0) -> NDArray:
     """Build affinity matrix using spatial distance and phase coupling."""
     positions.shape[0]
     # Pairwise squared distances
     diff = positions[:, np.newaxis, :] - positions[np.newaxis, :, :]
-    dists_sq = np.sum(diff ** 2, axis=2)
+    dists_sq = np.sum(diff**2, axis=2)
     # Spatial affinity
-    spatial = np.exp(-dists_sq / (2.0 * sigma ** 2))
+    spatial = np.exp(-dists_sq / (2.0 * sigma**2))
     # Phase coupling
     phase_diff = np.abs(phases[:, np.newaxis] - phases[np.newaxis, :])
     phase_diff = np.minimum(phase_diff, 2 * np.pi - phase_diff)
@@ -70,7 +67,7 @@ def _eigengap_k(vals: NDArray, max_k: int = 10, min_clusters: int = 2) -> int:
     if m < min_clusters:
         return max(min_clusters, 2)
     # gaps[k] = λ_{k+1} - λ_k  for k = 0 .. m-1
-    gaps = vals[1:m] - vals[:m - 1]
+    gaps = vals[1:m] - vals[: m - 1]
     # Skip k=0 because λ_0 = 0 gives uninformative gap.
     # Use relative gap to avoid being dominated by large eigenvalues.
     rel_gaps = gaps[1:] / (vals[2:m] + 1e-12)
@@ -81,8 +78,7 @@ def _eigengap_k(vals: NDArray, max_k: int = 10, min_clusters: int = 2) -> int:
     return min(best_k, m)
 
 
-def _kmeans_1d(embeddings: NDArray, k: int, max_iter: int = 20,
-               rng: Optional[np.random.Generator] = None) -> NDArray:
+def _kmeans_1d(embeddings: NDArray, k: int, max_iter: int = 20, rng: Optional[np.random.Generator] = None) -> NDArray:
     """Simple k-means on spectral embedding (k is small, dims <= k).
 
     Returns cluster labels (0..k-1).
@@ -93,16 +89,14 @@ def _kmeans_1d(embeddings: NDArray, k: int, max_iter: int = 20,
     centers = np.zeros((k, dim))
     centers[0] = embeddings[rng.integers(n)]
     for i in range(1, k):
-        dists = np.min(np.sum(
-            (embeddings[:, np.newaxis, :] - centers[np.newaxis, :i, :]) ** 2, axis=2), axis=1)
+        dists = np.min(np.sum((embeddings[:, np.newaxis, :] - centers[np.newaxis, :i, :]) ** 2, axis=2), axis=1)
         probs = dists / (dists.sum() + 1e-10)
         centers[i] = embeddings[rng.choice(n, p=probs)]
 
     labels = np.zeros(n, dtype=int)
     for _ in range(max_iter):
         # Assignment
-        dists = np.sum((embeddings[:, np.newaxis, :] -
-                        centers[np.newaxis, :, :]) ** 2, axis=2)
+        dists = np.sum((embeddings[:, np.newaxis, :] - centers[np.newaxis, :, :]) ** 2, axis=2)
         new_labels = np.argmin(dists, axis=1)
         if np.array_equal(new_labels, labels):
             break
@@ -118,6 +112,7 @@ def _kmeans_1d(embeddings: NDArray, k: int, max_iter: int = 20,
 def _auto_sigma(positions: NDArray) -> float:
     """Data-adaptive Gaussian bandwidth via median pairwise distance."""
     from scipy.spatial.distance import pdist
+
     d = pdist(positions)
     return float(np.median(d)) if len(d) else 1.0
 

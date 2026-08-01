@@ -27,10 +27,8 @@ def test_proxy():
         if resp.ok:
             status = resp.json()
             print(f"   Proxy: {status.get('proxy', 'unknown')}")
-            print(
-                f"   RTMDK: {status.get('rtmdk', {}).get('status', 'unknown')}")
-            print(
-                f"   Memory nodes: {status.get('rtmdk', {}).get('memory_nodes', 0)}")
+            print(f"   RTMDK: {status.get('rtmdk', {}).get('status', 'unknown')}")
+            print(f"   Memory nodes: {status.get('rtmdk', {}).get('memory_nodes', 0)}")
         else:
             print(f"   FAILED: HTTP {resp.status_code}")
     except Exception as e:
@@ -40,25 +38,18 @@ def test_proxy():
 
     # Test 2: Send message through proxy
     print("\n2. Testing chat completion...")
-    data = {"model": "test-model",
-            "messages": [{"role": "user",
-                          "content": "Hello, my name is TestUser and I like coffee"}],
-            "stream": False,
-            "char_name": "TestCharacter"}
+    data = {
+        "model": "test-model",
+        "messages": [{"role": "user", "content": "Hello, my name is TestUser and I like coffee"}],
+        "stream": False,
+        "char_name": "TestCharacter",
+    }
 
     try:
-        resp = requests.post(
-            f"{PROXY_URL}/v1/chat/completions",
-            json=data,
-            timeout=30
-        )
+        resp = requests.post(f"{PROXY_URL}/v1/chat/completions", json=data, timeout=30)
         if resp.ok:
             result = resp.json()
-            content = result.get(
-                "choices", [
-                    {}])[0].get(
-                "message", {}).get(
-                "content", "")
+            content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
             print(f"   Response: {content[:100]}...")
         else:
             print(f"   FAILED: HTTP {resp.status_code}")

@@ -14,6 +14,7 @@ Usage:
 Or CLI:
     python -m rtmdk bootstrap-fasttext --model glove.model --output sot_fasttext.npz
 """
+
 import logging
 import os
 
@@ -67,8 +68,7 @@ def run_bootstrap(
     for word, tid in tokenizer.word_to_id.items():
         if word in model:
             vec = model[word].astype(np.float32)
-            tokenizer.token_embeddings[tid] = vec / \
-                (np.linalg.norm(vec) + 1e-8)
+            tokenizer.token_embeddings[tid] = vec / (np.linalg.norm(vec) + 1e-8)
             vectors.append(vec)
             token_ids.append(tid)
             matched += 1
@@ -93,17 +93,14 @@ def run_bootstrap(
     for tid, emb in list(tokenizer.token_embeddings.items()):
         if len(emb) < vector_dim:
             padded = np.zeros(vector_dim, dtype=np.float32)
-            padded[:len(emb)] = emb
-            tokenizer.token_embeddings[tid] = padded / \
-                (np.linalg.norm(padded) + 1e-8)
+            padded[: len(emb)] = emb
+            tokenizer.token_embeddings[tid] = padded / (np.linalg.norm(padded) + 1e-8)
         elif len(emb) > vector_dim:
-            tokenizer.token_embeddings[tid] = emb[:vector_dim] / \
-                (np.linalg.norm(emb[:vector_dim]) + 1e-8)
+            tokenizer.token_embeddings[tid] = emb[:vector_dim] / (np.linalg.norm(emb[:vector_dim]) + 1e-8)
 
     # Learn projection if dimensions differ
     if vector_dim != tokenizer.latent_dim:
-        logger.info(
-            f"Learning projection: {vector_dim} -> {tokenizer.latent_dim}")
+        logger.info(f"Learning projection: {vector_dim} -> {tokenizer.latent_dim}")
         X = np.stack(vectors).astype(np.float32)
         # Center
         mean_vec = X.mean(axis=0, keepdims=True)
@@ -111,7 +108,7 @@ def run_bootstrap(
         # PCA via SVD
         u, s, vt = np.linalg.svd(X_centered, full_matrices=False)
         # Take top latent_dim components
-        W = vt[:tokenizer.latent_dim, :].T.astype(np.float32)
+        W = vt[: tokenizer.latent_dim, :].T.astype(np.float32)
         tokenizer.projection = W
         logger.info(f"Projection shape: {W.shape}")
     else:
@@ -122,11 +119,13 @@ def run_bootstrap(
 def load_model(model_path: str):
     """Load a gensim KeyedVectors model."""
     from gensim.models import KeyedVectors
+
     return KeyedVectors.load(model_path)
 
 
 if __name__ == "__main__":
     import sys
+
     logging.basicConfig(level=logging.INFO)
     if len(sys.argv) < 3:
         print("Usage: python bootstrap_fasttext.py <model_path> <tokenizer_state.json>")

@@ -6,39 +6,45 @@ Step-by-step setup guide for new RTMDK users.
 
 from typing import Dict, List, Any
 
-
-ONBOARDING_STEPS = [{"step": 1,
-                     "title": "Choose Your Use Case",
-                     "description": "Select how you'll use RTMDK",
-                     "options": {"personal": {"preset": "local",
-                                              "desc": "Personal assistant, <10K memories"},
-                                 "production": {"preset": "production",
-                                                "desc": "Multi-user server, <100K memories"},
-                                 "research": {"preset": "research",
-                                              "desc": "Maximum accuracy, unlimited memories"},
-                                 "enterprise": {"preset": "enterprise",
-                                                "desc": "Distributed system, 500K+ memories"},
-                                 }},
-                    {"step": 2,
-                     "title": "Set Up Embedder",
-                     "description": "Choose how to convert text to vectors",
-                     "options": {"lm_studio": {"desc": "Local LM Studio (free, needs GPU)"},
-                                 "openai": {"desc": "OpenAI API ($0.0001/request)"},
-                                 "custom": {"desc": "Custom embedder function"},
-                                 }},
-                    {"step": 3,
-                     "title": "Import Your Data",
-                     "description": "Load existing knowledge into RTMDK",
-                     "options": {"json": {"desc": "Import from JSON file"},
-                                 "csv": {"desc": "Import from CSV file"},
-                                 "manual": {"desc": "Start empty, add memories manually"},
-                                 }},
-                    {"step": 4,
-                     "title": "Test & Verify",
-                     "description": "Verify everything works",
-                     "test_query": "What do you know?",
-                     },
-                    ]
+ONBOARDING_STEPS = [
+    {
+        "step": 1,
+        "title": "Choose Your Use Case",
+        "description": "Select how you'll use RTMDK",
+        "options": {
+            "personal": {"preset": "local", "desc": "Personal assistant, <10K memories"},
+            "production": {"preset": "production", "desc": "Multi-user server, <100K memories"},
+            "research": {"preset": "research", "desc": "Maximum accuracy, unlimited memories"},
+            "enterprise": {"preset": "enterprise", "desc": "Distributed system, 500K+ memories"},
+        },
+    },
+    {
+        "step": 2,
+        "title": "Set Up Embedder",
+        "description": "Choose how to convert text to vectors",
+        "options": {
+            "lm_studio": {"desc": "Local LM Studio (free, needs GPU)"},
+            "openai": {"desc": "OpenAI API ($0.0001/request)"},
+            "custom": {"desc": "Custom embedder function"},
+        },
+    },
+    {
+        "step": 3,
+        "title": "Import Your Data",
+        "description": "Load existing knowledge into RTMDK",
+        "options": {
+            "json": {"desc": "Import from JSON file"},
+            "csv": {"desc": "Import from CSV file"},
+            "manual": {"desc": "Start empty, add memories manually"},
+        },
+    },
+    {
+        "step": 4,
+        "title": "Test & Verify",
+        "description": "Verify everything works",
+        "test_query": "What do you know?",
+    },
+]
 
 
 class OnboardingWizard:
@@ -84,5 +90,5 @@ class OnboardingWizard:
                 "Create memory: create_rtmdk(preset, embedder)",
                 "Import data: ImportPipeline(memory).import_json('data.json')",
                 "Test: memory.load_memory_variables({'input': 'test'})",
-            ]
+            ],
         }

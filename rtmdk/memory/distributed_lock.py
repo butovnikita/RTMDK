@@ -3,6 +3,7 @@
 File backend works on both Windows (msvcrt) and Unix (fcntl).
 Redis backend requires `redis-py` and a Redis server.
 """
+
 from __future__ import annotations
 import os
 import time
@@ -46,6 +47,7 @@ class DistributedLock:
         if backend == "redis":
             try:
                 import redis
+
                 self._redis_client = redis.from_url(redis_url or "redis://localhost:6379")
                 self._redis_client.ping()
                 logger.info("DistributedLock: Redis backend connected")
@@ -57,6 +59,7 @@ class DistributedLock:
     def _acquire_file(self) -> bool:
         """Platform-specific file acquire."""
         import platform
+
         os.makedirs(os.path.dirname(self.lock_path), exist_ok=True)
         self._fd = os.open(
             self.lock_path,
@@ -65,11 +68,13 @@ class DistributedLock:
         try:
             if platform.system() == "Windows":
                 import msvcrt
+
                 msvcrt.locking(self._fd, msvcrt.LK_NBLCK, 1)
                 self._owned = True
                 return True
             else:
                 import fcntl
+
                 fcntl.flock(self._fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 self._owned = True
                 return True
@@ -83,11 +88,10 @@ class DistributedLock:
         if self._redis_client is None:
             return False
         import redis
+
         timeout_ms = int((self.timeout or 10) * 1000)
         try:
-            acquired = self._redis_client.set(
-                self.lock_path, "1", nx=True, px=timeout_ms
-            )
+            acquired = self._redis_client.set(self.lock_path, "1", nx=True, px=timeout_ms)
             if acquired:
                 self._owned = True
                 return True
@@ -108,11 +112,7 @@ class DistributedLock:
             return False
         try:
             if not blocking:
-                acquired = (
-                    self._acquire_redis()
-                    if self.backend == "redis"
-                    else self._acquire_file()
-                )
+                acquired = self._acquire_redis() if self.backend == "redis" else self._acquire_file()
                 if not acquired:
                     self._thread_lock.release()
                     return False
@@ -120,11 +120,7 @@ class DistributedLock:
 
             deadline = time.time() + self.timeout if self.timeout else None
             while True:
-                acquired = (
-                    self._acquire_redis()
-                    if self.backend == "redis"
-                    else self._acquire_file()
-                )
+                acquired = self._acquire_redis() if self.backend == "redis" else self._acquire_file()
                 if acquired:
                     return True
                 if deadline and time.time() > deadline:
@@ -144,6 +140,7 @@ class DistributedLock:
         if self.backend == "redis" and self._redis_client is not None:
             try:
                 import redis
+
                 self._redis_client.delete(self.lock_path)
             except redis.RedisError:
                 pass
@@ -151,11 +148,14 @@ class DistributedLock:
             if self._fd is not None:
                 try:
                     import platform
+
                     if platform.system() == "Windows":
                         import msvcrt
+
                         msvcrt.locking(self._fd, msvcrt.LK_UNLCK, 1)
                     else:
                         import fcntl
+
                         fcntl.flock(self._fd, fcntl.LOCK_UN)
                 except Exception:
                     pass

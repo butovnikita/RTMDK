@@ -1,8 +1,8 @@
 """ProjectionManager — encapsulates projection + SOT tokenizer logic."""
+
 from __future__ import annotations
 
 import logging
-import time
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -34,8 +34,7 @@ class ProjectionManager:
 
         # --- Projection learner / raw matrix ---
         if cfg.projection_mode == "identity":
-            self.projection_learner = IdentityProjection(
-                cfg.embedding_dim, cfg.latent_dim)
+            self.projection_learner = IdentityProjection(cfg.embedding_dim, cfg.latent_dim)
             self._raw_projection = None
         elif cfg.learn_projection:
             self.projection_learner = IncPCAProjection(
@@ -54,10 +53,7 @@ class ProjectionManager:
                 self._raw_projection = projection_matrix.astype(np.float32)
             else:
                 self._raw_projection = (
-                    self._rng.standard_normal(
-                        (cfg.embedding_dim, cfg.latent_dim)
-                    ).astype(np.float32)
-                    * 0.1
+                    self._rng.standard_normal((cfg.embedding_dim, cfg.latent_dim)).astype(np.float32) * 0.1
                 )
 
         # --- SOT ---
@@ -65,9 +61,8 @@ class ProjectionManager:
         self.sot_hebbian: Optional[Any] = None
         self._sot_field_ema: Optional[NDArray] = None
         if cfg.sot_enabled:
-            from rtmdk.memory.self_organizing_field import (
-                SOTokenizer, ContrastiveHebbian
-            )
+            from rtmdk.memory.self_organizing_field import SOTokenizer, ContrastiveHebbian
+
             token_dim = cfg.sot_token_dim or cfg.latent_dim
             self.sot_tokenizer = SOTokenizer(
                 latent_dim=cfg.latent_dim,
@@ -140,11 +135,9 @@ class ProjectionManager:
             return
         if hasattr(self.projection_learner, "fit"):
             self.projection_learner.fit(corpus_embeddings)
-            logger.info(
-                f"Projection fitted on {corpus_embeddings.shape[0]} samples")
+            logger.info(f"Projection fitted on {corpus_embeddings.shape[0]} samples")
         else:
-            logger.warning(
-                "projection_learner does not support fit() — skipping corpus fit")
+            logger.warning("projection_learner does not support fit() — skipping corpus fit")
 
     # ------------------------------------------------------------------
     # SOT helpers
@@ -155,17 +148,13 @@ class ProjectionManager:
             return
         try:
             import json
+
             with open(cfg.sot_warm_start_corpus, "r", encoding="utf-8") as f:
                 data = json.load(f)
             texts: List[str] = []
             if isinstance(data, dict) and "records" in data:
                 texts = [
-                    r.get("context", "")
-                    + " "
-                    + r.get("answer", "")
-                    + " "
-                    + r.get("query", "")
-                    for r in data["records"]
+                    r.get("context", "") + " " + r.get("answer", "") + " " + r.get("query", "") for r in data["records"]
                 ]
             elif isinstance(data, list):
                 texts = [str(item) for item in data]
@@ -179,6 +168,7 @@ class ProjectionManager:
         if cfg.sot_bootstrap_projection:
             try:
                 from rtmdk.memory.bootstrap_sbert import load_bootstrap
+
                 load_bootstrap(cfg.sot_bootstrap_projection, self.sot_tokenizer)
             except Exception as e:
                 logger.warning(f"SOT bootstrap projection load failed: {e}")
@@ -186,17 +176,16 @@ class ProjectionManager:
         if cfg.sot_bootstrap_fasttext_model and cfg.sot_bootstrap_corpus:
             try:
                 import json
+
                 with open(cfg.sot_bootstrap_corpus, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 texts: List[str] = []
                 if isinstance(data, dict) and "records" in data:
-                    texts = [
-                        r.get("context", "") + " " + r.get("answer", "")
-                        for r in data["records"]
-                    ]
+                    texts = [r.get("context", "") + " " + r.get("answer", "") for r in data["records"]]
                 elif isinstance(data, list):
                     texts = [str(item) for item in data]
                 from rtmdk.memory.bootstrap_fasttext import run_bootstrap
+
                 run_bootstrap(
                     self.sot_tokenizer,
                     texts=texts,
@@ -208,17 +197,16 @@ class ProjectionManager:
         elif cfg.sot_bootstrap_corpus and not cfg.sot_bootstrap_projection:
             try:
                 import json
+
                 with open(cfg.sot_bootstrap_corpus, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 texts: List[str] = []
                 if isinstance(data, dict) and "records" in data:
-                    texts = [
-                        r.get("context", "") + " " + r.get("answer", "")
-                        for r in data["records"]
-                    ]
+                    texts = [r.get("context", "") + " " + r.get("answer", "") for r in data["records"]]
                 elif isinstance(data, list):
                     texts = [str(item) for item in data]
                 from sentence_transformers import SentenceTransformer
+
                 teacher = SentenceTransformer(cfg.sot_bootstrap_model)
                 self.sot_tokenizer.bootstrap_from_teacher(
                     texts,
@@ -244,6 +232,7 @@ class ProjectionManager:
             raise RuntimeError("SOT not enabled in config")
         try:
             from sentence_transformers import SentenceTransformer
+
             teacher = SentenceTransformer(teacher_model)
             logger.info(f"SOT bootstrap: loading teacher model {teacher_model}")
             self.sot_tokenizer.bootstrap_from_teacher(
@@ -290,9 +279,7 @@ class ProjectionManager:
         if not results:
             return
         top_nid, top_score, top_node = results[0]
-        bottom_nid, bottom_score, bottom_node = (
-            results[-1] if len(results) > 1 else (None, 0.0, None)
-        )
+        bottom_nid, bottom_score, bottom_node = results[-1] if len(results) > 1 else (None, 0.0, None)
         if top_score < 0.1:
             return
         top_text = top_node.content.get("text", "")
@@ -317,14 +304,10 @@ class ProjectionManager:
                     token_vec = self.sot_tokenizer.token_embeddings[t]
                     delta = 0.001 * np.outer(token_vec, error)
                     self.sot_tokenizer.projection += delta
-            if np.isnan(self.sot_tokenizer.projection).any() or np.isinf(
-                self.sot_tokenizer.projection
-            ).any():
+            if np.isnan(self.sot_tokenizer.projection).any() or np.isinf(self.sot_tokenizer.projection).any():
                 logger.warning("SOT projection NaN/Inf detected, skipping update")
                 return
-            norms = np.linalg.norm(
-                self.sot_tokenizer.projection, axis=0, keepdims=True
-            )
+            norms = np.linalg.norm(self.sot_tokenizer.projection, axis=0, keepdims=True)
             self.sot_tokenizer.projection /= np.maximum(norms, 1e-8)
 
     def sot_encode(self, text: str) -> List[int]:
@@ -381,12 +364,8 @@ class ProjectionManager:
             if n_neg > 0:
                 available = [v for v in vocab_ids if v not in tokens]
                 if available:
-                    negatives = self._rng.choice(
-                        available, size=min(n_neg, len(available)), replace=False
-                    ).tolist()
-            self.sot_hebbian.update(
-                self.sot_tokenizer.token_embeddings, tokens, negatives
-            )
+                    negatives = self._rng.choice(available, size=min(n_neg, len(available)), replace=False).tolist()
+            self.sot_hebbian.update(self.sot_tokenizer.token_embeddings, tokens, negatives)
 
     def sot_query_latent(self, text: str) -> Optional[np.ndarray]:
         """Return query latent from SOT tokenizer, or None if disabled."""
@@ -409,11 +388,7 @@ class ProjectionManager:
         mask = norms.flatten() >= self.cfg.ball_radius
         if np.any(mask):
             latents = latents.copy()
-            latents[mask] = (
-                latents[mask]
-                * (self.cfg.ball_radius - 1e-6)
-                / np.maximum(norms[mask], 1e-8)
-            )
+            latents[mask] = latents[mask] * (self.cfg.ball_radius - 1e-6) / np.maximum(norms[mask], 1e-8)
         return latents
 
     # ------------------------------------------------------------------

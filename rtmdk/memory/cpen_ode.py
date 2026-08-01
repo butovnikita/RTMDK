@@ -39,8 +39,9 @@ class CPENParentODE:
             else:
                 # Pad or truncate
                 self.input = np.zeros(self.state_dim)
-                self.input[:min(self.state_dim, input_vector.shape[0])] = input_vector[:min(
-                    self.state_dim, input_vector.shape[0])]
+                self.input[: min(self.state_dim, input_vector.shape[0])] = input_vector[
+                    : min(self.state_dim, input_vector.shape[0])
+                ]
         else:
             self.input = input_vector
 
@@ -62,12 +63,7 @@ class CPENChildODE:
     where A_i is amplitude, phi_i is phase.
     """
 
-    def __init__(
-            self,
-            latent_dim: int,
-            num_nodes: int,
-            hebbian_eta: float = 0.01,
-            decay: float = 0.01):
+    def __init__(self, latent_dim: int, num_nodes: int, hebbian_eta: float = 0.01, decay: float = 0.01):
         self.latent_dim = latent_dim
         self.num_nodes = num_nodes
         self.hebbian_eta = hebbian_eta
@@ -94,8 +90,8 @@ class CPENChildODE:
 
     def dynamics(self, t: float, state: np.ndarray) -> np.ndarray:
         """Compute child ODE dynamics for all nodes."""
-        A = state[:self.num_nodes]          # amplitudes
-        phi = state[self.num_nodes:]        # phases
+        A = state[: self.num_nodes]  # amplitudes
+        phi = state[self.num_nodes :]  # phases
 
         # Hebbian update for amplitude: dA/dt = eta * (input * A - decay * A)
         # input per node: we take the norm of the input vector for that node
@@ -113,8 +109,7 @@ class CPENChildODE:
         cos_phi = np.cos(phi)
         sum_sin_phi: float = float(np.sum(sin_phi))
         sum_cos_phi: float = float(np.sum(cos_phi))
-        dphi_dt = natural_freq + coupling * \
-            (sum_sin_phi * cos_phi - sum_cos_phi * sin_phi)
+        dphi_dt = natural_freq + coupling * (sum_sin_phi * cos_phi - sum_cos_phi * sin_phi)
 
         return np.concatenate([dA_dt, dphi_dt])
 
@@ -126,13 +121,13 @@ class CPENODECoupledSystem:
     State vector: [parent_state (latent_dim * num_nodes), child_state (2 * num_nodes)]
     """
 
-    def __init__(self, latent_dim: int, num_nodes: int, input_dim: int = 768,
-                 hebbian_eta: float = 0.01, decay: float = 0.01):
+    def __init__(
+        self, latent_dim: int, num_nodes: int, input_dim: int = 768, hebbian_eta: float = 0.01, decay: float = 0.01
+    ):
         self.latent_dim = latent_dim
         self.num_nodes = num_nodes
         self.parent_ode = CPENParentODE(latent_dim, num_nodes, input_dim)
-        self.child_ode = CPENChildODE(
-            latent_dim, num_nodes, hebbian_eta, decay)
+        self.child_ode = CPENChildODE(latent_dim, num_nodes, hebbian_eta, decay)
         self.state_dim = latent_dim * num_nodes + 2 * num_nodes
 
     def set_input(self, input_vector: np.ndarray):
@@ -145,8 +140,7 @@ class CPENODECoupledSystem:
         # For child, we need input per node: we'll use the same input vector for each node
         # Create a matrix of shape (latent_dim, num_nodes) where each column is
         # input_vector
-        self.child_ode.set_input(
-            np.tile(input_vector.reshape(-1, 1), (1, self.num_nodes)))
+        self.child_ode.set_input(np.tile(input_vector.reshape(-1, 1), (1, self.num_nodes)))
 
     def dynamics(self, t: float, state: np.ndarray) -> np.ndarray:
         """Compute combined dynamics."""
@@ -164,12 +158,17 @@ class CPENODECoupledSystem:
 
         return np.concatenate([parent_dx, child_dx])
 
-    def integrate(self, t_span: Tuple[float, float], initial_state: np.ndarray,
-                  t_eval: Optional[np.ndarray] = None, method: str = 'RK45',
-                  atol: float = 1e-6, rtol: float = 1e-3):
+    def integrate(
+        self,
+        t_span: Tuple[float, float],
+        initial_state: np.ndarray,
+        t_eval: Optional[np.ndarray] = None,
+        method: str = "RK45",
+        atol: float = 1e-6,
+        rtol: float = 1e-3,
+    ):
         """Integrate the ODE system."""
-        sol = solve_ivp(self.dynamics, t_span, initial_state, method=method,
-                        t_eval=t_eval, atol=atol, rtol=rtol)
+        sol = solve_ivp(self.dynamics, t_span, initial_state, method=method, t_eval=t_eval, atol=atol, rtol=rtol)
         if not sol.success:
             raise RuntimeError(f"ODE integration failed: {sol.message}")
         return sol
@@ -195,12 +194,6 @@ if __name__ == "__main__":
 
     # Integrate from t=0 to t=1
     t_span = (0.0, 1.0)
-    sol = system.integrate(
-        t_span,
-        initial_state,
-        t_eval=np.linspace(
-            0,
-            1,
-            100))
+    sol = system.integrate(t_span, initial_state, t_eval=np.linspace(0, 1, 100))
 
     print(f"Integration successful. Shape of solution: {sol.y.shape}")

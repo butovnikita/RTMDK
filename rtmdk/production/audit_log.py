@@ -82,7 +82,7 @@ class AuditLog:
                 # Keep last 50% of entries
                 with open(self.storage_path, "r", encoding="utf-8") as fh:
                     lines = fh.readlines()
-                keep = lines[-(self.max_entries // 2):]
+                keep = lines[-(self.max_entries // 2) :]
                 with open(self.storage_path, "w", encoding="utf-8") as fh:
                     fh.writelines(keep)
         except Exception:

@@ -1,4 +1,5 @@
 """rtmdk/utils/formatting.py"""
+
 from __future__ import annotations
 import json
 from typing import List, Tuple, TYPE_CHECKING
@@ -47,8 +48,7 @@ SYSTEM_PROMPT_TEMPLATES = {
 }
 
 
-def format_context(
-        results: List[Tuple[str, float, "MemoryNode"]], fmt: ContextFormat) -> str:
+def format_context(results: List[Tuple[str, float, "MemoryNode"]], fmt: ContextFormat) -> str:
     if fmt == ContextFormat.JSON:
         items = []
         for nid, resp, node in results:
@@ -85,53 +85,53 @@ def format_context(
                 if meta:
                     item["metadata"] = meta
             items.append(item)
-        return json.dumps(
-            items,
-            ensure_ascii=False,
-            indent=2) if items else "[]"
+        return json.dumps(items, ensure_ascii=False, indent=2) if items else "[]"
 
     elif fmt == ContextFormat.YAML:
         lines = []
         for nid, resp, node in results:
             content = node.content
             if content.get("version") == "2.0":
-                lines.extend([
-                    f"- resonance: {resp:.4f}",
-                    f"  salience: {node.salience:.4f}",
-                    "  input: \"{content.get('input_text', '')}\"",
-                    "  output: \"{content.get('output_text', '')}\"",
-                    f"  role: {content.get('role', '')}",
-                    f"  emotion: {content.get('emotion', '')}",
-                    f"  tier: {content.get('tier', '')}",
-                ])
+                lines.extend(
+                    [
+                        f"- resonance: {resp:.4f}",
+                        f"  salience: {node.salience:.4f}",
+                        "  input: \"{content.get('input_text', '')}\"",
+                        "  output: \"{content.get('output_text', '')}\"",
+                        f"  role: {content.get('role', '')}",
+                        f"  emotion: {content.get('emotion', '')}",
+                        f"  tier: {content.get('tier', '')}",
+                    ]
+                )
             else:
-                lines.extend([
-                    f"- resonance: {resp:.4f}",
-                    f"  salience: {node.salience:.4f}",
-                    "  text: \"{content.get('text', '')}\"",
-                    f"  lineage: {node.lineage}",
-                    f"  modality: {node.modality}",
-                    f"  cross_modal_score: {node.cross_modal_score:.4f}",
-                ])
+                lines.extend(
+                    [
+                        f"- resonance: {resp:.4f}",
+                        f"  salience: {node.salience:.4f}",
+                        "  text: \"{content.get('text', '')}\"",
+                        f"  lineage: {node.lineage}",
+                        f"  modality: {node.modality}",
+                        f"  cross_modal_score: {node.cross_modal_score:.4f}",
+                    ]
+                )
         return "\n".join(lines) if lines else "No relevant memory."
 
     elif fmt == ContextFormat.ATTENTION:
         lines = ["### ATTENTION_CONTEXT"]
         for nid, resp, node in results:
             content = node.content
-            causal = len(
-                node.causal_strength) if hasattr(
-                node, 'causal_strength') else 0
-            goal_rel = getattr(node, 'goal_relevance', 0.0)
+            causal = len(node.causal_strength) if hasattr(node, "causal_strength") else 0
+            goal_rel = getattr(node, "goal_relevance", 0.0)
             tokens = (
                 f"[ATTN:{resp:.3f}][SAL:{node.salience:.3f}]"
-                f"[TIER:{content.get('tier', getattr(node, 'tier', 'semantic'))[0].upper()}]")
+                f"[TIER:{content.get('tier', getattr(node, 'tier', 'semantic'))[0].upper()}]"
+            )
             # Phase 20: Domain & State tokens
-            domain = getattr(node, 'domain', 'general')
-            if domain and domain != 'general':
+            domain = getattr(node, "domain", "general")
+            if domain and domain != "general":
                 tokens += f"[DOM:{domain.upper()[:3]}]"
-            state = getattr(node, 'state', '')
-            if state and state != 'stable':
+            state = getattr(node, "state", "")
+            if state and state != "stable":
                 tokens += f"[STATE:{state[0].upper()}]"
             if causal > 0:
                 tokens += f"[CAUSAL:{causal}]"
@@ -169,21 +169,14 @@ def format_context(
             if content.get("version") == "2.0":
                 input_t = content.get("input_text", "")[:50]
                 output_t = content.get("output_text", "")[:50]
-                text = f"U:{input_t} | AI:{output_t}" if input_t and output_t else (
-                    input_t or output_t or "unknown")
+                text = f"U:{input_t} | AI:{output_t}" if input_t and output_t else (input_t or output_t or "unknown")
             else:
-                text = n.content.get('text', '')
-            parts.append(
-                f"[R:{r:.2f}|S:{n.salience:.2f}|CM:{n.cross_modal_score:.2f}] {text}")
+                text = n.content.get("text", "")
+            parts.append(f"[R:{r:.2f}|S:{n.salience:.2f}|CM:{n.cross_modal_score:.2f}] {text}")
         return "\n".join(parts) if parts else "No relevant memory."
 
 
-def build_system_prompt(
-        context: str,
-        fmt: ContextFormat,
-        use_structured: bool) -> str:
-    if not use_structured or not context or context in (
-            "No relevant memory.", "[]"):
+def build_system_prompt(context: str, fmt: ContextFormat, use_structured: bool) -> str:
+    if not use_structured or not context or context in ("No relevant memory.", "[]"):
         return "You are a helpful assistant with long-term memory."
-    return SYSTEM_PROMPT_TEMPLATES.get(
-        fmt, SYSTEM_PROMPT_TEMPLATES[ContextFormat.PLAIN]).format(context=context)
+    return SYSTEM_PROMPT_TEMPLATES.get(fmt, SYSTEM_PROMPT_TEMPLATES[ContextFormat.PLAIN]).format(context=context)

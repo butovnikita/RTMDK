@@ -31,8 +31,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # Try real embedder first
 try:
     from embedder_lmstudio import get_embedder
+
     _embedder_fn = get_embedder()
-    USING_REAL_EMBEDDER = getattr(_embedder_fn, 'is_real', False)
+    USING_REAL_EMBEDDER = getattr(_embedder_fn, "is_real", False)
 except Exception:
     USING_REAL_EMBEDDER = False
 
@@ -42,19 +43,21 @@ except Exception:
             base = rng.standard_normal(dim).astype(np.float32) * 0.01
             tokens = text.lower().split()
             for tok in tokens[:20]:
-                tok_rng = np.random.default_rng(
-                    hash(tok + "stab_seed") % 2**32)
+                tok_rng = np.random.default_rng(hash(tok + "stab_seed") % 2**32)
                 d = tok_rng.standard_normal(dim).astype(np.float32)
                 d = d / (np.linalg.norm(d) + 1e-8)
                 base += d * 0.5
             return base
+
         return embed
+
     _embedder_fn = _make_hash_embedder()
 
 
 # ============================================================================
 # HELPERS
 # ============================================================================
+
 
 def make_embedder(dim=768):
     # Use the shared embedder (real if available, hash fallback)
@@ -67,36 +70,44 @@ def generate_stable_facts(n=100, seed=42):
     for i in range(n):
         topic = ["science", "history", "geography", "tech", "health"][i % 5]
         keyword = f"stable_kw_{i:05d}"
-        facts.append({
-            "fact": f"{topic} fact number {i} with unique keyword {keyword}",
-            "query": f"What is the {topic} fact number {i} keyword?",
-            "keyword": keyword,
-        })
+        facts.append(
+            {
+                "fact": f"{topic} fact number {i} with unique keyword {keyword}",
+                "query": f"What is the {topic} fact number {i} keyword?",
+                "keyword": keyword,
+            }
+        )
     return facts
 
 
 def create_memory(latent_dim=128):
     config = RTMDKConfig(
-        embedding_dim=768, latent_dim=latent_dim, top_k=5,
-        min_response=0.001, decay_rate=0.999,
-        enable_async=False, causal_topological=False,
-        meta_adaptive=False, self_healing=False,
-        cross_modal=False, attention_bias=False,
-        adaptive_threshold=False, bm25_fallback=True,
-        use_hnsw=True, learn_projection=False,
-        soft_gates=True, self_supervision=False,
+        embedding_dim=768,
+        latent_dim=latent_dim,
+        top_k=5,
+        min_response=0.001,
+        decay_rate=0.999,
+        enable_async=False,
+        causal_topological=False,
+        meta_adaptive=False,
+        self_healing=False,
+        cross_modal=False,
+        attention_bias=False,
+        adaptive_threshold=False,
+        bm25_fallback=True,
+        use_hnsw=True,
+        learn_projection=False,
+        soft_gates=True,
+        self_supervision=False,
     )
     return RTMDKMemory(config=config, embedder=make_embedder())
 
 
 def store_facts(memory, facts):
     for item in facts:
-        memory.save_context({"input": item["fact"], "session_id": "stab"}, {
-                            "output": item["fact"]})
-        memory.save_context({"input": item["query"], "session_id": "stab"}, {
-                            "output": item["fact"]})
-        memory.save_context({"input": item["keyword"], "session_id": "stab"}, {
-                            "output": item["fact"]})
+        memory.save_context({"input": item["fact"], "session_id": "stab"}, {"output": item["fact"]})
+        memory.save_context({"input": item["query"], "session_id": "stab"}, {"output": item["fact"]})
+        memory.save_context({"input": item["keyword"], "session_id": "stab"}, {"output": item["fact"]})
 
 
 def test_recall(memory, facts):
@@ -104,8 +115,7 @@ def test_recall(memory, facts):
     latencies = []
     for item in facts:
         t0 = time.perf_counter()
-        ctx = memory.load_memory_variables(
-            {"input": item["query"], "session_id": "stab"})
+        ctx = memory.load_memory_variables({"input": item["query"], "session_id": "stab"})
         latencies.append((time.perf_counter() - t0) * 1000)
         context = ctx.get("rtmdk_context", "").lower()
         # Use multiple matching criteria for robust recall measurement
@@ -119,13 +129,7 @@ def test_recall(memory, facts):
 
 
 def check_integrity(memory):
-    r = {
-        "nan": 0,
-        "in": 0,
-        "neg_amp": 0,
-        "neg_sal": 0,
-        "total": len(
-            memory.field.nodes)}
+    r = {"nan": 0, "in": 0, "neg_amp": 0, "neg_sal": 0, "total": len(memory.field.nodes)}
     for node in memory.field.nodes.values():
         if np.any(np.isnan(node.latent_pos)):
             r["nan"] += 1
@@ -141,6 +145,7 @@ def check_integrity(memory):
 # ============================================================================
 # STANDALONE TEST RUNNER
 # ============================================================================
+
 
 def run_all_tests():
     print("=" * 70)
@@ -166,12 +171,10 @@ def run_all_tests():
         print(f"  Steps {steps:5d}: recall = {r:.2%}")
     results["longterm_retention"] = recalls
     if recalls.get(200, 0) >= 0.15:
-        print(
-            f"  [OK] PASS: Retention at 200 steps = {recalls[200]:.2%} (>= 15%)")
+        print(f"  [OK] PASS: Retention at 200 steps = {recalls[200]:.2%} (>= 15%)")
         passed += 1
     else:
-        print(
-            f"  [FAIL] FAIL: Retention at 500 steps = {recalls.get(500, 0):.2%} (< 20%)")
+        print(f"  [FAIL] FAIL: Retention at 500 steps = {recalls.get(500, 0):.2%} (< 20%)")
         failed += 1
 
     # Test 2: Field Stability (NaN/Inf check)
@@ -183,7 +186,8 @@ def run_all_tests():
     integrity = check_integrity(mem)
     print(
         f"  Nodes: {integrity['total']}, NaN: {integrity['nan']}, "
-        f"Inf: {integrity['inf']}, NegAmp: {integrity['neg_amp']}, NegSal: {integrity['neg_sal']}")
+        f"Inf: {integrity['inf']}, NegAmp: {integrity['neg_amp']}, NegSal: {integrity['neg_sal']}"
+    )
     results["field_stability"] = integrity
     if integrity["nan"] == 0 and integrity["in"] == 0 and integrity["neg_amp"] == 0 and integrity["neg_sal"] == 0:
         print("  [OK] PASS: No NaN/Inf/negative values after 500 steps")
@@ -210,8 +214,7 @@ def run_all_tests():
         print(f"  [OK] PASS: Recall retained {r1/r0:.0%} of original (>= 40%)")
         passed += 1
     else:
-        print(
-            f"  [FAIL] FAIL: Recall dropped to {r1/r0:.0%} of original (< 40%)")
+        print(f"  [FAIL] FAIL: Recall dropped to {r1/r0:.0%} of original (< 40%)")
         failed += 1
 
     # Test 4: Consolidation Quality
@@ -227,12 +230,10 @@ def run_all_tests():
     print(f"  After consolidation:  {r_after:.2%}")
     results["consolidation"] = {"before": r_before, "after": r_after}
     if r_after >= r_before * 0.5:
-        print(
-            f"  [OK] PASS: Recall after consolidation = {r_after/r_before:.0%} of before (>= 50%)")
+        print(f"  [OK] PASS: Recall after consolidation = {r_after/r_before:.0%} of before (>= 50%)")
         passed += 1
     else:
-        print(
-            f"  [FAIL] FAIL: Recall dropped to {r_after/r_before:.0%} of before (< 50%)")
+        print(f"  [FAIL] FAIL: Recall dropped to {r_after/r_before:.0%} of before (< 50%)")
         failed += 1
 
     # Test 5: Graceful Degradation
@@ -252,12 +253,10 @@ def run_all_tests():
     print(f"  After 25% loss:     {r1:.2%}")
     results["graceful_degradation"] = {"initial": r0, "after_25pct": r1}
     if r1 >= r0 * 0.3:
-        print(
-            f"  [OK] PASS: Recall retained {r1/r0:.0%} after 25% node loss (>= 30%)")
+        print(f"  [OK] PASS: Recall retained {r1/r0:.0%} after 25% node loss (>= 30%)")
         passed += 1
     else:
-        print(
-            f"  [FAIL] FAIL: Recall dropped to {r1/r0:.0%} after 25% node loss (< 30%)")
+        print(f"  [FAIL] FAIL: Recall dropped to {r1/r0:.0%} after 25% node loss (< 30%)")
         failed += 1
 
     # Test 6: Cross-Session Persistence
@@ -265,8 +264,7 @@ def run_all_tests():
     mem = create_memory()
     facts = generate_stable_facts(50)
     for item in facts:
-        mem.save_context({"input": item["fact"], "session_id": "s1"}, {
-                         "output": item["fact"]})
+        mem.save_context({"input": item["fact"], "session_id": "s1"}, {"output": item["fact"]})
     for _ in range(20):
         mem.field.step()
     r_s2, _ = test_recall(mem, facts[:25])
@@ -290,13 +288,12 @@ def run_all_tests():
         mem = create_memory()
         facts = generate_stable_facts(n)
         store_facts(mem, facts)
-        r, _ = test_recall(mem, facts[:min(30, len(facts))])
+        r, _ = test_recall(mem, facts[: min(30, len(facts))])
         scale_recalls[n] = r
         print(f"  N={n:5d}: recall = {r:.2%}")
     results["scalability"] = scale_recalls
     if scale_recalls[50] > 0 and scale_recalls[200] >= scale_recalls[50] * 0.3:
-        print(
-            f"  [OK] PASS: Recall at N=200 is {scale_recalls[200]/scale_recalls[50]:.0%} of N=50 (>= 30%)")
+        print(f"  [OK] PASS: Recall at N=200 is {scale_recalls[200]/scale_recalls[50]:.0%} of N=50 (>= 30%)")
         passed += 1
     else:
         print("  [FAIL] FAIL: Recall collapsed at scale")
@@ -308,11 +305,7 @@ def run_all_tests():
     print(f"  RESULTS: {passed}/{total} passed, {failed}/{total} failed")
     print("=" * 70)
 
-    report = {
-        "tests_passed": passed,
-        "tests_failed": failed,
-        "total": total,
-        "details": results}
+    report = {"tests_passed": passed, "tests_failed": failed, "total": total, "details": results}
     with open("stability_report.json", "w") as f:
         json.dump(report, f, indent=2, default=str)
     print("\n  Report saved to stability_report.json")

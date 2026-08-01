@@ -1,7 +1,6 @@
 """Tests for rtmdk.production.advanced_retrieval."""
 
 import numpy as np
-import pytest
 from rtmdk.memory.core import RTMDKConfig, RTMDKMemory
 from rtmdk.production.advanced_retrieval import (
     HybridRetriever,
@@ -95,6 +94,7 @@ class TestTemporalDecayLearner:
 
     def test_apply_to_node(self):
         from rtmdk.nodes import MemoryNode
+
         node = MemoryNode.__new__(MemoryNode)
         node.salience = 1.0
         learner = TemporalDecayLearner()

@@ -52,12 +52,7 @@ class HealthMonitor:
         node_count = len(self.memory.field.nodes)
         max_nodes = self.memory.config.max_nodes or 100000
         node_ratio = node_count / max_nodes
-        checks["node_count"] = {
-            "value": node_count,
-            "max": max_nodes,
-            "ratio": round(
-                node_ratio,
-                3)}
+        checks["node_count"] = {"value": node_count, "max": max_nodes, "ratio": round(node_ratio, 3)}
         if node_ratio > 0.9:
             status = "degraded"
             checks["node_count"]["warning"] = "Approaching max_nodes limit"
@@ -82,8 +77,7 @@ class HealthMonitor:
 
         # Check latency
         if self._latency_history:
-            avg_latency = sum(
-                self._latency_history[-100:]) / min(len(self._latency_history), 100)
+            avg_latency = sum(self._latency_history[-100:]) / min(len(self._latency_history), 100)
             checks["latency"] = {"avg_ms": round(avg_latency, 1)}
             if avg_latency > 500:
                 status = "degraded"
@@ -92,13 +86,10 @@ class HealthMonitor:
         # Check for NaN/Inf in nodes (integrity)
         nan_count = 0
         for node in list(self.memory.field.nodes.values())[:1000]:
-            if hasattr(node, 'latent_pos'):
+            if hasattr(node, "latent_pos"):
                 import numpy as np
-                if np.any(
-                    np.isnan(
-                        node.latent_pos)) or np.any(
-                    np.isinf(
-                        node.latent_pos)):
+
+                if np.any(np.isnan(node.latent_pos)) or np.any(np.isinf(node.latent_pos)):
                     nan_count += 1
         checks["integrity"] = {"nan_inf_nodes": nan_count}
         if nan_count > 0:
@@ -117,11 +108,13 @@ class HealthMonitor:
 
     def add_alert(self, name: str, threshold: float, callback: Callable):
         """Add an alert callback."""
-        self._alerts.append({
-            "name": name,
-            "threshold": threshold,
-            "callback": callback,
-        })
+        self._alerts.append(
+            {
+                "name": name,
+                "threshold": threshold,
+                "callback": callback,
+            }
+        )
 
     def record_latency(self, latency_ms: float):
         """Record a latency measurement."""
@@ -134,34 +127,13 @@ class HealthMonitor:
         health = self._last_health or self.check_health()
 
         return {
-            "rtmdk_nodes_total": len(
-                self.memory.field.nodes),
+            "rtmdk_nodes_total": len(self.memory.field.nodes),
             "rtmdk_health_status": health["status"],
-            "rtmdk_total_queries": health["checks"].get(
-                "field_stats",
-                {}).get(
-                "total_queries",
-                0),
-            "rtmdk_consolidations": health["checks"].get(
-                "field_stats",
-                    {}).get(
-                        "consolidations",
-                        0),
-            "rtmdk_memory_mb": health["checks"].get(
-                "memory",
-                {}).get(
-                "current_mb",
-                0),
-            "rtmdk_avg_latency_ms": health["checks"].get(
-                "latency",
-                {}).get(
-                "avg_ms",
-                0),
-            "rtmdk_integrity_issues": health["checks"].get(
-                "integrity",
-                {}).get(
-                "nan_inf_nodes",
-                0),
+            "rtmdk_total_queries": health["checks"].get("field_stats", {}).get("total_queries", 0),
+            "rtmdk_consolidations": health["checks"].get("field_stats", {}).get("consolidations", 0),
+            "rtmdk_memory_mb": health["checks"].get("memory", {}).get("current_mb", 0),
+            "rtmdk_avg_latency_ms": health["checks"].get("latency", {}).get("avg_ms", 0),
+            "rtmdk_integrity_issues": health["checks"].get("integrity", {}).get("nan_inf_nodes", 0),
         }
 
     def get_metrics_text(self) -> str:
@@ -171,7 +143,7 @@ class HealthMonitor:
         for name, value in metrics.items():
             if isinstance(value, (int, float)):
                 lines.append(f"# TYPE {name} gauge\n{name} {value}")
-        return '\n'.join(lines)
+        return "\n".join(lines)
 
     def _fire_alerts(self, status: str, checks: Dict):
         """Fire alert callbacks."""

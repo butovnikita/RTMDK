@@ -2,8 +2,9 @@
 
 Separates cache check/save from the monolithic retrieve_nodes() logic.
 """
+
 from __future__ import annotations
-from typing import Any, Optional
+from typing import Any
 
 from rtmdk.pipeline.base import PipelineContext, PipelineStage
 
@@ -28,9 +29,7 @@ class QueryCacheCheckStage(PipelineStage):
         query_latent = self.field._project(ctx.embedding)
         phase = self.memory._get_phase(ctx.session_id, ctx.embedding)
         top_k = ctx.top_k or self.field.cfg.top_k
-        cache_key = self.field._query_cache_key(
-            query_latent, phase, top_k, "text", ctx.session_id
-        )
+        cache_key = self.field._query_cache_key(query_latent, phase, top_k, "text", ctx.session_id)
         cached = self.field.query_cache.get_raw(cache_key)
         if cached is not None:
             ctx.results = cached
@@ -54,8 +53,6 @@ class QueryCacheSaveStage(PipelineStage):
         query_latent = self.field._project(ctx.embedding)
         phase = self.memory._get_phase(ctx.session_id, ctx.embedding)
         top_k = ctx.top_k or self.field.cfg.top_k
-        cache_key = self.field._query_cache_key(
-            query_latent, phase, top_k, "text", ctx.session_id
-        )
+        cache_key = self.field._query_cache_key(query_latent, phase, top_k, "text", ctx.session_id)
         self.field.query_cache.put_raw(cache_key, ctx.results)
         return ctx

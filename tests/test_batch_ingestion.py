@@ -52,11 +52,7 @@ class TestAddNodesBatch:
     def test_batch_cache_incremental(self, cfg):
         field = RTMDKField(cfg)
         # Pre-populate to build cache
-        field.add_node(
-            np.random.randn(
-                cfg.latent_dim).astype(
-                np.float32), {
-                "text": "seed"})
+        field.add_node(np.random.randn(cfg.latent_dim).astype(np.float32), {"text": "seed"})
         # Trigger cache build by a query
         field.query(np.random.randn(cfg.latent_dim).astype(np.float32))
         assert field._cached_positions is not None
@@ -98,6 +94,7 @@ class TestAddNodesBatch:
         )
         field = RTMDKField(cfg2)
         from rtmdk.memory.wal import WAL
+
         field.wal = WAL(wal_path)
         n = 4
         embeddings = np.random.randn(n, cfg2.latent_dim).astype(np.float32)
@@ -180,18 +177,13 @@ class TestAddNodesBatch:
 
     def test_batch_empty(self, cfg):
         field = RTMDKField(cfg)
-        nids = field.add_nodes_batch(
-            np.empty((0, cfg.latent_dim), dtype=np.float32), []
-        )
+        nids = field.add_nodes_batch(np.empty((0, cfg.latent_dim), dtype=np.float32), [])
         assert nids == []
 
     def test_batch_mismatched_lengths(self, cfg):
         field = RTMDKField(cfg)
         with pytest.raises(ValueError):
-            field.add_nodes_batch(
-                np.random.randn(3, cfg.latent_dim).astype(np.float32),
-                [{"text": "x"}]
-            )
+            field.add_nodes_batch(np.random.randn(3, cfg.latent_dim).astype(np.float32), [{"text": "x"}])
 
     def test_batch_with_async_hnsw_and_wal(self, tmp_path):
         wal_path = str(tmp_path / "wal.jsonl")
@@ -216,6 +208,7 @@ class TestAddNodesBatch:
         assert len(nids) == n
         # WAL should have the batch record after interval flush
         import time
+
         time.sleep(0.15)
         records = field.wal.replay()
         assert any(r["op"] == "add_nodes_batch" for r in records)
@@ -228,8 +221,7 @@ class TestAddNodesBatch:
         n = 3
         embeddings = np.random.randn(n, cfg.latent_dim).astype(np.float32)
         contents = [{"text": f"node {i}"} for i in range(n)]
-        nids = field.add_nodes_batch(
-            embeddings, contents, skip_projection=True)
+        nids = field.add_nodes_batch(embeddings, contents, skip_projection=True)
         assert len(nids) == n
 
     def test_batch_skip_projection_wrong_dim(self, cfg):

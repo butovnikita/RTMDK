@@ -54,7 +54,7 @@ class MemoryNode:
     def __post_init__(self):
         # Redirect latent_pos to internal raw storage so property works
         raw = self.latent_pos
-        object.__setattr__(self, '_latent_pos_raw', raw)
+        object.__setattr__(self, "_latent_pos_raw", raw)
         try:
             del self.latent_pos
         except AttributeError:
@@ -73,8 +73,7 @@ class MemoryNode:
     evidence_spans: List[Dict] = field(default_factory=list)
     fact_state: str = "active"  # active | expired | superseded
     superseded_by: Optional[str] = None
-    covariance: Optional[NDArray[np.float32]
-                         ] = None  # P2.2: Kalman uncertainty
+    covariance: Optional[NDArray[np.float32]] = None  # P2.2: Kalman uncertainty
     latent_scale_array: Optional[NDArray[np.float32]] = None  # int8 per-dim scale
 
     def to_dict(self) -> Dict:
@@ -107,19 +106,15 @@ class MemoryNode:
         filtered = {k: v for k, v in data.items() if k in known_fields}
         filtered["latent_pos"] = np.array(filtered["latent_pos"], dtype=np.float32)
         if filtered.get("pre_consolidation_pos"):
-            filtered["pre_consolidation_pos"] = np.array(
-                filtered["pre_consolidation_pos"], dtype=np.float32)
+            filtered["pre_consolidation_pos"] = np.array(filtered["pre_consolidation_pos"], dtype=np.float32)
         if filtered.get("gradient_cache"):
-            filtered["gradient_cache"] = np.array(
-                filtered["gradient_cache"], dtype=np.float32)
+            filtered["gradient_cache"] = np.array(filtered["gradient_cache"], dtype=np.float32)
         if filtered.get("velocity"):
             filtered["velocity"] = np.array(filtered["velocity"], dtype=np.float32)
         if filtered.get("acceleration"):
-            filtered["acceleration"] = np.array(
-                filtered["acceleration"], dtype=np.float32)
+            filtered["acceleration"] = np.array(filtered["acceleration"], dtype=np.float32)
         if filtered.get("modal_embedding"):
-            filtered["modal_embedding"] = np.array(
-                filtered["modal_embedding"], dtype=np.float32)
+            filtered["modal_embedding"] = np.array(filtered["modal_embedding"], dtype=np.float32)
         if filtered.get("covariance"):
             filtered["covariance"] = np.array(filtered["covariance"], dtype=np.float32)
         if filtered.get("latent_scale_array"):
@@ -137,14 +132,14 @@ def _memory_node_latent_pos_getter(self):
     if isinstance(raw, list):
         raw = np.array(raw, dtype=np.float32)
         self._latent_pos_raw = raw
-    if hasattr(raw, 'dtype') and raw.dtype == np.int8:
+    if hasattr(raw, "dtype") and raw.dtype == np.int8:
         # Dequantize int8 back to float32 on read
-        scale_arr = getattr(self, 'latent_scale_array', None)
+        scale_arr = getattr(self, "latent_scale_array", None)
         if scale_arr is not None:
             # Per-dimension scale
             return raw.astype(np.float32) * scale_arr
-        scale = getattr(self, 'latent_scale', 1.0)
-        zp = getattr(self, 'latent_zero_point', 0.0)
+        scale = getattr(self, "latent_scale", 1.0)
+        zp = getattr(self, "latent_zero_point", 0.0)
         return raw.astype(np.float32) * scale + zp
     return raw.astype(np.float32)
 
@@ -207,15 +202,14 @@ class CounterfactualResult:
     assumptions: List[str]
 
     def to_dict(self) -> Dict:
-        return {"query": self.query,
-                "intervention": self.intervention,
-                "predicted_outcomes": [{"node": n,
-                                        "probability": p} for n,
-                                       p in self.predicted_outcomes],
-                "confidence": self.confidence,
-                "reasoning_path": self.reasoning_path,
-                "assumptions": self.assumptions,
-                }
+        return {
+            "query": self.query,
+            "intervention": self.intervention,
+            "predicted_outcomes": [{"node": n, "probability": p} for n, p in self.predicted_outcomes],
+            "confidence": self.confidence,
+            "reasoning_path": self.reasoning_path,
+            "assumptions": self.assumptions,
+        }
 
 
 @dataclass

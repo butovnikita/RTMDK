@@ -2,6 +2,7 @@
 
 Separates distributed lock logic from the monolithic retrieve_nodes().
 """
+
 from __future__ import annotations
 from typing import Any
 
@@ -26,9 +27,8 @@ class DistributedLockStage(PipelineStage):
             if not self.lock.acquire(blocking=True):
                 # Log warning but continue — pipeline handles degradation
                 import logging
-                logging.getLogger(__name__).warning(
-                    "distributed_lock_acquire: failed to acquire lock"
-                )
+
+                logging.getLogger(__name__).warning("distributed_lock_acquire: failed to acquire lock")
         return ctx
 
 
@@ -46,6 +46,7 @@ class DistributedLockReleaseStage(PipelineStage):
                 self.lock.release()
             except Exception:
                 import logging
+
                 logging.getLogger(__name__).debug(
                     "distributed_lock_release: lock already released or not held",
                     exc_info=True,

@@ -12,9 +12,10 @@ Usage:
     nodes["node_1"] = memory_node  # delegates to store.put()
     node = nodes["node_1"]         # delegates to store.get()
 """
+
 from __future__ import annotations
 from collections.abc import MutableMapping
-from typing import Any, Dict, Iterator, Optional
+from typing import Any, Dict, Iterator
 
 from rtmdk.storage.tiered import TieredNodeStore
 
@@ -45,6 +46,7 @@ class TieredNodeStoreAdapter(MutableMapping):
         """Deserialize a plain dict back to MemoryNode."""
         try:
             from rtmdk.nodes import MemoryNode
+
             return MemoryNode.from_dict(data)
         except Exception:
             # Fallback: return as-is if deserialization fails

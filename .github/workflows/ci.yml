@@ -30,22 +30,17 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-prod.txt -r requirements-sot.txt -r requirements-dev.txt
 
-      - name: Lint with flake8 (critical errors — blocking)
-        run: flake8 rtmdk tests --max-line-length=120 --select=E9,F63,F7,F82
-
-      - name: Lint with flake8 (full style — report only)
-        run: flake8 rtmdk tests --max-line-length=120 --statistics
-        continue-on-error: true
+      - name: Lint with flake8
+        run: flake8 rtmdk tests --statistics
 
       - name: Type check with mypy
         run: mypy rtmdk --config-file mypy.ini
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10'
         continue-on-error: true
 
-      - name: Format check with black (report only)
+      - name: Format check with black
         run: black --check rtmdk tests
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10'
-        continue-on-error: true
 
       - name: Run tests (fast)
         run: pytest tests/ -v --tb=short -q --reruns=2 --durations=20 -m "not slow"

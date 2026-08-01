@@ -1,8 +1,6 @@
 """Property-based tests for pipeline invariants."""
 
 import numpy as np
-import pytest
-from hypothesis import given, strategies as st, settings
 
 from rtmdk.memory.config import RTMDKConfig
 from rtmdk.memory.core import RTMDKMemory
@@ -10,9 +8,10 @@ from rtmdk.memory.core import RTMDKMemory
 
 def _make_embedder(dim: int = 16):
     def embed(text: str) -> np.ndarray:
-        h = hash(text) % (2 ** 32)
+        h = hash(text) % (2**32)
         rng = np.random.default_rng(h)
         return rng.standard_normal(dim, dtype=np.float32)
+
     return embed
 
 

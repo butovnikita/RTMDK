@@ -62,16 +62,19 @@ def test_import_nodes(client):
     mem = _make_mem()
     app_mod.memory = mem
     try:
-        resp = client.post("/v1/memory/import", json={
-            "nodes": [
-                {
-                    "id": "imp1",
-                    "embedding": [0.0] * 16,
-                    "content": {"content": "imported"},
-                }
-            ],
-            "clear_existing": False,
-        })
+        resp = client.post(
+            "/v1/memory/import",
+            json={
+                "nodes": [
+                    {
+                        "id": "imp1",
+                        "embedding": [0.0] * 16,
+                        "content": {"content": "imported"},
+                    }
+                ],
+                "clear_existing": False,
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["imported"] == 1
@@ -89,16 +92,19 @@ def test_import_with_clear(client):
     )
     app_mod.memory = mem
     try:
-        resp = client.post("/v1/memory/import", json={
-            "nodes": [
-                {
-                    "id": "new1",
-                    "embedding": [0.0] * 16,
-                    "content": {"content": "new"},
-                }
-            ],
-            "clear_existing": True,
-        })
+        resp = client.post(
+            "/v1/memory/import",
+            json={
+                "nodes": [
+                    {
+                        "id": "new1",
+                        "embedding": [0.0] * 16,
+                        "content": {"content": "new"},
+                    }
+                ],
+                "clear_existing": True,
+            },
+        )
         assert resp.status_code == 200
         assert "old1" not in mem.field.nodes
         assert "new1" in mem.field.nodes

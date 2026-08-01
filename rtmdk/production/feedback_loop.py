@@ -18,8 +18,9 @@ from collections import defaultdict
 @dataclass
 class FeedbackRecord:
     """A single feedback record."""
+
     query: str
-    quality: float           # 0.0 (bad) to 1.0 (excellent)
+    quality: float  # 0.0 (bad) to 1.0 (excellent)
     timestamp: float
     session_id: str = ""
     # Nodes that were retrieved
@@ -116,7 +117,7 @@ class FeedbackLoop:
 
         # Trim history if needed
         if len(self._history) > self.max_history:
-            self._history = self._history[-self.max_history:]
+            self._history = self._history[-self.max_history :]
 
         # Track per-session
         if session_id:
@@ -205,7 +206,8 @@ class FeedbackLoop:
 
         if filepath:
             import json
-            with open(filepath, 'w') as f:
+
+            with open(filepath, "w") as f:
                 json.dump(data, f, indent=2)
 
         return data

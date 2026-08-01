@@ -1,12 +1,10 @@
 """Runtime WebSocket tests for GraphQL subscriptions."""
 
 import importlib
-import json
 
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
-from starlette.testclient import TestClient as StarletteTestClient
 
 from rtmdk.memory.config import RTMDKConfig
 from rtmdk.memory.core import RTMDKField, RTMDKMemory

@@ -22,29 +22,28 @@ class ConversationReplay:
         self.memory = memory
         self._history: List[Dict] = []
 
-    def record_query(
-            self,
-            query: str,
-            response: str,
-            session_id: str = "default"):
+    def record_query(self, query: str, response: str, session_id: str = "default"):
         """Record a query-response pair for replay."""
-        self._history.append({
-            "query": query,
-            "response": response,
-            "session_id": session_id,
-            "timestamp": __import__('time').time(),
-        })
+        self._history.append(
+            {
+                "query": query,
+                "response": response,
+                "session_id": session_id,
+                "timestamp": __import__("time").time(),
+            }
+        )
 
     def replay_queries(self, queries: List[str], embedder: Any) -> List[Dict]:
         """Replay queries against current memory."""
         results = []
         for query in queries:
-            ctx = self.memory.load_memory_variables(
-                {"input": query, "session_id": "replay"})
-            results.append({
-                "query": query,
-                "context": ctx.get("rtmdk_context", ""),
-            })
+            ctx = self.memory.load_memory_variables({"input": query, "session_id": "replay"})
+            results.append(
+                {
+                    "query": query,
+                    "context": ctx.get("rtmdk_context", ""),
+                }
+            )
         return results
 
     def get_history(self) -> List[Dict]:

@@ -1,4 +1,5 @@
 """rtmdk/utils/attention.py"""
+
 from __future__ import annotations
 import numpy as np
 from typing import List, Tuple, TYPE_CHECKING
@@ -7,12 +8,9 @@ if TYPE_CHECKING:
     from rtmdk.nodes import MemoryNode
 
 
-def apply_attention_bias(results: List[Tuple[str,
-                                             float,
-                                             "MemoryNode"]],
-                         temperature: float = 1.0) -> List[Tuple[str,
-                                                                 float,
-                                                                 "MemoryNode"]]:
+def apply_attention_bias(
+    results: List[Tuple[str, float, "MemoryNode"]], temperature: float = 1.0
+) -> List[Tuple[str, float, "MemoryNode"]]:
     if not results:
         return results
     raw_scores = np.array([r for _, r, _ in results])
@@ -21,13 +19,11 @@ def apply_attention_bias(results: List[Tuple[str,
     weights = []
     for nid, resp, node in results:
         score = resp
-        causal_boost = sum(
-            node.causal_strength.values()) if hasattr(
-            node, 'causal_strength') else 0
-        score *= (1.0 + 0.2 * min(1.0, causal_boost))
+        causal_boost = sum(node.causal_strength.values()) if hasattr(node, "causal_strength") else 0
+        score *= 1.0 + 0.2 * min(1.0, causal_boost)
         score *= max(0.5, 1.0 - node.tension)
-        goal_rel = getattr(node, 'goal_relevance', 0.0)
-        score *= (1.0 + 0.3 * goal_rel)
+        goal_rel = getattr(node, "goal_relevance", 0.0)
+        score *= 1.0 + 0.3 * goal_rel
         weights.append(score)
     weights = np.array(weights)
     if temperature > 0:
@@ -42,17 +38,14 @@ def apply_attention_bias(results: List[Tuple[str,
     return biased_results
 
 
-def format_cognitive_context(results: List[Tuple[str, float, "MemoryNode"]],
-                             bias_applied: bool = False) -> str:
+def format_cognitive_context(results: List[Tuple[str, float, "MemoryNode"]], bias_applied: bool = False) -> str:
     if not results:
         return "### COGNITIVE_CONTEXT\nNo relevant structures."
     lines = ["### COGNITIVE_CONTEXT"]
     for nid, score, node in results:
         text = node.content.get("text", "unknown")[:80]
-        tier = getattr(node, 'tier', 'semantic')
-        causal = len(
-            node.causal_strength) if hasattr(
-            node, 'causal_strength') else 0
+        tier = getattr(node, "tier", "semantic")
+        causal = len(node.causal_strength) if hasattr(node, "causal_strength") else 0
         tension = node.tension
         lineage = len(node.lineage) if node.lineage else 0
         tokens = f"[SCORE:{score:.3f}]"

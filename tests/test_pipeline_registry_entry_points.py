@@ -1,7 +1,5 @@
 """Tests for pipeline stage entry point discovery."""
 
-import pytest
-
 from rtmdk.pipeline.base import PipelineStage, PipelineContext
 from rtmdk.pipeline.registry import StageRegistry
 

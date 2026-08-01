@@ -42,8 +42,7 @@ class EmbeddingCache:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.max_size = max_size
         self.ttl = ttl_seconds
-        self.memory_cache: OrderedDict[str,
-                                       Tuple[np.ndarray, float]] = OrderedDict()
+        self.memory_cache: OrderedDict[str, Tuple[np.ndarray, float]] = OrderedDict()
         self.memory_cache_size = memory_cache_size
 
         self._hits = 0
@@ -90,9 +89,7 @@ class EmbeddingCache:
 
         return emb
 
-    def get_or_compute_batch(self,
-                             texts: List[str],
-                             embedder) -> List[np.ndarray]:
+    def get_or_compute_batch(self, texts: List[str], embedder) -> List[np.ndarray]:
         """Batch version — more efficient for multiple texts."""
         results: List[Optional[np.ndarray]] = []
         uncached_texts: List[str] = []
@@ -163,9 +160,7 @@ class EmbeddingCache:
 
     def _make_key(self, text: str) -> str:
         """Create cache key from text."""
-        return hashlib.md5(
-            text.encode('utf-8'),
-            usedforsecurity=False).hexdigest()
+        return hashlib.md5(text.encode("utf-8"), usedforsecurity=False).hexdigest()
 
     def _save_to_memory_cache(self, key: str, emb: np.ndarray):
         """Save to in-memory LRU cache."""
@@ -196,7 +191,7 @@ class EmbeddingCache:
                 if oldest_file.exists():
                     oldest_file.unlink()
 
-            with open(index_path, 'w') as f:
+            with open(index_path, "w") as f:
                 json.dump(index, f)
         except (json.JSONDecodeError, IOError):
             pass  # Best-effort indexing

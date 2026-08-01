@@ -51,6 +51,7 @@ class TestPipelineHealthMonitor:
 
     def test_check_alerts_no_alerts(self):
         from rtmdk.pipeline.base import PipelineContext, StageMetrics
+
         monitor = PipelineHealthMonitor()
         ctx = PipelineContext(query_text="test")
         ctx.metrics = [StageMetrics(name="embed", latency_ms=10.0, degraded=False)]
@@ -59,6 +60,7 @@ class TestPipelineHealthMonitor:
 
     def test_check_alerts_degraded_stages(self):
         from rtmdk.pipeline.base import PipelineContext, StageMetrics
+
         monitor = PipelineHealthMonitor()
         ctx = PipelineContext(query_text="test")
         ctx.metrics = [
@@ -72,6 +74,7 @@ class TestPipelineHealthMonitor:
 
     def test_check_alerts_high_latency(self):
         from rtmdk.pipeline.base import PipelineContext, StageMetrics
+
         monitor = PipelineHealthMonitor()
         ctx = PipelineContext(query_text="test")
         ctx.metrics = [StageMetrics(name="embed", latency_ms=6000.0, degraded=False)]
@@ -81,6 +84,7 @@ class TestPipelineHealthMonitor:
 
     def test_check_alerts_high_error_rate(self):
         from rtmdk.pipeline.base import PipelineContext, StageMetrics
+
         monitor = PipelineHealthMonitor()
         ctx = PipelineContext(query_text="test")
         ctx.metrics = [

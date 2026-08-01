@@ -1,4 +1,5 @@
 """Production stack for RTMDK."""
+
 from __future__ import annotations
 
 import re
@@ -20,12 +21,11 @@ class ShadowModeEvaluator:
         self._fallback_count = 0
         self._total_comparisons = 0
 
-    def compare(self, shadow_output: Any, production_output: Any,
-                metric_name: str = "response_quality") -> Dict[str, Any]:
-        self._shadow_results.append(
-            {"value": shadow_output, "metric": metric_name})
-        self._production_results.append(
-            {"value": production_output, "metric": metric_name})
+    def compare(
+        self, shadow_output: Any, production_output: Any, metric_name: str = "response_quality"
+    ) -> Dict[str, Any]:
+        self._shadow_results.append({"value": shadow_output, "metric": metric_name})
+        self._production_results.append({"value": production_output, "metric": metric_name})
         self._total_comparisons += 1
         diff = abs(float(shadow_output) - float(production_output))
         is_better = shadow_output > production_output
@@ -57,44 +57,43 @@ class RAGASPlusEvaluator:
     def __init__(self) -> None:
         self._eval_history: List["EvalResult"] = []
 
-    def evaluate(self,
-                 question: str,
-                 answer: str,
-                 contexts: List[str],
-                 ground_truth: Optional[str] = None,
-                 causal_edges: Optional[List[Tuple[str,
-                                                   str,
-                                                   float]]] = None) -> "EvalResult":
+    def evaluate(
+        self,
+        question: str,
+        answer: str,
+        contexts: List[str],
+        ground_truth: Optional[str] = None,
+        causal_edges: Optional[List[Tuple[str, str, float]]] = None,
+    ) -> "EvalResult":
         from rtmdk.nodes import EvalResult
+
         result = EvalResult()
-        result.context_precision = self._compute_context_precision(
-            question, contexts)
+        result.context_precision = self._compute_context_precision(question, contexts)
         if ground_truth:
-            result.context_recall = self._compute_context_recall(
-                ground_truth, contexts)
+            result.context_recall = self._compute_context_recall(ground_truth, contexts)
         else:
             result.context_recall = result.context_precision * 0.8
-        result.answer_relevance = self._compute_answer_relevance(
-            question, answer)
+        result.answer_relevance = self._compute_answer_relevance(question, answer)
         result.faithfulness = self._compute_faithfulness(answer, contexts)
         if causal_edges:
-            result.causal_consistency = self._compute_causal_consistency(
-                answer, causal_edges)
+            result.causal_consistency = self._compute_causal_consistency(answer, causal_edges)
         else:
             result.causal_consistency = 0.5
         result.temporal_coherence = self._compute_temporal_coherence(contexts)
         weights = [0.2, 0.15, 0.2, 0.2, 0.15, 0.1]
-        scores = [result.context_precision, result.context_recall,
-                  result.answer_relevance, result.faithfulness,
-                  result.causal_consistency, result.temporal_coherence]
+        scores = [
+            result.context_precision,
+            result.context_recall,
+            result.answer_relevance,
+            result.faithfulness,
+            result.causal_consistency,
+            result.temporal_coherence,
+        ]
         result.overall_score = sum(w * s for w, s in zip(weights, scores))
         self._eval_history.append(result)
         return result
 
-    def _compute_context_precision(
-            self,
-            question: str,
-            contexts: List[str]) -> float:
+    def _compute_context_precision(self, question: str, contexts: List[str]) -> float:
         if not contexts:
             return 0.0
         q_tokens = set(re.findall(r"\b\w+\b", question.lower()))
@@ -104,14 +103,10 @@ class RAGASPlusEvaluator:
         for ctx in contexts:
             c_tokens = set(re.findall(r"\b\w+\b", ctx.lower()))
             if c_tokens:
-                precision_scores.append(
-                    len(q_tokens & c_tokens) / len(q_tokens))
+                precision_scores.append(len(q_tokens & c_tokens) / len(q_tokens))
         return float(np.mean(precision_scores)) if precision_scores else 0.0
 
-    def _compute_context_recall(
-            self,
-            ground_truth: str,
-            contexts: List[str]) -> float:
+    def _compute_context_recall(self, ground_truth: str, contexts: List[str]) -> float:
         gt_tokens = set(re.findall(r"\b\w+\b", ground_truth.lower()))
         if not gt_tokens:
             return 0.0
@@ -139,8 +134,7 @@ class RAGASPlusEvaluator:
             return 0.5
         return len(a_tokens & ctx_tokens) / len(a_tokens)
 
-    def _compute_causal_consistency(
-            self, answer: str, causal_edges: List[Tuple[str, str, float]]) -> float:
+    def _compute_causal_consistency(self, answer: str, causal_edges: List[Tuple[str, str, float]]) -> float:
         if not causal_edges:
             return 0.5
         answer_lower = answer.lower()
@@ -153,13 +147,7 @@ class RAGASPlusEvaluator:
     def _compute_temporal_coherence(self, contexts: List[str]) -> float:
         if len(contexts) < 2:
             return 1.0
-        temporal_markers = [
-            "then",
-            "after",
-            "before",
-            "next",
-            "later",
-            "previously"]
+        temporal_markers = ["then", "after", "before", "next", "later", "previously"]
         coherent = 0
         for ctx in contexts:
             ctx_lower = ctx.lower()
@@ -171,15 +159,17 @@ class RAGASPlusEvaluator:
         if len(self._eval_history) < 5:
             return {}
         recent = self._eval_history[-10:]
-        older = self._eval_history[-20:-10] if len(
-            self._eval_history) >= 20 else self._eval_history[:5]
+        older = self._eval_history[-20:-10] if len(self._eval_history) >= 20 else self._eval_history[:5]
         return {
             "recent_overall": float(np.mean([e.overall_score for e in recent])),
             "older_overall": float(np.mean([e.overall_score for e in older])),
-            "trend": "improving" if (
-                float(np.mean([e.overall_score for e in recent])) >
-                float(np.mean([e.overall_score for e in older]))
-            ) else "degrading",
+            "trend": (
+                "improving"
+                if (
+                    float(np.mean([e.overall_score for e in recent])) > float(np.mean([e.overall_score for e in older]))
+                )
+                else "degrading"
+            ),
         }
 
 
@@ -215,9 +205,7 @@ class AutoRollbackManager:
     def get_state(self) -> Dict[str, Any]:
         return {
             "baseline_score": self._baseline_score,
-            "recent_mean": float(
-                np.mean(
-                    self._recent_scores)) if self._recent_scores else 0,
+            "recent_mean": float(np.mean(self._recent_scores)) if self._recent_scores else 0,
             "rollback_count": self._rollback_count,
             "rollback_rate": self.get_rollback_rate(),
         }

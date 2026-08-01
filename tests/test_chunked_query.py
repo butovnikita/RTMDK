@@ -1,5 +1,5 @@
 """Test chunked query path in _query_vectorized."""
-import time
+
 import numpy as np
 import pytest
 
@@ -19,10 +19,7 @@ def _make_field(n_nodes: int, batch_size: int):
     rng = np.random.default_rng(42)
     for i in range(n_nodes):
         emb = rng.standard_normal(64).astype(np.float32)
-        content = {
-            "text": f"node_{i}",
-            "tier": "semantic",
-            "session": "default"}
+        content = {"text": f"node_{i}", "tier": "semantic", "session": "default"}
         field.add_node(emb, content, phase=rng.random(), session_id="default")
     return field
 
@@ -31,17 +28,14 @@ def _make_field(n_nodes: int, batch_size: int):
 def test_chunked_query_matches_non_chunked():
     """Query with chunking should return same top-k as without chunking."""
     n_nodes = 200
-    query_latent = np.random.default_rng(
-        7).standard_normal(64).astype(np.float32)
+    query_latent = np.random.default_rng(7).standard_normal(64).astype(np.float32)
     query_phase = 0.5
 
     field_small_batch = _make_field(n_nodes, batch_size=50)
     field_large_batch = _make_field(n_nodes, batch_size=500)
 
-    results_small = field_small_batch.query(
-        query_latent, top_k=10, phase=query_phase)
-    results_large = field_large_batch.query(
-        query_latent, top_k=10, phase=query_phase)
+    results_small = field_small_batch.query(query_latent, top_k=10, phase=query_phase)
+    results_large = field_large_batch.query(query_latent, top_k=10, phase=query_phase)
 
     # Extract scores — IDs differ because fields were created at different
     # times (timestamp-based ID generation), but embeddings and query are

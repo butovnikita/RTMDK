@@ -5,7 +5,7 @@ Replaces BM25 with a token-level learned sparse index.
 
 import logging
 from collections import defaultdict
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple
 
 logger = logging.getLogger(__name__)
 

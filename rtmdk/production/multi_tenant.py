@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 @dataclass
 class TenantConfig:
     """Configuration for a single tenant."""
+
     max_nodes: int = 10000
     max_ram_mb: float = 100.0
     enable_engrams: bool = True
@@ -28,6 +29,7 @@ class TenantConfig:
 @dataclass
 class TenantStats:
     """Statistics for a single tenant."""
+
     tenant_id: str
     node_count: int = 0
     query_count: int = 0
@@ -142,15 +144,17 @@ class TenantRouter:
         """List all active tenants."""
         result = []
         for tenant_id, stats in self._stats.items():
-            result.append({
-                "tenant_id": tenant_id,
-                "node_count": stats.node_count,
-                "query_count": stats.query_count,
-                "avg_latency_ms": round(stats.avg_latency_ms, 2),
-                "created_at": stats.created_at,
-                "last_active": stats.last_active,
-                "ram_mb": round(stats.ram_mb, 2),
-            })
+            result.append(
+                {
+                    "tenant_id": tenant_id,
+                    "node_count": stats.node_count,
+                    "query_count": stats.query_count,
+                    "avg_latency_ms": round(stats.avg_latency_ms, 2),
+                    "created_at": stats.created_at,
+                    "last_active": stats.last_active,
+                    "ram_mb": round(stats.ram_mb, 2),
+                }
+            )
         return result
 
     def get_tenant_stats(self, tenant_id: str) -> Optional[Dict]:

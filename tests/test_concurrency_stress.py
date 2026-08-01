@@ -8,7 +8,6 @@ import threading
 import time
 
 import numpy as np
-import pytest
 
 from rtmdk.memory.config import RTMDKConfig
 from rtmdk.memory.core import RTMDKField

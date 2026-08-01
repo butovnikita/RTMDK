@@ -11,9 +11,10 @@ from rtmdk.production.smart_pruning import SmartPruner
 
 def _make_embedder(dim: int = 64):
     def embed(text: str) -> np.ndarray:
-        h = hash(text) % (2 ** 32)
+        h = hash(text) % (2**32)
         rng = np.random.default_rng(h)
         return rng.standard_normal(dim, dtype=np.float32)
+
     return embed
 
 
@@ -38,8 +39,10 @@ class TestSmartPruner:
         node.amplitude = 0.01
 
         pruner = SmartPruner(
-            mem, max_age_days=1, min_salience=0.05,
-            tier_overrides={"episodic": {"max_age_days": 1, "min_salience": 0.05}}
+            mem,
+            max_age_days=1,
+            min_salience=0.05,
+            tier_overrides={"episodic": {"max_age_days": 1, "min_salience": 0.05}},
         )
         result = pruner.prune()
         assert result["nodes_pruned"] == 1
@@ -57,8 +60,11 @@ class TestSmartPruner:
         node.amplitude = 0.01
 
         pruner = SmartPruner(
-            mem, max_age_days=1, min_salience=0.05, dry_run=True,
-            tier_overrides={"episodic": {"max_age_days": 1, "min_salience": 0.05}}
+            mem,
+            max_age_days=1,
+            min_salience=0.05,
+            dry_run=True,
+            tier_overrides={"episodic": {"max_age_days": 1, "min_salience": 0.05}},
         )
         result = pruner.prune()
         assert result["nodes_pruned"] == 1
@@ -99,12 +105,16 @@ class TestSmartPruner:
 
         export_dir = str(tmp_path / "pruning_backups")
         pruner = SmartPruner(
-            mem, max_age_days=1, min_salience=0.05, export_dir=export_dir,
-            tier_overrides={"episodic": {"max_age_days": 1, "min_salience": 0.05}}
+            mem,
+            max_age_days=1,
+            min_salience=0.05,
+            export_dir=export_dir,
+            tier_overrides={"episodic": {"max_age_days": 1, "min_salience": 0.05}},
         )
         result = pruner.prune()
         assert result["exported_to"] is not None
         import os
+
         assert os.path.exists(result["exported_to"])
 
     def test_get_stats(self):

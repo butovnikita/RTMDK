@@ -1,4 +1,5 @@
 """Tests for pipeline query planner."""
+
 from __future__ import annotations
 
 import pytest
@@ -35,7 +36,9 @@ class TestQueryPlanner:
 
     def test_plan_long_query_keeps_explain(self):
         planner = QueryPlanner(short_query_threshold=10)
-        plan = planner.plan("What is the capital of France and why is it historically significant?", route="standard", top_k=5)
+        plan = planner.plan(
+            "What is the capital of France and why is it historically significant?", route="standard", top_k=5
+        )
         assert "explain" in plan.stage_names
 
     def test_plan_low_top_k_skips_calibrate(self):

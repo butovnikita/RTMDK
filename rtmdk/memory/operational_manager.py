@@ -3,6 +3,7 @@
 Operational methods for RTMDKField: calibration, health checks,
 interventions, counterfactual queries, rollbacks.
 """
+
 from __future__ import annotations
 from typing import Dict, Any, List, Optional, TYPE_CHECKING
 import numpy as np
@@ -22,11 +23,7 @@ class OperationalManager:
     def __init__(self, field: RTMDKField):
         self._field = field
 
-    def calibrate(
-            self,
-            query_embedding: NDArray,
-            node_id: str,
-            is_relevant: bool) -> None:
+    def calibrate(self, query_embedding: NDArray, node_id: str, is_relevant: bool) -> None:
         """Add a labeled query-result pair to the conformal calibration set."""
         field = self._field
         if not field.cfg.conformal_prediction or field.conformal_calibrator is None:
@@ -38,8 +35,7 @@ class OperationalManager:
         score = field._query_mgr._resonance_response(query_latent, node.phase, node)
         field.conformal_calibrator.add_sample(score)
 
-    def imagine_counterfactual(self, base_query: NDArray,
-                               intervention: Dict[str, float]) -> List[Dict]:
+    def imagine_counterfactual(self, base_query: NDArray, intervention: Dict[str, float]) -> List[Dict]:
         """Generate hypothetical trajectories via do-interventions."""
         field = self._field
         if not field.scenario_planner:
@@ -114,24 +110,17 @@ class OperationalManager:
             return []
         field.stats["field_health"] = FieldHealth.HEALING.value
         if diagnostics.get("dead_zones", 0) > 0:
-            healed.extend(
-                field.healer.heal_dead_zones(
-                    field.nodes,
-                    diagnostics["dead_zone_nodes"]))
+            healed.extend(field.healer.heal_dead_zones(field.nodes, diagnostics["dead_zone_nodes"]))
         if diagnostics.get("hyperconvergence", False):
             healed.extend(field.healer.heal_hyperconvergence(field.nodes))
         if diagnostics.get("fragmentation", 0) > field.cfg.fragmentation_threshold:
             if len(field.nodes) >= 2:
-                positions = np.array(
-                    [n.latent_pos for n in field.nodes.values()])
+                positions = np.array([n.latent_pos for n in field.nodes.values()])
                 tree = cKDTree(positions)
                 neighbors = tree.query_ball_point(positions, 2.0)
-                isolated = [field.node_index[i] for i in range(
-                    len(field.node_index)) if len(neighbors[i]) <= 1]
+                isolated = [field.node_index[i] for i in range(len(field.node_index)) if len(neighbors[i]) <= 1]
                 if isolated:
-                    healed.extend(
-                        field.healer.heal_fragmentation(
-                            field.nodes, isolated))
+                    healed.extend(field.healer.heal_fragmentation(field.nodes, isolated))
         if healed:
             field.stats["healing_events"] += len(healed)
             field.stats["healing_history"].extend(healed)
@@ -139,10 +128,9 @@ class OperationalManager:
                 field.stats["healing_history"] = field.stats["healing_history"][-500:]
         return healed
 
-    def counterfactual_query(self,
-                             intervention: Dict[str, Any],
-                             query_nodes: List[str],
-                             evidence: Optional[Dict[str, Any]] = None) -> CounterfactualResult:
+    def counterfactual_query(
+        self, intervention: Dict[str, Any], query_nodes: List[str], evidence: Optional[Dict[str, Any]] = None
+    ) -> CounterfactualResult:
         """Run a counterfactual query against the causal engine."""
         field = self._field
         if not field.causal_engine:
@@ -152,10 +140,12 @@ class OperationalManager:
                 predicted_outcomes=[],
                 confidence=0.0,
                 reasoning_path=["Causal engine not enabled"],
-                assumptions=[])
+                assumptions=[],
+            )
         field.stats["counterfactual_queries"] += 1
         return field.causal_engine.counterfactual_query(
-            intervention, query_nodes, evidence, field.cfg.counterfactual_max_depth)
+            intervention, query_nodes, evidence, field.cfg.counterfactual_max_depth
+        )
 
     def get_causal_summary(self) -> Dict:
         """Return a summary of the causal graph state."""
@@ -165,15 +155,14 @@ class OperationalManager:
         return {
             "enabled": True,
             "causal_edges": len(field.causal_engine.causal_effects),
-            "contradictions": len([
-                c for c in field.causal_engine.contradictions.values()
-                if not c.resolved]),
+            "contradictions": len([c for c in field.causal_engine.contradictions.values() if not c.resolved]),
             "nodes_with_effects": len(set(k[0] for k in field.causal_engine.causal_effects)),
             "nodes_affected": len(set(k[1] for k in field.causal_engine.causal_effects)),
             "top_effects": sorted(
-                [(f"{k[0]}->{k[1]}", v.strength)
-                 for k, v in field.causal_engine.causal_effects.items()],
-                key=lambda x: x[1], reverse=True)[:10],
+                [(f"{k[0]}->{k[1]}", v.strength) for k, v in field.causal_engine.causal_effects.items()],
+                key=lambda x: x[1],
+                reverse=True,
+            )[:10],
         }
 
     def compress_field(self) -> None:

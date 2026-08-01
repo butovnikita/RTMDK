@@ -1,10 +1,9 @@
 """Tests for planned pipeline executor."""
+
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
-from rtmdk.pipeline.base import PipelineContext
 from rtmdk.pipeline.stages import EmbedStage, RouteStage, RetrieveStage, RerankStage, CalibrateStage, ExplainStage
 from rtmdk.pipeline.planner import QueryPlanner
 from rtmdk.pipeline.planned_executor import PlannedPipelineExecutor

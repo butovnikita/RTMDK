@@ -159,9 +159,7 @@ class RTMDKClient:
 
     def list_nodes(self, limit: int = 50, offset: int = 0) -> dict:
         """List memory nodes with pagination."""
-        return self._request(
-            "GET", "/v1/memory/nodes", params={"limit": limit, "offset": offset}
-        )
+        return self._request("GET", "/v1/memory/nodes", params={"limit": limit, "offset": offset})
 
     # ------------------------------------------------------------------
     # Batch Ingest
@@ -256,9 +254,7 @@ class RTMDKClient:
 
     def revoke_api_key(self, key_hash: str) -> dict:
         """Revoke an API key (admin only)."""
-        return self._request(
-            "POST", "/v1/admin/api-keys/revoke", json={"key_hash": key_hash}
-        )
+        return self._request("POST", "/v1/admin/api-keys/revoke", json={"key_hash": key_hash})
 
     # ------------------------------------------------------------------
     # Health

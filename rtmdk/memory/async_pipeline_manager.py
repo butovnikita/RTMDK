@@ -2,12 +2,13 @@
 
 Extracted from RTMDKField to reduce monolithic field.py size.
 """
+
 from __future__ import annotations
 
 import asyncio
 import logging
 import time
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from rtmdk.memory.field import RTMDKField
@@ -49,17 +50,14 @@ class AsyncPipelineManager:
 
                     if backpressure_ok and f.meta_controller:
                         if f.meta_controller.should_optimize():
-                            f._circuit_breakers["MetaControllerOptimize"].call(
-                                f.meta_controller.optimize, f)
+                            f._circuit_breakers["MetaControllerOptimize"].call(f.meta_controller.optimize, f)
 
                     if f._backpressure_events > 0:
                         f._backpressure_events = max(0, f._backpressure_events - 1)
                         if f._backpressure_events == 0 and f._heavy_modules_degraded:
                             f._heavy_modules_degraded = False
-                            f.stats["backpressure_degraded_mode"] = f.stats.get(
-                                "backpressure_degraded_mode", 0) + 1
-                            logger.info(
-                                "Backpressure recovered — heavy modules re-enabled")
+                            f.stats["backpressure_degraded_mode"] = f.stats.get("backpressure_degraded_mode", 0) + 1
+                            logger.info("Backpressure recovered — heavy modules re-enabled")
                         if f._backpressure_events == 0:
                             f.stats["last_backpressure_recovery"] = time.time()
 
@@ -109,7 +107,5 @@ class AsyncPipelineManager:
         f = self.field
         if f.cfg.async_pipeline and f.evolve_q:
             f.stats["async_queue_depth"] = (
-                f.evolve_q.qsize() +
-                (f.save_q.qsize() if f.save_q else 0) +
-                (f.query_q.qsize() if f.query_q else 0)
+                f.evolve_q.qsize() + (f.save_q.qsize() if f.save_q else 0) + (f.query_q.qsize() if f.query_q else 0)
             )

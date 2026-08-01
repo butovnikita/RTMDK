@@ -14,12 +14,14 @@ from rtmdk.server.proto import rtmdk_pb2_grpc
 def _memory_from_globals():
     """Access global memory from app module."""
     import rtmdk.server.app as app_mod
+
     return getattr(app_mod, "memory", None)
 
 
 def _require_key(context) -> bool:
     """Validate API key from gRPC metadata."""
     import rtmdk.server.app as app_mod
+
     if not getattr(app_mod, "ENABLE_API_AUTH", False):
         return True
     metadata = dict(context.invocation_metadata() or [])
@@ -73,8 +75,7 @@ class RTMDKServicer(rtmdk_pb2_grpc.RTMDKServicer):
                         content = r.content.get("text", str(r.content))
                     else:
                         content = str(r.content)
-                out.append(rtmdk_pb2.MemoryResult(
-                    node_id=node_id, score=float(score), content=content))
+                out.append(rtmdk_pb2.MemoryResult(node_id=node_id, score=float(score), content=content))
             return rtmdk_pb2.QueryMemoryResponse(results=out, total=len(out))
         except Exception as exc:
             context.set_code(grpc.StatusCode.INTERNAL)
@@ -160,8 +161,7 @@ class RTMDKServicer(rtmdk_pb2_grpc.RTMDKServicer):
                 list(request.contents),
                 node_ids=list(request.node_ids) if request.node_ids else None,
             )
-            return rtmdk_pb2.BatchIngestResponse(
-                ingested=len(ids), node_ids=ids)
+            return rtmdk_pb2.BatchIngestResponse(ingested=len(ids), node_ids=ids)
         except Exception as exc:
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(str(exc))
