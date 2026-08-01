@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Performance regression test for RTMDK Pipeline.
 
 Compares current benchmark results against a baseline and fails
@@ -54,11 +54,11 @@ def check_regression(
             latency_change = ((curr_latency - base_latency) / base_latency) * 100
             if latency_change > latency_threshold_pct:
                 print(f"  [FAIL] {dataset}/{method}: latency regressed "
-                      f"{latency_change:.1f}% (p95: {base_latency:.1f}ms → {curr_latency:.1f}ms)")
+                      f"{latency_change:.1f}% (p95: {base_latency:.1f}ms -> {curr_latency:.1f}ms)")
                 passed = False
             else:
                 print(f"  [OK] {dataset}/{method}: latency {latency_change:+.1f}% "
-                      f"(p95: {base_latency:.1f}ms → {curr_latency:.1f}ms)")
+                      f"(p95: {base_latency:.1f}ms -> {curr_latency:.1f}ms)")
 
         # Check recall regression
         base_recall = base.get("recall_at_k", 0)
@@ -67,11 +67,11 @@ def check_regression(
             recall_change = ((curr_recall - base_recall) / base_recall) * 100
             if recall_change < recall_threshold_pct:
                 print(f"  [FAIL] {dataset}/{method}: recall regressed "
-                      f"{recall_change:.1f}% ({base_recall:.3f} → {curr_recall:.3f})")
+                      f"{recall_change:.1f}% ({base_recall:.3f} -> {curr_recall:.3f})")
                 passed = False
             else:
                 print(f"  [OK] {dataset}/{method}: recall {recall_change:+.1f}% "
-                      f"({base_recall:.3f} → {curr_recall:.3f})")
+                      f"({base_recall:.3f} -> {curr_recall:.3f})")
 
     return passed
 

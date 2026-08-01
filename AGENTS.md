@@ -114,6 +114,13 @@ scripts/            — Benchmarks and diagnostics
 - Run full suite: `python -m pytest tests/ -x -q`
 - New backlog tests: `python -m pytest tests/test_backlog_modules.py -v`
 - Benchmark: `python scripts/bench_backlog_modules.py`
+- Perf baseline: `benchmarks/baseline.json` (regenerate: `RTMDK_ADD_RATE_LIMIT=100000 python scripts/bench_pipeline_production.py --dataset datasets/qa_1000_en.json --output benchmarks/baseline.json`)
+
+## Code Style (enforced in CI, blocking)
+- `black rtmdk tests` (line-length 120, config in pyproject.toml; `legacy/` excluded as frozen)
+- `flake8 rtmdk tests` (config `.flake8`: E203/W503 ignored for black-compat; core.py re-exports and generated proto excluded)
+- Admin: `cd admin && npm run lint && npm run build`; SDK: `cd sdk/typescript && npm run lint && npm test`
+- ALWAYS run black+flake8 before committing changes to `rtmdk/` or `tests/`
 
 ## Git Workflow
 - Commits use conventional format: `feat(scope): description`, `fix(scope): description`, `refactor(scope): description`.

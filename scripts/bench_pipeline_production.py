@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import statistics
 import sys
 import time
 from dataclasses import dataclass, field, asdict
@@ -54,8 +55,10 @@ class BenchmarkResult:
 def _load_dataset(path: str) -> List[Dict]:
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    if isinstance(data, dict) and "data" in data:
-        return data["data"]
+    if isinstance(data, dict):
+        for key in ("data", "records", "queries", "items"):
+            if key in data and isinstance(data[key], list):
+                return data[key]
     return data
 
 

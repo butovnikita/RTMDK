@@ -137,9 +137,10 @@ jobs:
         run: python scripts/bench_planner_savings.py --dataset datasets/comprehensive_500.json --n 200
 
       - name: Run regression check
-        run: python scripts/check_regression.py --run-benchmark --baseline benchmarks/baseline.json
-        # baseline file is not committed; report-only until benchmarks/baseline.json exists
-        continue-on-error: true
+        # latency threshold is generous (cross-hardware), recall is the strict gate
+        run: python scripts/check_regression.py --run-benchmark --baseline benchmarks/baseline.json --latency-threshold 100
+        env:
+          RTMDK_ADD_RATE_LIMIT: '100000'
 
   docker:
     runs-on: ubuntu-latest

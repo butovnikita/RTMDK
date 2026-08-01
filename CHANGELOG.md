@@ -13,7 +13,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Stale admin test**: `test_api_base_configurable` now checks `admin/src/hooks/use-api.js` (API_BASE moved out of `App.jsx`).
 - **Admin backend crash**: `POST /api/server/start` no longer 500s on empty body (`req.body` guard in `server.cjs`).
 - **Admin lint**: `ai-connection.jsx` — `looksLikeLMStudio` now used for symmetric provider-URL guards.
-- Verified: full pytest suite 1121 passed / 2 skipped; Playwright E2E audit of all 11 admin pages — no issues.
+- **Security**: server logs a startup warning when auth is enabled with the default API key `rtmdk-local`.
+- **Blanket `*.json` gitignore removed**: it silently swallowed `admin/package.json(+lock)`, `sdk/typescript/package.json/tsconfig.json`, `st_config.json` and `tests/e2e/package.json` — clones could not install admin/SDK and `Dockerfile.home` would fail. Manifests are now tracked; `datasets/` (benchmark sets) committed; targeted ignores instead.
+- **CI repaired and made honest**: flake8/black were missing from `requirements-dev.txt` (lint step could not run); blocking flake8 scoped to critical errors first, then fully enabled after cleanup; new `admin` CI job (npm ci, eslint, vite build); `benchmark.py` path updated to `legacy/`; perf-regression step report-only until baseline exists.
+- **Latent F821 bugs**: 16 undefined names (missing `typing`/`numpy` imports) fixed in `quantization`, `sot_v2/*`, `test_pipeline_circuit_breaker`.
+- **`bench_pipeline_production.py`**: `_load_dataset` now accepts `records`/`queries`/`items` keys (was only `data`).
+- **`[tool.black]` config was a no-op**: single-quoted TOML with doubled backslashes never matched any file — black silently scanned 0 files for years. Fixed; whole codebase formatted (268 files), all flake8 findings cleaned, `.flake8` config added, bulk commit recorded in `.git-blame-ignore-revs`.
+- **SDK `@rtmdk/client`**: jest+ts-jest devDeps and config added (`npm test` was broken); `npm run build` (tsc) verified.
+- Verified: full pytest suite 1126 passed / 2 skipped; Playwright E2E audit of all 11 admin pages — no issues; live server smoke after mass-format OK.
+
+### Added
+- **`tests/test_repo_health.py`**: regression tests locking version sync (pyproject ↔ `__version__` ↔ server banners) and `legacy/` importability.
+- **15 mkdocs nav pages** (`docs/api/*`, `docs/examples/*`, integrations, deployment, FAQ): thin pages pointing to canonical docs; site build verified locally.
+- **`legacy/`**: frozen SillyTavern dev servers moved out of repo root (Dockerfiles, .bat launchers, docs updated; `legacy/README.md`).
+- **`requirements-dev.txt`**: flake8, black; `requirements(-prod).txt`: python-dotenv, tenacity, strawberry-graphql.
 
 ## [8.3.1] — 2026-05-11
 
