@@ -40,7 +40,10 @@ def test_sot_vs_sbert_baseline():
 
     from sentence_transformers import SentenceTransformer
 
-    teacher = SentenceTransformer("all-MiniLM-L6-v2")
+    try:
+        teacher = SentenceTransformer("all-MiniLM-L6-v2")
+    except Exception as exc:  # HF hub unreachable (flaky CI network)
+        pytest.skip(f"HuggingFace unavailable: {exc}")
 
     # ---- SOT field (uses default word-level tokenization) ----
     cfg_sot = RTMDKConfig(

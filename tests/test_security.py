@@ -48,6 +48,9 @@ class TestPathSanitization:
 class TestRateLimiting:
     def test_add_node_rate_limit(self, monkeypatch):
         monkeypatch.setenv("RTMDK_ADD_RATE_LIMIT", "100")
+        # Freeze time: the 1s sliding window must see all 100 adds as one
+        # instant, otherwise slow CI runners spread them past the window
+        monkeypatch.setattr("rtmdk.memory.node_manager.time.time", lambda: 1_700_000_000.0)
         config = RTMDKConfig.local()
         config.max_nodes = 10000
 

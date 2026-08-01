@@ -176,7 +176,16 @@ jobs:
           exit $status
 
       - name: Start Docker Compose test stack
-        run: docker compose -f docker-compose.test.yml up -d
+        shell: bash
+        run: |
+          set +e
+          docker compose -f docker-compose.test.yml up -d > /tmp/compose.log 2>&1
+          status=$?
+          tail -30 /tmp/compose.log
+          if [ $status -ne 0 ]; then
+            python .github/scripts/log_to_annotations.py /tmp/compose.log 25
+          fi
+          exit $status
 
       - name: Wait for services
         run: sleep 15
