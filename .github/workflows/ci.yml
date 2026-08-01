@@ -189,8 +189,8 @@ jobs:
           tr '\r' '\n' < /tmp/compose.log > /tmp/compose_clean.log
           tail -40 /tmp/compose_clean.log
           if [ $status -ne 0 ]; then
-            head -80 /tmp/compose_clean.log > /tmp/compose_head.log
-            python .github/scripts/log_to_annotations.py /tmp/compose_head.log 80
+            grep -iE 'error|fail|denied|timeout|refused|cannot|exited|unhealthy|not found' /tmp/compose_clean.log | head -40 > /tmp/compose_err.log || true
+            python .github/scripts/log_to_annotations.py /tmp/compose_err.log 40
           fi
           exit $status
 
