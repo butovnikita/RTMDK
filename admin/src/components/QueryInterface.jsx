@@ -57,7 +57,7 @@ function QueryInterface({ apiBase }) {
           <ul>
             {results.results.map((r, i) => (
               <li key={i}>
-                <strong>{r.node_id}</strong> — score: {r.score.toFixed(4)}<br />
+                <strong>{r.node_id}</strong> — score: {typeof r.score === "number" ? r.score.toFixed(4) : r.score}<br />
                 <span className="result-content">
                   {typeof r.content === 'object'
                     ? r.content?.text || JSON.stringify(r.content)

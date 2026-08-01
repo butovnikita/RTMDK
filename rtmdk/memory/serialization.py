@@ -289,7 +289,7 @@ class FieldSerializer:
                 with open(path, "rb") as f:
                     compressed = f.read()
                 packed = zlib.decompress(compressed)
-                data = msgpack.unpackb(packed, raw=False)
+                data = msgpack.unpackb(packed, raw=False, strict_map_key=False)
             except ImportError:
                 raise ImportError(
                     "msgpack required for binary import. Install: pip install msgpack")
@@ -363,6 +363,11 @@ class FieldSerializer:
 
         valid_fields = set(
             f.name for f in RTMDKConfig.__dataclass_fields__.values())
+        try:
+            from rtmdk.memory.config import _FIELD_GROUPS
+            valid_fields |= set(_FIELD_GROUPS.keys())
+        except ImportError:
+            pass
         cd = {k: v for k, v in cd.items() if k in valid_fields}
 
         if config is None:

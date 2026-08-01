@@ -226,7 +226,7 @@ app.post("/api/server/start", async (req, res) => {
   }
 
   const cfg = readConfig() || {}
-  const bodyEnv = req.body.env || {}
+  const bodyEnv = (req.body && req.body.env) || {}
   const env = { ...process.env, ...cfg.env, ...bodyEnv, PORT: String(RTMDK_PORT), PYTHONIOENCODING: "utf-8" }
 
   logHistory = []

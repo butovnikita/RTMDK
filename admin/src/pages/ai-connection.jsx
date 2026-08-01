@@ -56,8 +56,8 @@ export default function AIPage() {
     const looksLikeOpenAI = savedUrl.includes("openai.com")
     const looksLikeLMStudio = savedUrl.includes("localhost") || savedUrl.includes("127.0.0.1")
     let urlToUse = savedUrl || defaultUrl
-    if (p === "openai" && looksLikeOpenRouter) urlToUse = defaultUrl
-    if (p === "openrouter" && looksLikeOpenAI) urlToUse = defaultUrl
+    if (p === "openai" && (looksLikeOpenRouter || looksLikeLMStudio)) urlToUse = defaultUrl
+    if (p === "openrouter" && (looksLikeOpenAI || looksLikeLMStudio)) urlToUse = defaultUrl
     if (p === "lm_studio" && (looksLikeOpenRouter || looksLikeOpenAI)) urlToUse = defaultUrl
     setUrl(urlToUse)
     setApiKey(e.OPENAI_API_KEY || "")

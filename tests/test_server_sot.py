@@ -77,3 +77,34 @@ class TestSOTVocab:
             assert "items" in data
         finally:
             app_mod.memory = None
+
+    def test_vocab_search_total_reflects_filtered_count(self, client):
+        """Regression: total must reflect the number of items matching search,
+        not the total unfiltered vocabulary size."""
+        import numpy as np
+        from rtmdk.memory.config import RTMDKConfig
+        from rtmdk.memory.core import RTMDKField, RTMDKMemory
+
+        cfg = RTMDKConfig(latent_dim=16, use_hnsw=False, sot_enabled=True)
+        field = RTMDKField(cfg)
+        sot = field._projection_mgr.sot_tokenizer
+        if sot is not None:
+            # Seed vocabulary with multiple words
+            for i, word in enumerate(["apple", "banana", "apricot", "cherry"]):
+                sot.word_to_id[word] = i
+                sot.id_to_word[i] = word
+                sot.token_embeddings[i] = np.zeros(16, dtype=np.float32)
+
+        mem = RTMDKMemory(config=cfg, embedder=lambda x: np.array([0.0] * 16))
+        mem.field = field
+        app_mod.memory = mem
+
+        try:
+            resp = client.get("/v1/sot/vocab?search=ap")
+            assert resp.status_code == 200
+            data = resp.json()
+            # Both apple and apricot match "ap"
+            assert data["total"] == 2
+            assert len(data["items"]) == 2
+        finally:
+            app_mod.memory = None

@@ -206,8 +206,9 @@ class Subscription:
 
         pipeline = memory.build_pipeline()
         streamer = StreamingPipelineExecutor(pipeline.stages)
+        embedding = await app_mod._get_embedding_cached(query)
 
-        async for chunk in streamer.run_async(query, top_k=top_k, session_id=session_id):
+        async for chunk in streamer.run_async(query, top_k=top_k, session_id=session_id, embedding=embedding):
             raw = chunk.strip()
             if raw.startswith("data: "):
                 raw = raw[6:]
