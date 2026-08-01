@@ -6,7 +6,7 @@
 ![PyPI](https://img.shields.io/pypi/v/rtmdk)
 
 > Long-term memory for LLMs based on resonance-topological organization
-> Version 8.3 — 74,000+ LOC, 440+ files, 49 API endpoints, 1118 tests
+> Version 8.3 — 74,000+ LOC, 440+ files, 49 API endpoints, 1281 tests
 
 ## Why RTMDK?
 
@@ -42,7 +42,7 @@ results = mem.retrieve_nodes("What color is the sky?", top_k=3)
 | Latency p50 @ 1K nodes | 0.26 ms |
 | Latency p50 @ 100K nodes | **16 ms** |
 | Latency p99 @ 100K nodes | **20 ms** |
-| Tests | 1127 passed, 1 skipped |
+| Tests | 1280 passed, 1 skipped |
 | Pipeline stages | 6 (explicit, observable) |
 | Circuit breakers | Per-stage |
 | Streaming protocols | SSE, WebSocket, GraphQL |

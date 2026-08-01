@@ -5,6 +5,7 @@ Generates a self-contained HTML report with memory statistics,
 visualizations, and analysis.
 """
 
+import time
 from typing import Dict
 from pathlib import Path
 
@@ -22,9 +23,9 @@ class DashboardGenerator:
 
     def generate(self, output_path: str = "rtmdk_dashboard.html"):
         """Generate HTML dashboard."""
-        self.memory.field.stats
+        stats = self.memory.field.stats
         nodes = self.memory.field.nodes
-        len(nodes)
+        node_count = len(nodes)
 
         # Collect node data for visualization
         tiers = {}
@@ -34,7 +35,14 @@ class DashboardGenerator:
                 tiers[tier] = 0
             tiers[tier] += 1
 
-        html = """<!DOCTYPE html>
+        # Top-10 by salience
+        top_nodes = sorted(
+            nodes.values(),
+            key=lambda n: getattr(n, "salience", 0.0),
+            reverse=True,
+        )[:10]
+
+        html = f"""<!DOCTYPE html>
 <html>
 <head>
     <title>RTMDK Memory Dashboard</title>

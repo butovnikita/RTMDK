@@ -58,7 +58,7 @@ class LearnedConsolidator:
         self._rng = np.random.default_rng(42)
 
         # MLP weights — Xavier-like init
-        d_in = latent_dim * 2 + 6  # 2 latents + sin/cos phase ×2 + amp ×2 + sal ×2
+        d_in = latent_dim * 2 + 8  # 2 latents + sin/cos phase ×2 + amp ×2 + sal ×2
         d_h = self.hidden_dim
         d_out = latent_dim
 

@@ -6,7 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Coverage 60% → 64%**: 156 new tests across 12 files — cli.py (0→97%), learned_consolidation (0→100%), procrustes (0→99%), cpen_ode (0→86%), timeline, quantum retrieval, async embedder, contextual retrieval, adaptive_pc, json loggers, dashboard, experimental modules. CI coverage gate raised 60 → 64.
+
 ### Fixed
+- **`learned_consolidation.py` was dead code**: `d_in = latent_dim*2 + 6` mismatched the 8-feature `_encode_pair` — every `predict()`/`train()` call raised ValueError since introduction. Fixed to `+8` (found by the new tests).
+- **`dashboard.py` generated literal `{placeholders}`**: template was written as an f-string (doubled CSS braces) but missed the `f` prefix, and `generate()` never bound `time/node_count/stats/top_nodes`. Completed the method; verified substituted output.
 - **mypy debt eliminated**: 1088 → 0 errors across all 203 source files (both Windows and POSIX counts). ~160 real fixes: None-guards (union-attr), missing annotations, `any`→`Any`, truthy-function bug in `index_manager`, broken `RollbackManager.rollback` (crashed on missing node fields — now restores correctly), PrivateAttr reading in `core.__getattr__`, POSIX-only float64/var-annotated issues. Config: `attr-defined` disabled (unsound for the manager-delegation pattern), third-party stubs skipped. Ratchet baseline now **0** — any new mypy error fails CI.
 - `check_mypy.py`: handles "Success: no issues found" (0) and fatal aborts correctly.
 

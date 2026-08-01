@@ -58,7 +58,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10'
 
       - name: Coverage report
-        run: pytest tests/ --cov=rtmdk --cov-report=xml --cov-report=term-missing --cov-fail-under=60 -m "not slow" --durations=20
+        run: pytest tests/ --cov=rtmdk --cov-report=xml --cov-report=term-missing --cov-fail-under=64 -m "not slow" --durations=20
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10'
 
       - name: Upload coverage artifact
