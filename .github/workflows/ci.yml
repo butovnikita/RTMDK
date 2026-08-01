@@ -26,9 +26,9 @@ jobs:
           cache: 'pip'
 
       - name: Install dependencies
-        run: |
         env:
-          HNSWLIB_NO_NATIVE: '1'  # avoid -march=native wheels cached across heterogeneous runners
+          HNSWLIB_NO_NATIVE: '1'  # portable build: cached wheels must not be arch-specific
+        run: |
           python -m pip install --upgrade pip
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements-prod.txt -r requirements-sot.txt -r requirements-dev.txt
@@ -122,9 +122,9 @@ jobs:
           cache: 'pip'
 
       - name: Install dependencies
-        run: |
         env:
-          HNSWLIB_NO_NATIVE: '1'  # avoid -march=native wheels cached across heterogeneous runners
+          HNSWLIB_NO_NATIVE: '1'  # portable build: cached wheels must not be arch-specific
+        run: |
           python -m pip install --upgrade pip
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements-prod.txt -r requirements-sot.txt -r requirements-dev.txt
@@ -149,9 +149,9 @@ jobs:
           cache: 'pip'
 
       - name: Install dependencies
-        run: |
         env:
-          HNSWLIB_NO_NATIVE: '1'  # avoid -march=native wheels cached across heterogeneous runners
+          HNSWLIB_NO_NATIVE: '1'  # portable build: cached wheels must not be arch-specific
+        run: |
           python -m pip install --upgrade pip
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements-prod.txt -r requirements-sot.txt -r requirements-dev.txt
