@@ -28,6 +28,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements-prod.txt -r requirements-sot.txt -r requirements-dev.txt
           pip install -e .
 
@@ -121,6 +122,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements-prod.txt -r requirements-sot.txt -r requirements-dev.txt
           pip install -e .
 
@@ -145,6 +147,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements-prod.txt -r requirements-sot.txt -r requirements-dev.txt
           pip install -e .
 
@@ -198,7 +201,17 @@ jobs:
         run: sleep 15
 
       - name: Run load tests
-        run: docker compose -f docker-compose.test.yml exec -T test pytest tests/test_server_load.py -v
+        shell: bash
+        run: |
+          set +e
+          docker compose -f docker-compose.test.yml exec -T test python -m pytest tests/test_server_load.py -v > /tmp/loadtests.log 2>&1
+          status=$?
+          tr '\r' '\n' < /tmp/loadtests.log > /tmp/loadtests_clean.log
+          tail -30 /tmp/loadtests_clean.log
+          if [ $status -ne 0 ]; then
+            python .github/scripts/log_to_annotations.py /tmp/loadtests_clean.log 40
+          fi
+          exit $status
 
       - name: Tear down
         run: docker compose -f docker-compose.test.yml down -v
