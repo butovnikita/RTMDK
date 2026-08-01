@@ -1,8 +1,9 @@
 # RTMDK Development Backlog
 
-> Last updated: 2026-05-07
-> Current version: 8.3.0
-> Test status: 1112 passed, 2 skipped
+> Last updated: 2026-08-01
+> Current version: 8.3.3
+> Test status: 1127 passed, 1 skipped
+> CI status: green (13/13 jobs: ubuntu/windows/macos × py3.10–3.12, admin, docker, perf)
 > Branch: `main`
 
 ---
@@ -10,6 +11,8 @@
 ## Executive Summary
 
 RTMDK v8.3 is in active development. The **Leadership Cleanup** refactor (v8.3-alpha) has decoupled the monolithic `RTMDKField` (5265 → 844 lines, −84%) and `RTMDKMemory` (2603 → ~1380 lines, −47%) into 21 focused subsystems.
+
+**2026-08-01 — Repo & CI overhaul (v8.3.2, v8.3.3):** полный аудит и ремонт инфраструктуры: блокирующие black+flake8 (был no-op конфиг 2+ года), mypy-ratchet (baseline 1080, долг только сокращается), perf-baseline в CI, legacy/ вынесен из корня, cross-platform тесты (POSIX/Windows), 20+ скрытых багов (SOT bootstrap no-op, race в node cache, скрытые runtime-deps), воспроизводимая установка admin/SDK, mkdocs Pages.
 
 v8.2 remains production-ready for single-node deployment (10K–100K nodes, sub-10ms latency).
 The backlog below targets **enterprise scale** (1M+ nodes), **cost reduction**, and **deployment ergonomics**.
