@@ -4,7 +4,10 @@ All notable changes to RTMDK are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [8.3.3] — 2026-08-01
+
+### Added
+- **mypy ratchet**: `scripts/check_mypy.py` + `.github/mypy-baseline.txt` — type-debt can only shrink; first 9 errors fixed (1089 → 1080).
 
 ### Fixed (CI overhaul, verified green end-to-end)
 - **GitHub CI was red on every push** — root-caused via clean-venv and WSL reproductions, plus new check-annotation tooling (`.github/scripts/`): 13/13 jobs now pass on ubuntu/windows/macos × py3.10–3.12.

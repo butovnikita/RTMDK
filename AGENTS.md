@@ -4,7 +4,7 @@
 
 ## Project
 - **Name:** RTMDK (Resonance-Topological Memory)
-- **Version:** 8.3.2
+- **Version:** 8.3.3
 - **Language:** Python 3.10
 - **OS:** Windows (primary dev), Linux (production Docker)
 - **GPU:** CUDA 12.8, torch 2.12.0.dev
@@ -121,6 +121,7 @@ scripts/            — Benchmarks and diagnostics
 - `flake8 rtmdk tests` (config `.flake8`: E203/W503 ignored for black-compat; core.py re-exports and generated proto excluded)
 - Admin: `cd admin && npm run lint && npm run build`; SDK: `cd sdk/typescript && npm run lint && npm test`
 - ALWAYS run black+flake8 before committing changes to `rtmdk/` or `tests/`
+- mypy ratchet: `python scripts/check_mypy.py` — error count must not exceed `.github/mypy-baseline.txt`; regenerate baseline only when REDUCING errors
 
 ## Git Workflow
 - Commits use conventional format: `feat(scope): description`, `fix(scope): description`, `refactor(scope): description`.
