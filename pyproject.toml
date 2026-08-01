@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rtmdk"
-version = "8.3.3"
+version = "8.3.4"
 description = "Resonance-Topological Memory for Large Language Models"
 readme = "README.md"
 license = {text = "AGPL-3.0"}
@@ -80,6 +80,7 @@ dev = [
 [project.scripts]
 rtmdk = "rtmdk.cli:main"
 rtmdk-mcp = "rtmdk.mcp_server:main"
+rtmdk-server = "rtmdk.server.app:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

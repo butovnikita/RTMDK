@@ -171,7 +171,7 @@ def query_memory(query: str, top_k: int = 5, session_id: str = "default") -> str
         top_k: Number of top results to return.
         session_id: Optional session filter.
     """
-    if _ctx.memory is None:
+    if _ctx.memory is None or _ctx.memory.embedder is None:
         return "Error: memory not initialized"
     embedding = _ctx.memory.embedder(query)
     field = _ctx.memory.field
@@ -286,7 +286,7 @@ def memory_node(node_id: str) -> str:
 @mcp.prompt("memory://prompts/context")
 def memory_context_prompt(query: str = "") -> str:
     """Generate a system prompt enriched with relevant memory context."""
-    if _ctx.memory is None or not query:
+    if _ctx.memory is None or _ctx.memory.embedder is None or not query:
         return "You are a helpful assistant with long-term memory."
     embedding = _ctx.memory.embedder(query)
     field = _ctx.memory.field

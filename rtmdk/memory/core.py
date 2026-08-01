@@ -129,7 +129,7 @@ class RTMDKMemory(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
     config: RTMDKConfig = Field(default_factory=RTMDKConfig)
-    embedder: Callable[[str], NDArray[np.float32]]
+    embedder: Optional[Callable[[str], NDArray[np.float32]]] = None
     field: Optional[RTMDKField] = Field(default=None, exclude=True)
     session_phases: Dict[str, float] = Field(default_factory=dict)
     wal_path: Optional[str] = Field(default=None, exclude=True)
@@ -142,11 +142,18 @@ class RTMDKMemory(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _init_field(cls, data):
-        if isinstance(data, dict) and data.get("field") is None:
-            cfg = data.get("config", RTMDKConfig())
-            wal = data.get("wal_path")
+        if isinstance(data, dict):
             data = dict(data)
-            data["field"] = RTMDKField(cfg, wal_path=wal)
+            cfg = data.get("config", RTMDKConfig())
+            if data.get("embedder") is None:
+                # Batteries included: zero-dependency SOT embedder so that
+                # RTMDKMemory() works out of the box (see default_embedder.py)
+                from rtmdk.memory.default_embedder import create_default_embedder
+
+                data["embedder"] = create_default_embedder(dim=cfg.embedding_dim)
+            if data.get("field") is None:
+                wal = data.get("wal_path")
+                data["field"] = RTMDKField(cfg, wal_path=wal)
         return data
 
     def model_post_init(self, __context):
@@ -157,6 +164,25 @@ class RTMDKMemory(BaseModel):
     @property
     def memory_variables(self) -> List[str]:
         return ["rtmdk_context"]
+
+    def add(self, text: str, content: Optional[Dict] = None, **kwargs) -> str:
+        """Ergonomic shortcut: embed ``text`` and add it as a memory node.
+
+        The 3-line quickstart API::
+
+            memory = RTMDKMemory()
+            memory.add("Paris is the capital of France")
+            results = memory.query("capital of France")
+        """
+        assert self.embedder is not None  # set by _init_field validator
+        payload = dict(content or {})
+        payload.setdefault("text", text)
+        return self.add_node(self.embedder(text), payload, **kwargs)
+
+    def query(self, text: str, top_k: Optional[int] = None, **kwargs) -> List[Tuple[str, float, Any]]:
+        """Ergonomic shortcut: retrieve memory nodes by raw text."""
+        assert self.embedder is not None  # set by _init_field validator
+        return self.retrieve_nodes(text, embedding=self.embedder(text), top_k=top_k, **kwargs)
 
     def add_node(self, embedding: NDArray, content: Dict, **kwargs) -> str:
         """Add a node to the memory field. Delegates to RTMDKField.add_node."""

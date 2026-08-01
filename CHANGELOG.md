@@ -4,9 +4,11 @@ All notable changes to RTMDK are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [8.3.4] — 2026-08-01
 
 ### Added
+- **Batteries-included quickstart**: `RTMDKMemory()` now works with **no embedder argument** — a zero-dependency, deterministic SOT-based default embedder (`rtmdk/memory/default_embedder.py`) is created from config. New ergonomic API: `mem.add(text)` / `mem.query(text)` — three lines to a working memory, verified in a clean venv from the built wheel.
+- **`rtmdk-server` entry point** (was only `python -m rtmdk`); `tests/test_default_embedder.py` (+9 tests).
 - **Coverage 60% → 64%**: 156 new tests across 12 files — cli.py (0→97%), learned_consolidation (0→100%), procrustes (0→99%), cpen_ode (0→86%), timeline, quantum retrieval, async embedder, contextual retrieval, adaptive_pc, json loggers, dashboard, experimental modules. CI coverage gate raised 60 → 64.
 
 ### Fixed

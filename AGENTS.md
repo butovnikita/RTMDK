@@ -1,10 +1,10 @@
-﻿# RTMDK — Agent Context
+# RTMDK — Agent Context
 
 > This file exists to help coding agents (Claude, Kimi, etc.) understand the project quickly.
 
 ## Project
 - **Name:** RTMDK (Resonance-Topological Memory)
-- **Version:** 8.3.3
+- **Version:** 8.3.4
 - **Language:** Python 3.10
 - **OS:** Windows (primary dev), Linux (production Docker)
 - **GPU:** CUDA 12.8, torch 2.12.0.dev

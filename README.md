@@ -26,14 +26,19 @@ pip install rtmdk
 ```
 
 ```python
-from rtmdk import RTMDKMemory, RTMDKConfig
-import numpy as np
+from rtmdk import RTMDKMemory
 
-cfg = RTMDKConfig.local()
-mem = RTMDKMemory(config=cfg, embedder=lambda t: np.random.randn(64).astype(np.float32))
-mem.add_node("The sky is blue")
-results = mem.retrieve_nodes("What color is the sky?", top_k=3)
+# Batteries included: works out of the box, no external services needed
+mem = RTMDKMemory()
+mem.add("The sky is blue")
+mem.add("RTMDK is a resonance-topological memory for LLMs")
+results = mem.query("What color is the sky?", top_k=3)
 ```
+
+> For production-grade semantic quality, plug in any embedder
+> (`RTMDKMemory(embedder=my_fn)` — LM Studio, OpenAI, SBERT) or train the
+> built-in SOT v2 embedder on your corpus (`mem.train_sot_v2(...)`).
+> Server: `rtmdk-server` (REST/GraphQL/WebSocket on :8080).
 
 ### Production Stats
 | Metric | Value |

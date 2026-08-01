@@ -83,6 +83,7 @@ class PipelineBuilder:
             stages.append(_attach_breaker(QueryCacheCheckStage(self._mem.field, self._mem)))
 
         # Stage 1: Embed
+        assert self._mem.embedder is not None  # set by _init_field validator
         stages.append(_attach_breaker(EmbedStage(self._mem.embedder)))
 
         # Stage 2: Route

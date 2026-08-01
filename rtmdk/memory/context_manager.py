@@ -46,6 +46,7 @@ class ContextManager:
 
         all_results = []
         for sub_q in sub_queries:
+            assert mem.embedder is not None  # set by _init_field validator
             sub_emb = mem.embedder(sub_q)
             phase = mem._get_phase(session_id, sub_emb)
 
@@ -234,6 +235,7 @@ class ContextManager:
             "version": "2.0",
         }
 
+        assert mem.embedder is not None  # set by _init_field validator
         embedding = mem.embedder(text_for_embedding)
         phase = mem._get_phase(session_id, embedding)
         modality = detect_modality(text_for_embedding) if cfg.cross_modal else "text"
