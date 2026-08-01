@@ -1,6 +1,8 @@
 """Tests for pipeline circuit breaker and SLO enforcement."""
 
 import time
+
+import numpy as np
 import pytest
 
 from rtmdk.pipeline.base import PipelineContext, PipelineStage

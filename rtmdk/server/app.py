@@ -202,7 +202,6 @@ def _handle_sigterm(signum, frame):
     logger.info("Received SIGTERM, initiating graceful shutdown...")
     _shutdown_event.set()
     # Pipeline-specific cleanup
-    global pipeline_metrics_store
     if pipeline_metrics_store is not None:
         try:
             logger.info("Flushing pipeline metrics store...")
@@ -306,7 +305,6 @@ async def lifespan(app: FastAPI):
     global analytics_dashboard, api_key_manager, tenant_rate_limiter
     global webhook_manager, audit_log, retention_manager
     global redis_query_cache, redis_embedding_cache, encryption_manager, telemetry_manager
-    global pipeline_metrics_store
     # Structured JSON logging in production mode
     if os.getenv("RTMDK_JSON_LOG", "").lower() in ("1", "true", "yes"):
         try:
@@ -1611,7 +1609,6 @@ async def memory_pipeline_health():
 
     pipeline = memory.build_pipeline()
     stages_health = []
-    degraded_count = 0
     open_breakers = 0
 
     for stage in pipeline.stages:
@@ -2112,7 +2109,10 @@ async def metrics():
                             detail="prometheus-client not installed")
     # Ensure production metrics are registered in the global Prometheus registry
     try:
-        from rtmdk.production.metrics import REQUESTS_TOTAL, QUERY_LATENCY
+        from rtmdk.production.metrics import (  # noqa: F401
+            REQUESTS_TOTAL,
+            QUERY_LATENCY,
+        )
     except Exception:
         pass
     if memory:

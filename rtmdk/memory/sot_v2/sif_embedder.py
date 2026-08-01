@@ -25,7 +25,7 @@ Theoretical foundation:
 from __future__ import annotations
 
 import logging
-from typing import Dict, List, Optional, Callable
+from typing import Any, Dict, List, Optional, Callable, Tuple
 
 import numpy as np
 

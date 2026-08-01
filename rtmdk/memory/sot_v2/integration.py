@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 import unicodedata
-from typing import Dict, List, Optional, Callable
+from typing import Dict, List, Optional, Callable, Tuple
 
 import numpy as np
 
