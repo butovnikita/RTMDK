@@ -48,6 +48,8 @@ config = RTMDKConfig(
 Любой из 59 параметров можно переопределить через `RTMDK_*` env var.
 Приоритет: **явные аргументы > env vars > defaults пресета**.
 
+> **Автозагрузка `.env`** (с 2026-08): точки входа `python -m rtmdk` и `start_production.py` автоматически подхватывают `.env` из текущего каталога через `python-dotenv` (реальные env vars имеют приоритет). Админка (`admin/server.cjs`) читает `../.env` сама и передаёт переменные при запуске сервера. Библиотечный импорт `rtmdk.server.app` `.env` **не** загружает — это защищает тестовое окружение от побочных эффектов.
+
 ```bash
 # Выбрать пресет
 RTMDK_PRESET=production python legacy/rtmdk_server.py

@@ -317,6 +317,10 @@ async def lifespan(app: FastAPI):
     logger.info("Starting RTMDK Production API v8.3.1")
     logger.info(f"Memory file: {MEMORY_FILE}")
     logger.info(f"LM Studio URL: {LM_STUDIO_URL}")
+    if ENABLE_API_AUTH and API_KEY == "rtmdk-local":
+        logger.warning(
+            "SECURITY: default API key 'rtmdk-local' is in use with auth enabled. "
+            "Set RTMDK_API_KEY (e.g. in .env) for any non-local deployment.")
 
     if ENABLE_LM_STUDIO:
         ai_provider_available = await check_ai_provider()

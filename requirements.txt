@@ -9,6 +9,9 @@ requests>=2.31.0
 # Memory persistence
 msgpack>=1.0.0
 
+# Server configuration (.env auto-load at entry points)
+python-dotenv>=1.0.0
+
 # Advanced features (optional)
 hnswlib>=0.7.0
 optuna>=3.0.0

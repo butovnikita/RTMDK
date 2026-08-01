@@ -2,6 +2,8 @@
 
 > Full functional audit conducted on 2026-05-22 via Playwright E2E testing across all 11 admin UI pages.
 
+> **✅ РЕШЕНО (2026-08-01):** после внедрения admin panel v2 повторный полный E2E-аудит (`admin/e2e-audit.mjs`, все 11 страниц) — **0 замечаний**. Critical-баг «Backend API mismatch» устранён унификацией через `/api/rtmdk` proxy + `use-api.js`; добавлены маршруты страниц (react-router). Отчёт сохранён как исторический артефакт.
+
 ## Test Environment
 
 | Component | Version / Port |
