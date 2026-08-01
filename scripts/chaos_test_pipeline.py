@@ -76,7 +76,7 @@ def make_test_pipeline(
 
     # Dummy field
     class DummyField:
-        def query(self, embedding, top_k=5, session_id=None, modality="text"):
+        def query(self, embedding, top_k=5, session_id=None, modality="text", query_text=None, **kwargs):
             return [(f"node_{i}", 0.9 - i * 0.05, None) for i in range(top_k)]
 
     stages = [

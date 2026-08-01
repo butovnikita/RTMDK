@@ -176,16 +176,16 @@ jobs:
           exit $status
 
       - name: Start Docker Compose test stack
-        run: docker-compose -f docker-compose.test.yml up -d
+        run: docker compose -f docker-compose.test.yml up -d
 
       - name: Wait for services
         run: sleep 15
 
       - name: Run load tests
-        run: docker-compose -f docker-compose.test.yml exec -T test pytest tests/test_server_load.py -v
+        run: docker compose -f docker-compose.test.yml exec -T test pytest tests/test_server_load.py -v
 
       - name: Tear down
-        run: docker-compose -f docker-compose.test.yml down -v
+        run: docker compose -f docker-compose.test.yml down -v
 
   admin:
     runs-on: ubuntu-latest
