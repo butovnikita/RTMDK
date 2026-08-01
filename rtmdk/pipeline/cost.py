@@ -14,7 +14,7 @@ Useful for:
 
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 import logging
 
 logger = logging.getLogger(__name__)
@@ -110,7 +110,7 @@ class PipelineCostAnalyzer:
             return {}
         total_cost = sum(h.total_cost for h in history)
         total_latency = sum(h.total_latency_ms for h in history)
-        return {
+        result: Dict[str, Any] = {
             "queries": len(history),
             "total_cost": round(total_cost, 6),
             "avg_cost_per_query": round(total_cost / len(history), 6),
@@ -120,6 +120,7 @@ class PipelineCostAnalyzer:
                 stage: round(sum(h.stage_costs.get(stage, 0.0) for h in history), 6) for stage in self.cost_rates.keys()
             },
         }
+        return result
 
     def reset(self) -> None:
         """Clear history."""

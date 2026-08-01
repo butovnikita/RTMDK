@@ -36,10 +36,9 @@ jobs:
       - name: Lint with flake8
         run: flake8 rtmdk tests --statistics
 
-      - name: Type check with mypy
-        run: mypy rtmdk --config-file mypy.ini
+      - name: Type check with mypy (ratchet)
+        run: python scripts/check_mypy.py
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10'
-        continue-on-error: true
 
       - name: Format check with black
         run: black --check rtmdk tests

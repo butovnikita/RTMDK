@@ -73,9 +73,9 @@ class DistributedLock:
                 self._owned = True
                 return True
             else:
-                import fcntl
+                import fcntl  # type: ignore[attr-defined]  # POSIX-only; branch is platform-gated
 
-                fcntl.flock(self._fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(self._fd, fcntl.LOCK_EX | fcntl.LOCK_NB)  # type: ignore[attr-defined]
                 self._owned = True
                 return True
         except (IOError, OSError):
@@ -154,9 +154,9 @@ class DistributedLock:
 
                         msvcrt.locking(self._fd, msvcrt.LK_UNLCK, 1)
                     else:
-                        import fcntl
+                        import fcntl  # type: ignore[attr-defined]  # POSIX-only
 
-                        fcntl.flock(self._fd, fcntl.LOCK_UN)
+                        fcntl.flock(self._fd, fcntl.LOCK_UN)  # type: ignore[attr-defined]
                 except Exception:
                     pass
                 try:

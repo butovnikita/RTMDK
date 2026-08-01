@@ -61,7 +61,7 @@ class PipelineHealthMonitor:
 
         Returns list of alert dicts with severity and message.
         """
-        alerts = []
+        alerts: List[Dict[str, Any]] = []
         metrics = getattr(ctx, "metrics", [])
         total_latency = sum(m.latency_ms for m in metrics)
 

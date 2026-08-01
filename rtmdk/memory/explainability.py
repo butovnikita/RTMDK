@@ -22,7 +22,7 @@ class ResultExplainer:
     ) -> Dict[str, Any]:
         """Return structured explanation for a single result."""
         reasons = []
-        details = {"score": round(score, 4)}
+        details: Dict[str, Any] = {"score": round(score, 4)}
 
         # Route reason
         if route == "bm25":

@@ -38,6 +38,8 @@ class ContextualHeaderGenerator:
 
     def _generate_sot(self, text: str) -> str:
         """Use SOT tokenizer to extract dominant tokens as pseudo-header."""
+        if self.sot_tokenizer is None:
+            return self._generate_heuristic(text)
         try:
             tokens = self.sot_tokenizer.encode(text)
             if not tokens:
