@@ -44,7 +44,11 @@ jobs:
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10'
 
       - name: Run tests (fast)
-        run: pytest tests/ -v --tb=short -q --reruns=2 --durations=20 -m "not slow"
+        run: |
+          pytest tests/ -v --tb=short -q --reruns=2 --durations=20 -m "not slow" --junitxml=pytest.xml
+          status=$?
+          if [ $status -ne 0 ]; then python .github/scripts/pytest_to_annotations.py pytest.xml; fi
+          exit $status
 
       - name: Run slow tests
         run: pytest tests/ -v --tb=short -q --reruns=2 --durations=10 -m "slow"
