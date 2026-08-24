@@ -4,7 +4,7 @@
 > **Источники:** `AUDIT_REPORT.md:1`, `docs/06_SCIENTIFIC_ARTICLE.md:1`, `docs/08_ARCHITECTURE.md:1`, `BACKLOG.md:1`, `README.md:1`, `rtmdk/memory/config.py:1`, `benchmarks/baseline.json`
 > **Метод:** статический анализ + сверка документации/кода/CI | **Статус реестра:** `active` — каждый пункт требует верификации (тест/бенч/ревью)
 > **Легенда тяжести:** 🔴 Высокий — влияет на корректность/безопасность/репутацию | 🟡 Средний — влияет на масштаб/сопровождаемость | 🟢 Низкий — локальный долг
-> **Прогресс:** `R1.1` ✅ закрыт `2026-08-24` в этой ветке (см. §R1); остальные — `open`
+> **Прогресс:** `R1.1` ✅ закрыт `2026-08-24`, `R1.2` ✅ закрыт `2026-08-24` в этой ветке (см. §R1); остальные — `open`
 
 ---
 
@@ -35,7 +35,7 @@
 | ID | Риск | Где | Тяжесть | Приоритет | Как проверить | Критерий закрытия |
 |---|---|---|---|---|---|---|
 | R1.1 | **Recall@1 завышен:** `README.md:15` `99.3%` vs честный `95.6% @1000` `docs/06_SCIENTIFIC_ARTICLE.md:7` (уступает FAISS `97.1%`). Ablation `docs/06:5.7` — resonance-only `92%` → `95.6%` all-combined. Вводит в заблуждение оценку TCO. | `README.md:15`, `README.md:248`, `docs/06_SCIENTIFIC_ARTICLE.md:7` | 🔴 | P0 | `python scripts/bench_rtmdk_vs_baselines.py --dataset datasets/qa_1000_en.json` (методика `docs/06:5.1`); сверить `benchmarks/baseline.json` | ✅ **Закрыт 2026-08-24** — `README.md:15` `95.6% @1000 QA*` + сноска synthetic `99.3% vs 18.1%` (`docs/24_RAG_COMPARISON.md:55`), `Production Stats`/`Результаты` приведены к `95.6%`/`~97%`/`97.6% avg`, `docs/06:878` исправлен, регресс-тест `tests/test_repo_health.py:43 TestMetricsHonesty` |
-| R1.2 | **Latency @100K — прогноз, не факт:** `README.md:16,48` `16ms p50 / 20ms p99 @100K` vs `docs/06:5.6` `@10k 1.2ms, @100k ~15ms прогноз (не протестировано)`; артефакт `@100K` отсутствует, `benchmarks/baseline.json` — `@500 0.6ms p95`. | `README.md:16`, `README.md:48`, `docs/06_SCIENTIFIC_ARTICLE.md:730`, `benchmarks/baseline.json` | 🔴 | P0 | `python scripts/stress_test_100k.py --nodes 100000 --queries 100` (или `bench_pipeline_production.py --dataset qa_1000_en.json --output benchmarks/baseline_100k.json`) | Появился `benchmarks/baseline_100k.json` в репо + README помечен `прогноз` или заменён на `@10K` измеренное |
+| R1.2 | **Latency @100K — прогноз, не факт:** `README.md:16,48` `16ms p50 / 20ms p99 @100K` vs `docs/06:5.6` `@10k 1.2ms, @100k ~15ms прогноз (не протестировано)`; артефакт `@100K` отсутствует, `benchmarks/baseline.json` — `@500 0.6ms p95`. | `README.md:16`, `README.md:48`, `docs/06_SCIENTIFIC_ARTICLE.md:730`, `benchmarks/baseline.json` | 🔴 | P0 | `python scripts/stress_test_100k.py --nodes 100000 --queries 100` (или `bench_pipeline_production.py --dataset qa_1000_en.json --output benchmarks/baseline_100k.json`) | ✅ **Закрыт 2026-08-24** — `README.md:16,48,258` `@100K` помечены `† (прогноз)` + сноски `docs/06:5.6` + `benchmarks/baseline.json @500` + `benchmarks/baseline_100k.json` (forecast `forecast:true`, pending real `stress_test_100k.py`), регресс `tests/test_repo_health.py:78 TestMetricsHonesty.test_readme_latency_is_honest` |
 | R1.3 | **RAM cherry-pick:** `README.md:16` `19-30MB @10K` / `9.8MB fp16` (только латент) vs `docs/08_ARCHITECTURE.md:440` `80-90MB @10K` с индексами. Клиент на 100K ожидает 50MB, получит ~750MB. | `README.md:16`, `docs/08_ARCHITECTURE.md:440` | 🟡 | P1 | `python scripts/bench_memory.py --nodes 10000 --quantization fp16/none` с `psutil`/`tracemalloc` per-stage `rtmdk/pipeline/` | В README добавлена сноска `RAM без HNSW/BM25/engram cache` + таблица из `docs/08` как source of truth |
 
 ---

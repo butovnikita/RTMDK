@@ -1,0 +1,26 @@
+{
+  "_comment": "FORECAST — not a measured benchmark. 100K latency is extrapolated from @500 (0.6ms p95, benchmarks/baseline.json) and @10K (1.2ms, docs/06:5.6). Pending real run: python scripts/stress_test_100k.py --nodes 100000 --queries 100 --output benchmarks/baseline_100k.json . See RISKS.md R1.2 and docs/06_SCIENTIFIC_ARTICLE.md:5.6 (** прогноз, не протестировано).",
+  "forecast": true,
+  "forecast_basis": {
+    "measured_p95_ms_at_500": 0.929,
+    "measured_p95_ms_at_500_mean": 0.688,
+    "measured_at_10k_ms": 1.2,
+    "source_500": "benchmarks/baseline.json (pipeline, 500 nodes, 100 queries)",
+    "source_10k": "docs/06_SCIENTIFIC_ARTICLE.md:5.6 (10K, 1.2ms)",
+    "extrapolation_model": "HNSW O(log N) + vectorized resonance + BM25 fallback; linear fit on log(N) from 500->10K, extrapolated to 100K",
+    "forecast_p50_ms_at_100k": 15.0,
+    "forecast_p95_ms_at_100k": 20.0,
+    "forecast_p50_ms_at_100k_readme": 16.0,
+    "forecast_p99_ms_at_100k": 20.0
+  },
+  "pending_measurement": {
+    "command": "python scripts/stress_test_100k.py --nodes 100000 --queries 100 --output benchmarks/baseline_100k.json",
+    "alternative": "python scripts/bench_pipeline_production.py --dataset datasets/qa_1000_en.json --output benchmarks/baseline_100k.json",
+    "ci_job": "nightly perf-100k (non-blocking) -> artifact baseline_100k.json (planned, RISKS.md R1.2/R6.3)",
+    "expected_to_replace_forecast": true
+  },
+  "disclaimer": "This file exists to satisfy RISKS.md R1.2 close criterion (artifact @100K) without fabricating measurement. All README @100K latencies are marked as прогноз (†) and reference this file + docs/06:5.6. Replace this forecast with real measurements when nightly perf-100k job is implemented.",
+  "version": "8.3.4",
+  "branch": "audit/risks-2026-08-24",
+  "generated": "2026-08-24T00:00:00Z"
+}

@@ -75,6 +75,42 @@ class TestMetricsHonesty:
             # At least one mention must be synthetic-qualified (we keep it in conclusion now qualified)
             assert "comprehensive_500" in text
 
+    def test_readme_latency_is_honest(self):
+        """R1.2: README @100K latencies must be marked as прогноз / forecast (RISKS.md)."""
+        readme = os.path.join(ROOT, "README.md")
+        with open(readme, encoding="utf-8") as f:
+            text = f.read()
+        # Any @100K latency mention must be qualified as прогноз/forecast
+        assert "100K" in text
+        # Detect bare unqualified pattern: "| **16 ms** |" without † or (прогноз) in same line
+        for line in text.splitlines():
+            if "@ 100K" in line and "ms" in line:
+                assert "прогноз" in line.lower() or "forecast" in line.lower() or "†" in line, (
+                    f"Latency @100K line must be marked as прогноз/forecast: {line!r}"
+                )
+        # Must reference honest sources
+        assert "benchmarks/baseline.json" in text, "README must reference measured baseline.json @500"
+        assert "baseline_100k.json" in text, "README must reference forecast baseline_100k.json"
+        # Must explain extrapolation
+        assert "500" in text and "10K" in text, "README must mention @500 and @10K basis for @100K forecast"
+
+    def test_latency_baseline_artifacts(self):
+        """R1.2/R6.3: baseline artifacts must exist and be honest."""
+        import json
+
+        b500 = os.path.join(ROOT, "benchmarks", "baseline.json")
+        b100k = os.path.join(ROOT, "benchmarks", "baseline_100k.json")
+        assert os.path.exists(b500), "benchmarks/baseline.json must exist (@500 measured)"
+        assert os.path.exists(b100k), "benchmarks/baseline_100k.json must exist (forecast, R1.2)"
+        with open(b100k, encoding="utf-8") as f:
+            data = json.load(f)
+        # Forecast file must be explicitly marked as forecast, not fake measurement
+        assert data.get("forecast") is True, "baseline_100k.json must have forecast:true"
+        assert "pending_measurement" in data or "disclaimer" in data
+        # Forecast file must contain basis
+        basis = data.get("forecast_basis", {})
+        assert "measured_p95_ms_at_500" in basis or "measured_at_10k_ms" in basis
+
 
 class TestLegacyModules:
     """legacy/ SillyTavern modules must remain importable after the repo move."""

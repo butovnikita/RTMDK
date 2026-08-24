@@ -13,13 +13,14 @@
 | Feature | RTMDK | Vector DB (FAISS/Chroma) |
 |---------|-------|--------------------------|
 | Recall@1 | **95.6%** @1000 QA* (97.6% avg) | 97.1% FAISS exact / 96.8% BM25 / ~60-75% Naive RAG |
-| Latency @ 100K | **16 ms** | 50-500 ms |
+| Latency @ 100K | **16 ms**† (прогноз) | 50-500 ms |
 | RAM @ 10K | **19-30 MB** | 500 MB+ |
 | Embedding cost | **$0** (SOT v2) | $0.10-1.00 / 1M tokens |
 | Offline capable | **Yes** | Partial |
 | Dependencies | **numpy only** | torch, transformers |
 
 > * **95.6% Recall@1** измерено на **1000 QA** (10 тем, Nomic v1.5) — `docs/06_SCIENTIFIC_ARTICLE.md:5.2` (5/10 тем — 100%, пер-топик среднее **97.6%**); синтетический `comprehensive_500` exact-match **99.3%** vs cosine **18.1%** (`docs/24_RAG_COMPARISON.md:55`) — другой датасет, несопоставим с FAISS.
+> † **16 ms @100K — прогноз** на основе экстраполяции (`docs/06_SCIENTIFIC_ARTICLE.md:5.6`: `@10K 1.2ms`, `benchmarks/baseline.json: @500 0.6ms p95`, `@100K ~15ms прогноз, не протестировано`). Измеренный артефакт — `benchmarks/baseline_100k.json` (forecast, pending real `stress_test_100k.py`).
 
 ## Quick Start
 
@@ -47,15 +48,16 @@ results = mem.query("What color is the sky?", top_k=3)
 |--------|-------|
 | Recall@1 @1000 QA (Nomic v1.5) | **95.6%** (All Combined) / **92%** resonance-only — vs **97.1%** FAISS / **96.8%** BM25* |
 | Recall@1 synthetic `comprehensive_500` | **99.3%** vs **18.1%** cosine (hard paraphrase exact-match, не 1000 QA) |
-| Latency p50 @ 1K nodes | 0.26 ms |
-| Latency p50 @ 100K nodes | **16 ms** |
-| Latency p99 @ 100K nodes | **20 ms** |
+| Latency p50 @ 1K nodes | 0.26 ms* |
+| Latency p50 @ 100K nodes | **16 ms**† (прогноз) |
+| Latency p99 @ 100K nodes | **20 ms**† (прогноз) |
 | Tests | 1280 passed, 1 skipped |
 | Pipeline stages | 6 (explicit, observable) |
 | Circuit breakers | Per-stage |
 | Streaming protocols | SSE, WebSocket, GraphQL |
 
-> * `docs/06_SCIENTIFIC_ARTICLE.md:5.2` (`95.6%` R@1, `~97%` R@5, per-topic avg `97.6%`), ablation `5.7` resonance-only `92%` → `+3pp` all-combined.
+> * `docs/06_SCIENTIFIC_ARTICLE.md:5.2` (`95.6%` R@1, `~97%` R@5, per-topic avg `97.6%`), ablation `5.7` resonance-only `92%` → `+3pp` all-combined. `0.26ms @1K` — точечное измерение; артефакт `benchmarks/baseline.json` — `@500 0.6ms p95` (pipeline vs legacy).
+> † **@100K — прогноз**: `docs/06:5.6` `@10K 1.2ms` + `benchmarks/baseline_100k.json` (forecast `~15ms`, не измерено, pending `scripts/stress_test_100k.py --nodes 100000`).
 
 ---
 
@@ -254,15 +256,16 @@ RTMDK_PRESET=research RTMDK_DECAY_RATE=0.9995 python legacy/rtmdk_server.py
 |---------|:---:|---|
 | **Recall@1 @1000 QA** | **95.6%** (97.6% avg per-topic) | +8-16% vs GraphRAG, +10-18% vs Self-RAG* |
 | **Recall@5 @1000 QA** | **~97%** | +2-7% vs GraphRAG |
-| **Latency p50 @ 1K** | **0.26 ms** | В 100-500× быстрее |
-| **Latency p50 @ 100K** | **16 ms** | В 10-50× быстрее |
-| **Latency p99 @ 100K** | **20 ms** | Стабильный |
+| **Latency p50 @ 1K** | **0.26 ms*** | В 100-500× быстрее |
+| **Latency p50 @ 100K** | **16 ms**† (прогноз) | В 10-50× быстрее |
+| **Latency p99 @ 100K** | **20 ms**† (прогноз) | Стабильный |
 | **RAM (1K узлов)** | **14 MB** | В 3-12× экономнее |
 | **RAM (10K fp16)** | **9.8 MB** | В 5-20× экономнее |
 | **Stress test** | ✅ 100K nodes, 50 queries | Все пороги пройдены |
 | **Batch ingestion** | ✅ 1M nodes in 12s (83K/sec) | WAL async, no HNSW |
 
-> * Честные цифры из `docs/06_SCIENTIFIC_ARTICLE.md:5.2-5.4` (Nomic v1.5, 1000 QA). Синтетический `comprehensive_500`: **99.3%** vs **18.1%** cosine (`docs/24_RAG_COMPARISON.md:55`) — отдельный датасет, не сравнивать с FAISS 97.1%.
+> * Честные цифры из `docs/06_SCIENTIFIC_ARTICLE.md:5.2-5.4` (Nomic v1.5, 1000 QA). Синтетический `comprehensive_500`: **99.3%** vs **18.1%** cosine (`docs/24_RAG_COMPARISON.md:55`) — отдельный датасет, не сравнивать с FAISS 97.1%. `0.26ms @1K` — точечно; `benchmarks/baseline.json` — `@500 0.6ms p95`.
+> † **@100K — прогноз** (`docs/06:5.6` `@10K 1.2ms`, `@100K ~15ms прогноз`). Артефакт `benchmarks/baseline_100k.json` — forecast, pending real `scripts/stress_test_100k.py`.
 
 ## 🏗️ Архитектура
 
