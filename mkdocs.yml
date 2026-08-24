@@ -74,6 +74,7 @@ nav:
     - Basic Memory: examples/basic-memory.md
     - Pipeline Retrieval: examples/pipeline-retrieval.md
     - Batch Ingestion: examples/batch-ingestion.md
+  - Risks: risks.md
   - FAQ: faq.md
 
 extra:

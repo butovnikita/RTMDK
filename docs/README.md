@@ -70,6 +70,7 @@
 | [06_SCIENTIFIC_ARTICLE.md](06_SCIENTIFIC_ARTICLE.md) | Researchers / Patent | Full scientific article (patent-pending technology) |
 | [ROADMAP.md](ROADMAP.md) | Product / Business | Commercial roadmap: branding, community, monetization |
 | [BACKLOG.md](../BACKLOG.md) | Product / Engineering | Development backlog: Tracks 1-5 status, acceptance criteria |
+| [RISKS.md](RISKS.md) | Engineering / QA | Risk registry (31 verified risks + tech debt, P0/P1/P2, close criteria) — branch `audit/risks-2026-08-24` |
 
 ---
 
@@ -83,6 +84,10 @@
 | [Values.md](../Values.md) | Parameter calibration reference |
 
 ---
+
+## ✅ Risk Registry (2026-08-24)
+
+New: **[RISKS.md](RISKS.md)** — 31 пункт рисков с верификацией (branch `audit/risks-2026-08-24`): маркетинг vs измерения, mypy-долг, конфиг-взрыв, потокобезопасность, tiered/storage, OOM, circuit breaker, legacy fork, зависимости, арх-долг, документация-дрейф, безопасность.
 
 ## ⚠️ Known Documentation Issues
 
