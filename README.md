@@ -12,12 +12,14 @@
 
 | Feature | RTMDK | Vector DB (FAISS/Chroma) |
 |---------|-------|--------------------------|
-| Recall@1 | **99.3%** | ~80-90% |
+| Recall@1 | **95.6%** @1000 QA* (97.6% avg) | 97.1% FAISS exact / 96.8% BM25 / ~60-75% Naive RAG |
 | Latency @ 100K | **16 ms** | 50-500 ms |
 | RAM @ 10K | **19-30 MB** | 500 MB+ |
 | Embedding cost | **$0** (SOT v2) | $0.10-1.00 / 1M tokens |
 | Offline capable | **Yes** | Partial |
 | Dependencies | **numpy only** | torch, transformers |
+
+> * **95.6% Recall@1** измерено на **1000 QA** (10 тем, Nomic v1.5) — `docs/06_SCIENTIFIC_ARTICLE.md:5.2` (5/10 тем — 100%, пер-топик среднее **97.6%**); синтетический `comprehensive_500` exact-match **99.3%** vs cosine **18.1%** (`docs/24_RAG_COMPARISON.md:55`) — другой датасет, несопоставим с FAISS.
 
 ## Quick Start
 
@@ -43,7 +45,8 @@ results = mem.query("What color is the sky?", top_k=3)
 ### Production Stats
 | Metric | Value |
 |--------|-------|
-| Recall@1 (vs Cosine) | **0.993** vs 0.181 |
+| Recall@1 @1000 QA (Nomic v1.5) | **95.6%** (All Combined) / **92%** resonance-only — vs **97.1%** FAISS / **96.8%** BM25* |
+| Recall@1 synthetic `comprehensive_500` | **99.3%** vs **18.1%** cosine (hard paraphrase exact-match, не 1000 QA) |
 | Latency p50 @ 1K nodes | 0.26 ms |
 | Latency p50 @ 100K nodes | **16 ms** |
 | Latency p99 @ 100K nodes | **20 ms** |
@@ -51,6 +54,8 @@ results = mem.query("What color is the sky?", top_k=3)
 | Pipeline stages | 6 (explicit, observable) |
 | Circuit breakers | Per-stage |
 | Streaming protocols | SSE, WebSocket, GraphQL |
+
+> * `docs/06_SCIENTIFIC_ARTICLE.md:5.2` (`95.6%` R@1, `~97%` R@5, per-topic avg `97.6%`), ablation `5.7` resonance-only `92%` → `+3pp` all-combined.
 
 ---
 
@@ -247,8 +252,8 @@ RTMDK_PRESET=research RTMDK_DECAY_RATE=0.9995 python legacy/rtmdk_server.py
 
 | Метрика | Значение | vs RAG |
 |---------|:---:|---|
-| **Recall@1** | **99.3%** | +20-40% |
-| **Recall@5** | **99.8%** | +15-30% |
+| **Recall@1 @1000 QA** | **95.6%** (97.6% avg per-topic) | +8-16% vs GraphRAG, +10-18% vs Self-RAG* |
+| **Recall@5 @1000 QA** | **~97%** | +2-7% vs GraphRAG |
 | **Latency p50 @ 1K** | **0.26 ms** | В 100-500× быстрее |
 | **Latency p50 @ 100K** | **16 ms** | В 10-50× быстрее |
 | **Latency p99 @ 100K** | **20 ms** | Стабильный |
@@ -256,6 +261,8 @@ RTMDK_PRESET=research RTMDK_DECAY_RATE=0.9995 python legacy/rtmdk_server.py
 | **RAM (10K fp16)** | **9.8 MB** | В 5-20× экономнее |
 | **Stress test** | ✅ 100K nodes, 50 queries | Все пороги пройдены |
 | **Batch ingestion** | ✅ 1M nodes in 12s (83K/sec) | WAL async, no HNSW |
+
+> * Честные цифры из `docs/06_SCIENTIFIC_ARTICLE.md:5.2-5.4` (Nomic v1.5, 1000 QA). Синтетический `comprehensive_500`: **99.3%** vs **18.1%** cosine (`docs/24_RAG_COMPARISON.md:55`) — отдельный датасет, не сравнивать с FAISS 97.1%.
 
 ## 🏗️ Архитектура
 
