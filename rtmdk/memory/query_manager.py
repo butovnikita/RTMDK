@@ -3,6 +3,12 @@
 Handles all query paths (BM25 first-stage, HNSW, sparse routing,
 vectorized fallback), batch resonance computation, and post-query
 filtering (conformal, adaptive top-k, attention bias).
+
+R10.2 (2026-08-24, audit/risks-2026-08-24): was God module (853 lines).
+Batch resonance extracted to rtmdk/memory/batch_resonance.py
+(BatchResonanceEngine, see R10.2) and cache to cache_manager.py.
+QueryManager now delegates batch compute; NodeManager (660 lines) remains
+next split candidate (see docs/RISKS.md R10.2).
 """
 
 from __future__ import annotations
@@ -17,6 +23,8 @@ from scipy.spatial.distance import pdist
 
 from rtmdk.memory.geometry import poincare_dist
 from rtmdk.memory.utils import apply_attention_bias
+from rtmdk.memory.batch_resonance import BatchResonanceEngine  # R10.2 extracted
+from rtmdk.memory.protocols import FieldLike  # R10.3 Protocol for field→manager cycle
 
 if TYPE_CHECKING:
     from rtmdk.memory.field import RTMDKField
@@ -29,8 +37,10 @@ logger = logging.getLogger(__name__)
 class QueryManager:
     """All query and resonance computation logic."""
 
-    def __init__(self, field: RTMDKField) -> None:
-        self.field = field
+    def __init__(self, field: FieldLike) -> None:  # R10.3 Protocol, was RTMDKField
+        self.field: FieldLike = field
+        # R10.2: BatchResonanceEngine extracted (was inline in QueryManager, 853 lines)
+        self.batch_engine = BatchResonanceEngine(field._resonance_engine)  # type: ignore[attr-defined]
         # Pre-select batch resonance backend to avoid branching in hot path
         if field.gpu_backend and field.gpu_backend.available:
             field._batch_resonance_fn = self._batch_resonance_torch

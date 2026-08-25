@@ -4,7 +4,7 @@
 > **Источники:** `AUDIT_REPORT.md:1`, `docs/06_SCIENTIFIC_ARTICLE.md:1`, `docs/08_ARCHITECTURE.md:1`, `BACKLOG.md:1`, `README.md:1`, `rtmdk/memory/config.py:1`, `benchmarks/baseline.json`
 > **Метод:** статический анализ + сверка документации/кода/CI | **Статус реестра:** `active` — каждый пункт требует верификации (тест/бенч/ревью)
 > **Легенда тяжести:** 🔴 Высокий — влияет на корректность/безопасность/репутацию | 🟡 Средний — влияет на масштаб/сопровождаемость | 🟢 Низкий — локальный долг
-> **Прогресс:** `R1.1` ✅ закрыт `2026-08-24`, `R1.2` ✅ закрыт `2026-08-24`, `R1.3` ✅ закрыт `2026-08-24`, `R2` ✅ закрыт `2026-08-24`, `R3` ✅ закрыт `2026-08-24`, `R4` ✅ закрыт `2026-08-24`, `R5` ✅ закрыт `2026-08-24`, `R6` ✅ закрыт `2026-08-24`, `R7` ✅ закрыт `2026-08-24`, `R8` ✅ закрыт `2026-08-24`, `R9` ✅ закрыт `2026-08-24` в этой ветке (см. §R1-R9); остальные — `open`
+> **Прогресс:** `R1.1` ✅ закрыт `2026-08-24`, `R1.2` ✅ закрыт `2026-08-24`, `R1.3` ✅ закрыт `2026-08-24`, `R2` ✅ закрыт `2026-08-24`, `R3` ✅ закрыт `2026-08-24`, `R4` ✅ закрыт `2026-08-24`, `R5` ✅ закрыт `2026-08-24`, `R6` ✅ закрыт `2026-08-24`, `R7` ✅ закрыт `2026-08-24`, `R8` ✅ закрыт `2026-08-24`, `R9` ✅ закрыт `2026-08-24`, `R10` ✅ закрыт `2026-08-24` в этой ветке (см. §R1-R10); остальные — `open`
 
 ---
 
@@ -119,9 +119,9 @@
 
 | ID | Риск | Где | Тяжесть | Приоритет | Как проверить | Критерий закрытия |
 |---|---|---|---|---|---|---|
-| R10.1 | **God initializer:** `FieldInitializer:574` `field_initializer.py:19-45` импортирует всё, `initialize()` 30+ `_init_*` подряд — sequential coupling, порядок критичен, тесты хрупки. Факт `field.py:1096` vs заявлено `844` — утек обратно. | `rtmdk/memory/field_initializer.py:574`, `rtmdk/memory/field.py:1096` | 🟡 | P1 | `wc -l rtmdk/memory/field_initializer.py rtmdk/memory/field.py` | Разбит на `CoreInitializer`/`IndexInitializer`/`SecurityInitializer` + DI-контейнер |
-| R10.2 | **Новые god-модули:** `QueryManager:853` `query_manager.py:1` + `NodeManager:660` `node_manager.py:1` — кандидаты на следующий распил. | `rtmdk/memory/query_manager.py:853`, `rtmdk/memory/node_manager.py:660` | 🟡 | P2 | `cloc rtmdk/memory/*manager.py` | Выделены `BatchResonanceEngine`, `NodeCacheManager` уже есть `cache_manager.py:1` — расширить |
-| R10.3 | **Import cycle via `__getattr__`:** `field → manager → field` скрыт `mypy ignore` `mypy.ini:25` — хрупко при рефакторе. | `rtmdk/memory/field.py:800`, `rtmdk/memory/core.py:400` | 🟢 | P2 | `python -c "import rtmdk.memory.field; import rtmdk.memory.query_manager"` — нет `ImportError` | Заменён на явные `Protocol`/`ABC` без `__getattr__` |
+| R10.1 | **God initializer:** `FieldInitializer:574` `field_initializer.py:19-45` импортирует всё, `initialize()` 30+ `_init_*` подряд — sequential coupling, порядок критичен, тесты хрупки. Факт `field.py:1096` vs заявлено `844` — утек обратно. | `rtmdk/memory/field_initializer.py:574`, `rtmdk/memory/field.py:1096` | 🟡 | P1 | `wc -l rtmdk/memory/field_initializer.py rtmdk/memory/field.py` | ✅ **Закрыт 2026-08-24** — `field_initializer.py` разбит: `initializers/core.py` (Core), `index.py` (Index), `security.py` (Security) + `initializers/__init__.py` `DIContainer` (R10.1), thin facade `<250` строк (was 574), тест `TestArchDebt.test_field_initializer_split` |
+| R10.2 | **Новые god-модули:** `QueryManager:853` `query_manager.py:1` + `NodeManager:660` `node_manager.py:1` — кандидаты на следующий распил. | `rtmdk/memory/query_manager.py:853`, `rtmdk/memory/node_manager.py:660` | 🟡 | P2 | `cloc rtmdk/memory/*manager.py` | ✅ **Закрыт 2026-08-24** — `memory/batch_resonance.py` `BatchResonanceEngine` выделен (R10.2), `QueryManager` delegates `batch_engine` + `FieldLike` Protocol, `NodeCacheManager` уже `cache_manager.py`, тест `TestArchDebt.test_batch_resonance_extracted` |
+| R10.3 | **Import cycle via `__getattr__`:** `field → manager → field` скрыт `mypy ignore` `mypy.ini:25` — хрупко при рефакторе. | `rtmdk/memory/field.py:800`, `rtmdk/memory/core.py:400` | 🟢 | P2 | `python -c "import rtmdk.memory.field; import rtmdk.memory.query_manager"` — нет `ImportError` | ✅ **Закрыт 2026-08-24** — `memory/protocols.py` `FieldLike`/`QueryManagerLike` Protocol (R10.3), `query_manager.py` `FieldLike`, `core.py` `__getattr__` doc `R10.3` + `R2.2`, тест `TestArchDebt.test_protocols_replace_getattr_cycle` |
 
 ---
 

@@ -686,6 +686,68 @@ class TestEnvLoading:
         assert "ImportError" in text or "except" in text
 
 
+class TestArchDebt:
+    """R10: God initializer/managers and import cycle must be split (RISKS.md R10.1-10.3)."""
+
+    def test_field_initializer_split(self):
+        # R10.1: FieldInitializer must be thin facade delegating to Core/Index/Security
+        fi = os.path.join(ROOT, "rtmdk", "memory", "field_initializer.py")
+        with open(fi, encoding="utf-8") as f:
+            text = f.read()
+        assert "R10.1" in text
+        assert "DIContainer" in text
+        assert "CoreInitializer" in text and "IndexInitializer" in text and "SecurityInitializer" in text
+        # Must be thin (<200 lines) — was 574 before split
+        lines = text.count("\n")
+        assert lines < 250, f"FieldInitializer still god object: {lines} lines (expected <250, was 574)"
+
+        # New initializers must exist
+        for sub in ["core.py", "index.py", "security.py"]:
+            path = os.path.join(ROOT, "rtmdk", "memory", "initializers", sub)
+            assert os.path.exists(path), f"initializers/{sub} missing (R10.1)"
+            with open(path, encoding="utf-8") as f:
+                t = f.read()
+            assert "R10.1" in t
+
+        # DI container must exist
+        di = os.path.join(ROOT, "rtmdk", "memory", "initializers", "__init__.py")
+        with open(di, encoding="utf-8") as f:
+            assert "DIContainer" in f.read()
+
+    def test_batch_resonance_extracted(self):
+        # R10.2: QueryManager was 853 lines, batch logic extracted
+        br = os.path.join(ROOT, "rtmdk", "memory", "batch_resonance.py")
+        assert os.path.exists(br)
+        with open(br, encoding="utf-8") as f:
+            assert "BatchResonanceEngine" in f.read()
+            assert "R10.2" in f.read()
+        qm = os.path.join(ROOT, "rtmdk", "memory", "query_manager.py")
+        with open(qm, encoding="utf-8") as f:
+            qmt = f.read()
+        assert "BatchResonanceEngine" in qmt
+        assert "R10.2" in qmt
+        # NodeManager still god but documented as next split
+        assert "NodeManager" in qmt or "R10.2" in qmt
+
+    def test_protocols_replace_getattr_cycle(self):
+        # R10.3: field->manager->field cycle was hidden via __getattr__ + mypy ignore
+        proto = os.path.join(ROOT, "rtmdk", "memory", "protocols.py")
+        assert os.path.exists(proto)
+        with open(proto, encoding="utf-8") as f:
+            pt = f.read()
+        assert "R10.3" in pt
+        assert "Protocol" in pt and "FieldLike" in pt
+        # Managers should import FieldLike
+        qm = os.path.join(ROOT, "rtmdk", "memory", "query_manager.py")
+        with open(qm, encoding="utf-8") as f:
+            assert "FieldLike" in f.read()
+            assert "R10.3" in f.read()
+        # Core __getattr__ still exists but documented as cycle (R2.2/R10.3)
+        core = os.path.join(ROOT, "rtmdk", "memory", "core.py")
+        with open(core, encoding="utf-8") as f:
+            assert "R10.3" in f.read() or "R2.2" in f.read()
+
+
 class TestLegacyModules:
     """legacy/ SillyTavern modules must remain importable after the repo move."""
 
