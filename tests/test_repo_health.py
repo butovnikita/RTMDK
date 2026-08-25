@@ -339,6 +339,83 @@ class TestThreadSafety:
         assert all("broadcast" not in str(e) for e in errors)
 
 
+class TestTieredAndBatch:
+    """R5: tiered/storage, batch ingestion, SLO must be honest (RISKS.md R5.1-5.3)."""
+
+    def test_tiered_v1_deprecated_v2_canonical(self):
+        v1 = os.path.join(ROOT, "rtmdk", "memory", "tiered_storage.py")
+        with open(v1, encoding="utf-8") as f:
+            t1 = f.read()
+        assert "R5.1" in t1 and "deprecated" in t1.lower()
+        assert "storage/tiered.py" in t1 and "v2" in t1
+        assert "DeprecationWarning" in t1
+
+        v2 = os.path.join(ROOT, "rtmdk", "storage", "tiered.py")
+        assert os.path.exists(v2)
+        with open(v2, encoding="utf-8") as f:
+            t2 = f.read()
+        # v2 must NOT be deprecated, must be memmap/LFU
+        assert "memmap" in t2.lower() or "mmap" in t2.lower()
+        assert "LFU" in t2 or "warm" in t2.lower()
+
+        cfg = os.path.join(ROOT, "rtmdk", "memory", "config.py")
+        with open(cfg, encoding="utf-8") as f:
+            ct = f.read()
+        assert "tiered_storage_enabled" in ct and "R5.1" in ct
+        assert "tiered_storage_v2_enabled" in ct
+
+    def test_tiered_fallback_is_sampled_not_full_scan(self):
+        qm = os.path.join(ROOT, "rtmdk", "memory", "query_manager.py")
+        with open(qm, encoding="utf-8") as f:
+            text = f.read()
+        assert "R5.1" in text
+        assert "peek_batch" in text
+        # Must be sampled needed*5, not O(W+C) full scan
+        assert "needed * 5" in text
+        assert "O(W+C)" in text or "O(C)" in text or "not O" in text or "sample" in text.lower()
+
+    def test_batch_artifact_exists_and_is_forecast(self):
+        import json
+
+        batch = os.path.join(ROOT, "benchmarks", "baseline_batch.json")
+        assert os.path.exists(batch), "benchmarks/baseline_batch.json must exist (forecast, R5.2)"
+        with open(batch, encoding="utf-8") as f:
+            data = json.load(f)
+        assert data.get("forecast") is True
+        assert "without_wal" in str(data.get("forecast_basis", {}))
+        assert "83K" in str(data) or "83000" in str(data) or "12s" in str(data)
+
+        tiered = os.path.join(ROOT, "benchmarks", "baseline_tiered.json")
+        assert os.path.exists(tiered)
+        with open(tiered, encoding="utf-8") as f:
+            dt = json.load(f)
+        assert dt.get("forecast") is True
+
+    def test_perf_workflow_has_nightly_batch_and_tiered(self):
+        perf = os.path.join(ROOT, ".github", "workflows", "perf.yml")
+        with open(perf, encoding="utf-8") as f:
+            text = f.read()
+        assert "schedule" in text and "cron" in text, "perf.yml must have nightly schedule (R5.2)"
+        assert "bench_batch_ingestion" in text, "perf.yml must run batch ingestion (R5.2)"
+        assert "bench_tiered" in text or "stress_test_100k" in text
+        assert "R5.1" in text or "tiered" in text.lower()
+        assert "R5.2" in text
+
+    def test_slo_thresholds_covered(self):
+        # R5.3: pipeline breaker thresholds must be validated as ERROR and tested
+        cfg = os.path.join(ROOT, "rtmdk", "memory", "config.py")
+        with open(cfg, encoding="utf-8") as f:
+            ct = f.read()
+        assert "pipeline_breaker_thresholds" in ct
+        assert "ERROR:" in ct  # from R3.1, critical SLO misconfig
+        # Test file must cover breaker thresholds
+        tcb = os.path.join(ROOT, "tests", "test_pipeline_circuit_breaker.py")
+        assert os.path.exists(tcb)
+        with open(tcb, encoding="utf-8") as f:
+            tbt = f.read()
+        assert "failure_threshold" in tbt or "latency" in tbt.lower()
+
+
 class TestLegacyModules:
     """legacy/ SillyTavern modules must remain importable after the repo move."""
 

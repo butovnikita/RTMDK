@@ -1,6 +1,13 @@
 """
 rtmdk/memory/tiered_storage.py
-Track 2: Tiered Storage
+Track 2: Tiered Storage (legacy v1)
+
+R5.1 (2026-08-24, audit/risks-2026-08-24): DEPRECATED — use rtmdk/storage/tiered.py v2
+(memmap + LFU, cold_dir manifest). v1 keeps OrderedDict hot + dict warm + zlib/msgpack
+cold batches (1550 files in git history). Kept for backward compat, will be removed
+in v9.0 (see BACKLOG.md R3.1/R5.1, docs/RISKS.md R5.1). New code must use
+TieredNodeStore v2 via TieredNodeStoreAdapter (storage/tiered.py). Fallback
+in query_manager.py:602 is sampled (needed*5) not O(W+C) — R5.1 cold_scan avoided.
 """
 
 from __future__ import annotations
@@ -28,7 +35,18 @@ def _msgpack_default(obj):
 
 
 class TieredNodeStore:
+    """Legacy v1 — deprecated, use storage.tiered.TieredNodeStore v2 (R5.1)."""
+
     def __init__(self, hot_limit: int, warm_limit: int, cold_dir: str, latent_dim: int):
+        import warnings
+
+        warnings.warn(
+            "rtmdk.memory.tiered_storage.TieredNodeStore v1 is deprecated, "
+            "use rtmdk.storage.tiered.TieredNodeStore v2 (memmap+LFU); "
+            "v1 will be removed in v9.0 (R5.1, BACKLOG.md)",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.hot_limit = max(1, hot_limit)
         self.warm_limit = max(1, warm_limit)
         self.cold_dir = cold_dir

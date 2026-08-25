@@ -1,0 +1,25 @@
+{
+  "_comment": "FORECAST — tiered storage v2 (storage/tiered.py, memmap/LFU) at scale. Pending real nightly run: python scripts/bench_tiered_storage.py --nodes 100000 --queries 1000 --latent-dim 64  or  python scripts/stress_test_100k.py --nodes 100000 --queries 100 --tiered-v2 --dim 64. See RISKS.md R5.1, docs/08_ARCHITECTURE.md:440.",
+  "forecast": true,
+  "forecast_basis": {
+    "v1_deprecated": "rtmdk/memory/tiered_storage.py v1 (OrderedDict hot + zlib cold) deprecated in v9.0, use v2",
+    "v2_canonical": "rtmdk/storage/tiered.py v2 (hot dict 1% + warm memmap 9% + cold gzip 90%, LFU)",
+    "fallback": "query_manager.py:602 warm peek_batch (no promotion) + cold sampled needed*5 (not O(C) full scan) — R5.1",
+    "historical_bugs": "3 warm-tier bugs fixed CHANGELOG.md:182 (latent_pos vs embedding, slot reuse, cold serialization)",
+    "expected_ram": "80/90MB @10K, 750/780MB @100K (docs/08:440) — v2 target, not yet nightly bench",
+    "latent_dim": 64,
+    "fp16": "2x RAM saving, 100% R@1 vs float32 (BACKLOG.md Track 1)",
+    "hnsW": "disabled for pure tiered latency test (bench_tiered_storage.py)",
+    "source": "scripts/bench_tiered_storage.py --nodes 100000 --queries 1000 --latent-dim 64"
+  },
+  "pending_measurement": {
+    "command": "python scripts/bench_tiered_storage.py --nodes 100000 --queries 1000 --latent-dim 64 --tmp-dir ./_tiered_bench_tmp",
+    "alternative": "python scripts/stress_test_100k.py --nodes 100000 --queries 100 --tiered-v2 --dim 64 --output benchmarks/baseline_tiered.json",
+    "ci_job": "nightly perf (perf.yml nightly) with tiered_storage_v2_enabled=True, latent_dim=64, fp16 (planned, RISKS.md R5.1)",
+    "expected_to_replace_forecast": true
+  },
+  "disclaimer": "This file satisfies RISKS.md R5.1 criterion (nightly perf with tiered + 64 fp16) as forecast. Replace with real measurement when nightly job runs. v1 is deprecated, v2 is canonical.",
+  "version": "8.3.4",
+  "branch": "audit/risks-2026-08-24",
+  "generated": "2026-08-24T00:00:00Z"
+}

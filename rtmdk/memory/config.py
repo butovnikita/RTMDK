@@ -691,12 +691,12 @@ class MemorySystemConfig:
     cpen_parent_ode: bool = False
     cpen_child_ode: bool = False
     hebbian_learning_rate: float = 0.01
-    tiered_storage_enabled: bool = False
-    tiered_storage_v2_enabled: bool = False
+    tiered_storage_enabled: bool = False  # R5.1 legacy v1 (memory/tiered_storage.py) deprecated → use v2
+    tiered_storage_v2_enabled: bool = False  # R5.1 canonical v2 (storage/tiered.py, memmap/LFU), off by default until perf nightly
     tiered_storage_path: Optional[str] = None
     tiered_hot_pct: float = 0.01
     tiered_warm_pct: float = 0.09
-    tiered_fallback_enabled: bool = True  # Enable warm/cold tier fallback in query()
+    tiered_fallback_enabled: bool = True  # Enable warm/cold tier fallback in query() — R5.1 sampled needed*5, not O(C)
 
 
 @dataclass

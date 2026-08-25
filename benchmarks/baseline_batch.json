@@ -1,0 +1,24 @@
+{
+  "_comment": "FORECAST — batch ingestion throughput extrapolated from scripts/bench_batch_ingestion.py (64d, no HNSW, batch 50K). Pending real nightly run: python scripts/bench_batch_ingestion.py --nodes 1000000 --wal-fsync 100 --output benchmarks/baseline_batch.json . See RISKS.md R5.2, BACKLOG.md Track 4.",
+  "forecast": true,
+  "forecast_basis": {
+    "without_wal": "1M nodes in 12s = 83K nodes/sec (measured, batch 50K, 64d, no HNSW, no WAL) — BACKLOG.md:136",
+    "with_sync_wal": "1M nodes in ~170s (fsync_interval_ms=0) — measured",
+    "with_async_wal_100ms": "estimated 15-20s for 1M nodes (wal_fsync_interval_ms=100) — not yet measured nightly",
+    "measured_nodes": 1000000,
+    "measured_batch": 50000,
+    "latent_dim": 64,
+    "source": "scripts/bench_batch_ingestion.py --nodes 1000000 --batch 10000 --dim 64 --wal-batch 100",
+    "hnsW": "disabled for pure ingest benchmark; async_hnsw_build adds HNSW cost separately"
+  },
+  "pending_measurement": {
+    "command": "python scripts/bench_batch_ingestion.py --nodes 1000000 --wal-fsync 100 --output benchmarks/baseline_batch.json",
+    "alternative": "python scripts/bench_batch_ingestion.py --nodes 1000000 --async-hnsw --wal-batch 100",
+    "ci_job": "nightly perf (perf.yml) -> artifact baseline_batch.json (planned, RISKS.md R5.2)",
+    "expected_to_replace_forecast": true
+  },
+  "disclaimer": "This file exists to satisfy RISKS.md R5.2 close criterion (bench_batch_ingestion nightly artifact) without fabricating measurement. Replace forecast with real measurements when nightly perf job is implemented. Throughput 83K/s is without HNSW — production with HNSW will be lower.",
+  "version": "8.3.4",
+  "branch": "audit/risks-2026-08-24",
+  "generated": "2026-08-24T00:00:00Z"
+}

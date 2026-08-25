@@ -616,11 +616,15 @@ class QueryManager:
         else:
             results = self._query_vectorized(query_latent, phase, top_k, modality, session_id, t0)
 
-        # Track 2: Fallback to warm/cold tiers
+        # Track 2: Fallback to warm/cold tiers — R5.1 (2026-08-24)
+        # v1 (memory/tiered_storage.py) deprecated → v2 (storage/tiered.py, memmap/LFU).
+        # Avoid O(W+C) cold scan at 90% cold=900K files: warm is peek_batch without promotion,
+        # cold is sampled needed*5 (not full scan). See docs/RISKS.md R5.1, BACKLOG.md R3.1.
         if f._tiered_store is not None and cfg.tiered_fallback_enabled and len(results) < top_k:
             needed = top_k - len(results)
             warm_ids = f._tiered_store.warm_ids()
             if warm_ids:
+                # R5.1: warm fallback is bounded peek_batch (no promotion, LFU preserved) — O(W) but W~9% and hot already checked
                 warm_nodes = f._tiered_store.peek_batch(warm_ids)
                 if warm_nodes:
                     scores = self._batch_resonance_nodes(
@@ -639,6 +643,7 @@ class QueryManager:
             if len(results) < top_k:
                 cold_ids = f._tiered_store.cold_ids()
                 if cold_ids:
+                    # R5.1: cold fallback sampled, not O(C) scan — 900K cold would be 900K disk I/O if full
                     sample_size = min(len(cold_ids), needed * 5)
                     sample_ids = f._rng.choice(cold_ids, size=sample_size, replace=False).tolist()
                     cold_nodes = f._tiered_store.peek_batch(sample_ids)

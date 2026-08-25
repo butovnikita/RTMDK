@@ -5,6 +5,9 @@ on:
     branches: [master, main]
   pull_request:
     branches: [master, main]
+  schedule:
+    - cron: '0 2 * * *'  # R5.2 nightly 02:00 UTC for batch/tiered (forecast artifacts pending, RISKS.md R5)
+  workflow_dispatch:
 
 jobs:
   benchmark:
@@ -35,10 +38,39 @@ jobs:
       - name: Run meta-adaptive benchmark
         run: python scripts/bench_meta_adaptive.py --help
 
+      - name: Run batch ingestion benchmark (smoke) — R5.2
+        # Smoke 100K nodes (full 1M only on nightly/schedule to avoid PR timeout)
+        run: |
+          python scripts/bench_batch_ingestion.py --nodes 100000 --batch 10000 --dim 64 --wal-batch 100
+          python scripts/bench_batch_ingestion.py --nodes 100000 --batch 10000 --dim 64 --wal-batch 100 --async-hnsw || true
+        env:
+          RTMDK_ADD_RATE_LIMIT: '100000'
+
+      - name: Run tiered storage v2 benchmark (smoke) — R5.1
+        # Uses memmap + LFU v2 (storage/tiered.py), latent_dim=64 fp16 target 80/90MB @10K (docs/08:440)
+        run: |
+          python scripts/bench_tiered_storage.py --nodes 10000 --queries 100 --latent-dim 64 --tmp-dir /tmp/_tiered_bench_tmp || true
+          python scripts/stress_test_100k.py --nodes 10000 --queries 50 --tiered-v2 --dim 64 || true
+
+      - name: Run nightly batch ingestion (1M, artifact) — R5.2
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: |
+          python scripts/bench_batch_ingestion.py --nodes 1000000 --batch 10000 --dim 64 --wal-batch 100 --async-hnsw > /tmp/benchmark_batch_1M.json 2>&1 || true
+          cp benchmarks/baseline_batch.json /tmp/benchmark_batch_forecast.json
+
+      - name: Run nightly tiered 100K (artifact) — R5.1
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: |
+          python scripts/stress_test_100k.py --nodes 100000 --queries 100 --tiered-v2 --dim 64 -o /tmp/benchmark_tiered_100k.json || true
+          cp benchmarks/baseline_tiered.json /tmp/benchmark_tiered_forecast.json
+
       - name: Upload benchmark results
         uses: actions/upload-artifact@v4
         with:
           name: benchmark-results
           path: |
             /tmp/benchmark_*.json
+            benchmarks/baseline_batch.json
+            benchmarks/baseline_tiered.json
+            benchmarks/baseline_100k.json
           retention-days: 7
