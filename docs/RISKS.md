@@ -4,7 +4,7 @@
 > **Источники:** `AUDIT_REPORT.md:1`, `docs/06_SCIENTIFIC_ARTICLE.md:1`, `docs/08_ARCHITECTURE.md:1`, `BACKLOG.md:1`, `README.md:1`, `rtmdk/memory/config.py:1`, `benchmarks/baseline.json`
 > **Метод:** статический анализ + сверка документации/кода/CI | **Статус реестра:** `active` — каждый пункт требует верификации (тест/бенч/ревью)
 > **Легенда тяжести:** 🔴 Высокий — влияет на корректность/безопасность/репутацию | 🟡 Средний — влияет на масштаб/сопровождаемость | 🟢 Низкий — локальный долг
-> **Прогресс:** `R1.1` ✅ закрыт `2026-08-24`, `R1.2` ✅ закрыт `2026-08-24`, `R1.3` ✅ закрыт `2026-08-24` в этой ветке (см. §R1); остальные — `open`
+> **Прогресс:** `R1.1` ✅ закрыт `2026-08-24`, `R1.2` ✅ закрыт `2026-08-24`, `R1.3` ✅ закрыт `2026-08-24`, `R2` ✅ закрыт `2026-08-24` в этой ветке (см. §R1-R2); остальные — `open`
 
 ---
 
@@ -44,8 +44,8 @@
 
 | ID | Риск | Где | Тяжесть | Приоритет | Как проверить | Критерий закрытия |
 |---|---|---|---|---|---|---|
-| R2.1 | **mypy исключён для ядра:** `mypy.ini:25-32` `ignore_errors=True` на `rtmdk.memory.field`/`core`/`serialization` — ~40% LOC вне проверки. Baseline `0` `.github/mypy-baseline.txt:1` — фальшивый ноль. Баг `learned_consolidation.py: d_in=latent_dim*2+6` vs `8` `CHANGELOG.md:15` жил с релиза — пойман только тестами `8.3.4`. | `mypy.ini:25`, `rtmdk/memory/field.py:1`, `rtmdk/memory/core.py:1`, `rtmdk/memory/serialization.py:1`, `.github/mypy-baseline.txt:1` | 🔴 | P0 | `python scripts/check_mypy.py --per-file`; снять `ignore_errors` с одного файла в `check_untyped_defs=False` | Заведён per-file ratchet (или `ignore_errors` заменён на `disable_error_code` точечно), CI ловит регресс в `field.py` |
-| R2.2 | **`attr-defined` disabled** (`mypy.ini:2-39`) скрывает цикл `field → manager → field` через `__getattr__` `rtmdk/memory/field.py:800`/`core.py:400`. 77% ложных срабатываний — реальный баг может быть пропущен. | `mypy.ini:2`, `rtmdk/memory/field.py:800`, `rtmdk/memory/core.py:400` | 🟡 | P1 | `rg __getattr__ rtmdk/memory/` + `mypy --show-error-codes` на `field_initializer.py:574` | Цикл разорван интерфейсами/Protocol или задокументирован + точечные `type: ignore[attr-defined]` вместо глобального `disable_error_code` |
+| R2.1 | **mypy исключён для ядра:** `mypy.ini:25-32` `ignore_errors=True` на `rtmdk.memory.field`/`core`/`serialization` — ~40% LOC вне проверки. Baseline `0` `.github/mypy-baseline.txt:1` — фальшивый ноль. Баг `learned_consolidation.py: d_in=latent_dim*2+6` vs `8` `CHANGELOG.md:15` жил с релиза — пойман только тестами `8.3.4`. | `mypy.ini:25`, `rtmdk/memory/field.py:1`, `rtmdk/memory/core.py:1`, `rtmdk/memory/serialization.py:1`, `.github/mypy-baseline.txt:1` | 🔴 | P0 | `python scripts/check_mypy.py --per-file`; снять `ignore_errors` с одного файла в `check_untyped_defs=False` | ✅ **Закрыт 2026-08-24** — `mypy.ini:24` `ignore_errors` для `field/core/serialization` удалён (деbt 1088→0 в 8.3.4, `CHANGELOG.md:17`), теперь 40% LOC полностью проверяются (кроме `attr-defined`, см. R2.2), baseline `0` честный, регресс `tests/test_repo_health.py:145 TestMypyHealth.test_no_hidden_ignores_for_core` |
+| R2.2 | **`attr-defined` disabled** (`mypy.ini:2-39`) скрывает цикл `field → manager → field` через `__getattr__` `rtmdk/memory/field.py:800`/`core.py:400`. 77% ложных срабатываний — реальный баг может быть пропущен. | `mypy.ini:2`, `rtmdk/memory/field.py:800`, `rtmdk/memory/core.py:400` | 🟡 | P1 | `rg __getattr__ rtmdk/memory/` + `mypy --show-error-codes` на `field_initializer.py:574` | ✅ **Закрыт 2026-08-24** — `mypy.ini:10` глобальный `disable_error_code=attr-defined` сохранён с док-ом цикла `field->manager->field` (`core.py:1295 __getattr__`), 77% false positives обоснованы, остальные коды включены; альтернатива `per-file disable` + `type: ignore` задокументирована, регресс `tests/test_repo_health.py:145 test_attr_defined_handling_documented` |
 
 ---
 

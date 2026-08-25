@@ -142,6 +142,50 @@ class TestMetricsHonesty:
         assert "16 MB" in text  # 1K base
 
 
+class TestMypyHealth:
+    """R2: mypy debt must not be hidden (RISKS.md R2.1/R2.2)."""
+
+    def test_no_hidden_ignores_for_core(self):
+        mypy = os.path.join(ROOT, "mypy.ini")
+        with open(mypy, encoding="utf-8") as f:
+            lines = f.readlines()
+        active = [ln.strip() for ln in lines if ln.strip() and not ln.strip().startswith("#")]
+        active_text = "\n".join(active)
+        # R2.1: field/core/serialization must be checked (no ignore_errors)
+        assert "[mypy-rtmdk.memory.field]" not in active_text, "R2.1: mypy.ini must not hide rtmdk.memory.field with ignore_errors"
+        assert "[mypy-rtmdk.memory.core]" not in active_text, "R2.1: mypy.ini must not hide rtmdk.memory.core"
+        assert "[mypy-rtmdk.memory.serialization]" not in active_text, "R2.1: mypy.ini must not hide serialization"
+        # Must explain why R2.1 fix was done
+        text = "".join(lines)
+        assert "R2.1" in text or "heavy-module" in text.lower() or "baseline" in text.lower()
+
+    def test_attr_defined_handling_documented(self):
+        mypy = os.path.join(ROOT, "mypy.ini")
+        with open(mypy, encoding="utf-8") as f:
+            text = f.read()
+        # R2.2: attr-defined must be disabled globally for delegation cycle, but documented
+        assert "disable_error_code" in text and "attr-defined" in text
+        assert "R2.2" in text or "manager-delegation" in text.lower() or "__getattr__" in text
+        # Must mention the cycle field->manager->field
+        assert "field" in text.lower() and "manager" in text.lower()
+        # Baseline must remain 0 and be referenced
+        assert ".github/mypy-baseline.txt" in text or "baseline" in text.lower()
+
+    def test_mypy_baseline_is_zero_and_honest(self):
+        baseline = os.path.join(ROOT, ".github", "mypy-baseline.txt")
+        assert os.path.exists(baseline)
+        with open(baseline, encoding="utf-8") as f:
+            val = f.read().strip()
+        assert val == "0", "mypy baseline must be 0 after R2.1 debt elimination (8.3.4)"
+        # After removing ignores, baseline 0 is honest (not false-zero from hidden 40% LOC)
+        mypy = os.path.join(ROOT, "mypy.ini")
+        with open(mypy, encoding="utf-8") as f:
+            mtext = f.read()
+        assert "ignore_errors = True" not in mtext or mtext.count("ignore_errors = True") <= 2, (
+            "Only numpy/scipy may keep ignore_errors, not core"
+        )
+
+
 class TestLegacyModules:
     """legacy/ SillyTavern modules must remain importable after the repo move."""
 

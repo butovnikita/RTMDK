@@ -1293,7 +1293,14 @@ class RTMDKMemory(BaseModel):
         self.field.do_intervention(node_id, emb)
 
     def __getattr__(self, name: str):
-        """Proxy simple delegations to RTMDKField to reduce boilerplate."""
+        """Proxy simple delegations to RTMDKField to reduce boilerplate.
+
+        R2.2 (RISKS.md): this creates the field -> manager -> field delegation cycle
+        (see mypy.ini disable_error_code=attr-defined, 77% false positives).
+        Keep _proxy_methods explicit (no wildcard) so mypy can still flag
+        real missing attributes; add type: ignore[attr-defined] locally if you
+        extend delegation, don't re-enable global ignore.
+        """
         # Respect pydantic private/extra attributes first
         pydantic_extra = object.__getattribute__(self, "__pydantic_extra__")
         if pydantic_extra is not None and name in pydantic_extra:
