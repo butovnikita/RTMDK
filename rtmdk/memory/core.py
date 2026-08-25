@@ -207,8 +207,19 @@ class RTMDKMemory(BaseModel):
                                 buffer_to_update = self._sot_v2_online_buffer
                                 self._sot_v2_online_buffer = []
                         if should_update:
+                            # R4.2 (2026-08-24): Hebbian update mutates token embeddings
+                            # that field.step() / query may read. Hold field write lock
+                            # to avoid race (field.step touches latent_pos + SOT cooccurrence).
+                            # Lock order: _sot_v2_online_lock -> field._write_lock (consistent).
                             try:
-                                self._sot_v2._embedder.online_update(buffer_to_update)
+                                # field may not be initialized during early construction
+                                fld_lock = getattr(self, "field", None)
+                                fld_lock = getattr(fld_lock, "_write_lock", None) if fld_lock is not None else None
+                                if fld_lock is not None:
+                                    with fld_lock:
+                                        self._sot_v2._embedder.online_update(buffer_to_update)
+                                else:
+                                    self._sot_v2._embedder.online_update(buffer_to_update)
                             except Exception:
                                 logger.warning("SOT v2.0 online update failed", exc_info=True)
         # P1: Matryoshka-lite — truncate for HNSW, keep full for resonance
@@ -659,70 +670,83 @@ class RTMDKMemory(BaseModel):
             return result["results"]
 
         # Legacy path — preserved for backward compatibility
-        # Distributed lock for multi-process safety
+        # R4.3 (2026-08-24): lock ordering is distributed_lock (outer, inter-process, file/redis)
+        # -> field._write_lock (inner, intra-process RLock) inside query_manager.
+        # Never acquire in reverse order. field._write_lock is RLock (re-entrant).
+        # Use try/finally to guarantee release even on exception.
+
+        acquired = False
         if self._distributed_lock is not None:
-            if not self._distributed_lock.acquire(blocking=True):
-                logger.warning("retrieve_nodes: failed to acquire distributed lock")
+            try:
+                acquired = bool(self._distributed_lock.acquire(blocking=True))
+            except Exception:
+                logger.warning("retrieve_nodes: distributed lock acquire raised", exc_info=True)
+                acquired = False
+            if not acquired:
+                logger.warning("retrieve_nodes: failed to acquire distributed lock (proceeding without)")
 
-        t0 = time.perf_counter()
-        cache_hit = False
+        try:
+            t0 = time.perf_counter()
+            cache_hit = False
 
-        # Check query cache
-        if self.field.query_cache is not None:
-            cache_key = self.field._query_cache_key(
-                self.field._project(embedding),
-                self._get_phase(session_id, embedding),
-                top_k or self.field.cfg.top_k,
-                "text",
-                session_id,
-            )
-            cached = self.field.query_cache.get_raw(cache_key)
-            if cached is not None:
-                cache_hit = True
-                results = cached
+            # Check query cache
+            if self.field.query_cache is not None:
+                cache_key = self.field._query_cache_key(
+                    self.field._project(embedding),
+                    self._get_phase(session_id, embedding),
+                    top_k or self.field.cfg.top_k,
+                    "text",
+                    session_id,
+                )
+                cached = self.field.query_cache.get_raw(cache_key)
+                if cached is not None:
+                    cache_hit = True
+                    results = cached
+                else:
+                    results = self._retrieve_nodes_impl(query, embedding, top_k, session_id, sparse_vec)
+                    self.field.query_cache.put_raw(cache_key, results)
             else:
                 results = self._retrieve_nodes_impl(query, embedding, top_k, session_id, sparse_vec)
-                self.field.query_cache.put_raw(cache_key, results)
-        else:
-            results = self._retrieve_nodes_impl(query, embedding, top_k, session_id, sparse_vec)
 
-        # Auto query rewrite on low-quality results
-        if self._query_rewriter is not None and self._query_rewriter.should_rewrite(
-            results, threshold=getattr(self.config, "query_rewrite_threshold", 0.3)
-        ):
-            rewritten = self._query_rewriter.rewrite(query, results)
-            if rewritten != query:
-                logger.debug("Query rewritten: '%s' -> '%s'", query, rewritten)
-                rew_emb = self.embedder(rewritten)
-                results = self._retrieve_nodes_impl(rewritten, rew_emb, top_k, session_id, sparse_vec)
+            # Auto query rewrite on low-quality results
+            if self._query_rewriter is not None and self._query_rewriter.should_rewrite(
+                results, threshold=getattr(self.config, "query_rewrite_threshold", 0.3)
+            ):
+                rewritten = self._query_rewriter.rewrite(query, results)
+                if rewritten != query:
+                    logger.debug("Query rewritten: '%s' -> '%s'", query, rewritten)
+                    rew_emb = self.embedder(rewritten)
+                    results = self._retrieve_nodes_impl(rewritten, rew_emb, top_k, session_id, sparse_vec)
 
-        # Intent-aware retrieval tuning
-        if self._intent_classifier is not None:
-            intent = self._intent_classifier.classify(query)
-            if intent == "factual":
-                # Boost top result precision
-                pass
-            elif intent == "exploratory":
-                # Diversify results via causal traversal if available
-                pass
+            # Intent-aware retrieval tuning
+            if self._intent_classifier is not None:
+                intent = self._intent_classifier.classify(query)
+                if intent == "factual":
+                    # Boost top result precision
+                    pass
+                elif intent == "exploratory":
+                    # Diversify results via causal traversal if available
+                    pass
 
-        # Sentence-level reranking
-        if self._sentence_reranker is not None and results:
-            results = self._sentence_reranker.rerank(query, results, top_k=top_k or self.field.cfg.top_k)
+            # Sentence-level reranking
+            if self._sentence_reranker is not None and results:
+                results = self._sentence_reranker.rerank(query, results, top_k=top_k or self.field.cfg.top_k)
 
-        # Observability
-        latency_ms = (time.perf_counter() - t0) * 1000
-        if self.metrics is not None:
-            self.metrics.record_query(latency_ms, cache_hit=cache_hit)
-            alerts = self.metrics.check_alerts()
-            for alert in alerts:
-                logger.warning(alert)
+            # Observability
+            latency_ms = (time.perf_counter() - t0) * 1000
+            if self.metrics is not None:
+                self.metrics.record_query(latency_ms, cache_hit=cache_hit)
+                alerts = self.metrics.check_alerts()
+                for alert in alerts:
+                    logger.warning(alert)
 
-        # Release distributed lock
-        if self._distributed_lock is not None:
-            self._distributed_lock.release()
-
-        return results
+            return results
+        finally:
+            if acquired:
+                try:
+                    self._distributed_lock.release()
+                except Exception:
+                    logger.warning("retrieve_nodes: distributed lock release failed", exc_info=True)
 
     def retrieve_nodes_with_explanations(
         self,

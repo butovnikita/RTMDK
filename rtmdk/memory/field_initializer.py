@@ -397,6 +397,10 @@ class FieldInitializer:
     def _init_lifecycle_controls(self) -> None:
         f = self.field
         f._workers = []
+        # R4 (2026-08-24): _write_lock is the inner intra-process RLock.
+        # Lock ordering (R4.3): distributed_lock (outer, file/redis, core.py:retrieve_nodes)
+        # -> _write_lock (inner, query_manager snapshot, SOT update, add_node).
+        # Never acquire in reverse order. RLock allows re-entrancy for nested query paths.
         f._write_lock = threading.RLock()
         f._consolidation_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="rtmdk_consolidate")
         f._consolidation_future = None

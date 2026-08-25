@@ -197,45 +197,62 @@ class QueryManager:
         if not node_ids:
             return np.empty((len(query_latents), 0), dtype=np.float32)
         f = self.field
-        if getattr(f, "_node_id_to_cached_idx", None) is None or f._cache_dirty:
-            f._build_node_cache()
-        mapping = f._node_id_to_cached_idx
-        indices = np.array([mapping[nid] for nid in node_ids if nid in mapping], dtype=np.int32)
+        # R4.1 (2026-08-24): snapshot cache under _write_lock to avoid torn read
+        # vs concurrent add_nodes_batch cache rebuild (see _query_vectorized).
+        # Hold lock only for snapshot, not for heavy resonance compute.
+        with f._write_lock:
+            if getattr(f, "_node_id_to_cached_idx", None) is None or f._cache_dirty:
+                f._build_node_cache()
+            mapping = f._node_id_to_cached_idx
+            indices = np.array([mapping[nid] for nid in node_ids if nid in mapping], dtype=np.int32)
+            if len(indices) == 0:
+                return np.empty((len(query_latents), 0), dtype=np.float32)
+            cached_positions = f._cached_positions
+            if cached_positions is None:
+                return np.empty((len(query_latents), 0), dtype=np.float32)
+            # Snapshot arrays (invariants: built together)
+            cached_positions = cached_positions[indices]
+            cached_phases = f._cached_phases[indices] if f._cached_phases is not None else None
+            cached_amplitudes = f._cached_amplitudes[indices] if f._cached_amplitudes is not None else None
+            cached_saliences = f._cached_saliences[indices] if f._cached_saliences is not None else None
+            cached_norms_sq = f._cached_norms_sq[indices] if f._cached_norms_sq is not None else None
+            cached_scales = f._cached_scales[indices] if getattr(f, "_cached_scales", None) is not None else None
+            # Snapshot phase scalars for int8 path
+            assert (
+                cached_phases is not None and cached_amplitudes is not None and cached_saliences is not None
+            ), "node cache arrays are built together"
+            # Copy to avoid holding lock during compute
+            cached_positions = np.copy(cached_positions)
+            cached_phases = np.copy(cached_phases)
+            cached_amplitudes = np.copy(cached_amplitudes)
+            cached_saliences = np.copy(cached_saliences)
+            if cached_norms_sq is not None:
+                cached_norms_sq = np.copy(cached_norms_sq)
+            if cached_scales is not None:
+                cached_scales = np.copy(cached_scales)
+
         if len(indices) == 0:
             return np.empty((len(query_latents), 0), dtype=np.float32)
-        cached_positions = f._cached_positions
-        if cached_positions is None:
-            return np.empty((len(query_latents), 0), dtype=np.float32)
-        # Invariant: _build_node_cache() populates all cached arrays together
-        cached_phases = f._cached_phases
-        cached_amplitudes = f._cached_amplitudes
-        cached_saliences = f._cached_saliences
-        assert (
-            cached_phases is not None and cached_amplitudes is not None and cached_saliences is not None
-        ), "node cache arrays are built together"
-        # Fast path for int8 cached positions: avoid cdist float64 cast
-        cached_norms_sq = f._cached_norms_sq
+        # Fast path for int8 cached positions
         if cached_positions.dtype == np.int8 and cached_norms_sq is not None:
-            # Invariant: int8 cache always has per-vector scales
-            cached_scales = f._cached_scales
             assert cached_scales is not None, "int8 node cache requires scales"
             return f._resonance_engine.batch_response_numpy_int8(
                 query_latents,
                 query_phases,
-                cached_positions[indices],
-                cached_norms_sq[indices],
-                cached_scales[indices],
-                cached_phases[indices],
-                cached_amplitudes[indices],
-                cached_saliences[indices],
+                cached_positions,
+                cached_norms_sq,
+                cached_scales,
+                cached_phases,
+                cached_amplitudes,
+                cached_saliences,
             )
         return f._resonance_engine.batch_response_numpy(
             query_latents,
             query_phases,
-            cached_positions[indices],
-            cached_phases[indices],
-            cached_amplitudes[indices],
-            cached_saliences[indices],
+            cached_positions,
+            cached_phases,
+            cached_amplitudes,
+            cached_saliences,
         )
 
     def _batch_resonance_torch(self, query_latents: NDArray, query_phases: NDArray, node_ids: List[str]) -> NDArray:
@@ -810,22 +827,26 @@ class QueryManager:
         for ql in query_latents:
             self._ensure_adaptive_pc(ql)
 
-        if f._cache_dirty or f._cached_positions is None:
-            f._build_node_cache()
+        # R4.1: snapshot node_index under lock for query_batch (torn read vs add_nodes_batch)
+        with f._write_lock:
+            if f._cache_dirty or f._cached_positions is None:
+                f._build_node_cache()
+            n_nodes = len(f.node_index)
+            node_index_snapshot = list(f.node_index)
 
-        n_nodes = len(f.node_index)
         if n_nodes == 0:
             return [[] for _ in range(n_queries)]
 
         query_phases: np.ndarray = np.full(n_queries, phase, dtype=np.float32)
-        all_scores = self._batch_resonance(query_latents, query_phases, f.node_index)
+        all_scores = self._batch_resonance(query_latents, query_phases, node_index_snapshot)
 
         results_per_query: List[List[Tuple[str, float, MemoryNode]]] = []
         for qi in range(n_queries):
             scores = all_scores[qi]
             if session_id and session_id != "default":
+                # R4.1: use snapshot to avoid race with concurrent node mutation
                 session_boosts = np.array(
-                    [1.3 if f.nodes[nid].content.get("session") == session_id else 1.0 for nid in f.node_index],
+                    [1.3 if f.nodes.get(nid) and f.nodes[nid].content.get("session") == session_id else 1.0 for nid in node_index_snapshot],
                     dtype=np.float32,
                 )
                 scores = scores * session_boosts
@@ -849,8 +870,13 @@ class QueryManager:
 
             query_results = []
             for idx, score in zip(top_indices, top_scores):
-                nid = f.node_index[idx]
-                node = f.nodes[nid]
+                # Defensive: snapshot index may be stale vs concurrent delete, guard bounds
+                if idx >= len(node_index_snapshot):
+                    continue
+                nid = node_index_snapshot[idx]
+                node = f.nodes.get(nid)
+                if node is None:
+                    continue
                 node.last_resonated = time.time()
                 query_results.append((nid, float(score), node))
             results_per_query.append(query_results)

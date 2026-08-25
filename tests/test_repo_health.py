@@ -246,6 +246,99 @@ class TestConfigHealth:
         assert "36" in text
 
 
+class TestThreadSafety:
+    """R4: thread safety must be documented and enforced (RISKS.md R4.1-4.3)."""
+
+    def test_query_uses_write_lock(self):
+        qm_path = os.path.join(ROOT, "rtmdk", "memory", "query_manager.py")
+        with open(qm_path, encoding="utf-8") as f:
+            text = f.read()
+        # R4.1: _query_vectorized and _batch_resonance_cached must snapshot under _write_lock
+        assert "with f._write_lock" in text, "query paths must snapshot under _write_lock (R4.1)"
+        assert "_batch_resonance_cached" in text
+        # query_batch must also snapshot node_index
+        assert "node_index_snapshot" in text or "with f._write_lock" in text
+        assert "R4.1" in text
+
+    def test_sot_update_holds_field_lock(self):
+        core_path = os.path.join(ROOT, "rtmdk", "memory", "core.py")
+        with open(core_path, encoding="utf-8") as f:
+            text = f.read()
+        # R4.2: SOT Hebbian update must be under field lock
+        assert "R4.2" in text
+        assert "_sot_v2_online_lock" in text
+        # Must acquire field lock for online_update
+        assert "field" in text and "_write_lock" in text and "online_update" in text
+
+    def test_distributed_lock_ordering(self):
+        core_path = os.path.join(ROOT, "rtmdk", "memory", "core.py")
+        with open(core_path, encoding="utf-8") as f:
+            text = f.read()
+        # R4.3: lock ordering documented and try/finally for release
+        assert "R4.3" in text
+        assert "distributed_lock" in text and "_write_lock" in text
+        assert "outer" in text.lower() and "inner" in text.lower()
+        assert "try:" in text and "finally:" in text
+
+    def test_field_write_lock_is_rlock(self):
+        init_path = os.path.join(ROOT, "rtmdk", "memory", "field_initializer.py")
+        with open(init_path, encoding="utf-8") as f:
+            text = f.read()
+        assert "threading.RLock" in text
+        assert "R4" in text or "_write_lock" in text
+
+    def test_concurrent_query_and_add(self):
+        """R4.1: concurrent add_nodes_batch + query must not raise torn-read ValueError."""
+        import threading
+        import numpy as np
+
+        from rtmdk.memory.config import RTMDKConfig
+        from rtmdk.memory.field import RTMDKField
+
+        cfg = RTMDKConfig(latent_dim=16, embedding_dim=16, max_nodes=1000, use_hnsw=False)
+        field = RTMDKField(cfg)
+
+        # Seed with 20 nodes
+        rng = np.random.default_rng(0)
+        for i in range(20):
+            emb = rng.standard_normal(16).astype(np.float32)
+            emb = emb / (np.linalg.norm(emb) + 1e-8)
+            field.add_node(emb, {"text": f"node {i}"})
+
+        query_emb = rng.standard_normal(16).astype(np.float32)
+        query_emb = query_emb / (np.linalg.norm(query_emb) + 1e-8)
+        errors = []
+
+        def add_many():
+            try:
+                embs = rng.standard_normal((10, 16)).astype(np.float32)
+                embs = embs / (np.linalg.norm(embs, axis=1, keepdims=True) + 1e-8)
+                contents = [{"text": f"batch {j}"} for j in range(10)]
+                field.add_nodes_batch(embs, contents)
+            except Exception as e:
+                errors.append(e)
+
+        def query_many():
+            try:
+                for _ in range(30):
+                    field.query(query_emb, top_k=5)
+            except Exception as e:
+                errors.append(e)
+
+        threads = []
+        for _ in range(3):
+            threads.append(threading.Thread(target=add_many))
+            threads.append(threading.Thread(target=query_many))
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=10)
+
+        assert not errors, f"concurrent query/add raised: {errors}"
+        # ValueError: broadcast shape mismatch would be the torn-read symptom
+        assert all("broadcast" not in str(e) for e in errors)
+
+
 class TestLegacyModules:
     """legacy/ SillyTavern modules must remain importable after the repo move."""
 
