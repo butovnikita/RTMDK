@@ -74,7 +74,7 @@ nav:
     - Basic Memory: examples/basic-memory.md
     - Pipeline Retrieval: examples/pipeline-retrieval.md
     - Batch Ingestion: examples/batch-ingestion.md
-  - Risks: risks.md
+  - Risks: risks.md  # R11.2 (2026-08-24): RISKS.md in nav, 48 endpoints, docs sync
   - FAQ: faq.md
 
 extra:

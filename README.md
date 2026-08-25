@@ -6,7 +6,7 @@
 ![PyPI](https://img.shields.io/pypi/v/rtmdk)
 
 > Long-term memory for LLMs based on resonance-topological organization
-> Version 8.3 — 74,000+ LOC, 440+ files, 49 API endpoints, 1281 tests
+> Version 8.3 — ~42,000 LOC in `rtmdk/` (74k+ with legacy/admin), 206+ py files (440+ total), 48 API endpoints, ~1300 tests — *see `scripts/check_docs_sync.py` for live counts (R11.1)*
 
 ## Why RTMDK?
 
@@ -272,7 +272,7 @@ RTMDK_PRESET=research RTMDK_DECAY_RATE=0.9995 python legacy/rtmdk_server.py
 ## 🏗️ Архитектура
 
 ```
-RTMDK v8.3 (74,000+ строк, 440+ файлов, 49 API)
+RTMDK v8.3 (~42k строк в rtmdk/, 74k+ с legacy/admin, 206+ py файлов, 48 API — см. scripts/check_docs_sync.py R11.1)
 ├── Core (decoupled v8.3-alpha): RTMDKField + RTMDKMemory facades delegate to 21 subsystems
 │   ├── Initializers: FieldInitializer, ContextManager, MemoryPostInitializer, BacklogModulesInitializer, PipelineBuilder
 │   ├── Managers: NodeManager, QueryManager, TopologyManager, AsyncPipelineManager, CrystallizationManager, MergeManager, RoutingManager, IndexManager, ProjectionManager, ConsolidationManager, CognitiveManager, OperationalManager, Scheduler, EngramManager

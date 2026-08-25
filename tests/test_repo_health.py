@@ -748,6 +748,62 @@ class TestArchDebt:
             assert "R10.3" in f.read() or "R2.2" in f.read()
 
 
+class TestDocsSync:
+    """R11: docs must not drift from code (RISKS.md R11.1-11.3)."""
+
+    def test_check_docs_sync_script_exists(self):
+        script = os.path.join(ROOT, "scripts", "check_docs_sync.py")
+        assert os.path.exists(script)
+        with open(script, encoding="utf-8") as f:
+            text = f.read()
+        assert "R11.1" in text
+        assert "README.md" in text and "cloc" in text.lower()
+
+    def test_readme_stats_are_honest(self):
+        # R11.1: README header must be ~42k/206/48/~1300, not 74k/440/49/1281
+        readme = os.path.join(ROOT, "README.md")
+        with open(readme, encoding="utf-8") as f:
+            text = f.read()
+        assert "scripts/check_docs_sync.py" in text
+        assert "R11.1" in text or "42,000" in text or "206+" in text
+        # Must mention 48 endpoints, not 49
+        assert "48 API" in text or "48 endpoints" in text
+
+    def test_docs_version_matches_package(self):
+        import rtmdk
+
+        docs_readme = os.path.join(ROOT, "docs", "README.md")
+        with open(docs_readme, encoding="utf-8") as f:
+            text = f.read()
+        assert "R11" in text or "8.3.4" in text
+        assert rtmdk.__version__ in text
+
+        backlog = os.path.join(ROOT, "BACKLOG.md")
+        with open(backlog, encoding="utf-8") as f:
+            bl = f.read()
+        assert rtmdk.__version__ in bl, "BACKLOG must be 8.3.4 (R11.3)"
+
+    def test_mkdocs_includes_risks(self):
+        mkdocs = os.path.join(ROOT, "mkdocs.yml")
+        with open(mkdocs, encoding="utf-8") as f:
+            text = f.read()
+        assert "risks" in text.lower()
+        assert "R11" in text or "RISKS" in text or "risks.md" in text
+
+    def test_endpoint_count_matches_server(self):
+        import re
+
+        srv = os.path.join(ROOT, "rtmdk", "server", "app.py")
+        with open(srv, encoding="utf-8") as f:
+            srv_text = f.read()
+        actual = len(re.findall(r"@app\.(get|post|put|delete|patch)", srv_text))
+        readme = os.path.join(ROOT, "README.md")
+        with open(readme, encoding="utf-8") as f:
+            readme_text = f.read()
+        # README must mention actual count
+        assert str(actual) in readme_text, f"README must mention {actual} endpoints"
+
+
 class TestLegacyModules:
     """legacy/ SillyTavern modules must remain importable after the repo move."""
 

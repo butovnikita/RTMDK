@@ -1,7 +1,7 @@
 # RTMDK Documentation Index
 
 > For developers and users navigating the RTMDK documentation.
-> Current version: **v8.3.1**
+> Current version: **v8.3.4** — *see `rtmdk/__init__.py:12` and `scripts/check_docs_sync.py` (R11.1)*
 
 ---
 

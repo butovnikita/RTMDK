@@ -4,7 +4,7 @@
 > **Источники:** `AUDIT_REPORT.md:1`, `docs/06_SCIENTIFIC_ARTICLE.md:1`, `docs/08_ARCHITECTURE.md:1`, `BACKLOG.md:1`, `README.md:1`, `rtmdk/memory/config.py:1`, `benchmarks/baseline.json`
 > **Метод:** статический анализ + сверка документации/кода/CI | **Статус реестра:** `active` — каждый пункт требует верификации (тест/бенч/ревью)
 > **Легенда тяжести:** 🔴 Высокий — влияет на корректность/безопасность/репутацию | 🟡 Средний — влияет на масштаб/сопровождаемость | 🟢 Низкий — локальный долг
-> **Прогресс:** `R1.1` ✅ закрыт `2026-08-24`, `R1.2` ✅ закрыт `2026-08-24`, `R1.3` ✅ закрыт `2026-08-24`, `R2` ✅ закрыт `2026-08-24`, `R3` ✅ закрыт `2026-08-24`, `R4` ✅ закрыт `2026-08-24`, `R5` ✅ закрыт `2026-08-24`, `R6` ✅ закрыт `2026-08-24`, `R7` ✅ закрыт `2026-08-24`, `R8` ✅ закрыт `2026-08-24`, `R9` ✅ закрыт `2026-08-24`, `R10` ✅ закрыт `2026-08-24` в этой ветке (см. §R1-R10); остальные — `open`
+> **Прогресс:** `R1.1` ✅ закрыт `2026-08-24`, `R1.2` ✅ закрыт `2026-08-24`, `R1.3` ✅ закрыт `2026-08-24`, `R2` ✅ закрыт `2026-08-24`, `R3` ✅ закрыт `2026-08-24`, `R4` ✅ закрыт `2026-08-24`, `R5` ✅ закрыт `2026-08-24`, `R6` ✅ закрыт `2026-08-24`, `R7` ✅ закрыт `2026-08-24`, `R8` ✅ закрыт `2026-08-24`, `R9` ✅ закрыт `2026-08-24`, `R10` ✅ закрыт `2026-08-24`, `R11` ✅ закрыт `2026-08-24` в этой ветке (см. §R1-R11); остальные — `open`
 
 ---
 
@@ -129,9 +129,9 @@
 
 | ID | Риск | Где | Тяжесть | Приоритет | Как проверить | Критерий закрытия |
 |---|---|---|---|---|---|---|
-| R11.1 | **LOC/файлы/тесты:** `README.md:8` `74k/440/49 API/1281` vs факт `42k rtmdk/ + legacy/admin` `206 .py` `1306 def test_` `173 файла`. `BACKLOG.md:5` `1280/1` vs `CHANGELOG.md:189` `1112`. | `README.md:8`, `BACKLOG.md:5`, `CHANGELOG.md:189` | 🟢 | P2 | `cloc rtmdk` + `Select-String def test_ tests` | Скрипт `scripts/check_docs_sync.py` в CI сверяет `README` vs `cloc` |
-| R11.2 | **Endpoints:** `docs/01_API_REFERENCE.md` 49 vs `docs/README.md` 44 vs факт `48` `server/app.py:1`. `docs/api/` в `mkdocs.yml:50` 15 страниц, но `audits` нет. | `docs/01_API_REFERENCE.md:1`, `mkdocs.yml:50` | 🟢 | P2 | `rg -c "@app\.(get|post|put|delete)" rtmdk/server/app.py` | `mkdocs.yml` nav включает `RISKS.md` + CI `test_repo_health.py` сверяет count |
-| R11.3 | **BACKLOG застыл на 8.3.3** `BACKLOG.md:3` `Current 8.3.3` vs код `8.3.4` `rtmdk/__init__.py:12` | `BACKLOG.md:3`, `rtmdk/__init__.py:12` | 🟢 | P2 | `rg "8\.3\." BACKLOG.md` | `BACKLOG.md` обновлён к `8.3.4` |
+| R11.1 | **LOC/файлы/тесты:** `README.md:8` `74k/440/49 API/1281` vs факт `42k rtmdk/ + legacy/admin` `206 .py` `1306 def test_` `173 файла`. `BACKLOG.md:5` `1280/1` vs `CHANGELOG.md:189` `1112`. | `README.md:8`, `BACKLOG.md:5`, `CHANGELOG.md:189` | 🟢 | P2 | `cloc rtmdk` + `Select-String def test_ tests` | ✅ **Закрыт 2026-08-24** — `README.md:8` `~42k/206+/48/~1300 + check_docs_sync.py (R11.1)`, `scripts/check_docs_sync.py` `README vs cloc` + `48` endpoints, тест `TestDocsSync.test_readme_stats_are_honest` |
+| R11.2 | **Endpoints:** `docs/01_API_REFERENCE.md` 49 vs `docs/README.md` 44 vs факт `48` `server/app.py:1`. `docs/api/` в `mkdocs.yml:50` 15 страниц, но `audits` нет. | `docs/01_API_REFERENCE.md:1`, `mkdocs.yml:50` | 🟢 | P2 | `rg -c "@app\.(get|post|put|delete)" rtmdk/server/app.py` | ✅ **Закрыт 2026-08-24** — `mkdocs.yml:50` `Risks: risks.md` (R11.2) + `48` endpoints в `README.md:8`, тест `TestDocsSync.test_endpoint_count_matches_server` + `test_mkdocs_includes_risks` |
+| R11.3 | **BACKLOG застыл на 8.3.3** `BACKLOG.md:3` `Current 8.3.3` vs код `8.3.4` `rtmdk/__init__.py:12` | `BACKLOG.md:3`, `rtmdk/__init__.py:12` | 🟢 | P2 | `rg "8\.3\." BACKLOG.md` | ✅ **Закрыт 2026-08-24** — `BACKLOG.md:3` уже `8.3.4` (R3), `docs/README.md:3` `8.3.4`, тест `TestDocsSync.test_docs_version_matches_package` |
 
 ---
 
