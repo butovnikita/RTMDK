@@ -111,6 +111,36 @@ class TestMetricsHonesty:
         basis = data.get("forecast_basis", {})
         assert "measured_p95_ms_at_500" in basis or "measured_at_10k_ms" in basis
 
+    def test_readme_ram_is_honest(self):
+        """R1.3: README RAM must clarify latent-only vs full cost (RISKS.md)."""
+        readme = os.path.join(ROOT, "README.md")
+        with open(readme, encoding="utf-8") as f:
+            text = f.read()
+        # Why table RAM row must be qualified
+        assert "19-30 MB" in text
+        # Must contain footnote marker and explanation
+        assert "‡" in text, "README must mark RAM rows with ‡ footnote"
+        # Footnote must explain latent-only vs full indexes
+        assert "HNSW" in text and "BM25" in text, "RAM footnote must mention HNSW/BM25"
+        assert "docs/08_ARCHITECTURE.md:440" in text, "RAM footnote must reference docs/08:440 source of truth"
+        # Must mention full cost 80/90 MB @10K and 750 MB @100K
+        assert "80" in text and "90" in text, "RAM footnote must mention full 80/90MB @10K"
+        # Results table RAM rows must also be marked
+        ram_lines = [ln for ln in text.splitlines() if "RAM (" in ln and "MB" in ln]
+        assert len(ram_lines) >= 2
+        for ln in ram_lines:
+            assert "‡" in ln, f"RAM result line must be marked with ‡: {ln!r}"
+
+    def test_ram_source_of_truth_exists(self):
+        """R1.3: docs/08 RAM table must exist as source of truth."""
+        arch = os.path.join(ROOT, "docs", "08_ARCHITECTURE.md")
+        with open(arch, encoding="utf-8") as f:
+            text = f.read()
+        assert "RAM по масштабу" in text
+        assert "80 MB" in text and "90 MB" in text
+        assert "750 MB" in text or "780 MB" in text
+        assert "16 MB" in text  # 1K base
+
 
 class TestLegacyModules:
     """legacy/ SillyTavern modules must remain importable after the repo move."""

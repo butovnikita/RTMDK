@@ -14,13 +14,14 @@
 |---------|-------|--------------------------|
 | Recall@1 | **95.6%** @1000 QA* (97.6% avg) | 97.1% FAISS exact / 96.8% BM25 / ~60-75% Naive RAG |
 | Latency @ 100K | **16 ms**† (прогноз) | 50-500 ms |
-| RAM @ 10K | **19-30 MB** | 500 MB+ |
+| RAM @ 10K | **19-30 MB**‡ (только латент) | 500 MB+ |
 | Embedding cost | **$0** (SOT v2) | $0.10-1.00 / 1M tokens |
 | Offline capable | **Yes** | Partial |
 | Dependencies | **numpy only** | torch, transformers |
 
 > * **95.6% Recall@1** измерено на **1000 QA** (10 тем, Nomic v1.5) — `docs/06_SCIENTIFIC_ARTICLE.md:5.2` (5/10 тем — 100%, пер-топик среднее **97.6%**); синтетический `comprehensive_500` exact-match **99.3%** vs cosine **18.1%** (`docs/24_RAG_COMPARISON.md:55`) — другой датасет, несопоставим с FAISS.
 > † **16 ms @100K — прогноз** на основе экстраполяции (`docs/06_SCIENTIFIC_ARTICLE.md:5.6`: `@10K 1.2ms`, `benchmarks/baseline.json: @500 0.6ms p95`, `@100K ~15ms прогноз, не протестировано`). Измеренный артефакт — `benchmarks/baseline_100k.json` (forecast, pending real `stress_test_100k.py`).
+> ‡ **RAM 19-30 MB @10K — только латентные позиции** (`10K×256×2B≈5MB` + overhead → `9.8MB` fp16). Полная стоимость с HNSW/BM25/энграммами/кэшем — **80 MB / 90 MB** @10K, **750/780 MB** @100K, **7.5/7.6 GB** @1M — `docs/08_ARCHITECTURE.md:440` (source of truth, без HNSW/BM25 — cherry-pick).
 
 ## Quick Start
 
@@ -259,13 +260,14 @@ RTMDK_PRESET=research RTMDK_DECAY_RATE=0.9995 python legacy/rtmdk_server.py
 | **Latency p50 @ 1K** | **0.26 ms*** | В 100-500× быстрее |
 | **Latency p50 @ 100K** | **16 ms**† (прогноз) | В 10-50× быстрее |
 | **Latency p99 @ 100K** | **20 ms**† (прогноз) | Стабильный |
-| **RAM (1K узлов)** | **14 MB** | В 3-12× экономнее |
-| **RAM (10K fp16)** | **9.8 MB** | В 5-20× экономнее |
+| **RAM (1K узлов)** | **14 MB**‡ | В 3-12× экономнее |
+| **RAM (10K fp16)** | **9.8 MB**‡ | В 5-20× экономнее |
 | **Stress test** | ✅ 100K nodes, 50 queries | Все пороги пройдены |
 | **Batch ingestion** | ✅ 1M nodes in 12s (83K/sec) | WAL async, no HNSW |
 
 > * Честные цифры из `docs/06_SCIENTIFIC_ARTICLE.md:5.2-5.4` (Nomic v1.5, 1000 QA). Синтетический `comprehensive_500`: **99.3%** vs **18.1%** cosine (`docs/24_RAG_COMPARISON.md:55`) — отдельный датасет, не сравнивать с FAISS 97.1%. `0.26ms @1K` — точечно; `benchmarks/baseline.json` — `@500 0.6ms p95`.
 > † **@100K — прогноз** (`docs/06:5.6` `@10K 1.2ms`, `@100K ~15ms прогноз`). Артефакт `benchmarks/baseline_100k.json` — forecast, pending real `scripts/stress_test_100k.py`.
+> ‡ **RAM без HNSW/BM25/энграмм**: `14MB@1K` — без индексов (только узлы+кэш). Полная — `16MB@1K` с энграммами (`+2MB`), `80/90MB @10K`, `750/780MB @100K` — `docs/08_ARCHITECTURE.md:440` (source of truth). `9.8MB fp16` — только `latent_pos` (`10K×256×fp16≈5MB`+overhead), без индексов.
 
 ## 🏗️ Архитектура
 
