@@ -1,7 +1,9 @@
 # RTMDK Calibration Reference & Values Guide
 
+> ⚠️ **R3.3 (2026-08-24, audit/risks-2026-08-24): частично устарел.** Полный источник правды — `rtmdk/memory/config.py` (230+ полей, 9 групп, 59 env-override, `ORPHANED_FLAGS` 36) и `rtmdk/config.py` (пресеты). Этот файл покрывает только базовые 30 параметров; новые `pipeline_breaker_*`, `sot_*`, `tiered_*`, `conformal_*`, `kalman_*` см. в коде и `docs/05_FINE_TUNING.md`. Планируется генерация `Values.md` из `RTMDKConfig` (BACKLOG.md R3.3, docs/RISKS.md).
+
 Полная документация по калибровке переменных, гиперпараметров и конфигураций системы RTMDK.
-Данные актуальны для `rtmdk/memory/core.py` и `rtmdk/support/swarm.py`.
+Данные актуальны для `rtmdk/memory/config.py` (канонично) и `rtmdk/support/swarm.py`.
 
 ---
 
@@ -73,3 +75,22 @@ rtmdk:
 | **`server.port`** | `8080` | Порт API (совместим с OpenAI). |
 | **`lm_studio.url`** | `localhost:12345` | Адрес локального LLM-инференса. |
 | **`memory.auto_save_interval`**| `60` | Интервал сохранения (сек). |
+
+---
+
+## 7. Pipeline & SOT (добавлено в R3.3 — ранее отсутствовало, см. `rtmdk/memory/config.py:748`)
+
+| Параметр | Значение (Default) | Описание | Где |
+|:---|:---|:---|:---|
+| **`pipeline_breaker_thresholds`** | `{"embed":5000,"route":100,"retrieve":500,"rerank":1000,"calibrate":200,"explain":100}` мс | Per-stage SLO; `validate()` помечает ≤0 как `ERROR:` (R3.1) | `ProductionConfig` |
+| **`pipeline_breaker_failure_threshold`** | `5` | Трип при ≥N фейлов | `ProductionConfig` |
+| **`pipeline_breaker_recovery_timeout_ms`** | `30000` | Восстановление half-open | `ProductionConfig` |
+| **`sot_enabled`** | `False` | Вкл. Self-Organizing Tokenizer | `SOTConfig` |
+| **`sot_max_vocab`** | `4096` | Max vocab; sparse PMI >5000 (`sif_embedder.py:168`) | `SOTConfig` |
+| **`sot_skipgram_window`** | `1` | 1=adjacent, >1 OOM риск (R6.2) | `SOTConfig` |
+| **`sot_max_cooccurrence`** | `100000` | Лимит COOC до pruning | `SOTConfig` |
+| **`tiered_storage_enabled`** | `False` | Tiered v1 | `MemorySystemConfig` |
+| **`tiered_storage_v2_enabled`** | `False` | Tiered v2 (memmap/LFU) | `MemorySystemConfig` |
+| **`conformal_prediction`** | `False` | ICP; нужен calibrate (`conformal_min_calib=50`) | `CoreConfig` |
+
+> Источник: `rtmdk/memory/config.py` — `git grep -n "pipeline_breaker\|sot_" rtmdk/memory/config.py` (см. R3.3).

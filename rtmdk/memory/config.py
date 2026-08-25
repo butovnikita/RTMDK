@@ -382,8 +382,10 @@ _FIELD_GROUPS: Dict[str, str] = {
     "query_intent_classification_enabled": "SOTConfig",
 }
 
-# Flags present in config but with no implementation anywhere in the codebase.
-# They are kept for backward compatibility but will be removed in v9.0.
+# R3.1 (2026-08-24, audit/risks-2026-08-24): 36 flags kept for backward compat, no impl.
+# Deprecation plan: warn in RTMDKConfig.validate() when set to non-default,
+# remove entirely in v9.0 (see BACKLOG.md §R3.1 and docs/RISKS.md R3.1).
+# New flags must NOT be added here — add to a real _FIELD_GROUPS group.
 ORPHANED_FLAGS: set = {
     "adjoint_enabled",
     "causal_masking",
@@ -1084,8 +1086,45 @@ class RTMDKConfig:
             self.core.pca_n_components = self.core.latent_dim
 
     def validate(self) -> list:
-        """Check for config conflicts and return list of warning strings."""
+        """Check for config conflicts and return list of warning strings.
+
+        R3.1 (2026-08-24): orphaned flags now warn when set to non-default
+        (deprecated, removal in v9.0). Critical pipeline breaker misconfigurations
+        are prefixed with ``ERROR:`` — callers should treat those as errors,
+        not mere warnings. See BACKLOG.md R3.1 and docs/RISKS.md.
+        """
         warnings = []
+        # R3.1: warn on orphaned flags set to non-default (deprecated, v9.0 removal)
+        try:
+            # Compare to fresh defaults without triggering validation recursion
+            _defaults = RTMDKConfig.__new__(RTMDKConfig)
+            _defaults.core = CoreConfig()
+            _defaults.retrieval = RetrievalConfig()
+            _defaults.learning = LearningConfig()
+            _defaults.dynamics = DynamicsConfig()
+            _defaults.inference = InferenceConfig()
+            _defaults.memory = MemorySystemConfig()
+            _defaults.production = ProductionConfig()
+            _defaults.routing = RoutingConfig()
+            _defaults.sot = SOTConfig()
+            for _flag in ORPHANED_FLAGS:
+                try:
+                    _group = _FIELD_GROUPS.get(_flag)
+                    if _group is None:
+                        continue
+                    _cur = getattr(self, _flag)
+                    _def = getattr(_defaults, _flag)
+                except Exception:
+                    continue
+                if _cur != _def:
+                    # Only warn when explicitly changed from default (avoids noise)
+                    warnings.append(
+                        f"Orphaned flag '{_flag}' is set to {_cur!r} but has no implementation "
+                        f"(deprecated, will be removed in v9.0; see BACKLOG.md R3.1)"
+                    )
+        except Exception:
+            # Never fail validation due to orphan check itself
+            pass
         # Check HNSW inconsistencies
         if not self.retrieval.use_hnsw and self.core.hnsw_min_nodes > 0:
             warnings.append(
@@ -1130,16 +1169,16 @@ class RTMDKConfig:
                 "query_rewrite_enabled=True but no embedder provided to RTMDKMemory. "
                 "Heuristic rewrite will be skipped; LLM fallback required."
             )
-        # Pipeline breaker validation
+        # Pipeline breaker validation — critical misconfigs are ERRORs (R3.1: callers should treat as errors)
         prod = self.production
         if prod.pipeline_breaker_failure_threshold < 1:
             warnings.append(
-                f"pipeline_breaker_failure_threshold={prod.pipeline_breaker_failure_threshold} but must be >= 1. "
+                f"ERROR: pipeline_breaker_failure_threshold={prod.pipeline_breaker_failure_threshold} but must be >= 1. "
                 "Circuit breaker will not trip."
             )
         if prod.pipeline_breaker_latency_violation_threshold < 1:
             warnings.append(
-                f"pipeline_breaker_latency_violation_threshold="
+                f"ERROR: pipeline_breaker_latency_violation_threshold="
                 f"{prod.pipeline_breaker_latency_violation_threshold} but must be >= 1. "
                 "Latency-based breaker will not trip."
             )
@@ -1150,13 +1189,13 @@ class RTMDKConfig:
             )
         if prod.pipeline_breaker_half_open_max_calls < 1:
             warnings.append(
-                f"pipeline_breaker_half_open_max_calls={prod.pipeline_breaker_half_open_max_calls} but must be >= 1. "
+                f"ERROR: pipeline_breaker_half_open_max_calls={prod.pipeline_breaker_half_open_max_calls} but must be >= 1. "
                 "Half-open probing disabled."
             )
         for stage_name, threshold in prod.pipeline_breaker_thresholds.items():
             if threshold <= 0:
                 warnings.append(
-                    f"pipeline_breaker_thresholds['{stage_name}']={threshold} must be > 0. "
+                    f"ERROR: pipeline_breaker_thresholds['{stage_name}']={threshold} must be > 0. "
                     "Stage breaker will trip on any latency."
                 )
         return warnings

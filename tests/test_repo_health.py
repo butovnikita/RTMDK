@@ -186,6 +186,66 @@ class TestMypyHealth:
         )
 
 
+class TestConfigHealth:
+    """R3: config bloat must be documented and deprecated (RISKS.md R3.1-3.3)."""
+
+    def test_orphaned_flags_deprecated_and_validated(self):
+        cfg_path = os.path.join(ROOT, "rtmdk", "memory", "config.py")
+        with open(cfg_path, encoding="utf-8") as f:
+            text = f.read()
+        assert "ORPHANED_FLAGS" in text
+        assert "R3.1" in text or "v9.0" in text or "deprecated" in text.lower()
+        # validate() must warn on orphaned and mark critical as ERROR
+        assert "Orphaned flag" in text
+        assert "ERROR:" in text  # critical pipeline thresholds
+
+    def test_validate_warns_on_orphaned_and_errors_on_critical(self):
+        from rtmdk.memory.config import RTMDKConfig, ORPHANED_FLAGS
+
+        # Orphaned flag set to non-default should warn with deprecation
+        cfg = RTMDKConfig(latent_dim=64, adjoint_enabled=True)
+        if "adjoint_enabled" in ORPHANED_FLAGS:
+            warns = cfg.validate()
+            assert any("adjoint_enabled" in w and "deprecated" in w.lower() for w in warns), (
+                f"validate must warn on orphaned adjoint_enabled, got {warns}"
+            )
+        # Critical pipeline threshold must be ERROR
+        cfg2 = RTMDKConfig(latent_dim=16, pipeline_breaker_failure_threshold=0)
+        warns2 = cfg2.validate()
+        assert any("ERROR" in w and "failure_threshold" in w for w in warns2)
+
+    def test_single_source_of_truth_for_config(self):
+        cfg_reexport = os.path.join(ROOT, "rtmdk", "config.py")
+        with open(cfg_reexport, encoding="utf-8") as f:
+            text = f.read()
+        assert "rtmdk/memory/config.py" in text or "memory.config" in text, (
+            "rtmdk/config.py must re-export from memory.config (R3.2)"
+        )
+        assert "R3.2" in text or "single source" in text.lower()
+        # Both imports must resolve to same class
+        from rtmdk.memory.config import RTMDKConfig as FromMemory
+        from rtmdk.config import RTMDKConfig as FromPreset
+
+        assert FromMemory is FromPreset
+
+    def test_values_deprecated_pointer(self):
+        vals = os.path.join(ROOT, "Values.md")
+        with open(vals, encoding="utf-8") as f:
+            text = f.read()
+        assert "R3.3" in text or "deprecated" in text.lower()
+        assert "rtmdk/memory/config.py" in text
+        assert "pipeline_breaker" in text or "sot_" in text
+
+    def test_backlog_deprecation_plan_exists(self):
+        bl = os.path.join(ROOT, "BACKLOG.md")
+        with open(bl, encoding="utf-8") as f:
+            text = f.read()
+        assert "R3.1" in text
+        assert "ORPHANED_FLAGS" in text
+        assert "v9.0" in text
+        assert "36" in text
+
+
 class TestLegacyModules:
     """legacy/ SillyTavern modules must remain importable after the repo move."""
 

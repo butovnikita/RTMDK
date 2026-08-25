@@ -1,10 +1,10 @@
 ﻿# RTMDK Development Backlog
 
-> Last updated: 2026-08-01
-> Current version: 8.3.3
-> Test status: 1280 passed, 1 skipped
+> Last updated: 2026-08-24 (R3.1 deprecation plan, audit/risks-2026-08-24)
+> Current version: 8.3.4
+> Test status: 1280 passed, 1 skipped (+5 health checks for R1/R2/R3)
 > CI status: green (13/13 jobs: ubuntu/windows/macos × py3.10–3.12, admin, docker, perf)
-> Branch: `main`
+> Branch: `audit/risks-2026-08-24` (base `main@42c5b3b`)
 
 ---
 
@@ -199,6 +199,25 @@ RTMDK wins on **total cost of ownership**, **latency**, **memory**, and **zero e
 
 ---
 
+## R3.1 — Config Deprecation Plan (2026-08-24, audit/risks-2026-08-24)
+
+**Goal:** Remove 36 `ORPHANED_FLAGS` (`rtmdk/memory/config.py:387`) in **v9.0** without breaking 8.x.
+
+| Flag | Status | Replacement | Removal |
+|------|--------|-------------|---------|
+| `adjoint_enabled`, `causal_masking`, `cpen_*`, `crystallization_*`, `curvature`, `dreaming_freq`, `drift_*`, `entropy_*`, `eval_frequency`, `vector_storage_dsn`, `false_merge_threshold`, `goal_directed_routing`, `hebbian_learning_rate`, `learnable_*`, `lyapunov_*`, `metrics_retention`, `ode_*`, `pc_latent_dim`, `prover_backend`, `response_smoothness_target`, `sde_noise_level`, `self_sup_threshold`, `sot_diagonal_ssm`, `sot_ssm_sync`, `ssm_state_dim`, `swarm_*`, `symbolic_*`, `tier_tension_thresh`, `trust_min_reputation` (36 total) | deprecated | none (no impl) | **v9.0** |
+
+**Steps:**
+1. `8.3.4` — `RTMDKConfig.validate()` warns when orphaned flag set to non-default (this commit).
+2. `8.4` — add `DeprecationWarning` on direct access, log once.
+3. `9.0` — delete `ORPHANED_FLAGS` + `_FIELD_GROUPS` entries + env-overrides for them.
+
+**Critical validation (`validate()` → `ERROR:`):** `pipeline_breaker_*` thresholds `<1` or `≤0` are now `ERROR:` — callers must treat as errors, not warnings (R3.1).
+
+**Source of truth:** `rtmdk/memory/config.py` (`CoreConfig` 230+ fields); `rtmdk/config.py` is thin re-export + presets (R3.2). `Values.md` is deprecated pointer to code (R3.3).
+
+---
+
 ## How to Pick the Next Track
 
 - **Shipping to mobile / edge devices** → Track 1 (Quantization)
@@ -206,3 +225,4 @@ RTMDK wins on **total cost of ownership**, **latency**, **memory**, and **zero e
 - **Enterprise pilot with 1M+ document corpus** → Track 4 (Async Pipeline) then Track 2 (Tiered Storage)
 - **Indie hacker, single-server deployment** → Track 1 (Quantization) or Track 4 (Batch ingestion for faster setup)
 - **Improving code maintainability / onboarding devs** → Update `docs/08_ARCHITECTURE.md` to reflect v8.3 decoupled architecture
+- **Config hygiene** → R3.1 deprecation above (no new flags in `ORPHANED_FLAGS`)

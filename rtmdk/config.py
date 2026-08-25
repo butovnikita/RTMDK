@@ -1,11 +1,17 @@
 """
 rtmdk/config.py — Configuration Presets for RTMDK.
 
-The single source of truth for RTMDKConfig is in rtmdk.memory.core.
-This module provides convenience presets only.
+R3.2 (2026-08-24, audit/risks-2026-08-24): single source of truth is
+rtmdk/memory/config.py (230+ flat fields, ORPHANED_FLAGS, validate).
+This module is a thin re-export + presets only — no duplicated defaults
+beyond explicit preset overrides (see BACKLOG.md R3.1). Importing
+RTMDKConfig from here or from rtmdk.memory.config is equivalent, but
+memory.config is canonical for class definition. Presets delegate to
+RTMDKConfig(**kwargs) and are bound in rtmdk/__init__.py.
 
 Usage:
-    from rtmdk.config import RTMDKConfig  # Same as from rtmdk.memory.config import RTMDKConfig
+    from rtmdk.config import RTMDKConfig  # re-export, same as from rtmdk.memory.config
+    from rtmdk.memory.config import RTMDKConfig  # canonical
     config = RTMDKConfig.local()           # Minimal resources
     config = RTMDKConfig.production()      # Full optimizations
     config = RTMDKConfig.research()        # Maximum accuracy
@@ -21,8 +27,11 @@ Presets:
     streaming()   — High-throughput real-time (~3ms, 50K nodes)
 """
 
-# Re-export the single source of truth
-from rtmdk.memory.core import RTMDKConfig
+# Re-export the single source of truth — thin wrapper, no duplication (R3.2)
+# Canonical definition lives in rtmdk/memory/config.py; this re-export keeps
+# backward compat for `from rtmdk.config import RTMDKConfig`.
+from rtmdk.memory.config import RTMDKConfig
+from rtmdk.memory.config import ConsolidationMode, Backend, ContextFormat, FieldHealth, EvalMode  # noqa: F401
 
 # Re-export enums
 
