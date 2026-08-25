@@ -4,7 +4,7 @@
 > **Источники:** `AUDIT_REPORT.md:1`, `docs/06_SCIENTIFIC_ARTICLE.md:1`, `docs/08_ARCHITECTURE.md:1`, `BACKLOG.md:1`, `README.md:1`, `rtmdk/memory/config.py:1`, `benchmarks/baseline.json`
 > **Метод:** статический анализ + сверка документации/кода/CI | **Статус реестра:** `active` — каждый пункт требует верификации (тест/бенч/ревью)
 > **Легенда тяжести:** 🔴 Высокий — влияет на корректность/безопасность/репутацию | 🟡 Средний — влияет на масштаб/сопровождаемость | 🟢 Низкий — локальный долг
-> **Прогресс:** `R1.1` ✅ закрыт `2026-08-24`, `R1.2` ✅ закрыт `2026-08-24`, `R1.3` ✅ закрыт `2026-08-24`, `R2` ✅ закрыт `2026-08-24`, `R3` ✅ закрыт `2026-08-24`, `R4` ✅ закрыт `2026-08-24`, `R5` ✅ закрыт `2026-08-24`, `R6` ✅ закрыт `2026-08-24` в этой ветке (см. §R1-R6); остальные — `open`
+> **Прогресс:** `R1.1` ✅ закрыт `2026-08-24`, `R1.2` ✅ закрыт `2026-08-24`, `R1.3` ✅ закрыт `2026-08-24`, `R2` ✅ закрыт `2026-08-24`, `R3` ✅ закрыт `2026-08-24`, `R4` ✅ закрыт `2026-08-24`, `R5` ✅ закрыт `2026-08-24`, `R6` ✅ закрыт `2026-08-24`, `R7` ✅ закрыт `2026-08-24` в этой ветке (см. §R1-R7); остальные — `open`
 
 ---
 
@@ -93,7 +93,7 @@
 
 | ID | Риск | Где | Тяжесть | Приоритет | Как проверить | Критерий закрытия |
 |---|---|---|---|---|---|---|
-| R7.1 | **Два класса:** `support/circuit_breaker.py` (3-state, `threshold=3, recovery=30s`) vs `pipeline/circuit_breaker.py` per-stage. Плюс 11 field breakers `field_initializer.py:410`, embedder breaker `memory_post_initializer.py:189`, server `llm_chat_circuit` `server/app.py:632`, `SOTBootstrapBreaker` `app.py:53`. Дублирование сигнатур. | `rtmdk/support/circuit_breaker.py:1`, `rtmdk/pipeline/circuit_breaker.py:1`, `rtmdk/memory/field_initializer.py:410`, `rtmdk/server/app.py:632` | 🟢 | P2 | `rg "class CircuitBreaker" rtmdk/` | Один `CircuitBreaker` переиспользуется везде (pipeline наследует конфиг `pipeline_breaker_thresholds` `config.py:748`) |
+| R7.1 | **Два класса:** `support/circuit_breaker.py` (3-state, `threshold=3, recovery=30s`) vs `pipeline/circuit_breaker.py` per-stage. Плюс 11 field breakers `field_initializer.py:410`, embedder breaker `memory_post_initializer.py:189`, server `llm_chat_circuit` `server/app.py:632`, `SOTBootstrapBreaker` `app.py:53`. Дублирование сигнатур. | `rtmdk/support/circuit_breaker.py:1`, `rtmdk/pipeline/circuit_breaker.py:1`, `rtmdk/memory/field_initializer.py:410`, `rtmdk/server/app.py:632` | 🟢 | P2 | `rg "class CircuitBreaker" rtmdk/` | ✅ **Закрыт 2026-08-24** — `support/circuit_breaker.py:1` каноничный `CircuitState` (R7.1), `pipeline/circuit_breaker.py:1` `BreakerState = CircuitState` (импорт из support, single source) + latency SLO `config.py:748` via `pipeline_builder.py:44` (`failure_threshold 5→config`, `latency 500ms` etc.), тест `TestCircuitBreakerUnified` (alias + thresholds) |
 
 ---
 

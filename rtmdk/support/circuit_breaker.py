@@ -1,4 +1,13 @@
-"""Circuit breaker pattern for RTMDK subsystem fault tolerance.
+"""Circuit breaker pattern for RTMDK subsystem fault tolerance — R7.1 canonical.
+
+R7.1 (2026-08-24, audit/risks-2026-08-24): single source for 3-state
+CLOSED/OPEN/HALF_OPEN (CircuitState) + base CircuitBreaker (failure_threshold,
+recovery_timeout, call wrapper). Pipeline's latency-aware breaker
+(pipeline/circuit_breaker.py) re-uses this state enum (BreakerState alias)
+and inherits thresholds from RTMDKConfig.pipeline_breaker_thresholds
+(config.py:748) via pipeline_builder. Field 11 breakers, embedder, server
+circuits all use this class — minimizes duplication (was duplicated with
+pipeline's BreakerState).
 
 Replaces the overly broad _safe_run() catch-all with per-subsystem
 failure tracking and automatic recovery.

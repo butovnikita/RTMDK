@@ -1,24 +1,41 @@
-"""Circuit breaker for pipeline stages.
+"""Circuit breaker for pipeline stages — R7.1 unified.
 
-Provides per-stage fault isolation: if a stage repeatedly fails or is too slow,
-the breaker opens and the stage is automatically bypassed (fallback always runs).
+R7.1 (2026-08-24, audit/risks-2026-08-24): previously duplicated 3-state
+logic (support/circuit_breaker.py vs pipeline/circuit_breaker.py). Now
+pipeline re-uses support's CircuitState as single source for CLOSED/OPEN/
+HALF_OPEN (see support/circuit_breaker.py:18). Pipeline adds latency SLO
+thresholds on top (latency_threshold_ms etc.) that are inherited from
+RTMDKConfig.production.pipeline_breaker_thresholds (config.py:748) via
+memory/pipeline_builder.py:44. Field 11 breakers (field_initializer.py:410),
+embedder breaker (memory_post_initializer.py:189), server llm_chat_circuit
+(server/app.py:632) already use support's breaker — now pipeline shares the
+same state enum, minimizing duplication.
+
+Future: extract latency-aware logic into support as PipelineCircuitBreaker
+subclass (see comment below), but API (can_execute/record_success vs call)
+kept separate to avoid breaking pipeline stages.
 """
 
 from __future__ import annotations
-from enum import Enum
 from typing import Optional
 import threading
 import time
 
+# R7.1 single source for 3-state enum — was duplicated BreakerState
+from rtmdk.support.circuit_breaker import CircuitState
 
-class BreakerState(Enum):
-    CLOSED = "closed"  # Normal operation
-    OPEN = "open"  # Bypassing stage, fallback always runs
-    HALF_OPEN = "half_open"  # Testing if stage recovered
+# Keep alias for backward compat: pipeline code imports BreakerState
+BreakerState = CircuitState
 
 
 class CircuitBreaker:
-    """Circuit breaker for a single pipeline stage.
+    """Circuit breaker for a single pipeline stage — R7.1 latency-aware extension.
+
+    Shares 3-state enum with support/circuit_breaker.py (BreakerState = CircuitState).
+    Base failure logic (CLOSED/OPEN/HALF_OPEN, recovery_timeout) is canonical in
+    support; this class adds latency SLO tracking (latency_threshold_ms etc.)
+    that is configured via RTMDKConfig.pipeline_breaker_thresholds (config.py:748)
+    and wired in memory/pipeline_builder.py:44. Future: make this subclass SupportBreaker.
 
     Opens after `failure_threshold` consecutive failures OR
     `latency_threshold_ms` exceeded `latency_violation_threshold` times.

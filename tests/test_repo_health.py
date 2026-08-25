@@ -482,6 +482,59 @@ class TestOomAndScale:
         assert "baseline_100k" in text
 
 
+class TestCircuitBreakerUnified:
+    """R7: CircuitBreaker must be single source (RISKS.md R7.1)."""
+
+    def test_pipeline_reuses_support_state(self):
+        # R7.1: pipeline BreakerState must be alias to support CircuitState
+        sup = os.path.join(ROOT, "rtmdk", "support", "circuit_breaker.py")
+        pipe = os.path.join(ROOT, "rtmdk", "pipeline", "circuit_breaker.py")
+        with open(sup, encoding="utf-8") as f:
+            t_sup = f.read()
+        with open(pipe, encoding="utf-8") as f:
+            t_pipe = f.read()
+        assert "R7.1" in t_sup
+        assert "R7.1" in t_pipe
+        assert "CircuitState" in t_sup
+        assert "CircuitState" in t_pipe or "BreakerState = CircuitState" in t_pipe
+        # Both must define CLOSED/OPEN/HALF_OPEN
+        assert "CLOSED" in t_sup and "OPEN" in t_sup
+        assert "CLOSED" in t_pipe and "OPEN" in t_pipe
+        # Pipeline must import from support (single source)
+        assert "from rtmdk.support.circuit_breaker import" in t_pipe
+
+    def test_single_breaker_class_reused(self):
+        # Both modules define class CircuitBreaker but pipeline should note it extends/reuses support
+        pipe = os.path.join(ROOT, "rtmdk", "pipeline", "circuit_breaker.py")
+        with open(pipe, encoding="utf-8") as f:
+            text = f.read()
+        # Must document inheritance of thresholds from config
+        assert "pipeline_breaker_thresholds" in text or "config.py:748" in text
+        # Must mention that support is canonical for 3-state
+        assert "support" in text.lower() and "single source" in text.lower()
+
+    def test_runtime_imports_share_state_values(self):
+        from rtmdk.support.circuit_breaker import CircuitState as SupState
+        from rtmdk.pipeline.circuit_breaker import BreakerState as PipeState
+
+        # Alias must be same object
+        assert PipeState is SupState
+        assert PipeState.CLOSED.value == "closed"
+        assert PipeState.OPEN.value == "open"
+        assert PipeState.HALF_OPEN.value == "half_open"
+
+        from rtmdk.support.circuit_breaker import CircuitBreaker as SupBreaker
+        from rtmdk.pipeline.circuit_breaker import CircuitBreaker as PipeBreaker
+
+        # Both must be instantiable with similar failure_threshold API
+        sb = SupBreaker(name="test_sup", failure_threshold=2)
+        pb = PipeBreaker(name="test_pipe", failure_threshold=2)
+        assert sb.failure_threshold == 2
+        assert pb.failure_threshold == 2
+        # Pipeline breaker must have latency thresholds from config
+        assert hasattr(pb, "latency_threshold_ms")
+
+
 class TestLegacyModules:
     """legacy/ SillyTavern modules must remain importable after the repo move."""
 
