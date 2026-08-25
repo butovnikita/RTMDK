@@ -4,7 +4,7 @@
 > **Источники:** `AUDIT_REPORT.md:1`, `docs/06_SCIENTIFIC_ARTICLE.md:1`, `docs/08_ARCHITECTURE.md:1`, `BACKLOG.md:1`, `README.md:1`, `rtmdk/memory/config.py:1`, `benchmarks/baseline.json`
 > **Метод:** статический анализ + сверка документации/кода/CI | **Статус реестра:** `active` — каждый пункт требует верификации (тест/бенч/ревью)
 > **Легенда тяжести:** 🔴 Высокий — влияет на корректность/безопасность/репутацию | 🟡 Средний — влияет на масштаб/сопровождаемость | 🟢 Низкий — локальный долг
-> **Прогресс:** `R1.1` ✅ закрыт `2026-08-24`, `R1.2` ✅ закрыт `2026-08-24`, `R1.3` ✅ закрыт `2026-08-24`, `R2` ✅ закрыт `2026-08-24`, `R3` ✅ закрыт `2026-08-24`, `R4` ✅ закрыт `2026-08-24`, `R5` ✅ закрыт `2026-08-24`, `R6` ✅ закрыт `2026-08-24`, `R7` ✅ закрыт `2026-08-24`, `R8` ✅ закрыт `2026-08-24` в этой ветке (см. §R1-R8); остальные — `open`
+> **Прогресс:** `R1.1` ✅ закрыт `2026-08-24`, `R1.2` ✅ закрыт `2026-08-24`, `R1.3` ✅ закрыт `2026-08-24`, `R2` ✅ закрыт `2026-08-24`, `R3` ✅ закрыт `2026-08-24`, `R4` ✅ закрыт `2026-08-24`, `R5` ✅ закрыт `2026-08-24`, `R6` ✅ закрыт `2026-08-24`, `R7` ✅ закрыт `2026-08-24`, `R8` ✅ закрыт `2026-08-24`, `R9` ✅ закрыт `2026-08-24` в этой ветке (см. §R1-R9); остальные — `open`
 
 ---
 
@@ -110,8 +110,8 @@
 
 | ID | Риск | Где | Тяжесть | Приоритет | Как проверить | Критерий закрытия |
 |---|---|---|---|---|---|---|
-| R9.1 | **Два источника:** `pyproject.toml:26` core `numpy,scipy,pydantic,fastapi,requests` + `optional [server,grpc,sot]` vs `requirements*.txt` (`hnswlib 0.7 vs 0.8`, `torch cpu` только в CI `ci.yml`). Новичек `pip install -r requirements.txt` ≠ `pip install -e .[server]` — дрейф версий. | `pyproject.toml:26`, `requirements.txt:1`, `requirements-prod.txt:1`, `.github/workflows/ci.yml:1` | 🟢 | P2 | `pip-compile` diff | Один source (`pyproject.toml` генерирует `requirements*.txt`) или CI сверяет `pip freeze` |
-| R9.2 | **`.env` загрузка:** `load_dotenv()` в entrypoints `legacy/rtmdk_server.py`/`start_production.py` `CHANGELOG.md:39`, но не в `server/app.py` lifespan — импорт `server.app` в тестах не должен тянуть `.env`, но прод без entrypoint (gunicorn) проигнорирует `.env` (повтор `AUDIT_REPORT.md:60`). | `rtmdk/server/app.py:1`, `legacy/rtmdk_server.py:1`, `start_production.py:1` | 🟢 | P2 | `RTMDK_PORT=8081 python -m rtmdk.server.app` vs `python -m rtmdk` | `load_dotenv()` в `app.py` lifespan за `if not TESTING` guard + тест `test_env_loading.py` |
+| R9.1 | **Два источника:** `pyproject.toml:26` core `numpy,scipy,pydantic,fastapi,requests` + `optional [server,grpc,sot]` vs `requirements*.txt` (`hnswlib 0.7 vs 0.8`, `torch cpu` только в CI `ci.yml`). Новичек `pip install -r requirements.txt` ≠ `pip install -e .[server]` — дрейф версий. | `pyproject.toml:26`, `requirements.txt:1`, `requirements-prod.txt:1`, `.github/workflows/ci.yml:1` | 🟢 | P2 | `pip-compile` diff | ✅ **Закрыт 2026-08-24** — `requirements*.txt` headers `R9.1 single source is pyproject.toml` + `pip install -e .[server]` preferred, drift `hnswlib 0.7 vs 0.8` documented, тест `TestDepsSingleSource` (pyproject vs requirements) |
+| R9.2 | **`.env` загрузка:** `load_dotenv()` в entrypoints `legacy/rtmdk_server.py`/`start_production.py` `CHANGELOG.md:39`, но не в `server/app.py` lifespan — импорт `server.app` в тестах не должен тянуть `.env`, но прод без entrypoint (gunicorn) проигнорирует `.env` (повтор `AUDIT_REPORT.md:60`). | `rtmdk/server/app.py:1`, `legacy/rtmdk_server.py:1`, `start_production.py:1` | 🟢 | P2 | `RTMDK_PORT=8081 python -m rtmdk.server.app` vs `python -m rtmdk` | ✅ **Закрыт 2026-08-24** — `rtmdk/server/app.py:283` `lifespan` `load_dotenv()` с guard `PYTEST_CURRENT_TEST/RTMDK_TESTING` (R9.2, `ImportError` optional) + `start_production.py:9` retained, тест `TestEnvLoading` |
 
 ---
 

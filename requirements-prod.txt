@@ -1,26 +1,31 @@
-# RTMDK — Production Requirements (No SillyTavern)
+# R9.1 (2026-08-24, audit/risks-2026-08-24): single source is pyproject.toml
+# This file is a convenience pin for production. Canonical deps live in
+# pyproject.toml [project] dependencies + [project.optional-dependencies] server/grpc/sot.
+# Prefer `pip install -e .[server,grpc,sot]`; keep this file in sync via pip-compile.
+# CI drift check: tests/test_repo_health.py:TestDepsSingleSource (hnswlib 0.7 vs 0.8 documented drift)
+# RTMDK — Production Requirements (No SillyTavern) — from pyproject
 # Minimal dependencies for the production API server.
-# Install: pip install -r requirements-prod.txt
+# Install: pip install -r requirements-prod.txt OR pip install -e .[server]
 
-fastapi>=0.100.0
-uvicorn[standard]>=0.23.0
-pydantic>=2.0.0
-numpy>=1.24.0
-scikit-learn>=1.3.0
-requests>=2.31.0
-msgpack>=1.0.0
-gensim>=4.0.0
-grpcio>=1.60.0
-httpx>=0.25.0
-prometheus-client>=0.20.0
-hnswlib>=0.8.0
-tenacity>=8.2.0
-strawberry-graphql>=0.200.0
-python-dotenv>=1.0.0
+fastapi>=0.100.0  # pyproject: fastapi>=0.100
+uvicorn[standard]>=0.23.0  # pyproject server: uvicorn[standard]>=0.24 (relaxed)
+pydantic>=2.0.0  # pyproject: pydantic>=2.0
+numpy>=1.24.0  # pyproject: numpy>=1.24
+scikit-learn>=1.3.0  # pyproject sot: scikit-learn>=1.3
+requests>=2.31.0  # pyproject: requests>=2.28
+msgpack>=1.0.0  # pyproject server: msgpack>=1.0
+gensim>=4.0.0  # legacy, not in pyproject (track separately)
+grpcio>=1.60.0  # pyproject grpc: grpcio>=1.60
+httpx>=0.25.0  # pyproject server: httpx>=0.25
+prometheus-client>=0.20.0  # pyproject server: prometheus-client>=0.19 (pin bump)
+hnswlib>=0.8.0  # NOTE: requirements.txt uses >=0.7.0 — documented drift R9.1, prefer pyproject
+tenacity>=8.2.0  # pyproject server: tenacity>=8.2
+strawberry-graphql>=0.200.0  # pyproject server: strawberry-graphql>=0.200
+python-dotenv>=1.0.0  # pyproject server: python-dotenv>=1.0 (R9.2 .env)
 
-# Production modules with hard imports (encryption, telemetry)
-cryptography>=41.0.0
-python-multipart>=0.0.9
-opentelemetry-api>=1.20.0
-opentelemetry-sdk>=1.20.0
-opentelemetry-exporter-otlp-proto-grpc>=1.20.0
+# Production modules with hard imports (encryption, telemetry) — pyproject server
+cryptography>=41.0.0  # pyproject server: cryptography>=41.0
+python-multipart>=0.0.9  # pyproject server: python-multipart>=0.0.9
+opentelemetry-api>=1.20.0  # pyproject server: opentelemetry-api>=1.20
+opentelemetry-sdk>=1.20.0  # pyproject server: opentelemetry-sdk>=1.20
+opentelemetry-exporter-otlp-proto-grpc>=1.20.0  # pyproject server

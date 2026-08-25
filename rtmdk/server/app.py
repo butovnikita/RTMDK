@@ -287,6 +287,18 @@ async def lifespan(app: FastAPI):
     global analytics_dashboard, api_key_manager, tenant_rate_limiter
     global webhook_manager, audit_log, retention_manager
     global redis_query_cache, redis_embedding_cache, encryption_manager, telemetry_manager
+    # R9.2 (2026-08-24, audit/risks-2026-08-24): .env loading for gunicorn/uvicorn
+    # without entrypoint (start_production.py does load_dotenv, but `uvicorn rtmdk.server.app:app`
+    # or gunicorn would bypass it). Guard PYTEST_CURRENT_TEST so pytest env is not polluted
+    # (legacy issue AUDIT_REPORT.md:60, CHANGELOG.md:39).
+    if os.getenv("PYTEST_CURRENT_TEST") is None and os.getenv("RTMDK_TESTING") is None:
+        try:
+            from dotenv import load_dotenv  # type: ignore[import-not-found]
+
+            load_dotenv()
+            logger.debug("R9.2 .env loaded in lifespan (if present)")
+        except ImportError:
+            pass  # python-dotenv is optional; env vars still work if set externally
     # Structured JSON logging in production mode
     if os.getenv("RTMDK_JSON_LOG", "").lower() in ("1", "true", "yes"):
         try:

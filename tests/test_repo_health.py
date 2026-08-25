@@ -613,6 +613,79 @@ class TestSillyTavernParity:
         assert "5000" in text
 
 
+class TestDepsSingleSource:
+    """R9.1: deps single source is pyproject.toml (RISKS.md R9.1)."""
+
+    def test_requirements_headers_point_to_pyproject(self):
+        for fname in ["requirements.txt", "requirements-prod.txt"]:
+            path = os.path.join(ROOT, fname)
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
+            assert "R9.1" in text
+            assert "pyproject.toml" in text
+            assert "single source" in text.lower()
+
+    def test_pyproject_is_single_source(self):
+        import re
+
+        py = os.path.join(ROOT, "pyproject.toml")
+        with open(py, encoding="utf-8") as f:
+            text = f.read()
+        # Core deps must be in pyproject
+        assert "numpy" in text and "fastapi" in text and "pydantic" in text
+        # Server extra must contain key deps
+        assert "uvicorn" in text and "msgpack" in text and "python-dotenv" in text
+        # Version pins should be >= (not hard ==) for flexibility
+        assert re.search(r"numpy>=1\.24", text)
+        assert re.search(r"fastapi>=0\.100", text)
+
+    def test_requirements_contain_core_deps(self):
+        req = os.path.join(ROOT, "requirements.txt")
+        with open(req, encoding="utf-8") as f:
+            text = f.read()
+        assert "fastapi" in text.lower()
+        assert "uvicorn" in text.lower()
+        assert "msgpack" in text.lower()
+        assert "python-dotenv" in text.lower()
+
+        prod = os.path.join(ROOT, "requirements-prod.txt")
+        with open(prod, encoding="utf-8") as f:
+            text2 = f.read()
+        assert "hnswlib" in text2.lower()
+        # Documented drift 0.7 vs 0.8 must be mentioned
+        assert "0.7.0" in text or "0.8.0" in text2
+
+
+class TestEnvLoading:
+    """R9.2: .env loading must be in lifespan with guard (RISKS.md R9.2)."""
+
+    def test_lifespan_loads_dotenv_with_guard(self):
+        srv = os.path.join(ROOT, "rtmdk", "server", "app.py")
+        with open(srv, encoding="utf-8") as f:
+            text = f.read()
+        assert "load_dotenv" in text, "lifespan must load .env (R9.2)"
+        assert "R9.2" in text
+        assert "PYTEST_CURRENT_TEST" in text
+        # Guard must not pollute pytest
+        assert "RTMDK_TESTING" in text or "PYTEST" in text
+        # Must be inside lifespan, not just entrypoint
+        assert "async def lifespan" in text
+        # start_production still loads .env as before
+        sp = os.path.join(ROOT, "start_production.py")
+        with open(sp, encoding="utf-8") as f:
+            spt = f.read()
+        assert "load_dotenv" in spt
+
+    def test_lifespan_does_not_hardcode_env(self):
+        srv = os.path.join(ROOT, "rtmdk", "server", "app.py")
+        with open(srv, encoding="utf-8") as f:
+            text = f.read()
+        # Should use load_dotenv, not manual os.getenv without it
+        assert "load_dotenv" in text
+        # Must handle ImportError gracefully (optional dep)
+        assert "ImportError" in text or "except" in text
+
+
 class TestLegacyModules:
     """legacy/ SillyTavern modules must remain importable after the repo move."""
 

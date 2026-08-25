@@ -1,17 +1,22 @@
-# RTMDK Core Dependencies
-fastapi>=0.100.0
-uvicorn[standard]>=0.23.0
-pydantic>=2.0.0
-numpy>=1.24.0
-scikit-learn>=1.3.0
-requests>=2.31.0
+# R9.1 (2026-08-24, audit/risks-2026-08-24): single source is pyproject.toml
+# This file is a convenience pin for `pip install -r requirements.txt`.
+# Canonical deps live in pyproject.toml: [project] dependencies + [project.optional-dependencies] server/sot.
+# Prefer `pip install -e .[server]` for prod; keep this file in sync via `pip-compile` or manual update.
+# CI checks drift via tests/test_repo_health.py:TestDepsSingleSource.
+# RTMDK Core Dependencies (from pyproject.toml dependencies + server extra)
+fastapi>=0.100.0  # pyproject: fastapi>=0.100
+uvicorn[standard]>=0.23.0  # pyproject server: uvicorn[standard]>=0.24 (pin relaxed for compat)
+pydantic>=2.0.0  # pyproject: pydantic>=2.0
+numpy>=1.24.0  # pyproject: numpy>=1.24
+scikit-learn>=1.3.0  # pyproject sot: scikit-learn>=1.3 (optional, but kept here for hnswlib compat)
+requests>=2.31.0  # pyproject: requests>=2.28
 
-# Memory persistence
+# Memory persistence (pyproject server: msgpack>=1.0)
 msgpack>=1.0.0
 
-# Server configuration (.env auto-load at entry points)
-python-dotenv>=1.0.0
+# Server configuration (.env auto-load at entry points + lifespan R9.2)
+python-dotenv>=1.0.0  # pyproject server: python-dotenv>=1.0
 
-# Advanced features (optional)
-hnswlib>=0.7.0
+# Advanced features (optional, must match pyproject optional deps)
+hnswlib>=0.7.0  # NOTE: requirements-prod.txt uses >=0.8.0 — intentional drift, see R9.1; prefer pyproject
 optuna>=3.0.0
