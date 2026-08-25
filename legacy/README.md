@@ -1,6 +1,8 @@
 # Legacy — SillyTavern Development Servers
 
-Этот каталог содержит **замороженные** легаси-скрипты для разработки с интеграцией SillyTavern. Они вынесены из корня репозитория при чистке (2026-08-01). Активная разработка ведётся в пакете `rtmdk/`; production-сервер — `rtmdk/server/app.py` (`python -m rtmdk`).
+> **R8.1 (2026-08-24, audit/risks-2026-08-24): Frozen 2026-08-01 — drift check in `tests/test_repo_health.py:TestLegacyDrift`**
+> Этот каталог содержит **замороженные** легаси-скрипты для разработки с интеграцией SillyTavern. Они вынесены из корня репозитория при чистке (2026-08-01). Активная разработка ведётся в пакете `rtmdk/`; production-сервер — `rtmdk/server/app.py` (`python -m rtmdk`).
+> **.env:** `start_production.py:9` делает `load_dotenv()` (RTMDK_PORT/API_KEY); `legacy/rtmdk_server.py` — frozen dev-сервер (порт 80801) без `load_dotenv` — используйте лаунчер/прокcи. Новые ST-фичи — только в `rtmdk/` (см. `docs/RISKS.md R8`).
 
 ## Содержимое
 
@@ -31,4 +33,4 @@ start_proxy.bat         REM только прокси
 
 ## Статус
 
-**Frozen.** Исправления — только критические. Новые функции SillyTavern-интеграции должны реализовываться в пакете `rtmdk/`.
+**Frozen 2026-08-01 (R8.1).** Исправления — только критические. Новые функции SillyTavern-интеграции должны реализовываться в пакете `rtmdk/` (`rtmdk/server/app.py` 48 роутов vs `legacy/rtmdk_server.py` 27 роутов — см. `tests/test_repo_health.py:TestLegacyDrift`). Дрейф ловится CI (`test_legacy_drift.py` logic in `test_repo_health`); при расхождении `legacy` считается отдельным репо-форком.

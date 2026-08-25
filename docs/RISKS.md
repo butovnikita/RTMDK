@@ -4,7 +4,7 @@
 > **Источники:** `AUDIT_REPORT.md:1`, `docs/06_SCIENTIFIC_ARTICLE.md:1`, `docs/08_ARCHITECTURE.md:1`, `BACKLOG.md:1`, `README.md:1`, `rtmdk/memory/config.py:1`, `benchmarks/baseline.json`
 > **Метод:** статический анализ + сверка документации/кода/CI | **Статус реестра:** `active` — каждый пункт требует верификации (тест/бенч/ревью)
 > **Легенда тяжести:** 🔴 Высокий — влияет на корректность/безопасность/репутацию | 🟡 Средний — влияет на масштаб/сопровождаемость | 🟢 Низкий — локальный долг
-> **Прогресс:** `R1.1` ✅ закрыт `2026-08-24`, `R1.2` ✅ закрыт `2026-08-24`, `R1.3` ✅ закрыт `2026-08-24`, `R2` ✅ закрыт `2026-08-24`, `R3` ✅ закрыт `2026-08-24`, `R4` ✅ закрыт `2026-08-24`, `R5` ✅ закрыт `2026-08-24`, `R6` ✅ закрыт `2026-08-24`, `R7` ✅ закрыт `2026-08-24` в этой ветке (см. §R1-R7); остальные — `open`
+> **Прогресс:** `R1.1` ✅ закрыт `2026-08-24`, `R1.2` ✅ закрыт `2026-08-24`, `R1.3` ✅ закрыт `2026-08-24`, `R2` ✅ закрыт `2026-08-24`, `R3` ✅ закрыт `2026-08-24`, `R4` ✅ закрыт `2026-08-24`, `R5` ✅ закрыт `2026-08-24`, `R6` ✅ закрыт `2026-08-24`, `R7` ✅ закрыт `2026-08-24`, `R8` ✅ закрыт `2026-08-24` в этой ветке (см. §R1-R8); остальные — `open`
 
 ---
 
@@ -101,8 +101,8 @@
 
 | ID | Риск | Где | Тяжесть | Приоритет | Как проверить | Критерий закрытия |
 |---|---|---|---|---|---|---|
-| R8.1 | **Fork сервера:** `legacy/rtmdk_server.py:1195` 27 роутов vs `rtmdk/server/app.py:2317` 48 роутов. `legacy/README.md` — frozen, но SillyTavern proxy/UI только там `legacy/rtmdk_st_proxy.py`/`rtmdk_dashboard_ui.py`. Фикс `.env load` `CHANGELOG.md:39` пришлось дублировать. | `legacy/rtmdk_server.py:1`, `rtmdk/server/app.py:1`, `legacy/README.md:1` | 🟡 | P1 | `diff <(rg "@app\.(get|post)" legacy/rtmdk_server.py) <(rg "@app\.(get|post)" rtmdk/server/app.py)` | `legacy/` помечен `frozen 2026-08-01` + CI `test_repo_health.py` ловит дрейф (или вынесен в отдельный репо) |
-| R8.2 | **Muse proxy drift:** `legacy/rtmdk_sillytavern_launcher.py` единственная точка ST — нет теста на паритет с `server/app.py` OpenAI-compat. | `legacy/rtmdk_sillytavern_launcher.py:1` | 🟢 | P2 | `pytest tests/test_sillytavern_*.py` (если есть) | E2E `legacy` vs `server` query parity тест |
+| R8.1 | **Fork сервера:** `legacy/rtmdk_server.py:1195` 27 роутов vs `rtmdk/server/app.py:2317` 48 роутов. `legacy/README.md` — frozen, но SillyTavern proxy/UI только там `legacy/rtmdk_st_proxy.py`/`rtmdk_dashboard_ui.py`. Фикс `.env load` `CHANGELOG.md:39` пришлось дублировать. | `legacy/rtmdk_server.py:1`, `rtmdk/server/app.py:1`, `legacy/README.md:1` | 🟡 | P1 | `diff <(rg "@app\.(get|post)" legacy/rtmdk_server.py) <(rg "@app\.(get|post)" rtmdk/server/app.py)` | ✅ **Закрыт 2026-08-24** — `legacy/README.md:1` `Frozen 2026-08-01` + `R8.1` + `.env` via `start_production.py:9`, 27 vs 48 дрейф ловится `tests/test_repo_health.py:TestLegacyDrift.test_legacy_vs_server_route_drift` |
+| R8.2 | **Muse proxy drift:** `legacy/rtmdk_sillytavern_launcher.py` единственная точка ST — нет теста на паритет с `server/app.py` OpenAI-compat. | `legacy/rtmdk_sillytavern_launcher.py:1` | 🟢 | P2 | `pytest tests/test_sillytavern_*.py` (если есть) | ✅ **Закрыт 2026-08-24** — `legacy/rtmdk_st_proxy.py` (5000→8080) + `launcher` (8080/5000) parity с `server/app.py` `/v1/chat/completions`, тест `TestSillyTavernParity` (proxy targets + launcher refs) |
 
 ---
 

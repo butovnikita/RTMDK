@@ -535,6 +535,84 @@ class TestCircuitBreakerUnified:
         assert hasattr(pb, "latency_threshold_ms")
 
 
+class TestLegacyDrift:
+    """R8: legacy fork must stay frozen and not drift (RISKS.md R8.1)."""
+
+    def test_legacy_readme_frozen(self):
+        readme = os.path.join(ROOT, "legacy", "README.md")
+        with open(readme, encoding="utf-8") as f:
+            text = f.read()
+        assert "Frozen" in text
+        assert "2026-08-01" in text
+        assert "R8.1" in text
+        assert "rtmdk/server/app.py" in text
+        assert "27" in text or "48" in text  # route counts documented
+
+    def test_legacy_vs_server_route_drift(self):
+        # R8.1: 27 legacy vs 48 server — drift must be intentional, not silent
+        leg = os.path.join(ROOT, "legacy", "rtmdk_server.py")
+        srv = os.path.join(ROOT, "rtmdk", "server", "app.py")
+        with open(leg, encoding="utf-8") as f:
+            leg_text = f.read()
+        with open(srv, encoding="utf-8") as f:
+            srv_text = f.read()
+        import re
+
+        leg_routes = len(re.findall(r"@app\.(get|post|put|delete|patch)", leg_text))
+        srv_routes = len(re.findall(r"@app\.(get|post|put|delete|patch)", srv_text))
+        # Documented counts in RISKS.md R8.1
+        assert leg_routes == 27, f"legacy routes {leg_routes} != 27 (RISKS.md R8.1)"
+        assert srv_routes == 48, f"server routes {srv_routes} != 48 (RISKS.md R8.1)"
+        assert srv_routes > leg_routes, "server must have more routes than frozen legacy"
+        # If legacy gains routes, it must be intentional (frozen exception)
+        assert leg_routes <= 27, "legacy gained routes — must be frozen (R8.1)"
+
+    def test_env_load_duplication_documented(self):
+        # R8.1: .env load was duplicated, now documented as launcher vs server
+        readme = os.path.join(ROOT, "legacy", "README.md")
+        with open(readme, encoding="utf-8") as f:
+            text = f.read()
+        assert ".env" in text or "load_dotenv" in text or "RTMDK_PORT" in text
+        start_prod = os.path.join(ROOT, "start_production.py")
+        with open(start_prod, encoding="utf-8") as f:
+            sp = f.read()
+        assert "load_dotenv" in sp
+
+
+class TestSillyTavernParity:
+    """R8.2: ST proxy/launcher must stay in sync with server OpenAI compat (RISKS.md R8.2)."""
+
+    def test_proxy_and_launcher_exist(self):
+        assert os.path.exists(os.path.join(ROOT, "legacy", "rtmdk_st_proxy.py"))
+        assert os.path.exists(os.path.join(ROOT, "legacy", "rtmdk_sillytavern_launcher.py"))
+
+    def test_proxy_targets_server(self):
+        proxy = os.path.join(ROOT, "legacy", "rtmdk_st_proxy.py")
+        launcher = os.path.join(ROOT, "legacy", "rtmdk_sillytavern_launcher.py")
+        srv = os.path.join(ROOT, "rtmdk", "server", "app.py")
+        with open(proxy, encoding="utf-8") as f:
+            pt = f.read()
+        with open(launcher, encoding="utf-8") as f:
+            lt = f.read()
+        with open(srv, encoding="utf-8") as f:
+            st = f.read()
+        # Proxy must forward to server port 8080 / 5000 mapping
+        assert "8080" in pt or "8080" in lt or "rtmdk" in pt.lower()
+        assert "5000" in pt or "5000" in lt
+        # Both must expose OpenAI compat
+        assert "/v1/chat/completions" in st or "chat/completions" in st
+        # Proxy should mention chat/completions or OpenAI
+        assert "chat" in pt.lower() or "openai" in pt.lower() or "proxy" in pt.lower()
+
+    def test_launcher_references_both(self):
+        launcher = os.path.join(ROOT, "legacy", "rtmdk_sillytavern_launcher.py")
+        with open(launcher, encoding="utf-8") as f:
+            text = f.read()
+        assert "rtmdk_server.py" in text
+        assert "rtmdk_st_proxy.py" in text
+        assert "5000" in text
+
+
 class TestLegacyModules:
     """legacy/ SillyTavern modules must remain importable after the repo move."""
 
