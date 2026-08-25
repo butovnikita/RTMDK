@@ -4,7 +4,7 @@
 > **Источники:** `AUDIT_REPORT.md:1`, `docs/06_SCIENTIFIC_ARTICLE.md:1`, `docs/08_ARCHITECTURE.md:1`, `BACKLOG.md:1`, `README.md:1`, `rtmdk/memory/config.py:1`, `benchmarks/baseline.json`
 > **Метод:** статический анализ + сверка документации/кода/CI | **Статус реестра:** `active` — каждый пункт требует верификации (тест/бенч/ревью)
 > **Легенда тяжести:** 🔴 Высокий — влияет на корректность/безопасность/репутацию | 🟡 Средний — влияет на масштаб/сопровождаемость | 🟢 Низкий — локальный долг
-> **Прогресс:** `R1.1` ✅ закрыт `2026-08-24`, `R1.2` ✅ закрыт `2026-08-24`, `R1.3` ✅ закрыт `2026-08-24`, `R2` ✅ закрыт `2026-08-24`, `R3` ✅ закрыт `2026-08-24`, `R4` ✅ закрыт `2026-08-24`, `R5` ✅ закрыт `2026-08-24`, `R6` ✅ закрыт `2026-08-24`, `R7` ✅ закрыт `2026-08-24`, `R8` ✅ закрыт `2026-08-24`, `R9` ✅ закрыт `2026-08-24`, `R10` ✅ закрыт `2026-08-24`, `R11` ✅ закрыт `2026-08-24` в этой ветке (см. §R1-R11); остальные — `open`
+> **Прогресс:** `R1.1` ✅ закрыт `2026-08-24`, `R1.2` ✅ закрыт `2026-08-24`, `R1.3` ✅ закрыт `2026-08-24`, `R2` ✅ закрыт `2026-08-24`, `R3` ✅ закрыт `2026-08-24`, `R4` ✅ закрыт `2026-08-24`, `R5` ✅ закрыт `2026-08-24`, `R6` ✅ закрыт `2026-08-24`, `R7` ✅ закрыт `2026-08-24`, `R8` ✅ закрыт `2026-08-24`, `R9` ✅ закрыт `2026-08-24`, `R10` ✅ закрыт `2026-08-24`, `R11` ✅ закрыт `2026-08-24`, `R12` ✅ закрыт `2026-08-24` в этой ветке (см. §R1-R12); **все 31 риск закрыты**
 
 ---
 
@@ -139,9 +139,9 @@
 
 | ID | Риск | Где | Тяжесть | Приоритет | Как проверить | Критерий закрытия |
 |---|---|---|---|---|---|---|
-| R12.1 | **Имя `memory.json` вводит в заблуждение:** на деле `msgpack+zlib` + `checksum` `rtmdk/memory/serialization.py:464`, `AUDIT_REPORT.md:34` — 8 `memory.json.corrupted.*` в `~/.rtmdk/` до внедрения checksum. | `rtmdk/memory/serialization.py:464`, `AUDIT_REPORT.md:34` | 🟢 | P2 | `file ~/.rtmdk/memory.json` | Переименован в `memory.msgpack` или docs `SOT_V2_GUIDE.md` явно описывают формат |
-| R12.2 | **Дефолтный ключ `rtmdk-local`:** `server/app.py` auth `ENABLE_API_AUTH=true` с дефолтом — известный секрет `AUDIT_REPORT.md:60` `CHANGELOG.md:44` startup warning уже есть, но ключ не ротируется. | `rtmdk/server/app.py:632`, `AUDIT_REPORT.md:60` | 🟡 | P1 | `grep -r "rtmdk-local" rtmdk/` | Дефолт запрещён в `production()` пресете (`validate()` error) |
-| R12.3 | **Silent embedding pad:** `server/app.py:849` `get_embedding` паддит/режет до `768` молча — скрывает ошибку модели (dim mismatch). Должен `fail-fast`. | `rtmdk/server/app.py:849` | 🟡 | P1 | `pytest tests/test_server_models_embeddings.py -v` с `dim=512` | `400 Bad Request` при `len(emb)!=768` |
+| R12.1 | **Имя `memory.json` вводит в заблуждение:** на деле `msgpack+zlib` + `checksum` `rtmdk/memory/serialization.py:464`, `AUDIT_REPORT.md:34` — 8 `memory.json.corrupted.*` в `~/.rtmdk/` до внедрения checksum. | `rtmdk/memory/serialization.py:464`, `AUDIT_REPORT.md:34` | 🟢 | P2 | `file ~/.rtmdk/memory.json` | ✅ **Закрыт 2026-08-24** — default `memory.msgpack` (`server/app.py:118` R12.1, was `memory.json`), `serialization.py:1` `msgpack+zlib` + `backward compat` + `SOT_V2_GUIDE.md` `Persistence Format`, тест `TestSecurityAndPersistence.test_memory_file_is_msgpack` |
+| R12.2 | **Дефолтный ключ `rtmdk-local`:** `server/app.py` auth `ENABLE_API_AUTH=true` с дефолтом — известный секрет `AUDIT_REPORT.md:60` `CHANGELOG.md:44` startup warning уже есть, но ключ не ротируется. | `rtmdk/server/app.py:632`, `AUDIT_REPORT.md:60` | 🟡 | P1 | `grep -r "rtmdk-local" rtmdk/` | ✅ **Закрыт 2026-08-24** — `config.py:706` `api_key="rtmdk-local"` + `RTMDK_API_KEY` env, `production()` `production_mode=True` + `validate()` `ERROR: api_key='rtmdk-local'` (R12.2), тест `TestSecurityAndPersistence.test_production_preset_forbids_default_key` |
+| R12.3 | **Silent embedding pad:** `server/app.py:849` `get_embedding` паддит/режет до `768` молча — скрывает ошибку модели (dim mismatch). Должен `fail-fast`. | `rtmdk/server/app.py:849` | 🟡 | P1 | `pytest tests/test_server_models_embeddings.py -v` с `dim=512` | ✅ **Закрыт 2026-08-24** — `server/app.py:860` `raise HTTPException 400` `Embedding dimension mismatch` (was `np.pad`), `R12.3` `logger.error` fail-fast, тест `TestSecurityAndPersistence.test_get_embedding_fail_fast` |
 
 ---
 

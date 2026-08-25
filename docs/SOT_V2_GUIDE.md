@@ -186,6 +186,14 @@ result = memory.query_with_confidence(query, embedding, alpha=0.05)
 
 **Rule:** `sot_max_vocab ≤4096` (dense, fast), `5000–8000` (sparse, okay), `>8000` (validate warns, need RAM).
 
+## Persistence Format — R12.1 (2026-08-24)
+
+**Memory file is `msgpack+zlib` + checksum, not JSON** (`rtmdk/memory/serialization.py:174`, `docs/RISKS.md R12.1`).
+Default now `~/.rtmdk/memory.msgpack` (`rtmdk/server/app.py:118`, was `memory.json` misleading).
+`field_to_file(..., fmt="msgpack")` writes `zlib(msgpack)` with `b"\x78"` header and `_checksum` (sha256);
+`field_from_file` auto-detects `msgpack` vs `JSON` and verifies checksum (prevents 8 `*.corrupted.*` from `AUDIT_REPORT.md:34`).
+Legacy `memory.json` still readable for backward compat (init_memory tries `.msgpack` then `.json`).
+
 ## Further Reading
 
 - [SOT v2.0 Theory](SOT_V2_THEORY.md) — mathematical derivations and proofs

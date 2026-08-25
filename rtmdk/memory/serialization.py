@@ -1,16 +1,21 @@
 from __future__ import annotations
 
 """
-rtmdk/memory/serialization.py — Field serialization utilities.
+rtmdk/memory/serialization.py — Field serialization utilities — R12.1.
 
-Centralizes export/import logic to eliminate duplication between
-RTMDKField.export_field, export_to_dict, import_field, import_from_dict.
+R12.1 (2026-08-24, audit/risks-2026-08-24): file was misleadingly named
+`memory.json` but is actually msgpack+zlib + checksum (see FieldSerializer.field_to_file
+fmt="msgpack", header b"\\x78" zlib, docs/RISKS.md R12.1, AUDIT_REPORT.md:34).
+Default now `memory.msgpack` (server/app.py:118) with backward compat for
+`memory.json` (auto-detect in field_from_file). Old `memory.json.corrupted.*`
+(8 files) from pre-checksum era remain in ~/.rtmdk/ for forensics.
 
 Usage:
     from rtmdk.memory.serialization import FieldSerializer
     data = FieldSerializer.field_to_dict(field)
-    FieldSerializer.field_to_file(field, "memory.json")
-    field = FieldSerializer.field_from_file("memory.json", embedder, config)
+    FieldSerializer.field_to_file(field, "memory.msgpack")  # preferred
+    FieldSerializer.field_to_file(field, "memory.json")  # legacy, still works (JSON fallback)
+    field = FieldSerializer.field_from_file("memory.msgpack", embedder, config)
 """
 
 import hashlib

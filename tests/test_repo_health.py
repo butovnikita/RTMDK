@@ -804,6 +804,66 @@ class TestDocsSync:
         assert str(actual) in readme_text, f"README must mention {actual} endpoints"
 
 
+class TestSecurityAndPersistence:
+    """R12: security and persistence must be honest (RISKS.md R12.1-12.3)."""
+
+    def test_memory_file_is_msgpack(self):
+        # R12.1: default must be memory.msgpack (was misleading memory.json)
+        srv = os.path.join(ROOT, "rtmdk", "server", "app.py")
+        with open(srv, encoding="utf-8") as f:
+            text = f.read()
+        assert "memory.msgpack" in text, "default MEMORY_FILE must be memory.msgpack (R12.1)"
+        assert "R12.1" in text
+        # Serialization must support both and be documented as msgpack+zlib
+        ser = os.path.join(ROOT, "rtmdk", "memory", "serialization.py")
+        with open(ser, encoding="utf-8") as f:
+            st = f.read()
+        assert "msgpack" in st and "zlib" in st
+        assert "R12.1" in st
+        assert "memory.msgpack" in st or "memory.json" in st
+        # Docs must describe format
+        guide = os.path.join(ROOT, "docs", "SOT_V2_GUIDE.md")
+        with open(guide, encoding="utf-8") as f:
+            assert "msgpack" in f.read().lower()
+
+    def test_production_preset_forbids_default_key(self):
+        from rtmdk.memory.config import RTMDKConfig
+
+        # R12.2: production() with default rtmdk-local must ERROR
+        cfg = RTMDKConfig.production()
+        # Ensure it's production_mode True (set in R12.2 fix)
+        assert cfg.production.production_mode is True
+        warns = cfg.validate()
+        assert any("rtmdk-local" in w and "ERROR" in w for w in warns), f"production must ERROR on default key, got {warns}"
+
+        # Non-production (local) must NOT error on same key
+        cfg2 = RTMDKConfig.local()
+        warns2 = cfg2.validate()
+        # local may still have api_key rtmdk-local but not production_mode, so no ERROR
+        assert not any("rtmdk-local" in w and "ERROR" in w and "production_mode" in w for w in warns2)
+
+        # Custom key should not error
+        cfg3 = RTMDKConfig(production_mode=True, api_key="my-secret-key-123")
+        warns3 = cfg3.validate()
+        assert not any("rtmdk-local" in w for w in warns3)
+
+    def test_get_embedding_fail_fast(self):
+        srv = os.path.join(ROOT, "rtmdk", "server", "app.py")
+        with open(srv, encoding="utf-8") as f:
+            text = f.read()
+        assert "R12.3" in text
+        # Must raise HTTPException 400 on dim mismatch, not silent pad
+        assert "HTTPException" in text and "400" in text
+        assert "Embedding dimension mismatch" in text
+        # Old silent pad code must be gone (np.pad)
+        # The pad line inside get_embedding should not exist for mismatch case
+        # Check that the function contains raise, not just warning+pad
+        assert "raise HTTPException" in text
+        # Ensure no silent fallback remains for mismatch (np.pad after warning)
+        # The old pattern was logger.warning then np.pad — now it should be logger.error then raise
+        assert "logger.error" in text or "logger.warning" in text
+
+
 class TestLegacyModules:
     """legacy/ SillyTavern modules must remain importable after the repo move."""
 

@@ -66,8 +66,9 @@ def _local() -> RTMDKConfig:
 
 
 def _production() -> RTMDKConfig:
-    """Multi-user production server — all optimizations."""
+    """Multi-user production server — all optimizations. R12.2: requires RTMDK_API_KEY != rtmdk-local."""
     return RTMDKConfig(
+        production_mode=True,  # R12.2: enables api_key validation (ERROR if rtmdk-local)
         latent_dim=256,
         top_k=5,
         min_response=0.001,

@@ -115,7 +115,10 @@ SERVER_PORT = int(os.getenv("RTMDK_PORT", "8080"))
 LM_STUDIO_URL = os.getenv("LM_STUDIO_URL", "http://localhost:12345/v1")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-MEMORY_FILE = os.getenv("RTMDK_MEMORY_FILE", os.path.join(os.path.expanduser("~"), ".rtmdk", "memory.json"))
+MEMORY_FILE = os.getenv(
+    "RTMDK_MEMORY_FILE",
+    os.path.join(os.path.expanduser("~"), ".rtmdk", "memory.msgpack"),  # R12.1: was memory.json (misleading, actually msgpack+zlib, see serialization.py:174)
+)
 EMBED_MODEL = os.getenv("RTMDK_EMBED_MODEL", "nomic-ai/nomic-embed-text-v1.5-GGUF")
 CHAT_MODEL = os.getenv("RTMDK_CHAT_MODEL", "")
 API_KEY = os.getenv("RTMDK_API_KEY", "rtmdk-local")
@@ -859,11 +862,13 @@ async def get_embedding(text: str, model: str = None) -> np.ndarray:
 
     expected_dim = 768
     if len(embedding) != expected_dim:
-        logger.warning(f"Embedding dimension mismatch: got {len(embedding)}, expected {expected_dim}. Resizing.")
-        if len(embedding) > expected_dim:
-            embedding = embedding[:expected_dim]
-        else:
-            embedding = np.pad(embedding, (0, expected_dim - len(embedding)), "constant")
+        # R12.3 (2026-08-24): fail-fast instead of silent pad/trim (was hiding model misconfig, AUDIT_REPORT.md R12.3)
+        logger.error(f"Embedding dimension mismatch: got {len(embedding)}, expected {expected_dim} (model {embedder_model})")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Embedding dimension mismatch: got {len(embedding)}, expected {expected_dim} for model {embedder_model}. "
+            f"Check EMBED_MODEL={EMBED_MODEL} and embedder output.",
+        )
 
     embedder_cache.set(text, embedding)
     return embedding
@@ -892,9 +897,10 @@ def init_memory() -> RTMDKMemory:
 
     load_path = MEMORY_FILE
     if not os.path.exists(load_path):
-        msgpack_path = os.path.splitext(load_path)[0] + ".msgpack"
-        if os.path.exists(msgpack_path):
-            load_path = msgpack_path
+        # R12.1: default is now .msgpack, but keep .json for backward compat (pre-checksum era)
+        alt = os.path.splitext(load_path)[0] + (".json" if load_path.endswith(".msgpack") else ".msgpack")
+        if os.path.exists(alt):
+            load_path = alt
 
     if os.path.exists(load_path):
         try:

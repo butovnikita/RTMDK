@@ -171,6 +171,7 @@ _FIELD_GROUPS: Dict[str, str] = {
     "entropy_management": "MemorySystemConfig",
     "eval_frequency": "ProductionConfig",
     "eval_mode": "ProductionConfig",
+    "api_key": "ProductionConfig",  # R12.2
     "vector_storage_dsn": "ProductionConfig",
     "replication_peers": "ProductionConfig",
     "replication_node_id": "ProductionConfig",
@@ -702,6 +703,7 @@ class MemorySystemConfig:
 @dataclass
 class ProductionConfig:
     production_mode: bool = False
+    api_key: str = "rtmdk-local"  # R12.2: default local key, must be changed in production (validate ERROR if production_mode + default)
     eval_mode: EvalMode = EvalMode.PRODUCTION
     shadow_mode: bool = False
     shadow_fallback_threshold: float = 0.3
@@ -1059,6 +1061,7 @@ class RTMDKConfig:
             ("RTMDK_CAUSAL_MASKING", "causal_masking", lambda x: x.lower() == "true"),
             ("RTMDK_DOMAIN_AWARE_RETRIEVAL", "domain_aware_retrieval", lambda x: x.lower() == "true"),
             ("RTMDK_DOMAIN_CONSOLIDATION_GUARD", "domain_consolidation_guard", lambda x: x.lower() == "true"),
+            ("RTMDK_API_KEY", "api_key", str),  # R12.2
         ]
 
         for env_key, attr, type_fn in _env_overrides:
@@ -1198,6 +1201,12 @@ class RTMDKConfig:
                     f"ERROR: pipeline_breaker_thresholds['{stage_name}']={threshold} must be > 0. "
                     "Stage breaker will trip on any latency."
                 )
+        # R12.2 (2026-08-24): forbid default rtmdk-local in production
+        if self.production.production_mode and self.production.api_key == "rtmdk-local":
+            warnings.append(
+                "ERROR: api_key='rtmdk-local' with production_mode=True is insecure — "
+                "set RTMDK_API_KEY to a strong secret (R12.2, AUDIT_REPORT.md:60, CHANGELOG.md:44)"
+            )
         # R6.1 (2026-08-24): SIF dense PMI O(n²) — warn on large vocab (AGENTS.md Critical #1, RISKS.md)
         # SPARSE_PMI_THRESHOLD=5000 (sif_embedder.py:168): dense 4096²*8≈134MB, 5000 threshold, 20K sparse CSR ~3GB
         if self.sot.sot_max_vocab > 8000:
