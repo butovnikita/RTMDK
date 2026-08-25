@@ -1198,4 +1198,29 @@ class RTMDKConfig:
                     f"ERROR: pipeline_breaker_thresholds['{stage_name}']={threshold} must be > 0. "
                     "Stage breaker will trip on any latency."
                 )
+        # R6.1 (2026-08-24): SIF dense PMI O(n²) — warn on large vocab (AGENTS.md Critical #1, RISKS.md)
+        # SPARSE_PMI_THRESHOLD=5000 (sif_embedder.py:168): dense 4096²*8≈134MB, 5000 threshold, 20K sparse CSR ~3GB
+        if self.sot.sot_max_vocab > 8000:
+            warnings.append(
+                f"sot_max_vocab={self.sot.sot_max_vocab} >8000: sparse PMI TruncatedSVD on ~{self.sot.sot_max_vocab}x{self.sot.sot_max_vocab} CSR "
+                f"will need ~3GB at 20K vocab (R6.1, sif_embedder.py:168 SPARSE_PMI_THRESHOLD=5000). "
+                "Consider vocab ≤5000 for dense or 5K-8K for sparse; see docs/SOT_V2_GUIDE.md RAM table."
+            )
+        elif self.sot.sot_max_vocab > 5000:
+            warnings.append(
+                f"sot_max_vocab={self.sot.sot_max_vocab} >5000: SIF will use sparse PMI + TruncatedSVD "
+                f"(sif_embedder.py:168). Expect higher CPU/RAM than dense path (4096²≈134MB)."
+            )
+        # R6.2 (2026-08-24): COOC dict growth O(n²) before PMI matrix — window>5 may OOM
+        if self.sot.sot_skipgram_window > 5:
+            warnings.append(
+                f"sot_skipgram_window={self.sot.sot_skipgram_window} >5 may OOM before PMI matrix "
+                f"(COOC max_cooccurrence={self.sot.sot_max_cooccurrence}, window>5 expands co-occurrence Dict[int,Dict] "
+                f"to O(n²), R6.2). Keep ≤5 or ensure LRU pruning. See sif_embedder.py:116."
+            )
+        if self.sot.sot_max_cooccurrence > 200_000:
+            warnings.append(
+                f"sot_max_cooccurrence={self.sot.sot_max_cooccurrence} >200K may inflate COOC dict "
+                f"before sparse PMI pruning (R6.2). Consider ≤100K."
+            )
         return warnings

@@ -165,6 +165,27 @@ result = memory.query_with_confidence(query, embedding, alpha=0.05)
 - **CJK scripts** work but word-level splitting is less meaningful than for Latin scripts.
 - **No pre-trained knowledge** — SOT v2.0 only knows what is in your corpus.  It will not understand out-of-vocabulary domain terms unless they appear in the training data.
 
+## RAM & OOM Guide — R6.1 (2026-08-24, audit/risks-2026-08-24)
+
+**AGENTS.md Critical Constraint #1 — SIF dense PMI matrix scales as O(n_valid²).**
+
+| Vocab (`sot_max_vocab`) | PMI path | RAM / compute | Note |
+|:---:|:---:|:---|:---|
+| `≤4096` (default) | **dense** `np.zeros((n,n))` `sif_embedder.py:221` | `4096²×8B≈134MB` + SVD `~×2` | Fits in 16MB RSS? No — but dense fits in 256MB, okay for 1K docs |
+| `4096–5000` | **dense** (fast BLAS) | `5000²×8≈200MB` | Threshold `SPARSE_PMI_THRESHOLD=5000` `sif_embedder.py:168` |
+| `5000–8000` | **sparse** `coo_matrix + TruncatedSVD` `sif_embedder.py:171` | `CSR + randomized SVD ~0.5–1GB` | Warn in `validate()` when `>5000`, OK for 10K docs `window=5` |
+| `8000–20000` | **sparse** | `10K²≈800MB, 20K²≈3GB` CSR before SVD | `validate()` warns `>8000` (R6.1), user must ensure 6+GB RAM |
+| `>20000` | **sparse** | `>3GB` + `TruncatedSVD(randomized)` 3GB+ | Not recommended; consider external embedder (SBERT) |
+
+**Tuning:**
+
+- `sot_skipgram_window` (`default 1`) — `>5` may OOM **before** PMI (COOC `Dict[int,Dict]`, `max_cooccurrence=100K`, `R6.2`). Keep `≤5` (validate warns).
+- `sot_max_cooccurrence=100_000` — LRU pruning before matrix build; `>200K` warns.
+- `RTMDKConfig.validate()` now emits `sot_max_vocab>8000` and `window>5` warnings (R6.1/R6.2).
+- Measure: `python -c "from rtmdk.memory.sot_v2.sif_embedder import SPARSE_PMI_THRESHOLD; print(SPARSE_PMI_THRESHOLD)"` (`5000`).
+
+**Rule:** `sot_max_vocab ≤4096` (dense, fast), `5000–8000` (sparse, okay), `>8000` (validate warns, need RAM).
+
 ## Further Reading
 
 - [SOT v2.0 Theory](SOT_V2_THEORY.md) — mathematical derivations and proofs

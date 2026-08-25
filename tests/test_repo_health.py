@@ -416,6 +416,72 @@ class TestTieredAndBatch:
         assert "failure_threshold" in tbt or "latency" in tbt.lower()
 
 
+class TestOomAndScale:
+    """R6: OOM and scale must be guarded (RISKS.md R6.1-6.3)."""
+
+    def test_sif_oom_guardian_in_code(self):
+        sif = os.path.join(ROOT, "rtmdk", "memory", "sot_v2", "sif_embedder.py")
+        with open(sif, encoding="utf-8") as f:
+            text = f.read()
+        assert "SPARSE_PMI_THRESHOLD" in text
+        assert "5000" in text
+        assert "sparse" in text.lower() and "TruncatedSVD" in text
+
+    def test_validate_warns_on_large_vocab(self):
+        from rtmdk.memory.config import RTMDKConfig
+
+        cfg_big = RTMDKConfig(latent_dim=16, sot_max_vocab=9000)
+        warns = cfg_big.validate()
+        assert any("sot_max_vocab" in w and ("8000" in w or "5000" in w) for w in warns), f"expected vocab warn, got {warns}"
+
+        cfg_huge = RTMDKConfig(latent_dim=16, sot_max_vocab=20000)
+        warns2 = cfg_huge.validate()
+        assert any("sot_max_vocab" in w and "3GB" in w for w in warns2), f"expected 3GB warn for 20K, got {warns2}"
+
+        cfg_ok = RTMDKConfig(latent_dim=16, sot_max_vocab=4096)
+        warns_ok = cfg_ok.validate()
+        # Default 4096 should not trigger R6.1 vocab warn
+        assert not any("sot_max_vocab" in w and "8000" in w for w in warns_ok)
+
+    def test_validate_warns_on_large_window(self):
+        from rtmdk.memory.config import RTMDKConfig
+
+        cfg_w = RTMDKConfig(latent_dim=16, sot_skipgram_window=10)
+        warns = cfg_w.validate()
+        assert any("sot_skipgram_window" in w and "R6.2" in w for w in warns), f"expected window>5 warn, got {warns}"
+
+        cfg_ok = RTMDKConfig(latent_dim=16, sot_skipgram_window=1)
+        warns_ok = cfg_ok.validate()
+        assert not any("sot_skipgram_window" in w for w in warns_ok)
+
+    def test_sot_guide_has_ram_table(self):
+        guide = os.path.join(ROOT, "docs", "SOT_V2_GUIDE.md")
+        with open(guide, encoding="utf-8") as f:
+            text = f.read()
+        assert "R6.1" in text
+        assert "SPARSE_PMI_THRESHOLD" in text
+        assert "5000" in text
+        assert "3GB" in text or "3 GB" in text
+        assert "RAM" in text and "sot_max_vocab" in text
+
+    def test_baseline_100k_is_forecast_and_nightly_exists(self):
+        import json
+
+        b100k = os.path.join(ROOT, "benchmarks", "baseline_100k.json")
+        assert os.path.exists(b100k), "baseline_100k.json must exist (R1.2/R6.3)"
+        with open(b100k, encoding="utf-8") as f:
+            data = json.load(f)
+        assert data.get("forecast") is True
+
+        perf = os.path.join(ROOT, ".github", "workflows", "perf.yml")
+        with open(perf, encoding="utf-8") as f:
+            text = f.read()
+        assert "schedule" in text and "cron" in text, "perf.yml must have nightly schedule (R6.3)"
+        assert "stress_test_100k" in text
+        assert "R6.3" in text or "100K baseline" in text
+        assert "baseline_100k" in text
+
+
 class TestLegacyModules:
     """legacy/ SillyTavern modules must remain importable after the repo move."""
 

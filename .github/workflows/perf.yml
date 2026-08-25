@@ -6,7 +6,7 @@ on:
   pull_request:
     branches: [master, main]
   schedule:
-    - cron: '0 2 * * *'  # R5.2 nightly 02:00 UTC for batch/tiered (forecast artifacts pending, RISKS.md R5)
+    - cron: '0 2 * * *'  # R5/R6 nightly 02:00 UTC for batch/tiered/100K (forecast artifacts pending, RISKS.md R5/R6)
   workflow_dispatch:
 
 jobs:
@@ -52,6 +52,12 @@ jobs:
           python scripts/bench_tiered_storage.py --nodes 10000 --queries 100 --latent-dim 64 --tmp-dir /tmp/_tiered_bench_tmp || true
           python scripts/stress_test_100k.py --nodes 10000 --queries 50 --tiered-v2 --dim 64 || true
 
+      - name: Run 100K baseline (smoke) — R6.3 / R1.2
+        # Non-blocking smoke for scale regress: @500 -> @10K -> @100K forecast ~15ms (docs/06:5.6)
+        run: |
+          python scripts/stress_test_100k.py --nodes 10000 --queries 50 --dim 64 || true
+          python scripts/stress_test_100k.py --nodes 10000 --queries 50 --dim 384 || true
+
       - name: Run nightly batch ingestion (1M, artifact) — R5.2
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: |
@@ -63,6 +69,13 @@ jobs:
         run: |
           python scripts/stress_test_100k.py --nodes 100000 --queries 100 --tiered-v2 --dim 64 -o /tmp/benchmark_tiered_100k.json || true
           cp benchmarks/baseline_tiered.json /tmp/benchmark_tiered_forecast.json
+
+      - name: Run nightly 100K baseline (artifact) — R6.3 / R1.2
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: |
+          python scripts/stress_test_100k.py --nodes 100000 --queries 100 --dim 64 -o /tmp/benchmark_100k.json || true
+          python scripts/stress_test_100k.py --nodes 100000 --queries 100 --dim 384 -o /tmp/benchmark_100k_384.json || true
+          cp benchmarks/baseline_100k.json /tmp/benchmark_100k_forecast.json
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@v4
